@@ -6,7 +6,7 @@ This guide covers everything you need to write effective skills for the devexp f
 
 ## What Is a Skill?
 
-A skill is a Markdown file at `~/.claude/skills/<name>/skill.md`. When a user invokes `/skill-name` in Claude Code, the skill's content is injected into the conversation context. This shapes how Claude behaves for the duration of that conversation or task.
+A skill is a Markdown file at `~/.claude/skills/<name>/skill.md`. When a user invokes `/skill-name` in Claude Code or opencode, the skill's content is injected into the conversation context. This shapes how Claude behaves for the duration of that task.
 
 Key differences from agents:
 
@@ -14,10 +14,11 @@ Key differences from agents:
 |-|--------|--------|
 | Invocation | Spawned by Claude via `Agent` tool | Invoked by user via `/skill-name` slash command |
 | Isolation | Runs in a sub-agent context | Injected into the current conversation |
+| Tool access | Full tool access (as configured) | No independent tool access — uses the current conversation's tools |
 | Persistence | Has its own memory and state | Stateless — context injection only |
-| Best for | Autonomous multi-step tasks with tool access | Shaping Claude's approach to a specific type of task |
+| Best for | Autonomous multi-step tasks | Shaping Claude's approach to a specific type of task |
 
-Think of skills as **behavioral overlays** — they add focused expertise and structure to Claude's current context.
+Think of skills as **behavioral overlays** — they add focused expertise and structure to Claude's current context. The difference between Claude reviewing code with and without a skill active is the difference between general advice and a structured, expert review with defined severity levels and a specific output format.
 
 ---
 
@@ -45,19 +46,19 @@ The file lives at `skills/my-skill/skill.md`. The directory name must match the 
 The skill name, which becomes the slash command: `/name`.
 
 - Must match the containing directory name exactly
-- Lowercase kebab-case: `my-bugfix`, `api-designer`
-- If part of a suite, use a consistent namespace prefix: `devexp-bugfix`, `devexp-feature`
+- Lowercase kebab-case: `bugfix`, `api-design`, `logic-review`
+- No namespace prefix — use short, descriptive names directly
 
 ### `description` (required)
 
-A single-line description shown in skill listings. This is also what the orchestrating Claude reads when deciding which skill to load for a task.
+A single-line description shown in skill listings. This is also what Claude reads when deciding which skill to load for a task.
 
 Write it as: **[What it does] for [what] — producing [output]**
 
 Examples:
 - "Root cause analysis and automated bug fixing with safety checks"
 - "Designs API contracts, endpoints, schemas, and error handling"
-- "Analyzes test coverage and identifies gaps"
+- "Generates a daily standup update from recent git activity"
 
 Avoid vague descriptions like "helps with bugs" or "for code review".
 
@@ -75,9 +76,28 @@ You are the **Bug Fixer**, specialized in identifying, analyzing, and fixing sof
 
 The bold name is a convention across the devexp skills — it creates a clear identity that Claude can inhabit.
 
+### Include "Triggered by"
+
+After the role statement, include a "Triggered by" section listing which agents or other skills invoke this skill. This creates a readable dependency map in the codebase and helps future authors understand how skills are connected.
+
+```markdown
+## Triggered by
+
+- `dev-agent` — to fix bugs encountered during autonomous implementation
+- `feature` skill — to verify the bug was fixed before marking complete
+```
+
+If the skill is only user-invoked and no agent uses it, say so:
+
+```markdown
+## Triggered by
+
+User-invoked only.
+```
+
 ### Define When to Use
 
-After the role statement, include a "When to Use" section. Even if the skill is primarily user-invoked, this section:
+After "Triggered by", include a "When to Use" section. Even if the skill is primarily user-invoked, this section:
 - Helps Claude route correctly when used as an orchestrated sub-skill
 - Helps users understand when to reach for this skill
 - Acts as a contract: if the situation matches these triggers, this skill applies
@@ -166,14 +186,14 @@ Summarize the results.
 ## Output
 
 Provide a clear fix summary covering:
-- What was the bug? (one sentence)
-- Where was it located? (file and line)
-- What was the root cause? (the exact cause, not just the symptom)
-- What fix was applied? (description of the change)
-- How was it verified? (tests run and their results)
+- **Bug**: What was the bug? (one sentence)
+- **Location**: Where was it? (file and line)
+- **Root cause**: The exact cause, not just the symptom
+- **Fix applied**: Description of the change
+- **Verification**: Tests run and their results
 ```
 
-If the output is a structured report, name the sections. If it's code, describe what files to create/modify and what to return.
+If the output is a structured report, name the sections. If it's a file to create, describe the file.
 
 ---
 
@@ -183,7 +203,7 @@ If the output is a structured report, name the sections. If it's code, describe 
 
 The user types `/my-skill` and describes their task. The skill shapes how Claude approaches it.
 
-Best for: tasks where a user wants a specific type of analysis or output format that differs from Claude's default behavior.
+Best for: tasks where a user wants a specific type of analysis or output format.
 
 ```markdown
 ## When to Use
@@ -195,20 +215,21 @@ Invoked by the user directly when they need [specific type of help].
 
 ### Orchestrated Sub-Skill
 
-Spawned by another skill (like the devexp orchestrator). The parent skill passes context, the sub-skill executes a specific phase.
+Invoked by an agent or another skill. The parent passes context; this skill executes a specific phase.
 
-Best for: specialized phases in a multi-step pipeline — architecture review after analysis, fix verification after bug fixing.
+Best for: specialized phases in a multi-step pipeline — architecture review after analysis, fix verification after implementation.
 
 ```markdown
+## Triggered by
+- `dev-agent` — to [specific purpose]
+
 ## When to Use
-Spawned by [parent skill] when:
-- [Condition 1]
-- [Condition 2]
+Invoked by [parent] when [condition].
 ```
 
 ### Orchestrator Skill
 
-Routes to other skills based on the user's request. The devexp skill is this archetype.
+Routes to other skills or agents based on the user's request.
 
 Best for: entry points that delegate to a family of sub-skills.
 
@@ -220,8 +241,8 @@ you coordinate specialized capabilities.
 ### Available Capabilities
 | User Request | Delegate To |
 |-------------|-------------|
-| "analyze..." | Use [skill-name] |
-| "fix..." | Use [skill-name] |
+| "analyze..." | [skill or agent name] |
+| "fix..." | [skill or agent name] |
 ```
 
 ---
@@ -230,9 +251,7 @@ you coordinate specialized capabilities.
 
 ### The Numbered Phase Pattern
 
-Divide the process into named phases. Each phase gets a header, and each step within a phase is a bullet point.
-
-This is the most reliable structure for consistent, repeatable behavior across different invocations.
+Divide the process into named phases. Each phase gets a header, and each step within a phase is a bullet point. This is the most reliable structure for consistent, repeatable behavior across different invocations.
 
 ### The Verification Checklist Pattern
 
@@ -248,7 +267,7 @@ For quality-focused skills (bug fix verifier, regression tester), use an explici
 - [ ] Performance is acceptable
 ```
 
-Checklists create accountability. The agent works through each item rather than guessing when it's done.
+Checklists create accountability. Claude works through each item rather than guessing when it's done.
 
 ### The Severity Ladder Pattern
 
@@ -299,24 +318,13 @@ Provide your analysis in this format:
 
 **Trying to do everything.** A skill named "code quality" that covers style, performance, security, and architecture will do all of them poorly. Split into focused skills.
 
+**Missing "Triggered by".** Without this, there's no record of which agents use the skill. Future authors can't tell whether it's safe to rename or change the interface.
+
 **Missing "When to Use".** Without this, the orchestrator can't route correctly, and users don't know when to reach for the skill.
 
 **Process steps that aren't steps.** "Understand the codebase" is not a step. "Read the three most-imported files to understand the architecture" is a step.
 
-**Confusing skills with agents.** Skills are context injection — they don't have tool access by default and don't run autonomously. If your skill needs to read files, run tests, and make changes, it should probably be an agent.
-
----
-
-## Testing Your Skill
-
-1. Install with `./install.sh`
-2. Start a new conversation in Claude Code
-3. Type `/skill-name`
-4. Describe a task or paste code
-5. Evaluate: does Claude follow the process you defined? Does the output match the format you specified?
-6. Iterate: add specificity where the output diverges from what you wanted
-
-The fastest feedback loop is: write skill → install → test with a real example → refine → repeat.
+**Confusing skills with agents.** Skills are context injection — they shape behavior but don't run autonomously. If your skill needs to read files, run tests, and make changes independently, it should be an agent.
 
 ---
 
@@ -330,12 +338,22 @@ Skill names in the devexp suite use short, descriptive kebab-case names without 
 
 Examples:
 - `bugfix` — root cause analysis and bug fixing
-- `test` — test execution and coverage (covers unit, integration, and flaky tests)
-- `docs` — documentation generation (covers API docs, comments, examples, README)
-- `root-cause` — deep root cause analysis
-- `arch-review` — architecture review
-- `dep-map` — dependency mapping
+- `logic-review` — code logic review for bugs and edge cases
+- `api-design` — API contract design
+- `db-design` — database schema design
+- `test-gen` — test generation
 
-Prefer merging closely related sub-skills into a single skill with sub-sections rather than creating many fine-grained skills. For example, `test` covers unit tests, integration tests, coverage, and flaky test detection as sub-sections — not four separate skills.
+Prefer merging closely related concerns into a single skill with sub-sections rather than creating many fine-grained skills. For example, `docs` covers API docs, code comments, usage examples, and README — not four separate skills.
 
-For standalone skills with no suite context, just use a descriptive name: `sql-optimizer`, `commit-message`, `pr-review`.
+---
+
+## Testing Your Skill
+
+1. Install with `./install.sh`
+2. Start a new conversation in Claude Code or opencode
+3. Type `/skill-name`
+4. Describe a task or paste code
+5. Evaluate: does Claude follow the process you defined? Does the output match the format you specified?
+6. Iterate: add specificity where the output diverges from what you wanted
+
+The fastest feedback loop is: write skill → install → test with a real example → refine → repeat.

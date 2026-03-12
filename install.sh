@@ -174,6 +174,9 @@ install_claude() {
     success "Installed $count skill(s)."
     echo ""
 
+    # Install MCPs
+    install_mcps_claude
+
     success "Claude Code installation complete."
     echo "  Agents: $AGENTS_TARGET"
     echo "  Skills: $SKILLS_TARGET"
@@ -330,11 +333,181 @@ install_opencode() {
     success "Installed $count skill(s)."
     echo ""
 
+    # Install MCPs
+    install_mcps_opencode
+
     success "opencode installation complete."
     echo "  Agents: $AGENTS_TARGET"
     echo "  Skills: $SKILLS_TARGET (shared path)"
     echo ""
     info "Restart opencode to activate."
+    echo ""
+}
+
+# ── MCP installation (Claude Code) ────────────────────────────────────────────
+install_mcps_claude() {
+    local registry="$REPO_DIR/mcps/registry.json"
+    [[ -f "$registry" ]] || return 0
+    command -v claude &>/dev/null || return 0
+
+    info "Installing MCP servers (Claude Code)..."
+    local count=0
+
+    python3 - "$registry" "$REPO_DIR/mcps/.env" "$($DRY_RUN && echo 1 || echo 0)" <<'PYEOF'
+import json, sys, subprocess, os
+
+with open(sys.argv[1]) as f:
+    mcps = json.load(f)
+dotenv_path = sys.argv[2]
+dry_run     = sys.argv[3] == "1"
+
+# Load mcps/.env if it exists
+dotenv = {}
+if os.path.exists(dotenv_path):
+    with open(dotenv_path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                k, _, v = line.partition('=')
+                dotenv[k.strip()] = v.strip()
+    if dotenv:
+        print(f"  Loaded {len(dotenv)} var(s) from mcps/.env")
+
+# Merged env: shell → .env overrides (so .env takes precedence for MCP vars)
+merged_env = {**os.environ, **dotenv}
+
+for mcp in mcps:
+    name         = mcp['name']
+    command      = mcp['command']
+    args         = mcp.get('args', [])
+    scope        = mcp.get('scope', 'user')
+    env_vars     = mcp.get('env', {})
+    required_env = mcp.get('required_env', [])
+
+    # Resolve env_vars: substitute from merged_env if value is empty
+    resolved = {k: merged_env.get(k, v) for k, v in env_vars.items()}
+    # Also pick up required_env values from merged_env
+    for key in required_env:
+        if key in merged_env and key not in resolved:
+            resolved[key] = merged_env[key]
+
+    missing = [e for e in required_env if not merged_env.get(e)]
+    if missing:
+        print(f"  [skip] {name} — missing env: {', '.join(missing)} (set in mcps/.env or shell)")
+        continue
+
+    # Build --env flags for claude mcp add
+    env_flags = []
+    for k, v in resolved.items():
+        env_flags += ['--env', f'{k}={v}']
+
+    if dry_run:
+        env_preview = ' '.join(f'--env {k}=***' for k in resolved) if resolved else ''
+        print(f"  [dry-run] claude mcp add --scope {scope} {env_preview} {name} -- {command} {' '.join(args)}")
+        continue
+
+    result = subprocess.run(['claude', 'mcp', 'list'], capture_output=True, text=True)
+    if name in result.stdout:
+        print(f"  [skip] {name} — already installed")
+        continue
+
+    r = subprocess.run(
+        ['claude', 'mcp', 'add', '--scope', scope] + env_flags + [name, '--', command] + args,
+        capture_output=True, text=True
+    )
+    if r.returncode == 0:
+        print(f"  \033[0;32m+\033[0m {name}")
+    else:
+        print(f"  \033[1;33m[warn]\033[0m {name} — {r.stderr.strip()}", file=sys.stderr)
+PYEOF
+    echo ""
+}
+
+# ── MCP installation (opencode) ───────────────────────────────────────────────
+install_mcps_opencode() {
+    local registry="$REPO_DIR/mcps/registry.json"
+    [[ -f "$registry" ]] || return 0
+
+    local config_path="$HOME/.config/opencode/config.json"
+    info "Installing MCP servers (opencode → $config_path)..."
+
+    python3 - "$registry" "$config_path" "$REPO_DIR/mcps/.env" "$($DRY_RUN && echo 1 || echo 0)" <<'PYEOF'
+import json, sys, os
+
+with open(sys.argv[1]) as f:
+    mcps = json.load(f)
+config_path = sys.argv[2]
+dotenv_path = sys.argv[3]
+dry_run     = sys.argv[4] == "1"
+
+# Load mcps/.env if it exists
+dotenv = {}
+if os.path.exists(dotenv_path):
+    with open(dotenv_path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                k, _, v = line.partition('=')
+                dotenv[k.strip()] = v.strip()
+    if dotenv:
+        print(f"  Loaded {len(dotenv)} var(s) from mcps/.env")
+
+merged_env = {**os.environ, **dotenv}
+
+# Load existing config or start fresh
+config = {}
+if os.path.exists(config_path):
+    with open(config_path) as f:
+        try:
+            config = json.load(f)
+        except json.JSONDecodeError:
+            config = {}
+
+if 'mcp' not in config:
+    config['mcp'] = {}
+
+added = []
+for mcp in mcps:
+    name         = mcp['name']
+    command      = mcp['command']
+    args         = mcp.get('args', [])
+    env_vars     = mcp.get('env', {})
+    required_env = mcp.get('required_env', [])
+
+    # Resolve env values from .env / shell
+    resolved = {k: merged_env.get(k, v) for k, v in env_vars.items()}
+    for key in required_env:
+        if key in merged_env and key not in resolved:
+            resolved[key] = merged_env[key]
+
+    missing = [e for e in required_env if not merged_env.get(e)]
+    if missing:
+        print(f"  [skip] {name} — missing env: {', '.join(missing)} (set in mcps/.env or shell)")
+        continue
+
+    entry = {'type': 'local', 'command': [command] + args}
+    if resolved:
+        entry['env'] = resolved
+
+    if dry_run:
+        env_preview = f" (env: {', '.join(resolved.keys())})" if resolved else ''
+        print(f"  [dry-run] add mcp.{name} to {config_path}{env_preview}")
+        continue
+
+    if name in config['mcp']:
+        print(f"  [skip] {name} — already configured")
+        continue
+
+    config['mcp'][name] = entry
+    added.append(name)
+    print(f"  \033[0;32m+\033[0m {name}")
+
+if added and not dry_run:
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    with open(config_path, 'w') as f:
+        json.dump(config, f, indent=2)
+    print(f"  Saved: {config_path}")
+PYEOF
     echo ""
 }
 

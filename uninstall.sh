@@ -190,6 +190,57 @@ if [[ ${#SKILL_DIRS[@]} -gt 0 ]]; then
     echo ""
 fi
 
+# ── Remove MCPs ───────────────────────────────────────────────────────────────
+if $REMOVE_CLAUDE && command -v claude &>/dev/null && [[ -f "$REPO_DIR/mcps/registry.json" ]]; then
+    info "Removing MCP servers (Claude Code)..."
+    python3 - "$REPO_DIR/mcps/registry.json" <<'PYEOF'
+import json, sys, subprocess
+with open(sys.argv[1]) as f:
+    mcps = json.load(f)
+for mcp in mcps:
+    name = mcp['name']
+    result = subprocess.run(['claude', 'mcp', 'list'], capture_output=True, text=True)
+    if name not in result.stdout:
+        print(f"  [skip] {name} — not installed")
+        continue
+    r = subprocess.run(['claude', 'mcp', 'remove', name], capture_output=True, text=True)
+    if r.returncode == 0:
+        print(f"  \033[0;31m-\033[0m {name}")
+    else:
+        print(f"  [warn] {name} — {r.stderr.strip()}")
+PYEOF
+    echo ""
+fi
+
+if $REMOVE_OPENCODE && [[ -f "$REPO_DIR/mcps/registry.json" ]]; then
+    local config_path="$HOME/.config/opencode/config.json"
+    if [[ -f "$config_path" ]]; then
+        info "Removing MCP servers (opencode)..."
+        python3 - "$REPO_DIR/mcps/registry.json" "$config_path" <<'PYEOF'
+import json, sys, os
+with open(sys.argv[1]) as f:
+    mcps = json.load(f)
+config_path = sys.argv[2]
+with open(config_path) as f:
+    config = json.load(f)
+changed = False
+for mcp in mcps:
+    name = mcp['name']
+    if name in config.get('mcp', {}):
+        del config['mcp'][name]
+        changed = True
+        print(f"  \033[0;31m-\033[0m {name}")
+    else:
+        print(f"  [skip] {name} — not configured")
+if changed:
+    with open(config_path, 'w') as f:
+        json.dump(config, f, indent=2)
+    print(f"  Saved: {config_path}")
+PYEOF
+        echo ""
+    fi
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 success "Removed $removed item(s)."
 echo ""

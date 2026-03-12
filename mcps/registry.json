@@ -1,0 +1,11 @@
+[
+  {
+    "name": "context7",
+    "description": "Up-to-date library documentation and code examples for any package",
+    "command": "npx",
+    "args": ["-y", "@upstash/context7-mcp"],
+    "scope": "user",
+    "env": {},
+    "required_env": []
+  }
+]

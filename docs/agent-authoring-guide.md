@@ -1,12 +1,12 @@
 # Agent Authoring Guide
 
-This guide covers everything you need to write effective Claude Code agents for this framework. Read it before writing your first agent; refer back when something isn't working as expected.
+This guide covers everything you need to write effective agents for the devexp framework. Read it before writing your first agent; refer back when something isn't working as expected.
 
 ---
 
 ## What Is an Agent?
 
-A Claude Code agent is a Markdown file with YAML frontmatter that lives in `~/.claude/agents/`. When loaded, it creates a specialized sub-agent that the orchestrating Claude can spawn using the `Agent` tool.
+A Claude Code agent is a Markdown file with YAML frontmatter that lives in `~/.claude/agents/` (or `~/.config/opencode/agents/` for opencode). When loaded, it creates a specialized sub-agent that the orchestrating Claude can spawn using the `Agent` tool.
 
 Agents are autonomous: once spawned, they read code, write files, run commands, and produce output — without constant guidance from the user. The quality of your agent file directly determines the quality of that autonomous behavior.
 
@@ -108,6 +108,8 @@ Comma-separated list of tools the agent can use. Only include tools the agent ac
 
 **Do not give agents tools they don't need.** An agent with `Write` access that only reviews code is a security risk and a source of unexpected behavior.
 
+**CLI compatibility note:** The `Agent`, `Skill`, and `Task*` tools are Claude Code-only. When installed for opencode via `install.sh`, these are automatically stripped from the tools list during frontmatter transformation. If your agent relies on these tools, it will work in Claude Code but have reduced capability in opencode — document this in the agent description.
+
 ### `model`
 
 - `sonnet` — default, fast, capable. Use for most agents.
@@ -125,6 +127,8 @@ Useful for:
 - Agents that learn project conventions (codebase-navigator)
 - Agents that track known issues across sessions (backend-senior-dev)
 - Agents that adapt to user preferences over time
+
+**CLI compatibility note:** The `memory` field is Claude Code-only. It is stripped during opencode transformation. Agents that rely on persistent memory will start fresh each session in opencode.
 
 ---
 
@@ -151,9 +155,29 @@ excellent engineering decisions and diagnosing poor-quality code.
 
 The identity sets the level of expertise, the perspective, and the calibration. It shapes how the agent weighs trade-offs and what it considers worth flagging.
 
+### Phase 0: Check the Shared Codebase Atlas
+
+Every agent that reads code should begin by checking if `codebase-navigator` has already mapped the current project. This avoids redundant discovery work and ensures all agents share a consistent understanding of the codebase.
+
+Include this as the first phase in every agent that touches code:
+
+```markdown
+### Phase 0: Check Shared Context
+
+Before doing any discovery work:
+1. Run `git rev-parse --show-toplevel 2>/dev/null || pwd` to get the project root
+2. Derive the project name from the root directory name
+3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
+4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives
+   you stack, entry points, conventions, and the canonical example instantly
+5. Skip any discovery steps that the atlas already covers
+```
+
+This pattern is used by all agents in the devexp framework. Follow it.
+
 ### Define a Clear Process
 
-Agents should follow a defined process, not make it up as they go. Structure the body around numbered steps.
+Agents should follow a defined process, not make it up as they go. Structure the body around numbered phases.
 
 **Weak:**
 ```
@@ -164,14 +188,14 @@ Review the code and provide feedback.
 ```
 ## Review Methodology
 
-### 1. Language & Idiom Assessment
+### Phase 1: Language & Idiom Assessment
 - Verify idiomatic usage for the specific language and version
 - Flag non-idiomatic constructs that violate language conventions
 
-### 2. Pattern Recognition
+### Phase 2: Pattern Recognition
 Identify good patterns to affirm and bad patterns to flag...
 
-### 3. Algorithm & Complexity Analysis
+### Phase 3: Algorithm & Complexity Analysis
 State Big-O time and space complexity for critical algorithms...
 ```
 
@@ -212,7 +236,19 @@ Add explicit rules for edge cases and quality standards:
 - **Ask when it matters**: If the language version or deployment context would change your analysis, ask.
 ```
 
-### Delegation Rules (for orchestrator agents)
+### List Available Skills
+
+If the agent uses the `Skill` tool, include a section listing the skills it can invoke and when to use each one. This is how the agent knows which skills are available in the framework.
+
+```markdown
+## Available Skills
+
+- `/bugfix` — focused bug investigation and fixing
+- `/refactor` — targeted refactoring work
+- `/quality` — code quality assessment
+```
+
+### Delegation Rules (for agents that spawn sub-agents)
 
 If the agent can spawn other agents, define clear delegation rules:
 
@@ -239,17 +275,19 @@ You are a Senior [Role] with [N]+ years of experience in [domain].
 You are known for [distinctive trait].
 ```
 
-### The Numbered Workflow Pattern
+### The Numbered Phase Pattern
 
-Structure every agent around a named, numbered workflow. Each phase should have 3–5 concrete actions.
+Structure every agent around named, numbered phases. Each phase should have 3–5 concrete actions.
 
 ```
 ## Workflow
 
+### Phase 0: Check Shared Context
+[Atlas check — see above]
+
 ### Phase 1: Orientation
-1. Check codebase-navigator memory
-2. Read the relevant files
-3. Identify the canonical pattern
+1. Read the relevant files
+2. Identify the canonical pattern
 
 ### Phase 2: Analysis
 ...
@@ -292,6 +330,19 @@ After completing work, record:
 - Gotchas worth remembering
 ```
 
+### The Chaining Pattern
+
+Agents can invoke skills at the end of their workflow to chain into follow-up actions:
+
+```markdown
+## Chaining
+
+After completing analysis, chain into action when appropriate:
+- **Code-level bottleneck identified** → invoke `/refactor` skill
+- **Database issues found** → invoke `/db-design` skill
+- **Quick wins available** → invoke `/bugfix` skill
+```
+
 ---
 
 ## Common Mistakes
@@ -302,20 +353,41 @@ After completing work, record:
 
 **Vague process steps.** "Understand the code" is not a step. "Read the handler file, trace the call to the service layer, read the service method" is a step.
 
+**Skipping Phase 0.** Not checking the codebase-navigator atlas means the agent re-discovers what's already known, wasting time and producing inconsistent results across agents.
+
 **Unspecified output format.** If you don't describe the structure of the output, you'll get different structure every time.
 
 **Giving agents tools they don't need.** If an agent only reads files, don't give it `Write` or `Bash`. Access to powerful tools when not needed creates risk and unpredictability.
 
 **No behavioral guidelines.** Guidelines handle the edge cases your process steps don't cover. "Be direct and specific, not vague" and "calibrate severity accurately" produce measurably better reviews.
 
+**Not listing available skills.** If your agent uses the Skill tool, list what's available. The agent cannot invoke skills it doesn't know exist.
+
+---
+
+## CLI Compatibility
+
+Agents in `agents/` are written in Claude Code format and automatically transformed for opencode at install time. The transformation:
+
+- Maps model aliases (`sonnet` → `anthropic/claude-sonnet-4-5`)
+- Converts the tools list to an opencode YAML object (disabling tools not in the list)
+- Strips fields not supported by opencode: `name`, `color`, `memory`
+- Strips tools not supported by opencode: `Agent`, `Skill`, `Task*`
+- Adds `mode: subagent`
+
+Agents placed in `agents/opencode/` are opencode-exclusive and installed as-is (no transformation). Use this for agents that require opencode-only capabilities like the `Task` tool for true parallel subagent spawning.
+
+If your agent is meaningfully degraded by the transformation (e.g., it relies heavily on spawning sub-agents), note this in the description so users know what to expect.
+
 ---
 
 ## Testing Your Agent
 
 1. Install with `./install.sh`
-2. In Claude Code, describe a scenario that should trigger the agent
-3. Check if Claude picks the right agent and spawns it
-4. Evaluate the output quality: is it specific? Is it structured as you specified? Does it follow the process?
-5. Iterate on weak spots: add an example to the description if routing is wrong, add a guideline if a specific behavior is off
+2. Restart Claude Code (or opencode)
+3. Describe a scenario that should trigger the agent
+4. Check if Claude picks the right agent and spawns it
+5. Evaluate the output quality: is it specific? Is it structured as you specified? Does it follow the process?
+6. Iterate on weak spots: add an example to the description if routing is wrong; add a guideline if a specific behavior is off
 
 The most reliable way to test is to use the agent on your actual codebase with a real task.

@@ -141,13 +141,14 @@ The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed a
 ### install.sh
 
 ```bash
-./install.sh
+./install.sh            # interactive
+./install.sh --dry-run  # preview what would be installed, no changes made
 ```
 
 Behavior:
 - Detects `claude` and/or `opencode` in PATH and prompts which to install for
-- **Claude Code**: copies agents to `~/.claude/agents/`, skills to `~/.claude/skills/`
-- **opencode**: transforms agent frontmatter (model aliases, tool mapping, adds `mode: subagent`) and installs to `~/.config/opencode/agents/`; skills go to `~/.claude/skills/` (opencode reads this path natively)
+- **Claude Code**: copies agents to `~/.claude/agents/`, skills to `~/.claude/skills/`, registers MCPs via `claude mcp add`
+- **opencode**: transforms agent frontmatter (model aliases, tool mapping, adds `mode: subagent`) and installs to `~/.config/opencode/agents/`; skills go to `~/.claude/skills/` (opencode reads this path natively); MCPs are written to `~/.config/opencode/config.json`
 - Backs up any conflicting files before overwriting
 - If neither CLI is detected, still allows manual target selection
 
@@ -172,6 +173,76 @@ Behavior:
 | `CLAUDE.md` | `~/.claude/CLAUDE.md` | read as fallback if no `AGENTS.md` exists |
 | Agent tools | All Claude tools | `read/write/edit/bash/glob/grep/webfetch/websearch` only |
 | `Agent`, `Skill`, `Task*` tools | Supported | No opencode equivalent — dropped at transform |
+
+---
+
+## MCP Servers
+
+MCP servers extend Claude's capabilities with external tools (documentation lookup, databases, APIs, etc.). The devexp framework manages MCPs alongside agents and skills.
+
+### Registry
+
+MCP servers are declared in `mcps/registry.json`:
+
+```json
+[
+  {
+    "name": "context7",
+    "description": "Up-to-date library documentation for any package",
+    "command": "npx",
+    "args": ["-y", "@upstash/context7-mcp"],
+    "scope": "user",
+    "env": {},
+    "required_env": []
+  }
+]
+```
+
+| Field | Description |
+|-------|-------------|
+| `name` | Unique MCP identifier |
+| `description` | What this MCP provides |
+| `command` | Executable to run |
+| `args` | Arguments passed to the command |
+| `scope` | `"user"` (global) or `"project"` (Claude Code only) |
+| `env` | Static environment variables to pass |
+| `required_env` | Env vars that must be set — MCP is skipped with a warning if missing |
+
+### MCPs in This Repo
+
+| Name | Description |
+|------|-------------|
+| context7 | Up-to-date library documentation and code examples for any package |
+
+### API Keys and Secrets
+
+MCPs that need API keys use `mcps/.env` (gitignored):
+
+```bash
+cp mcps/.env.example mcps/.env
+# edit mcps/.env and fill in your keys
+./install.sh
+```
+
+The installer loads `mcps/.env` and:
+- Passes values as `--env KEY=VALUE` flags to `claude mcp add` (stored permanently in Claude Code's MCP config)
+- Writes them into the `env` field in opencode's `config.json`
+- Skips any MCP whose `required_env` keys are missing from both the file and the shell, with a clear warning
+
+`mcps/.env.example` is committed to the repo and documents what keys are expected. Never commit `mcps/.env`.
+
+### Adding a New MCP
+
+1. Add an entry to `mcps/registry.json`
+2. If it needs secrets, add the key names to `required_env` and document them in `mcps/.env.example`
+3. Run `./install.sh` to register it (or `--dry-run` to preview)
+
+### CLI compatibility
+
+| | Claude Code | opencode |
+|---|---|---|
+| Install method | `claude mcp add --scope <scope>` | Written to `~/.config/opencode/config.json` |
+| Uninstall method | `claude mcp remove` | Entry removed from config.json |
 
 ---
 
