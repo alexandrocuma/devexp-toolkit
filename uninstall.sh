@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ── Colors ───────────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+info()    { echo -e "${BLUE}[devexp]${RESET} $*"; }
+success() { echo -e "${GREEN}[devexp]${RESET} $*"; }
+warn()    { echo -e "${YELLOW}[devexp]${RESET} $*"; }
+error()   { echo -e "${RED}[devexp] ERROR:${RESET} $*" >&2; }
+die()     { error "$*"; exit 1; }
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+[[ -d "$REPO_DIR/agents" ]] || die "agents/ directory not found. Is this the devexp repo?"
+[[ -d "$REPO_DIR/skills" ]] || die "skills/ directory not found. Is this the devexp repo?"
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+CLAUDE_AGENTS="$HOME/.claude/agents"
+OPENCODE_AGENTS="$HOME/.config/opencode/agents"
+SKILLS_DIR="$HOME/.claude/skills"   # shared between both CLIs
+
+# ── Detect what's installed ───────────────────────────────────────────────────
+HAS_CLAUDE_INSTALL=false
+HAS_OPENCODE_INSTALL=false
+
+for f in "$REPO_DIR/agents/"*.md; do
+    [[ -f "$f" ]] || continue
+    [[ -f "$CLAUDE_AGENTS/$(basename "$f")"   ]] && HAS_CLAUDE_INSTALL=true
+    [[ -f "$OPENCODE_AGENTS/$(basename "$f")" ]] && HAS_OPENCODE_INSTALL=true
+done
+
+echo ""
+echo -e "${BOLD}devexp Framework Uninstaller${RESET}"
+echo "────────────────────────────────────────"
+echo ""
+
+if ! $HAS_CLAUDE_INSTALL && ! $HAS_OPENCODE_INSTALL; then
+    info "Nothing to remove — no devexp agents found in Claude Code or opencode directories."
+    exit 0
+fi
+
+# ── Determine what to remove ──────────────────────────────────────────────────
+REMOVE_CLAUDE=false
+REMOVE_OPENCODE=false
+
+if $HAS_CLAUDE_INSTALL && $HAS_OPENCODE_INSTALL; then
+    warn "devexp is installed for both Claude Code and opencode."
+    echo ""
+    echo "  [1] Claude Code only"
+    echo "  [2] opencode only"
+    echo "  [3] Both"
+    echo ""
+    read -r -p "Remove from which CLI? [1/2/3]: " choice
+    case "$choice" in
+        1) REMOVE_CLAUDE=true ;;
+        2) REMOVE_OPENCODE=true ;;
+        3) REMOVE_CLAUDE=true; REMOVE_OPENCODE=true ;;
+        *) die "Invalid choice." ;;
+    esac
+elif $HAS_CLAUDE_INSTALL; then
+    warn "devexp is installed for Claude Code."
+    REMOVE_CLAUDE=true
+elif $HAS_OPENCODE_INSTALL; then
+    warn "devexp is installed for opencode."
+    REMOVE_OPENCODE=true
+fi
+
+echo ""
+
+# ── Collect what will be removed ──────────────────────────────────────────────
+AGENT_FILES_CLAUDE=()
+AGENT_FILES_OPENCODE=()
+SKILL_DIRS=()
+
+if $REMOVE_CLAUDE; then
+    for f in "$REPO_DIR/agents/"*.md; do
+        [[ -f "$f" ]] || continue
+        [[ "$(basename "$f")" == "README.md" ]] && continue
+        t="$CLAUDE_AGENTS/$(basename "$f")"
+        [[ -f "$t" ]] && AGENT_FILES_CLAUDE+=("$t")
+    done
+fi
+
+if $REMOVE_OPENCODE; then
+    # Shared agents (transformed)
+    for f in "$REPO_DIR/agents/"*.md; do
+        [[ -f "$f" ]] || continue
+        [[ "$(basename "$f")" == "README.md" ]] && continue
+        t="$OPENCODE_AGENTS/$(basename "$f")"
+        [[ -f "$t" ]] && AGENT_FILES_OPENCODE+=("$t")
+    done
+    # opencode-exclusive agents
+    for f in "$REPO_DIR/agents/opencode/"*.md; do
+        [[ -f "$f" ]] || continue
+        t="$OPENCODE_AGENTS/$(basename "$f")"
+        [[ -f "$t" ]] && AGENT_FILES_OPENCODE+=("$t")
+    done
+fi
+
+# Skills are shared — only remove if uninstalling from all installed CLIs
+REMOVE_SKILLS=false
+if $REMOVE_CLAUDE && $REMOVE_OPENCODE; then
+    REMOVE_SKILLS=true
+elif $REMOVE_CLAUDE && ! $HAS_OPENCODE_INSTALL; then
+    REMOVE_SKILLS=true
+elif $REMOVE_OPENCODE && ! $HAS_CLAUDE_INSTALL; then
+    REMOVE_SKILLS=true
+fi
+
+if $REMOVE_SKILLS; then
+    for d in "$REPO_DIR/skills/"/*/; do
+        [[ -d "$d" ]] || continue
+        t="$SKILLS_DIR/$(basename "$d")"
+        [[ -d "$t" ]] && SKILL_DIRS+=("$t")
+    done
+fi
+
+# ── Preview ───────────────────────────────────────────────────────────────────
+if [[ ${#AGENT_FILES_CLAUDE[@]} -gt 0 ]]; then
+    info "Claude Code agents to remove (${#AGENT_FILES_CLAUDE[@]}):"
+    for f in "${AGENT_FILES_CLAUDE[@]}"; do
+        echo -e "  ${RED}-${RESET} $(basename "$f")"
+    done
+    echo ""
+fi
+
+if [[ ${#AGENT_FILES_OPENCODE[@]} -gt 0 ]]; then
+    info "opencode agents to remove (${#AGENT_FILES_OPENCODE[@]}):"
+    for f in "${AGENT_FILES_OPENCODE[@]}"; do
+        echo -e "  ${RED}-${RESET} $(basename "$f")"
+    done
+    echo ""
+fi
+
+if [[ ${#SKILL_DIRS[@]} -gt 0 ]]; then
+    info "Skill directories to remove (${#SKILL_DIRS[@]}) from $SKILLS_DIR:"
+    for d in "${SKILL_DIRS[@]}"; do
+        echo -e "  ${RED}-${RESET} $(basename "$d")/"
+    done
+    echo ""
+elif $REMOVE_CLAUDE || $REMOVE_OPENCODE; then
+    info "Skills will be kept (still in use by other installed CLI)."
+    echo ""
+fi
+
+# ── Confirm ───────────────────────────────────────────────────────────────────
+if [[ "${1:-}" != "--yes" && "${1:-}" != "-y" ]]; then
+    read -r -p "Proceed with removal? [y/N] " confirm
+    case "$confirm" in
+        [yY][eE][sS]|[yY]) ;;
+        *) info "Aborted."; exit 0 ;;
+    esac
+    echo ""
+fi
+
+# ── Remove ────────────────────────────────────────────────────────────────────
+removed=0
+
+if [[ ${#AGENT_FILES_CLAUDE[@]} -gt 0 ]]; then
+    info "Removing Claude Code agents..."
+    for f in "${AGENT_FILES_CLAUDE[@]}"; do
+        rm -f "$f" && echo -e "  ${RED}-${RESET} $(basename "$f")"
+        (( removed++ )) || true
+    done
+    echo ""
+fi
+
+if [[ ${#AGENT_FILES_OPENCODE[@]} -gt 0 ]]; then
+    info "Removing opencode agents..."
+    for f in "${AGENT_FILES_OPENCODE[@]}"; do
+        rm -f "$f" && echo -e "  ${RED}-${RESET} $(basename "$f")"
+        (( removed++ )) || true
+    done
+    echo ""
+fi
+
+if [[ ${#SKILL_DIRS[@]} -gt 0 ]]; then
+    info "Removing skills..."
+    for d in "${SKILL_DIRS[@]}"; do
+        rm -rf "$d" && echo -e "  ${RED}-${RESET} $(basename "$d")/"
+        (( removed++ )) || true
+    done
+    echo ""
+fi
+
+# ── Done ──────────────────────────────────────────────────────────────────────
+success "Removed $removed item(s)."
+echo ""
+echo -e "${GREEN}${BOLD}Uninstall complete.${RESET}"
+echo ""
+echo "To reinstall at any time, run: ./install.sh"
+echo ""
