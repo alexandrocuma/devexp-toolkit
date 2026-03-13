@@ -131,7 +131,7 @@ Body: instructions, process steps, output format...
 | ticket | `/ticket` | Create a well-structured GitHub Issue for a bug, feature, or tech-debt item |
 | scope | `/scope` | Break a large feature or epic into atomic tickets with dependencies |
 | health | `/health` | Generate a codebase health scorecard with RAG status per dimension |
-| init-claude | `/init-claude` | Crawl a project's docs and codebase to generate a directive CLAUDE.md with architecture map, conventions, and implementation playbooks |
+| gen-claude-md | `/gen-claude-md` | Crawl a project's docs and codebase to generate a directive CLAUDE.md with architecture map, conventions, and implementation playbooks |
 
 ---
 
@@ -172,8 +172,8 @@ Behavior:
 | Component | Claude Code | opencode |
 |-----------|-------------|----------|
 | Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (transformed) |
-| Skills | `~/.claude/skills/` | `~/.claude/skills/` (same path, read natively) |
-| `CLAUDE.md` | `~/.claude/CLAUDE.md` | read as fallback if no `AGENTS.md` exists |
+| Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) |
+| `CLAUDE.md` / `AGENTS.md` | `~/.claude/CLAUDE.md` | `~/.config/opencode/AGENTS.md` (or project root) |
 | Agent tools | All Claude tools | `read/write/edit/bash/glob/grep/webfetch/websearch` only |
 | `Agent`, `Skill`, `Task*` tools | Supported | No opencode equivalent — dropped at transform |
 

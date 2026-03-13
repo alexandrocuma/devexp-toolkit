@@ -299,8 +299,8 @@ PYEOF
 # ── opencode installation ─────────────────────────────────────────────────────
 install_opencode() {
     local AGENTS_TARGET="$HOME/.config/opencode/agents"
-    # opencode reads skills from ~/.claude/skills as a compatibility fallback
-    local SKILLS_TARGET="$HOME/.claude/skills"
+    # opencode uses its own commands directory — flat .md files, filename = command name
+    local SKILLS_TARGET="$HOME/.config/opencode/commands"
     local BACKUP_DIR="$HOME/.config/opencode/.devexp-backup-$(date +%Y%m%dT%H%M%S)"
 
     info "Installing for opencode..."
@@ -327,7 +327,7 @@ install_opencode() {
     done
     for d in "$REPO_DIR/skills/"/*/; do
         [[ -d "$d" ]] || continue
-        local t="$SKILLS_TARGET/$(basename "$d")/skill.md"
+        local t="$SKILLS_TARGET/$(basename "$d").md"
         [[ -f "$t" ]] && conflicts+=("$t")
     done
 
@@ -390,16 +390,22 @@ PYEOF
     success "Installed $count agent(s)."
     echo ""
 
-    # Install skills (shared path — opencode reads ~/.claude/skills natively)
+    # Install skills as opencode commands (flat .md files, name: line stripped — filename is the command name)
     count=0
-    info "Installing skills (to ~/.claude/skills — opencode reads this natively)..."
+    info "Installing skills (to ~/.config/opencode/commands — opencode slash commands)..."
+    run_mkdir "$SKILLS_TARGET"
     for d in "$REPO_DIR/skills/"/*/; do
         [[ -d "$d" ]] || continue
         local skill="$(basename "$d")"
-        run_mkdir "$SKILLS_TARGET/$skill"
         if [[ -f "$d/skill.md" ]]; then
-            run_cp "$d/skill.md" "$SKILLS_TARGET/$skill/skill.md"
-            echo -e "  ${GREEN}+${RESET} $skill/skill.md"
+            local dest="$SKILLS_TARGET/$skill.md"
+            if $DRY_RUN; then
+                dryrun "write $dest"
+            else
+                # Strip 'name:' line from frontmatter — opencode derives name from filename
+                sed '/^name:/d' "$d/skill.md" > "$dest"
+            fi
+            echo -e "  ${GREEN}+${RESET} $skill.md"
             (( count++ )) || true
         fi
     done
@@ -411,7 +417,7 @@ PYEOF
 
     success "opencode installation complete."
     echo "  Agents: $AGENTS_TARGET"
-    echo "  Skills: $SKILLS_TARGET (shared path)"
+    echo "  Skills: $SKILLS_TARGET"
     echo ""
     info "Restart opencode to activate."
     echo ""
