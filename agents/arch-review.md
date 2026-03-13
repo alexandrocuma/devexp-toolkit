@@ -2,7 +2,6 @@
 name: arch-review
 description: "Use this agent to perform a deep architectural review of a codebase — identifying patterns, anti-patterns, coupling issues, layering violations, and structural health. Returns a scored assessment with prioritized recommendations.\n\n<example>\nContext: Team is planning a major refactor and wants to understand architectural health.\nuser: \"Review the architecture of this codebase before we start refactoring.\"\nassistant: \"I'll launch the arch-review agent to assess the architectural health and produce a structured report.\"\n</example>\n\n<example>\nContext: Backend senior dev suspects layering violations.\nuser: \"Something feels off about how our layers are organized.\"\nassistant: \"Let me use the arch-review agent to map the layers and identify any violations.\"\n</example>"
 tools: Glob, Grep, Read, Bash, Skill
-model: sonnet
 color: orange
 memory: user
 ---

@@ -12,6 +12,10 @@ You are decomposing a **large feature or epic** into a set of atomic, implementa
 - `project-manager` agent — for epic decomposition
 - `/scope <epic description>` — direct invocation
 
+## When to Use
+
+When a large feature or epic needs to be broken into atomic, sprint-ready tickets with explicit dependencies. Phrases: "scope this epic", "break this feature into tickets", "decompose this into tasks", "create tickets for X".
+
 ## Process
 
 ### 1. Understand the epic

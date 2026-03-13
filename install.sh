@@ -11,12 +11,24 @@ RESET='\033[0m'
 
 # ── Flags ─────────────────────────────────────────────────────────────────────
 DRY_RUN=false
+SELECTED_MODEL=""
 for arg in "$@"; do
     case "$arg" in
         --dry-run|-n) DRY_RUN=true ;;
+        --model=*)    SELECTED_MODEL="${arg#--model=}" ;;
+        --model)      shift; SELECTED_MODEL="$1" ;;
         --help|-h)
-            echo "Usage: ./install.sh [--dry-run|-n]"
-            echo "  --dry-run, -n   Preview what would be installed without making changes"
+            echo "Usage: ./install.sh [--dry-run|-n] [--model <alias|model-id>]"
+            echo "  --dry-run, -n     Preview what would be installed without making changes"
+            echo "  --model <value>   Override model for all agents (optional — agents inherit CLI default if omitted)"
+            echo ""
+            echo "  Aliases:"
+            echo "    Anthropic : sonnet, opus, haiku"
+            echo "    OpenAI    : gpt4, gpt4o, o3, o4mini"
+            echo "    DeepSeek  : deepseek, deepseek-r1"
+            echo "    Kimi      : kimi, kimi-turbo"
+            echo ""
+            echo "  Or pass a full model ID: openai/gpt-4o, moonshot/kimi-k2.5, etc."
             exit 0 ;;
     esac
 done
@@ -95,6 +107,13 @@ fi
 
 echo ""
 
+# ── Model selection ───────────────────────────────────────────────────────────
+# Agents inherit the CLI's default model. --model overrides all agents at install time.
+if [[ -n "$SELECTED_MODEL" ]]; then
+    info "Model override: ${BOLD}$SELECTED_MODEL${RESET} (will be set on all agents)"
+    echo ""
+fi
+
 # ── Shared: backup helper ─────────────────────────────────────────────────────
 backup_conflicts() {
     local backup_dir="$1"
@@ -151,7 +170,14 @@ install_claude() {
     for f in "$REPO_DIR/agents/"*.md; do
         [[ -f "$f" ]] || continue
         [[ "$(basename "$f")" == "README.md" ]] && continue
-        run_cp "$f" "$AGENTS_TARGET/$(basename "$f")"
+        local dest="$AGENTS_TARGET/$(basename "$f")"
+        if $DRY_RUN; then
+            dryrun "write $dest"
+        elif [[ -n "$SELECTED_MODEL" ]]; then
+            sed "s/^model:.*/model: $SELECTED_MODEL/" "$f" > "$dest"
+        else
+            cp "$f" "$dest"
+        fi
         echo -e "  ${GREEN}+${RESET} $(basename "$f")"
         (( count++ )) || true
     done
@@ -188,12 +214,13 @@ install_claude() {
 # ── opencode agent frontmatter transformation ─────────────────────────────────
 # Transforms Claude Code agent frontmatter to opencode format:
 #   - Strips: name, color, memory (not supported by opencode)
-#   - Maps:   model aliases  (sonnet → anthropic/claude-sonnet-4-20250514, etc.)
+#   - Maps:   model aliases (sonnet/opus/haiku → full opencode IDs); custom IDs pass through as-is
 #   - Maps:   tools list → YAML object disabling tools not in the list
 #   - Adds:   mode: subagent
 transform_agent_for_opencode() {
     local src="$1"
-    python3 - "$src" <<'PYEOF'
+    local model="$2"
+    python3 - "$src" "$model" <<'PYEOF'
 import re, sys
 
 OPENCODE_TOOLS = {'read', 'write', 'edit', 'bash', 'glob', 'grep', 'webfetch', 'websearch'}
@@ -204,15 +231,30 @@ CLAUDE_TO_OC = {
 }
 
 MODEL_MAP = {
-    'sonnet': 'anthropic/claude-sonnet-4-5',
-    'opus':   'anthropic/claude-opus-4-5',
-    'haiku':  'anthropic/claude-haiku-4-5',
+    # Anthropic
+    'sonnet':       'anthropic/claude-sonnet-4-6',
+    'opus':         'anthropic/claude-opus-4-6',
+    'haiku':        'anthropic/claude-haiku-4-5-20251001',
+    # OpenAI
+    'gpt4':         'openai/gpt-4.1-2025-04-14',
+    'gpt4o':        'openai/gpt-4o',
+    'o3':           'openai/o3-2025-04-16',
+    'o4mini':       'openai/o4-mini-2025-04-16',
+    # DeepSeek
+    'deepseek':     'deepseek/deepseek-chat',
+    'deepseek-r1':  'deepseek/deepseek-reasoner',
+    # Kimi (Moonshot)
+    'kimi':         'moonshot/kimi-k2.5',
+    'kimi-turbo':   'moonshot/kimi-k2-turbo-preview',
 }
 
 SKIP_KEYS = {'name', 'color', 'memory'}
 
 with open(sys.argv[1]) as f:
     content = f.read()
+
+# Selected model alias from installer (overrides per-agent model)
+selected_model = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else None
 
 parts = content.split('---', 2)
 if len(parts) < 3:
@@ -235,7 +277,8 @@ for line in lines:
     if key in SKIP_KEYS:
         continue
     elif key == 'model':
-        new_lines.append(f'model: {MODEL_MAP.get(val, val)}')
+        alias = selected_model if selected_model else val
+        new_lines.append(f'model: {MODEL_MAP.get(alias, alias)}')
     elif key == 'tools':
         claude_tools = {t.strip().lower() for t in val.split(',')}
         enabled  = {CLAUDE_TO_OC[t] for t in claude_tools if t in CLAUDE_TO_OC}
@@ -299,17 +342,47 @@ install_opencode() {
         if $DRY_RUN; then
             dryrun "transform + write $AGENTS_TARGET/$(basename "$f")"
         else
-            transform_agent_for_opencode "$f" > "$AGENTS_TARGET/$(basename "$f")"
+            transform_agent_for_opencode "$f" "$SELECTED_MODEL" > "$AGENTS_TARGET/$(basename "$f")"
         fi
         echo -e "  ${GREEN}+${RESET} $(basename "$f")"
         (( count++ )) || true
     done
 
-    # Install opencode-exclusive agents (already in opencode format — no transform)
+    # Install opencode-exclusive agents (already in opencode format — copy as-is, optional model override)
     if [[ -d "$REPO_DIR/agents/opencode" ]]; then
         for f in "$REPO_DIR/agents/opencode/"*.md; do
             [[ -f "$f" ]] || continue
-            run_cp "$f" "$AGENTS_TARGET/$(basename "$f")"
+            local dest="$AGENTS_TARGET/$(basename "$f")"
+            if $DRY_RUN; then
+                dryrun "write $dest"
+            elif [[ -n "$SELECTED_MODEL" ]]; then
+                python3 - "$f" "$SELECTED_MODEL" <<'PYEOF' > "$dest"
+import re, sys
+
+MODEL_MAP = {
+    'sonnet':       'anthropic/claude-sonnet-4-6',
+    'opus':         'anthropic/claude-opus-4-6',
+    'haiku':        'anthropic/claude-haiku-4-5-20251001',
+    'gpt4':         'openai/gpt-4.1-2025-04-14',
+    'gpt4o':        'openai/gpt-4o',
+    'o3':           'openai/o3-2025-04-16',
+    'o4mini':       'openai/o4-mini-2025-04-16',
+    'deepseek':     'deepseek/deepseek-chat',
+    'deepseek-r1':  'deepseek/deepseek-reasoner',
+    'kimi':         'moonshot/kimi-k2.5',
+    'kimi-turbo':   'moonshot/kimi-k2-turbo-preview',
+}
+
+with open(sys.argv[1]) as f:
+    content = f.read()
+
+resolved = MODEL_MAP.get(sys.argv[2], sys.argv[2])
+result = re.sub(r'^model:.*$', f'model: {resolved}', content, flags=re.MULTILINE)
+sys.stdout.write(result)
+PYEOF
+            else
+                cp "$f" "$dest"
+            fi
             echo -e "  ${GREEN}+${RESET} $(basename "$f") ${YELLOW}(opencode-exclusive)${RESET}"
             (( count++ )) || true
         done

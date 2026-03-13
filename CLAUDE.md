@@ -131,6 +131,7 @@ Body: instructions, process steps, output format...
 | ticket | `/ticket` | Create a well-structured GitHub Issue for a bug, feature, or tech-debt item |
 | scope | `/scope` | Break a large feature or epic into atomic tickets with dependencies |
 | health | `/health` | Generate a codebase health scorecard with RAG status per dimension |
+| init-claude | `/init-claude` | Crawl a project's docs and codebase to generate a directive CLAUDE.md with architecture map, conventions, and implementation playbooks |
 
 ---
 
@@ -141,8 +142,10 @@ The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed a
 ### install.sh
 
 ```bash
-./install.sh            # interactive
-./install.sh --dry-run  # preview what would be installed, no changes made
+./install.sh                     # interactive
+./install.sh --dry-run           # preview what would be installed, no changes made
+./install.sh --model sonnet      # skip model prompt, use claude-sonnet-4-6
+./install.sh --model opus        # skip model prompt, use claude-opus-4-6
 ```
 
 Behavior:
@@ -254,7 +257,7 @@ The installer loads `mcps/.env` and:
 4. Run `./install.sh` to deploy to `~/.claude/agents/`
 5. Restart Claude Code to activate
 
-Read `docs/agent-authoring-guide.md` for detailed guidance on writing effective agents.
+Read `docs/development/agent-authoring-guide.md` for detailed guidance on writing effective agents.
 
 ---
 
@@ -267,7 +270,7 @@ Read `docs/agent-authoring-guide.md` for detailed guidance on writing effective 
 5. Run `./install.sh` to deploy to `~/.claude/skills/`
 6. The skill is immediately available as `/<skill-name>` in Claude Code
 
-Read `docs/skill-authoring-guide.md` for detailed guidance on writing effective skills.
+Read `docs/development/skill-authoring-guide.md` for detailed guidance on writing effective skills.
 
 ---
 
@@ -279,7 +282,7 @@ Read `docs/skill-authoring-guide.md` for detailed guidance on writing effective 
 - Skills include a "Triggered by" section listing which agents/skills invoke them
 - Never modify agent or skill files in place on `~/.claude/` — always edit the source in this repo and re-run `install.sh`
 - Templates are in `templates/` — use them as starting points, not final output
-- Authoring guides are in `docs/`
+- Authoring guides are in `docs/development/`
 
 ---
 

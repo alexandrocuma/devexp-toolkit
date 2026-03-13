@@ -27,9 +27,10 @@ assistant: \"I'll launch the pr-review agent with a focus on breaking change det
 <commentary>
 The agent can focus on specific concerns when given explicit direction.
 </commentary>
-</example>"
+</example>
+
+Best results with a high-capability model (e.g. opus)."
 tools: Read, Bash, Glob, Grep, WebFetch
-model: opus
 color: yellow
 ---
 

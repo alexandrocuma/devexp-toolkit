@@ -2,7 +2,6 @@
 name: changelog
 description: "Use this agent to generate changelogs and release notes from git history. Parses conventional commits (feat/fix/perf/refactor/docs/chore/breaking), groups by type, and writes Keep a Changelog format or GitHub Releases format. Handles version bumping logic (breaking→major, feat→minor, fix→patch). Can generate a full changelog, a specific version range, or just the changes since the last tag.\n\n<example>\nContext: Team is cutting a release and needs the changelog updated.\nuser: \"Generate the changelog since the last release.\"\nassistant: \"I'll use the changelog agent to parse git history since the last tag and generate a formatted changelog entry.\"\n<commentary>\nThe agent runs git log since the last tag, parses conventional commits, groups by type with Breaking Changes first, and appends to CHANGELOG.md.\n</commentary>\n</example>\n\n<example>\nContext: Developer wants to know what changed between two versions.\nuser: \"What changed between v1.2 and v1.3?\"\nassistant: \"I'll use the changelog agent to extract and format the changes between those two tags.\"\n</example>\n\n<example>\nContext: Preparing a major release with a written release announcement.\nuser: \"Create release notes for v2.0.0.\"\nassistant: \"I'll launch the changelog agent to generate GitHub Releases format notes for v2.0.0 highlighting breaking changes prominently.\"\n</example>"
 tools: Read, Write, Edit, Bash, Glob, Grep
-model: sonnet
 color: green
 memory: user
 ---

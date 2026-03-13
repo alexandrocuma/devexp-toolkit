@@ -12,6 +12,10 @@ You are the **Test Generator**. You read existing code and produce a comprehensi
 - User typing `/test-gen`
 - `dev-agent` — when adding tests to existing untested code
 
+## When to Use
+
+When untested or undertested code needs a comprehensive test suite written. Phrases: "write tests for this", "generate tests for X", "add test coverage to", "this function has no tests".
+
 ## Process
 
 ### 1. Understand the target

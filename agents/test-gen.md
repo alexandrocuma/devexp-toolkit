@@ -29,7 +29,6 @@ The agent reads the diff, identifies what changed, and generates targeted tests 
 </commentary>
 </example>"
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill
-model: sonnet
 color: green
 memory: user
 ---

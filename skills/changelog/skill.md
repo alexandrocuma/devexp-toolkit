@@ -13,6 +13,10 @@ You are generating a **changelog** from git commit history. You parse convention
 - `/changelog` — generate for unreleased changes since last tag
 - `/changelog v1.3.0` — generate for a specific version
 
+## When to Use
+
+When the user needs a formatted changelog entry generated from git commit history. Phrases: "generate changelog", "what changed since the last release", "write the changelog for v1.3.0", "update CHANGELOG.md".
+
 ## Process
 
 ### 1. Determine the range

@@ -2,7 +2,6 @@
 name: test-runner
 description: "Use this agent to run tests, analyze failures, measure coverage, and detect flaky tests. Handles unit, integration, and end-to-end tests across all major languages and test frameworks. Returns a structured test report with failure analysis and recommendations.\n\n<example>\nContext: Implementing a feature and want to verify tests pass.\nuser: \"Run the tests and tell me what's failing.\"\nassistant: \"I'll use the test-runner agent to execute the test suite and analyze any failures.\"\n</example>\n\n<example>\nContext: Suspecting flaky tests in CI.\nuser: \"Our CI is randomly failing. I think we have flaky tests.\"\nassistant: \"Let me launch the test-runner agent to identify flaky tests.\"\n</example>\n\n<example>\nContext: Checking coverage before a PR.\nuser: \"What's our test coverage like?\"\nassistant: \"I'll use the test-runner agent to measure coverage and identify gaps.\"\n</example>"
 tools: Glob, Grep, Read, Bash, Skill
-model: sonnet
 color: green
 memory: user
 ---

@@ -2,7 +2,6 @@
 name: security
 description: "Use this agent to perform a comprehensive security audit of a codebase — scanning for OWASP Top 10 vulnerabilities, auth flaws, data exposure, dependency vulnerabilities, and security misconfigurations. Returns a severity-ranked findings report with fix recommendations.\n\n<example>\nContext: About to deploy a new API and want a security check.\nuser: \"Run a security audit on the codebase before we deploy.\"\nassistant: \"I'll launch the security agent to perform a full vulnerability scan.\"\n</example>\n\n<example>\nContext: Code review surfaced a potential auth bypass.\nuser: \"Can you check if there are any authentication vulnerabilities?\"\nassistant: \"I'll use the security agent to audit the authentication and authorization flows.\"\n</example>"
 tools: Glob, Grep, Read, Bash, Skill
-model: sonnet
 color: red
 memory: user
 ---

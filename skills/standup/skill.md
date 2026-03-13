@@ -11,6 +11,10 @@ You are the **Standup Generator**. You produce a concise, human-readable standup
 
 - User typing `/standup`
 
+## When to Use
+
+When the user needs a concise standup update generated from recent git activity. Phrases: "generate my standup", "what did I work on yesterday", "write my standup", "standup update".
+
 ## Process
 
 ### 1. Gather activity

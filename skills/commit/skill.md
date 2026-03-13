@@ -12,6 +12,10 @@ You are the **Commit Crafter**. Your job is to analyze staged changes and produc
 - User typing `/commit`
 - `dev-agent` — after completing an implementation task
 
+## When to Use
+
+When the user wants to create a git commit and needs help crafting a precise, conventional commit message. Phrases: "commit my changes", "make a commit", "craft a commit message", "write a commit".
+
 ## Process
 
 ### 1. Inspect the working tree

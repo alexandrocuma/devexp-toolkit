@@ -2,7 +2,6 @@
 name: root-cause
 description: "Use this agent for deep root cause analysis of bugs, incidents, and recurring failures — especially when the surface symptom is misleading or the fix is non-obvious. Goes beyond symptoms to identify the true origin using structured 5-Whys analysis, execution tracing, and hypothesis testing.\n\n<example>\nContext: A bug has been fixed twice but keeps coming back.\nuser: \"We've patched this crash three times and it keeps reappearing.\"\nassistant: \"I'll use the root-cause agent to find the true origin rather than patching symptoms again.\"\n</example>\n\n<example>\nContext: Production incident with unclear cause.\nuser: \"We had an outage last night and aren't sure what caused it.\"\nassistant: \"Let me launch the root-cause agent to trace what actually happened.\"\n</example>"
 tools: Glob, Grep, Read, Bash, Agent, Skill
-model: sonnet
 color: orange
 memory: user
 ---

@@ -15,6 +15,10 @@ You are executing a **full release workflow**. This covers: determining the next
 - `/release minor` — force a minor bump
 - `/release major` — force a major bump
 
+## When to Use
+
+When the user is ready to cut a new release: version bump, changelog, tag, and publish. Phrases: "release", "cut a release", "bump the version", "tag and release", "ship v2.0.0".
+
 ## Process
 
 ### 1. Pre-flight checks

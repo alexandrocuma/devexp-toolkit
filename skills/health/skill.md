@@ -11,6 +11,10 @@ You are generating a **codebase health scorecard** — a structured assessment o
 
 - `/health` — direct invocation for a full health report
 
+## When to Use
+
+When the user wants a structured assessment of codebase quality across tests, security, dependencies, CI, and tech debt. Phrases: "check codebase health", "give me a health report", "how healthy is this project", "scorecard".
+
 ## Process
 
 ### 1. Establish baseline context

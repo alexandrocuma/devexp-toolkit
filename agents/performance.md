@@ -2,7 +2,6 @@
 name: performance
 description: "Use this agent to identify performance bottlenecks, analyze algorithm complexity, find slow database queries, and produce optimization recommendations with estimated impact. Works across backend and frontend.\n\n<example>\nContext: API response times are degrading under load.\nuser: \"Our API is getting slow as traffic increases. Find out why.\"\nassistant: \"I'll launch the performance agent to identify the bottlenecks.\"\n</example>\n\n<example>\nContext: A specific operation feels sluggish.\nuser: \"The user search is really slow.\"\nassistant: \"Let me use the performance agent to analyze the search execution path for performance issues.\"\n</example>"
 tools: Glob, Grep, Read, Bash, Skill
-model: sonnet
 color: cyan
 memory: user
 ---

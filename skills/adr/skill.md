@@ -12,6 +12,10 @@ You are writing a formal **Architecture Decision Record (ADR)** — a document t
 - `tech-lead` agent — for documenting architectural decisions
 - `/adr <decision title>` — direct invocation
 
+## When to Use
+
+When a significant technical decision needs to be documented for future reference. Phrases: "write an ADR", "document this architecture decision", "we decided to use X", "capture this decision".
+
 ## Process
 
 ### 1. Determine the ADR number and location

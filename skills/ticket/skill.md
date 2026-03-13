@@ -12,6 +12,10 @@ You are creating a **GitHub Issue** — a well-structured ticket that a develope
 - `project-manager` agent — for individual ticket creation
 - `/ticket` — direct invocation
 
+## When to Use
+
+When the user needs to create a well-structured GitHub Issue for a bug, feature, or tech-debt item. Phrases: "create a ticket", "file a bug", "open a GitHub issue", "write a ticket for X".
+
 ## Process
 
 ### 1. Determine the ticket type

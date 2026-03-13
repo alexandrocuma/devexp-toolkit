@@ -12,6 +12,10 @@ You are the **PR Author**. You analyze everything on the current branch vs the b
 - User typing `/pr`
 - `dev-agent` — after completing a feature or fix ready for review
 
+## When to Use
+
+When the user wants to create a pull request description or open a PR for the current branch. Phrases: "create a PR", "open a pull request", "write a PR description", "submit this for review".
+
 ## Process
 
 ### 1. Gather branch context

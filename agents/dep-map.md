@@ -2,7 +2,6 @@
 name: dep-map
 description: "Use this agent to map all module, package, and file-level dependencies across a codebase. Identifies circular dependencies, unused packages, and import patterns. Returns a structured dependency graph with issues flagged.\n\n<example>\nContext: Planning a refactor and need to understand what depends on what.\nuser: \"Map the dependencies in this project before we start moving things around.\"\nassistant: \"I'll use the dep-map agent to produce a full dependency map.\"\n</example>\n\n<example>\nContext: Circular dependency error at runtime.\nuser: \"We're getting a circular dependency error somewhere.\"\nassistant: \"Let me launch the dep-map agent to trace all import cycles.\"\n</example>"
 tools: Glob, Grep, Read, Bash
-model: sonnet
 color: yellow
 memory: user
 ---

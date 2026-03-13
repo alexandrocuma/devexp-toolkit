@@ -68,6 +68,7 @@ Skills are invoked as slash commands (`/skill-name`) in Claude Code or opencode.
 | `/ticket` | Create a well-structured GitHub Issue for a bug, feature, or tech-debt item. |
 | `/scope` | Break a large feature or epic into atomic tickets with dependencies. |
 | `/health` | Generate a codebase health scorecard with RAG status per dimension. |
+| `/init-claude` | Crawl a project's docs and codebase to generate a directive CLAUDE.md with architecture map, conventions, and implementation playbooks. |
 | `/postmortem` | Generate a structured blameless postmortem document. |
 
 ### MCP Servers
@@ -234,7 +235,7 @@ names no longer cause payment failures.
 
 5. Restart your CLI to activate.
 
-See `docs/agent-authoring-guide.md` for a comprehensive guide.
+See `docs/development/agent-authoring-guide.md` for a comprehensive guide.
 
 ---
 
@@ -253,7 +254,7 @@ See `docs/agent-authoring-guide.md` for a comprehensive guide.
    ./install.sh
    ```
 
-See `docs/skill-authoring-guide.md` for a comprehensive guide.
+See `docs/development/skill-authoring-guide.md` for a comprehensive guide.
 
 ---
 
@@ -276,7 +277,7 @@ See `docs/skill-authoring-guide.md` for a comprehensive guide.
 
 3. Run `./install.sh` — the MCP is registered with the CLI automatically.
 
-See `docs/mcp-guide.md` for a full guide to the registry format and secrets handling.
+See `docs/development/mcp-guide.md` for a full guide to the registry format and secrets handling.
 
 ---
 
@@ -332,6 +333,7 @@ devexp/
 │   ├── ticket/skill.md
 │   ├── scope/skill.md
 │   ├── health/skill.md
+│   ├── init-claude/skill.md
 │   └── postmortem/skill.md
 ├── mcps/                       # MCP server registry and secrets
 │   ├── registry.json           # Curated MCP server list
@@ -339,10 +341,12 @@ devexp/
 ├── templates/                  # Starting points for new agents and skills
 │   ├── agent-template.md
 │   └── skill-template.md
-└── docs/                       # Authoring guides
-    ├── agent-authoring-guide.md
-    ├── skill-authoring-guide.md
-    └── mcp-guide.md
+└── docs/                       # Project documentation
+    ├── README.md               # Navigation index
+    └── development/            # Authoring guides for contributors
+        ├── agent-authoring-guide.md
+        ├── skill-authoring-guide.md
+        └── mcp-guide.md
 ```
 
 ---

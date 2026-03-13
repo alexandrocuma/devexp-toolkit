@@ -29,7 +29,6 @@ The agent reads the Prisma v5 migration guide, audits all prisma.* calls in the 
 </commentary>
 </example>"
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, Skill
-model: opus
 color: yellow
 memory: user
 ---
