@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "devexp configuration",
+  "description": "Team-level configuration for the devexp framework installer. Fork this repo and edit devexp.config.json to customise which agents, skills, hooks, and MCPs are installed for your org.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "model": {
+      "description": "Default model for all agents. null = inherit CLI default. Overridden by --model flag at install time.",
+      "type": ["string", "null"],
+      "examples": ["sonnet", "opus", "haiku", "openai/gpt-4o", "anthropic/claude-opus-4-6"]
+    },
+    "agents": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "disabled": {
+          "description": "Agent names (without .md) to skip during installation.",
+          "type": "array",
+          "items": { "type": "string" },
+          "examples": [["scaffold", "orchestrator", "dep-map"]],
+          "default": []
+        }
+      }
+    },
+    "skills": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "disabled": {
+          "description": "Skill names (directory name under skills/) to skip during installation.",
+          "type": "array",
+          "items": { "type": "string" },
+          "examples": [["gen-claude-md", "release"]],
+          "default": []
+        }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "disabled": {
+          "description": "Hook names from hooks/registry.json to skip during installation.",
+          "type": "array",
+          "items": { "type": "string" },
+          "examples": [["lint-on-save"]],
+          "default": []
+        }
+      }
+    },
+    "mcps": {
+      "description": "Additional MCP servers to install alongside the base registry in mcps/registry.json. Same schema as registry entries.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "command"],
+        "properties": {
+          "name":         { "type": "string", "description": "Unique MCP identifier" },
+          "description":  { "type": "string" },
+          "command":      { "type": "string", "description": "Executable to run (npx, uvx, node, etc.)" },
+          "args":         { "type": "array", "items": { "type": "string" }, "default": [] },
+          "scope":        { "type": "string", "enum": ["user", "project"], "default": "user" },
+          "env":          { "type": "object", "additionalProperties": { "type": "string" }, "default": {} },
+          "required_env": { "type": "array", "items": { "type": "string" }, "default": [],
+                            "description": "Env vars that must be set — MCP is skipped with a warning if missing. Set values in mcps/.env (gitignored)." }
+        }
+      }
+    }
+  }
+}

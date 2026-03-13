@@ -39,6 +39,9 @@ Invoke these via the Task tool. Send multiple Task calls in a single message to 
 | `ci-cd` | CI/CD pipeline management | Debug, create, optimize pipelines |
 | `postmortem` | Incident postmortems | After incidents and production issues |
 | `tech-lead` | Architecture decisions and ADRs | Technical direction, design review |
+| `pr-feedback` | PR review feedback implementation | Implementing reviewer comments on an existing PR |
+| `dep-audit` | Dependency vulnerability and staleness audit | CVE checks and outdated package detection |
+| `runbook` | Operational runbook generation | Writing restart, rollback, rotation, and scaling procedures |
 
 ## Execution Modes
 
@@ -142,6 +145,7 @@ Step 3 (sequential):  test-runner        → "full suite verification post-migra
 Step 1 (parallel):    pr-review          → "full review of PR/branch"
                       security           → "security-focused review of changes"
 Step 2 (sequential):  synthesize findings, unified recommendation
+Step 3 (optional):    pr-feedback        → "implement actionable review comments from Step 1"
 ```
 
 ### `release` — Cut a new release
@@ -174,6 +178,7 @@ Step 3 (sequential):  project-manager    → "break into tickets with acceptance
 Step 1 (parallel):    test-runner  → "run suite and measure coverage"
                       security     → "scan for vulnerabilities"
                       dep-map      → "check for circular deps and outdated packages"
+                      dep-audit    → "audit dependencies for CVEs and staleness"
                       performance  → "identify performance bottlenecks"
 Step 2 (sequential):  synthesize health scorecard with RAG status per dimension
 ```

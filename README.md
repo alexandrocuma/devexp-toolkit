@@ -351,6 +351,32 @@ devexp/
 
 ---
 
+## Team Distribution
+
+Fork this repo and edit `devexp.config.json` to customise what gets installed for your org — disable agents you don't use, set a default model, and add org-internal MCP servers.
+
+```json
+{
+  "model": "sonnet",
+  "agents": { "disabled": ["scaffold"] },
+  "hooks":  { "disabled": ["lint-on-save"] },
+  "mcps": [
+    {
+      "name": "our-internal-docs",
+      "command": "npx",
+      "args": ["-y", "@our-org/docs-mcp"],
+      "required_env": ["ORG_DOCS_TOKEN"]
+    }
+  ]
+}
+```
+
+The config is read automatically by `./install.sh` — no extra flags needed. Secrets go in `mcps/.env` (gitignored).
+
+→ Full guide: `docs/team-distribution.md`
+
+---
+
 ## Contributing
 
 Contributions are welcome. To add an agent or skill:

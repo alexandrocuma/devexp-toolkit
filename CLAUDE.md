@@ -77,6 +77,9 @@ Full instructions for how this agent should behave...
 | `ci-cd.md` | ci-cd | CI/CD pipeline debugging, creation, and optimization |
 | `postmortem.md` | postmortem | Structured blameless incident postmortem documents |
 | `tech-lead.md` | tech-lead | Architecture Decision Records, design review, engineering standards |
+| `pr-feedback.md` | pr-feedback | Implements reviewer comments from an existing GitHub PR |
+| `dep-audit.md` | dep-audit | Dependency vulnerability (CVE) and staleness audit |
+| `runbook.md` | runbook | Generates operational runbooks from actual project config |
 
 **opencode-exclusive agents** live in `agents/opencode/` — written directly in opencode frontmatter format, installed as-is (no transformation). They use opencode-only capabilities like the Task tool for true parallel subagent spawning.
 
@@ -271,6 +274,22 @@ Read `docs/development/agent-authoring-guide.md` for detailed guidance on writin
 6. The skill is immediately available as `/<skill-name>` in Claude Code
 
 Read `docs/development/skill-authoring-guide.md` for detailed guidance on writing effective skills.
+
+---
+
+## Team Distribution
+
+Teams can fork this repo and customise `devexp.config.json` to control what gets installed.
+
+| Field | Purpose |
+|-------|---------|
+| `model` | Default model for all agents (overridden by `--model` flag) |
+| `agents.disabled` | Agent names to skip (e.g. `["scaffold", "orchestrator"]`) |
+| `skills.disabled` | Skill names to skip (e.g. `["gen-claude-md"]`) |
+| `hooks.disabled` | Hook names from `hooks/registry.json` to skip |
+| `mcps` | Additional MCP entries merged with `mcps/registry.json` at install time |
+
+The schema is in `devexp.config.schema.json`. Full guide: `docs/team-distribution.md`.
 
 ---
 

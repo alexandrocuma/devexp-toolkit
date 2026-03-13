@@ -1,0 +1,28 @@
+[
+  {
+    "name": "secret-guard",
+    "description": "Block accidental reads of .env and secret key files",
+    "claude_code": {
+      "event": "PreToolUse",
+      "script": "hooks/claude-code/pre-tool-use.sh"
+    },
+    "opencode": {
+      "event": "tool.execute.before",
+      "plugin": "hooks/opencode/devexp-plugin.js"
+    },
+    "enabled": true
+  },
+  {
+    "name": "lint-on-save",
+    "description": "After source file edits, emit an advisory to run the project linter",
+    "claude_code": {
+      "event": "PostToolUse",
+      "script": "hooks/claude-code/post-tool-use.sh"
+    },
+    "opencode": {
+      "event": "file.edited",
+      "plugin": "hooks/opencode/devexp-plugin.js"
+    },
+    "enabled": true
+  }
+]

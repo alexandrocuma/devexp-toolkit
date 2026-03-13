@@ -92,3 +92,48 @@ Useful for:
 - Pre-modification understanding in unfamiliar code
 
 Output: numbered execution chain, branch decisions documented, key findings, trace outcome, and an optional ASCII flow diagram.
+
+---
+
+### pr-feedback
+
+**File:** `pr-feedback.md`
+
+Reads all review comments on an existing GitHub PR and autonomously implements the actionable ones. Complements `pr-review` (which generates reviews) — this agent closes the loop on review cycles.
+
+Triages comments into four categories:
+- **Implement** — concrete, actionable code changes (renames, null checks, pattern fixes)
+- **Ask** — ambiguous requests requiring a design decision before acting
+- **Flag** — architectural or structural changes that belong in a separate PR
+- **Skip** — already resolved or non-actionable (praise, questions already answered)
+
+Reports a summary table of what was implemented, what was flagged, and what needs user input. Chains into `dev-agent` if tests fail post-implementation.
+
+---
+
+### dep-audit
+
+**File:** `dep-audit.md`
+
+Audits project dependencies for known vulnerabilities (CVEs) and staleness using ecosystem-native tools. Operates at the package manifest level — distinct from the `security` agent, which scans code patterns.
+
+Supported ecosystems: Node.js (npm/yarn audit), Go (govulncheck), Python (pip-audit/safety), Rust (cargo audit), Ruby (bundle audit).
+
+Produces a severity-ranked report (Critical/High/Medium/Low) covering:
+- Known CVEs with CVE IDs, affected version ranges, and patched versions
+- Major-version staleness gaps (packages that may be missing backported security patches)
+- Specific upgrade commands for each finding
+
+Chains into `security` for code-level impact assessment of Critical/High findings, and into `migration` for systematic upgrade planning.
+
+---
+
+### runbook
+
+**File:** `runbook.md`
+
+Generates operational runbooks — step-by-step procedures for restarting services, rolling back deployments, rotating secrets, scaling, and draining traffic. Discovers real commands from the project's actual configuration files (Makefile, docker-compose.yml, k8s manifests, CI workflows) — never fabricates commands.
+
+Writes to `docs/runbooks/<service>-<operation>.md` using a standardized SRE format: purpose, when to run, prerequisites, numbered steps with expected output, rollback procedure, and escalation path.
+
+Uses `[FILL IN]` placeholders honestly when a command cannot be sourced from the project's config files. Chains into `postmortem` when a runbook is written in response to an incident.

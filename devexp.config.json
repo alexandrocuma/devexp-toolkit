@@ -1,0 +1,14 @@
+{
+  "$schema": "./devexp.config.schema.json",
+  "model": null,
+  "agents": {
+    "disabled": []
+  },
+  "skills": {
+    "disabled": []
+  },
+  "hooks": {
+    "disabled": []
+  },
+  "mcps": []
+}
