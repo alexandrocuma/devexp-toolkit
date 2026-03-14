@@ -745,7 +745,7 @@ for hook in hooks:
         continue
 
     settings['hooks'][event].append({
-        'matcher': '.*',
+        'matcher': cc.get('matcher', '.*'),
         'hooks': [{'type': 'command', 'command': script_abs}]
     })
     changed = True
@@ -766,6 +766,7 @@ install_hooks_opencode() {
     [[ -f "$registry" ]] || return 0
 
     local plugin_src="$REPO_DIR/hooks/opencode/devexp-plugin.js"
+    local plugin_dir_src="$REPO_DIR/hooks/opencode"
     [[ -f "$plugin_src" ]] || return 0
 
     # Check if ALL hooks are disabled — if so, skip plugin install entirely
@@ -791,15 +792,26 @@ install_hooks_opencode() {
     info "Installing hooks (opencode plugin)..."
 
     if $DRY_RUN; then
-        dryrun "cp hooks/opencode/devexp-plugin.js → $plugin_dest"
+        for js_file in "$plugin_dir_src"/*.js; do
+            dryrun "cp $(basename "$js_file") → $plugin_dir/"
+        done
+        [[ -f "$plugin_dir_src/package.json" ]] && dryrun "cp package.json → $plugin_dir/"
         dryrun "register plugin path in $config_path"
         echo ""
         return 0
     fi
 
     run_mkdir "$plugin_dir"
-    cp "$plugin_src" "$plugin_dest"
-    echo -e "  ${GREEN}+${RESET} devexp-plugin.js → $plugin_dest"
+    # Copy all JS modules — devexp-plugin.js imports the others via relative paths
+    for js_file in "$plugin_dir_src"/*.js; do
+        cp "$js_file" "$plugin_dir/$(basename "$js_file")"
+        echo -e "  ${GREEN}+${RESET} $(basename "$js_file") → $plugin_dir/"
+    done
+    # Copy package.json so Node treats the directory as ESM
+    if [[ -f "$plugin_dir_src/package.json" ]]; then
+        cp "$plugin_dir_src/package.json" "$plugin_dir/package.json"
+        echo -e "  ${GREEN}+${RESET} package.json → $plugin_dir/"
+    fi
 
     # Register the plugin path in opencode config.json
     python3 - "$config_path" "$plugin_dest" <<'PYEOF'
@@ -816,13 +828,13 @@ if os.path.exists(config_path):
         except json.JSONDecodeError:
             config = {}
 
-if 'plugins' not in config:
-    config['plugins'] = []
+if 'plugin' not in config:
+    config['plugin'] = []
 
-if plugin_path in config['plugins']:
+if plugin_path in config['plugin']:
     print(f"  [skip] plugin already registered in {config_path}")
 else:
-    config['plugins'].append(plugin_path)
+    config['plugin'].append(plugin_path)
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
     with open(config_path, 'w') as f:
         json.dump(config, f, indent=2)

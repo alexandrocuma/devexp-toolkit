@@ -302,10 +302,15 @@ if $REMOVE_OPENCODE; then
     if [[ -f "$plugin_dest" || -f "$config_path" ]]; then
         info "Removing hooks (opencode plugin)..."
 
-        if [[ -f "$plugin_dest" ]]; then
-            rm -f "$plugin_dest"
-            echo -e "  ${RED}-${RESET} devexp-plugin.js"
-        fi
+        # Remove all devexp plugin modules (devexp-plugin.js + imported modules)
+        local plugin_dir="$HOME/.config/opencode/plugins"
+        for js_file in devexp-plugin.js utils.js secret-guard.js dangerous-cmd-guard.js large-file-guard.js lint-on-save.js; do
+            if [[ -f "$plugin_dir/$js_file" ]]; then
+                rm -f "$plugin_dir/$js_file"
+                echo -e "  ${RED}-${RESET} $js_file"
+            fi
+        done
+        [[ -f "$plugin_dir/package.json" ]] && rm -f "$plugin_dir/package.json" && echo -e "  ${RED}-${RESET} package.json"
 
         if [[ -f "$config_path" ]]; then
             python3 - "$config_path" "$plugin_dest" <<'PYEOF'
@@ -320,9 +325,9 @@ with open(config_path) as f:
     except json.JSONDecodeError:
         sys.exit(0)
 
-plugins = config.get('plugins', [])
+plugins = config.get('plugin', [])
 if plugin_path in plugins:
-    config['plugins'] = [p for p in plugins if p != plugin_path]
+    config['plugin'] = [p for p in plugins if p != plugin_path]
     with open(config_path, 'w') as f:
         json.dump(config, f, indent=2)
     print(f"  - unregistered plugin from {config_path}")

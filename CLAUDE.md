@@ -6,10 +6,11 @@ This file gives you everything you need to work effectively in this repository.
 
 This is the **devexp framework** — a curated collection of Claude Code agents and skills that improve the development experience. The repo is designed to be cloned and installed, distributing a consistent set of AI-powered development capabilities to any machine.
 
-The framework has two types of components:
+The framework has three types of components:
 
 - **Agents** — specialized Claude sub-agents that handle domain-specific tasks (code review, codebase navigation, autonomous implementation, frontend review, execution tracing). Stored in `agents/`.
 - **Skills** — reusable slash-command behaviors that Claude can invoke mid-conversation. Stored in `skills/`. Each skill is an instruction set that shapes how Claude behaves when invoked.
+- **Hooks** — safety and quality guards that intercept tool calls automatically. Stored in `hooks/`. Each hook is a separate file: shell scripts for Claude Code, JS modules for opencode.
 
 ---
 
@@ -176,6 +177,7 @@ Behavior:
 |-----------|-------------|----------|
 | Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (transformed) |
 | Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) |
+| Hooks | `~/.claude/settings.json` (shell scripts, per-tool matchers) | `~/.config/opencode/plugins/devexp-plugin.js` (JS modules) |
 | `CLAUDE.md` / `AGENTS.md` | `~/.claude/CLAUDE.md` | `~/.config/opencode/AGENTS.md` (or project root) |
 | Agent tools | All Claude tools | `read/write/edit/bash/glob/grep/webfetch/websearch` only |
 | `Agent`, `Skill`, `Task*` tools | Supported | No opencode equivalent — dropped at transform |
@@ -252,6 +254,133 @@ The installer loads `mcps/.env` and:
 
 ---
 
+## Hooks
+
+Hooks are safety and quality guards that intercept tool calls automatically — no user action required. They are implemented differently per CLI but behave identically from the user's perspective.
+
+### How Hooks Work
+
+**Claude Code** hooks are shell scripts registered in `~/.claude/settings.json` under `PreToolUse` or `PostToolUse` events. Claude Code calls the script with a JSON payload on stdin and reads the response:
+
+- **Hard block** — print reason to stderr, `exit 2`. Claude stops the tool call entirely.
+- **Soft block (ask)** — output `{"hookSpecificOutput": {"permissionDecision": "ask"}}` to stdout, `exit 0`. Claude pauses and asks the user to confirm.
+- **Allow** — `exit 0` with no output.
+
+**opencode** hooks are JS modules composed into a single plugin (`devexp-plugin.js`) registered in `~/.config/opencode/config.json`. Handlers receive `(input, output)` and:
+
+- **Block** — `throw new Error("reason")`. opencode stops the tool call.
+- **Allow** — return without throwing.
+
+### File Structure
+
+```
+hooks/
+  registry.json               # Source of truth — one entry per hook
+  claude-code/                # One .sh file per hook
+  └── secret-guard.sh
+  └── dangerous-cmd-guard.sh
+  └── large-file-guard.sh
+  └── lint-on-save.sh
+  opencode/                   # One .js module per hook + shared utils + entry point
+  └── utils.js                # Shared: findRoot, which, runLinter, countLines
+  └── secret-guard.js
+  └── dangerous-cmd-guard.js
+  └── large-file-guard.js
+  └── lint-on-save.js
+  └── devexp-plugin.js        # Composes all modules into a single plugin export
+  └── package.json            # { "type": "module" } — required for ESM
+```
+
+### Registry Format
+
+`hooks/registry.json` is the source of truth. Each entry:
+
+```json
+{
+  "name": "hook-name",
+  "description": "What this hook does",
+  "claude_code": {
+    "event":   "PreToolUse",
+    "matcher": "Bash",
+    "script":  "hooks/claude-code/hook-name.sh"
+  },
+  "opencode": {
+    "event":  "tool.execute.before",
+    "plugin": "hooks/opencode/devexp-plugin.js"
+  },
+  "enabled": true
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `name` | Unique hook identifier — used in `devexp.config.json` `hooks.disabled` list |
+| `claude_code.event` | `PreToolUse` or `PostToolUse` |
+| `claude_code.matcher` | Regex matched against tool name (e.g. `"Bash"`, `"Read"`, `"Write\|Edit"`) |
+| `claude_code.script` | Path to the shell script, relative to repo root |
+| `opencode.event` | `tool.execute.before` or `file.edited` |
+| `opencode.plugin` | Always `hooks/opencode/devexp-plugin.js` — the single entry point |
+| `enabled` | Set to `false` to skip this hook for all users |
+
+### Hooks in This Repo
+
+| Hook | Event | Matcher | What it does |
+|------|-------|---------|--------------|
+| `secret-guard` | PreToolUse | `Read` | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
+| `dangerous-cmd-guard` | PreToolUse | `Bash` | Hard-blocks `rm -rf /`, fork bombs, `DROP DATABASE`; asks before `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
+| `large-file-guard` | PreToolUse | `Write` | Asks for confirmation before overwriting a file with >500 lines |
+| `lint-on-save` | PostToolUse | `Write\|Edit` | Runs the project linter on edited source files (JS/TS → biome/eslint, Python → ruff/flake8, Go → go vet, Ruby → rubocop) |
+
+### CLI Compatibility
+
+| | Claude Code | opencode |
+|---|---|---|
+| Hook scripts | `hooks/claude-code/*.sh` (one per hook) | `hooks/opencode/*.js` (one module per hook) |
+| Entry point | Each script registered separately in `settings.json` | Single `devexp-plugin.js` registered in `config.json` |
+| Block mechanism | `exit 2` + stderr | `throw new Error(...)` |
+| Confirm/ask | `permissionDecision: "ask"` JSON output | Not supported — hard block instead |
+| Advisory output | stderr (PostToolUse) | `console.log` (file.edited) |
+
+---
+
+## Adding a New Hook
+
+1. Create `hooks/claude-code/<hook-name>.sh`:
+   ```bash
+   #!/usr/bin/env bash
+   # devexp hook: <hook-name>
+   # Event: PreToolUse | Matcher: <ToolName>
+   set -euo pipefail
+   input=$(cat)
+   # extract fields with python3 -c "..."
+   # hard block: echo "reason" >&2; exit 2
+   # soft block: python3 -c "print(json.dumps({'hookSpecificOutput': {'permissionDecision': 'ask', ...}}))"
+   exit 0
+   ```
+
+2. Create `hooks/opencode/<hook-name>.js`:
+   ```js
+   import { ... } from './utils.js';
+   export async function myHookName(_ctx) {
+     return {
+       'tool.execute.before': async (input, output) => {
+         if (input.tool !== 'target-tool') return;
+         // throw new Error('reason') to block
+       },
+     };
+   }
+   ```
+
+3. Register the module in `hooks/opencode/devexp-plugin.js` — import it and add it to `Promise.all([...])`.
+
+4. Add the entry to `hooks/registry.json`.
+
+5. `chmod +x hooks/claude-code/<hook-name>.sh` and run `./install.sh`.
+
+Read `docs/development/hook-authoring-guide.md` for detailed guidance.
+
+---
+
 ## Adding a New Agent
 
 1. Copy `templates/agent-template.md` to `agents/<agent-name>.md`
@@ -299,7 +428,10 @@ The schema is in `devexp.config.schema.json`. Full guide: `docs/team-distributio
 - Skill files go in `skills/<skill-name>/skill.md` — each skill in its own subdirectory
 - Skill directory names use short, descriptive kebab-case names without a namespace prefix (e.g., `bugfix`, not `devexp-bugfix`)
 - Skills include a "Triggered by" section listing which agents/skills invoke them
-- Never modify agent or skill files in place on `~/.claude/` — always edit the source in this repo and re-run `install.sh`
+- Hook files go in `hooks/claude-code/<hook-name>.sh` and `hooks/opencode/<hook-name>.js` — one file per hook per CLI
+- Every hook has an entry in `hooks/registry.json` — this is the source of truth
+- The opencode entry point (`hooks/opencode/devexp-plugin.js`) must be updated when adding a new hook module
+- Never modify deployed hook scripts directly — always edit the source in this repo and re-run `install.sh`
 - Templates are in `templates/` — use them as starting points, not final output
 - Authoring guides are in `docs/development/`
 
@@ -309,9 +441,9 @@ The schema is in `devexp.config.schema.json`. Full guide: `docs/team-distributio
 
 When working in this repo, the typical workflow is:
 
-1. Edit a file in `agents/` or `skills/`
+1. Edit a file in `agents/`, `skills/`, or `hooks/`
 2. Run `./install.sh` to deploy the change
-3. Test in Claude Code
+3. Test in Claude Code or opencode
 4. Commit when satisfied
 
 The install script is idempotent — safe to run multiple times.
