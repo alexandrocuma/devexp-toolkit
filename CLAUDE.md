@@ -56,37 +56,38 @@ Full instructions for how this agent should behave...
 
 ### Agents in This Repo
 
-| File | Agent Name | Purpose |
-|------|-----------|---------|
-| `arch-review.md` | arch-review | Deep architectural health assessment with scored findings |
-| `backend-senior-dev.md` | backend-senior-dev | Expert backend code review and architecture analysis |
-| `codebase-navigator.md` | codebase-navigator | Builds and maintains a shared codebase atlas for all agents |
-| `dep-map.md` | dep-map | Maps module and package dependencies, detects cycles |
-| `dev-agent.md` | dev-agent | Autonomous implementation: bugs, features, refactors |
-| `feature-path-tracer.md` | feature-path-tracer | Traces a single execution path through code |
-| `frontend-senior-dev.md` | frontend-senior-dev | Expert frontend code review and UI architecture guidance |
-| `migration.md` | migration | Plan and execute library/framework/runtime version migrations |
-| `performance.md` | performance | Performance bottleneck identification and optimization |
-| `pr-review.md` | pr-review | Thorough PR review across bugs, security, patterns, and tests |
-| `root-cause.md` | root-cause | Deep root cause analysis using 5-Whys and hypothesis testing |
-| `security.md` | security | Full security audit: OWASP Top 10, auth, data exposure |
-| `test-gen.md` | test-gen | Generate comprehensive test suites for untested code |
-| `test-runner.md` | test-runner | Test execution, coverage analysis, flaky test detection |
-| `project-manager.md` | project-manager | GitHub Issue creation, epic decomposition, backlog triage |
-| `scaffold.md` | scaffold | Pattern-matched code generation for new modules, services, and components |
-| `changelog.md` | changelog | Changelog and release notes generation from git history |
-| `ci-cd.md` | ci-cd | CI/CD pipeline debugging, creation, and optimization |
-| `postmortem.md` | postmortem | Structured blameless incident postmortem documents |
-| `tech-lead.md` | tech-lead | Architecture Decision Records, design review, engineering standards |
-| `pr-feedback.md` | pr-feedback | Implements reviewer comments from an existing GitHub PR |
-| `dep-audit.md` | dep-audit | Dependency vulnerability (CVE) and staleness audit |
-| `runbook.md` | runbook | Generates operational runbooks from actual project config |
+| File | Agent Name | Purpose | Example Trigger Phrase |
+|------|-----------|---------|------------------------|
+| `arch-review.md` | arch-review | Deep architectural health assessment with scored findings | "Review the architecture before we start the refactor" |
+| `backend-senior-dev.md` | backend-senior-dev | Expert backend code review and architecture analysis | "Review my new auth endpoint" / "I just wrote the service layer, can you take a look?" |
+| `codebase-navigator.md` | codebase-navigator | Builds and maintains a shared codebase atlas for all agents | "Orient yourself in this codebase before we start" / "Where does authentication logic live?" |
+| `dep-map.md` | dep-map | Maps module and package dependencies, detects cycles | "Map the dependencies before we start moving things around" / "We're getting a circular dependency error" |
+| `dev-agent.md` | dev-agent | Autonomous implementation: bugs, features, refactors | "Fix the bug where payments fail for users with special characters" / "Add rate limiting to all public API endpoints" |
+| `feature-path-tracer.md` | feature-path-tracer | Traces a single execution path through code | "Trace how the POST /auth/login endpoint works end-to-end" / "What happens when a payment fails in checkout?" |
+| `frontend-senior-dev.md` | frontend-senior-dev | Expert frontend code review and UI architecture guidance | "Review my new React component" / "I'm fetching data in every component, is there a better way?" |
+| `migration.md` | migration | Plan and execute library/framework/runtime version migrations | "Migrate this project from React 17 to React 18" / "Plan the upgrade from Node 18 to Node 22" |
+| `performance.md` | performance | Performance bottleneck identification and optimization | "Our API is getting slow under load, find out why" / "The user search feels really sluggish" |
+| `pr-review.md` | pr-review | Thorough PR review across bugs, security, patterns, and tests | "Review PR #42" / "Do a full review of this pull request before we merge" |
+| `root-cause.md` | root-cause | Deep root cause analysis using 5-Whys and hypothesis testing | "We've patched this crash three times and it keeps coming back" / "We had an outage last night and aren't sure what caused it" |
+| `security.md` | security | Full security audit: OWASP Top 10, auth, data exposure | "Run a security audit before we deploy" / "Check for authentication vulnerabilities" |
+| `test-gen.md` | test-gen | Generate comprehensive test suites for untested code | "Generate tests for the payment module" / "Write a test suite for this service" |
+| `test-runner.md` | test-runner | Test execution, coverage analysis, flaky test detection | "Run the tests and tell me what's failing" / "What's our test coverage like?" |
+| `project-manager.md` | project-manager | GitHub Issue creation, epic decomposition, backlog triage | "Create a ticket for adding user authentication" / "Break down the notifications epic into tasks" |
+| `scaffold.md` | scaffold | Pattern-matched code generation for new modules, services, and components | "Scaffold a new payments service" / "Create a UserNotifications component" |
+| `changelog.md` | changelog | Changelog and release notes generation from git history | "Generate the changelog since the last release" / "What changed between v1.2 and v1.3?" |
+| `docs-sync.md` | docs-sync | Syncs documentation surfaces (CLAUDE.md, README, authoring guides) with actual repo state after changes to agents, skills, hooks, or MCPs | "Sync the docs after these agent changes" / "Update the documentation to reflect the new hooks" |
+| `ci-cd.md` | ci-cd | CI/CD pipeline debugging, creation, and optimization | "Our GitHub Actions pipeline is failing, debug it" / "Add a test step to the CI pipeline" |
+| `postmortem.md` | postmortem | Structured blameless incident postmortem documents | "Write a postmortem for last night's database outage" |
+| `tech-lead.md` | tech-lead | Architecture Decision Records, design review, engineering standards | "Write an ADR for switching to PostgreSQL" / "Review this microservice design" |
+| `pr-feedback.md` | pr-feedback | Implements reviewer comments from an existing GitHub PR | "Implement the reviewer comments on PR #58" / "Address the feedback on my open PR" |
+| `dep-audit.md` | dep-audit | Dependency vulnerability (CVE) and staleness audit | "Audit our dependencies for vulnerabilities" / "Which packages are outdated or have known CVEs?" |
+| `runbook.md` | runbook | Generates operational runbooks from actual project config | "Generate a runbook for deploying this service" / "Write an on-call runbook for the API" |
 
 **opencode-exclusive agents** live in `agents/opencode/` — written directly in opencode frontmatter format, installed as-is (no transformation). They use opencode-only capabilities like the Task tool for true parallel subagent spawning.
 
-| File | Agent Name | Purpose |
-|------|-----------|---------|
-| `opencode/orchestrator.md` | orchestrator | Swarm orchestrator: spawns specialist agents in parallel via Task tool (13 workflow presets) |
+| File | Agent Name | Purpose | Example Trigger Phrase |
+|------|-----------|---------|------------------------|
+| `opencode/orchestrator.md` | orchestrator | Swarm orchestrator: spawns specialist agents in parallel via Task tool (13 workflow presets) | "Do a full review of this PR — security, performance, and architecture all at once" / "Run the full audit workflow" |
 
 ---
 
@@ -327,9 +328,11 @@ hooks/
 | Hook | Event | Matcher | What it does |
 |------|-------|---------|--------------|
 | `secret-guard` | PreToolUse | `Read` | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
-| `dangerous-cmd-guard` | PreToolUse | `Bash` | Hard-blocks `rm -rf /`, fork bombs, `DROP DATABASE`; asks before `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
+| `secret-in-write-guard` | PreToolUse | `Write\|Edit` | Hard-blocks writing content that contains secret patterns (API keys, GitHub tokens, private key blocks, etc.) |
+| `dangerous-cmd-guard` | PreToolUse | `Bash` | Hard-blocks `rm -rf /`, fork bombs, `DROP DATABASE`, `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
 | `large-file-guard` | PreToolUse | `Write` | Asks for confirmation before overwriting a file with >500 lines |
 | `lint-on-save` | PostToolUse | `Write\|Edit` | Runs the project linter on edited source files (JS/TS → biome/eslint, Python → ruff/flake8, Go → go vet, Ruby → rubocop) |
+| `format-on-save` | PostToolUse | `Write\|Edit` | Runs the project formatter in-place on edited source files (JS/TS → biome/prettier, Python → ruff/black, Go → gofmt, Ruby → rubocop) |
 
 ### CLI Compatibility
 
@@ -371,7 +374,7 @@ hooks/
    }
    ```
 
-3. Register the module in `hooks/opencode/devexp-plugin.js` — import it and add it to `Promise.all([...])`.
+3. Register the module in `hooks/opencode/devexp-plugin.js` — import it and add it to the `Promise.all([...])` array.
 
 4. Add the entry to `hooks/registry.json`.
 

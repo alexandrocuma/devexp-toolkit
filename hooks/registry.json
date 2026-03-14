@@ -15,7 +15,7 @@
   },
   {
     "name": "dangerous-cmd-guard",
-    "description": "Block or prompt on destructive shell commands (rm -rf /, force push, reset --hard, DROP DATABASE, etc.)",
+    "description": "Hard-block destructive shell commands (rm -rf /, force push, reset --hard, DROP DATABASE, etc.)",
     "claude_code": {
       "event": "PreToolUse",
       "matcher": "Bash",
@@ -48,6 +48,34 @@
       "event": "PostToolUse",
       "matcher": "Write|Edit",
       "script": "hooks/claude-code/lint-on-save.sh"
+    },
+    "opencode": {
+      "event": "file.edited",
+      "plugin": "hooks/opencode/devexp-plugin.js"
+    },
+    "enabled": true
+  },
+  {
+    "name": "secret-in-write-guard",
+    "description": "Hard-block writing content that contains secret or token patterns (API keys, GitHub tokens, private keys, etc.)",
+    "claude_code": {
+      "event": "PreToolUse",
+      "matcher": "Write|Edit",
+      "script": "hooks/claude-code/secret-in-write-guard.sh"
+    },
+    "opencode": {
+      "event": "tool.execute.before",
+      "plugin": "hooks/opencode/devexp-plugin.js"
+    },
+    "enabled": true
+  },
+  {
+    "name": "format-on-save",
+    "description": "Run the project formatter on edited source files in-place (JS/TS, Python, Go, Ruby)",
+    "claude_code": {
+      "event": "PostToolUse",
+      "matcher": "Write|Edit",
+      "script": "hooks/claude-code/format-on-save.sh"
     },
     "opencode": {
       "event": "file.edited",

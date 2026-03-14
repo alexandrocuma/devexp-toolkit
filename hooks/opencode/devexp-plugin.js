@@ -4,25 +4,31 @@
  * Composes all hook modules into a single plugin export.
  * Each hook lives in its own file — edit them individually.
  *
- *   secret-guard.js        blocks reads of .env and key files
- *   dangerous-cmd-guard.js blocks/warns on destructive shell commands
- *   large-file-guard.js    blocks full overwrites of large files (>500 lines)
- *   lint-on-save.js        runs the project linter after source file edits
+ *   secret-guard.js           blocks reads of .env and key files
+ *   secret-in-write-guard.js  blocks writes containing secret/token patterns
+ *   dangerous-cmd-guard.js    hard-blocks destructive shell commands
+ *   large-file-guard.js       blocks full overwrites of large files (>500 lines)
+ *   lint-on-save.js           runs the project linter after source file edits
+ *   format-on-save.js         runs the project formatter after source file edits
  *
  * @see https://opencode.ai/docs/plugins
  */
 
-import { secretGuard }        from './secret-guard.js';
-import { dangerousCmdGuard }  from './dangerous-cmd-guard.js';
-import { largeFileGuard }     from './large-file-guard.js';
-import { lintOnSave }         from './lint-on-save.js';
+import { secretGuard }          from './secret-guard.js';
+import { secretInWriteGuard }   from './secret-in-write-guard.js';
+import { dangerousCmdGuard }    from './dangerous-cmd-guard.js';
+import { largeFileGuard }       from './large-file-guard.js';
+import { lintOnSave }           from './lint-on-save.js';
+import { formatOnSave }         from './format-on-save.js';
 
 export const DevExpPlugin = async (ctx) => {
   const modules = await Promise.all([
     secretGuard(ctx),
+    secretInWriteGuard(ctx),
     dangerousCmdGuard(ctx),
     largeFileGuard(ctx),
     lintOnSave(ctx),
+    formatOnSave(ctx),
   ]);
 
   return {

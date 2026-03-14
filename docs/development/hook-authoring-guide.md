@@ -8,7 +8,7 @@ This guide covers everything you need to write a new devexp hook — from decidi
 
 Hooks intercept tool calls before or after they execute. They are the right tool for:
 
-- **Safety guards** — blocking or prompting on irreversible operations
+- **Safety guards** — hard-blocking irreversible or dangerous operations
 - **Quality enforcement** — running linters, formatters, or validators automatically
 - **Audit trails** — logging what commands were run
 
@@ -63,6 +63,7 @@ Every hook must have an entry in `hooks/registry.json`:
 | Before a shell command | `PreToolUse` | `Bash` | `tool.execute.before` |
 | Before reading a file | `PreToolUse` | `Read` | `tool.execute.before` |
 | Before writing a file | `PreToolUse` | `Write` | `tool.execute.before` |
+| Before writing or editing | `PreToolUse` | `Write\|Edit` | `tool.execute.before` |
 | After writing or editing | `PostToolUse` | `Write\|Edit` | `file.edited` |
 | Before any tool | `PreToolUse` | `.*` | `tool.execute.before` |
 
@@ -85,7 +86,8 @@ Shell scripts receive a JSON payload on stdin and communicate back via exit code
 ```
 
 For `Read`: `tool_input.file_path`
-For `Write`/`Edit`: `tool_input.file_path`
+For `Write`: `tool_input.file_path`, `tool_input.content`
+For `Edit`: `tool_input.file_path`, `tool_input.old_string`, `tool_input.new_string`
 For `Bash`: `tool_input.command`
 
 ### Response types
@@ -194,13 +196,20 @@ export async function myGuard(_ctx) {
 ### Shared utilities (`utils.js`)
 
 ```js
-import { findRoot, which, runLinter, countLines, existsSync, join, basename } from './utils.js';
+import {
+  findRoot, which, runLinter, countLines,
+  existsSync, join, dirname, resolve, extname, basename,
+  LINT_EXTS,
+} from './utils.js';
 
-findRoot(filePath)   // walks up to find package.json / go.mod / .git
-which('ruff')        // returns path or null
-runLinter(cmd, args, cwd)  // runs linter, prints output, 10s timeout
-countLines(filePath) // returns line count, 0 on error
+findRoot(filePath)         // walks up to find package.json / go.mod / .git
+which('ruff')              // returns binary path or null
+runLinter(cmd, args, cwd)  // runs linter, prints output, swallows non-zero exit, 10s timeout
+countLines(filePath)       // returns line count, 0 on error
+LINT_EXTS                  // Set of lintable extensions: .js, .ts, .py, .go, .rb, etc.
 ```
+
+Path helpers (`join`, `dirname`, `resolve`, `extname`, `basename`) are re-exported from Node's `path` module for convenience. `existsSync` is re-exported from `fs`.
 
 ---
 
@@ -214,9 +223,11 @@ import { myGuard } from './my-guard.js';
 export const DevExpPlugin = async (ctx) => {
   const modules = await Promise.all([
     secretGuard(ctx),
+    secretInWriteGuard(ctx),
     dangerousCmdGuard(ctx),
     largeFileGuard(ctx),
     lintOnSave(ctx),
+    formatOnSave(ctx),
     myGuard(ctx),           // ← add here
   ]);
 
@@ -259,12 +270,12 @@ export const DevExpPlugin = async (ctx) => {
 
 **Be precise with matchers.** `matcher: "Bash"` runs only on Bash calls. `matcher: ".*"` runs on every tool call — avoid it unless truly necessary.
 
-**Hard block sparingly.** Reserve hard blocks (`exit 2` / `throw`) for operations that are catastrophic and essentially never intentional (e.g., `rm -rf /`). For high-risk-but-sometimes-valid operations, use soft block (ask) in Claude Code.
+**Guards always hard-block.** All safety guards in this framework use hard blocks (`exit 2` / `throw`). This is intentional — soft blocks (ask) add friction without a real safety guarantee because the user can just approve them. The only legitimate use of soft block (ask) is for *reversible* operations where a brief confirmation is meaningful, like the large-file-guard which protects against accidentally targeting the wrong path.
 
-**opencode has no "ask".** Anything that is a soft block in Claude Code becomes a hard block in opencode. Write your error message so users understand what happened and how to proceed intentionally.
+**opencode has no "ask".** There is no soft-block mechanism in opencode — `throw` is always a hard block. Design guard logic so the error message is self-explanatory: tell the user what was blocked and what to do instead.
 
 **PostToolUse / file.edited must never block.** These run after the tool completes — they are advisory only. In opencode `file.edited` handlers, wrap everything in try/catch and never throw.
 
 **Silent on success.** Hooks that find nothing wrong should produce zero output. Don't print "all clear" messages — they create noise on every tool call.
 
-**Keep it fast.** Hooks run synchronously before every tool call. Avoid network calls, heavy computation, or anything that could add noticeable latency. For PostToolUse linting, always set a timeout (10s).
+**Keep it fast.** Hooks run synchronously before every tool call. Avoid network calls, heavy computation, or anything that could add noticeable latency. For PostToolUse linting/formatting, always set a timeout (10–15s).
