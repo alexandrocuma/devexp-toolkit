@@ -34,6 +34,7 @@ Agents are specialized sub-agents that Claude Code or opencode can spawn to hand
 | **ci-cd** | CI/CD pipeline debugging, creation, and optimization across GitHub Actions, GitLab CI, and others. |
 | **postmortem** | Produces structured blameless incident postmortem documents. |
 | **tech-lead** | Architecture Decision Records, design review, and engineering standards documentation. |
+| **docs-sync** | Syncs documentation surfaces (CLAUDE.md, README, authoring guides) with actual repo state after changes to agents, skills, hooks, or MCPs. |
 
 **opencode-exclusive agents** (in `agents/opencode/`):
 
@@ -78,9 +79,11 @@ Hooks are safety and quality guards that run automatically on every tool call �
 | Hook | Trigger | What it does |
 |------|---------|--------------|
 | **secret-guard** | Any `Read` call | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
-| **dangerous-cmd-guard** | Any `Bash` call | Hard-blocks `rm -rf /`, fork bombs, `DROP DATABASE`; asks before `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
+| **secret-in-write-guard** | Any `Write` or `Edit` call | Hard-blocks writing content containing secret patterns (API keys, GitHub tokens, private key blocks, etc.) |
+| **dangerous-cmd-guard** | Any `Bash` call | Hard-blocks `rm -rf /`, fork bombs, `DROP DATABASE`, `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
 | **large-file-guard** | Any `Write` call | Asks for confirmation before overwriting a file with >500 lines |
 | **lint-on-save** | After `Write` or `Edit` | Runs the project linter on edited source files (JS/TS, Python, Go, Ruby) |
+| **format-on-save** | After `Write` or `Edit` | Runs the project formatter in-place on edited source files (JS/TS, Python, Go, Ruby) |
 
 Hook configuration lives in `hooks/registry.json`. Each hook is a separate file in `hooks/claude-code/` (shell scripts) and `hooks/opencode/` (JS modules).
 
@@ -398,17 +401,21 @@ devexp/
 ├── hooks/                      # Safety and quality hooks (one file per hook)
 │   ├── registry.json           # Hook registry — source of truth for all hooks
 │   ├── claude-code/            # Shell scripts registered in ~/.claude/settings.json
-│   │   ├── secret-guard.sh         # Blocks reads of .env and key files (matcher: Read)
-│   │   ├── dangerous-cmd-guard.sh  # Guards destructive shell commands (matcher: Bash)
-│   │   ├── large-file-guard.sh     # Confirms large file overwrites (matcher: Write)
-│   │   └── lint-on-save.sh         # Runs project linter after edits (PostToolUse)
+│   │   ├── secret-guard.sh             # Blocks reads of .env and key files (matcher: Read)
+│   │   ├── secret-in-write-guard.sh    # Blocks writing secret patterns in content (matcher: Write|Edit)
+│   │   ├── dangerous-cmd-guard.sh      # Hard-blocks destructive shell commands (matcher: Bash)
+│   │   ├── large-file-guard.sh         # Confirms large file overwrites (matcher: Write)
+│   │   ├── lint-on-save.sh             # Runs project linter after edits (PostToolUse)
+│   │   └── format-on-save.sh           # Runs project formatter after edits (PostToolUse)
 │   └── opencode/               # JS modules composed into a single plugin
 │       ├── devexp-plugin.js        # Entry point — imports and composes all hook modules
 │       ├── utils.js                # Shared helpers: findRoot, which, runLinter, countLines
 │       ├── secret-guard.js
+│       ├── secret-in-write-guard.js
 │       ├── dangerous-cmd-guard.js
 │       ├── large-file-guard.js
-│       └── lint-on-save.js
+│       ├── lint-on-save.js
+│       └── format-on-save.js
 ├── mcps/                       # MCP server registry and secrets
 │   ├── registry.json           # Curated MCP server list
 │   └── .env.example            # Template for API keys (copy to .env)

@@ -75,6 +75,7 @@ Full instructions for how this agent should behave...
 | `project-manager.md` | project-manager | GitHub Issue creation, epic decomposition, backlog triage |
 | `scaffold.md` | scaffold | Pattern-matched code generation for new modules, services, and components |
 | `changelog.md` | changelog | Changelog and release notes generation from git history |
+| `docs-sync.md` | docs-sync | Syncs documentation surfaces (CLAUDE.md, README, authoring guides) with actual repo state after changes to agents, skills, hooks, or MCPs |
 | `ci-cd.md` | ci-cd | CI/CD pipeline debugging, creation, and optimization |
 | `postmortem.md` | postmortem | Structured blameless incident postmortem documents |
 | `tech-lead.md` | tech-lead | Architecture Decision Records, design review, engineering standards |
@@ -327,9 +328,11 @@ hooks/
 | Hook | Event | Matcher | What it does |
 |------|-------|---------|--------------|
 | `secret-guard` | PreToolUse | `Read` | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
-| `dangerous-cmd-guard` | PreToolUse | `Bash` | Hard-blocks `rm -rf /`, fork bombs, `DROP DATABASE`; asks before `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
+| `secret-in-write-guard` | PreToolUse | `Write\|Edit` | Hard-blocks writing content that contains secret patterns (API keys, GitHub tokens, private key blocks, etc.) |
+| `dangerous-cmd-guard` | PreToolUse | `Bash` | Hard-blocks `rm -rf /`, fork bombs, `DROP DATABASE`, `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
 | `large-file-guard` | PreToolUse | `Write` | Asks for confirmation before overwriting a file with >500 lines |
 | `lint-on-save` | PostToolUse | `Write\|Edit` | Runs the project linter on edited source files (JS/TS → biome/eslint, Python → ruff/flake8, Go → go vet, Ruby → rubocop) |
+| `format-on-save` | PostToolUse | `Write\|Edit` | Runs the project formatter in-place on edited source files (JS/TS → biome/prettier, Python → ruff/black, Go → gofmt, Ruby → rubocop) |
 
 ### CLI Compatibility
 
@@ -371,7 +374,7 @@ hooks/
    }
    ```
 
-3. Register the module in `hooks/opencode/devexp-plugin.js` — import it and add it to `Promise.all([...])`.
+3. Register the module in `hooks/opencode/devexp-plugin.js` — import it and add it to the `Promise.all([...])` array.
 
 4. Add the entry to `hooks/registry.json`.
 
