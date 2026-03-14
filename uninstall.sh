@@ -241,6 +241,104 @@ PYEOF
     fi
 fi
 
+# ── Remove hooks (Claude Code) ────────────────────────────────────────────────
+if $REMOVE_CLAUDE; then
+    settings_path="$HOME/.claude/settings.json"
+    if [[ -f "$settings_path" && -f "$REPO_DIR/hooks/registry.json" ]]; then
+        info "Removing hooks (Claude Code)..."
+        python3 - "$REPO_DIR" "$settings_path" <<'PYEOF'
+import json, sys, os
+
+repo_dir      = sys.argv[1]
+settings_path = sys.argv[2]
+
+with open(settings_path) as f:
+    try:
+        settings = json.load(f)
+    except json.JSONDecodeError:
+        print("  [skip] settings.json is not valid JSON")
+        sys.exit(0)
+
+hooks_section = settings.get('hooks', {})
+if not hooks_section:
+    print("  [skip] no hooks configured")
+    sys.exit(0)
+
+changed = False
+for event, hook_list in list(hooks_section.items()):
+    filtered = []
+    for entry in hook_list:
+        cmd = ''
+        if entry.get('hooks'):
+            cmd = entry['hooks'][0].get('command', '')
+        # Remove entries whose command path lives inside the devexp repo
+        if repo_dir in cmd:
+            script_name = os.path.basename(cmd)
+            print(f"  \033[0;31m-\033[0m {event}: {script_name}")
+            changed = True
+        else:
+            filtered.append(entry)
+    hooks_section[event] = filtered
+
+# Clean up empty event keys
+settings['hooks'] = {k: v for k, v in hooks_section.items() if v}
+
+if changed:
+    with open(settings_path, 'w') as f:
+        json.dump(settings, f, indent=2)
+    print(f"  Saved: {settings_path}")
+else:
+    print("  [skip] no devexp hooks found in settings.json")
+PYEOF
+        echo ""
+    fi
+fi
+
+# ── Remove hooks (opencode) ───────────────────────────────────────────────────
+if $REMOVE_OPENCODE; then
+    plugin_dest="$HOME/.config/opencode/plugins/devexp-plugin.js"
+    config_path="$HOME/.config/opencode/config.json"
+
+    if [[ -f "$plugin_dest" || -f "$config_path" ]]; then
+        info "Removing hooks (opencode plugin)..."
+
+        # Remove all devexp plugin modules (devexp-plugin.js + imported modules)
+        local plugin_dir="$HOME/.config/opencode/plugins"
+        for js_file in devexp-plugin.js utils.js secret-guard.js dangerous-cmd-guard.js large-file-guard.js lint-on-save.js; do
+            if [[ -f "$plugin_dir/$js_file" ]]; then
+                rm -f "$plugin_dir/$js_file"
+                echo -e "  ${RED}-${RESET} $js_file"
+            fi
+        done
+        [[ -f "$plugin_dir/package.json" ]] && rm -f "$plugin_dir/package.json" && echo -e "  ${RED}-${RESET} package.json"
+
+        if [[ -f "$config_path" ]]; then
+            python3 - "$config_path" "$plugin_dest" <<'PYEOF'
+import json, sys, os
+
+config_path = sys.argv[1]
+plugin_path = sys.argv[2]
+
+with open(config_path) as f:
+    try:
+        config = json.load(f)
+    except json.JSONDecodeError:
+        sys.exit(0)
+
+plugins = config.get('plugin', [])
+if plugin_path in plugins:
+    config['plugin'] = [p for p in plugins if p != plugin_path]
+    with open(config_path, 'w') as f:
+        json.dump(config, f, indent=2)
+    print(f"  - unregistered plugin from {config_path}")
+else:
+    print(f"  [skip] plugin not registered in {config_path}")
+PYEOF
+        fi
+        echo ""
+    fi
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 success "Removed $removed item(s)."
 echo ""

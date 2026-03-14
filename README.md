@@ -71,9 +71,22 @@ Skills are invoked as slash commands (`/skill-name`) in Claude Code or opencode.
 | `/init-claude` | Crawl a project's docs and codebase to generate a directive CLAUDE.md with architecture map, conventions, and implementation playbooks. |
 | `/postmortem` | Generate a structured blameless postmortem document. |
 
+### Hooks
+
+Hooks are safety and quality guards that run automatically on every tool call — no configuration needed. They work identically in Claude Code (shell scripts) and opencode (JS plugin modules).
+
+| Hook | Trigger | What it does |
+|------|---------|--------------|
+| **secret-guard** | Any `Read` call | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
+| **dangerous-cmd-guard** | Any `Bash` call | Hard-blocks `rm -rf /`, fork bombs, `DROP DATABASE`; asks before `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
+| **large-file-guard** | Any `Write` call | Asks for confirmation before overwriting a file with >500 lines |
+| **lint-on-save** | After `Write` or `Edit` | Runs the project linter on edited source files (JS/TS, Python, Go, Ruby) |
+
+Hook configuration lives in `hooks/registry.json`. Each hook is a separate file in `hooks/claude-code/` (shell scripts) and `hooks/opencode/` (JS modules).
+
 ### MCP Servers
 
-MCP (Model Context Protocol) servers extend Claude with additional tool capabilities. devexp manages a registry of curated MCP servers and installs them alongside agents and skills.
+MCP (Model Context Protocol) servers extend Claude with additional tool capabilities. devexp manages a registry of curated MCP servers and installs them alongside agents, skills, and hooks.
 
 | MCP | Description |
 |-----|-------------|
@@ -122,6 +135,7 @@ Prints what would be installed without making any changes.
 |-----------|-------------|----------|
 | Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (frontmatter transformed) |
 | Skills | `~/.claude/skills/` | `~/.claude/skills/` (same path — opencode reads it natively) |
+| Hooks | `~/.claude/settings.json` (shell scripts, per-tool matchers) | `~/.config/opencode/plugins/devexp-plugin.js` (JS modules) |
 | MCPs | via `claude mcp add` | `~/.config/opencode/config.json` |
 
 Existing files are backed up automatically before any overwrite.
@@ -133,7 +147,7 @@ Existing files are backed up automatically before any overwrite.
 ./uninstall.sh --yes    # non-interactive
 ```
 
-Removes only devexp's agents, skills, and MCPs. Your own custom agents and skills are untouched.
+Removes only devexp's agents, skills, hooks, and MCPs. Your own custom agents and skills are untouched.
 
 ---
 
@@ -258,6 +272,52 @@ See `docs/development/skill-authoring-guide.md` for a comprehensive guide.
 
 ---
 
+## Adding a New Hook
+
+1. Create `hooks/claude-code/<hook-name>.sh` — the shell script Claude Code will run:
+   ```bash
+   #!/usr/bin/env bash
+   # devexp hook: <hook-name>
+   # Event: PreToolUse | Matcher: <ToolName>
+   set -euo pipefail
+   input=$(cat)
+   # ... guard logic ...
+   exit 0
+   ```
+
+2. Create `hooks/opencode/<hook-name>.js` — the opencode JS module:
+   ```js
+   import { ... } from './utils.js';
+   export async function myHook(_ctx) {
+     return {
+       'tool.execute.before': async (input, output) => { /* ... */ },
+     };
+   }
+   ```
+
+3. Register the module in `hooks/opencode/devexp-plugin.js`:
+   ```js
+   import { myHook } from './my-hook.js';
+   // add to Promise.all([...]) and merge its handlers
+   ```
+
+4. Add an entry to `hooks/registry.json`:
+   ```json
+   {
+     "name": "my-hook",
+     "description": "What this hook does",
+     "claude_code": { "event": "PreToolUse", "matcher": "Bash", "script": "hooks/claude-code/my-hook.sh" },
+     "opencode":    { "event": "tool.execute.before", "plugin": "hooks/opencode/devexp-plugin.js" },
+     "enabled": true
+   }
+   ```
+
+5. Run `./install.sh` — the hook is registered automatically.
+
+See `docs/development/hook-authoring-guide.md` for a full guide.
+
+---
+
 ## Adding a New MCP
 
 1. Add an entry to `mcps/registry.json`:
@@ -335,6 +395,20 @@ devexp/
 │   ├── health/skill.md
 │   ├── init-claude/skill.md
 │   └── postmortem/skill.md
+├── hooks/                      # Safety and quality hooks (one file per hook)
+│   ├── registry.json           # Hook registry — source of truth for all hooks
+│   ├── claude-code/            # Shell scripts registered in ~/.claude/settings.json
+│   │   ├── secret-guard.sh         # Blocks reads of .env and key files (matcher: Read)
+│   │   ├── dangerous-cmd-guard.sh  # Guards destructive shell commands (matcher: Bash)
+│   │   ├── large-file-guard.sh     # Confirms large file overwrites (matcher: Write)
+│   │   └── lint-on-save.sh         # Runs project linter after edits (PostToolUse)
+│   └── opencode/               # JS modules composed into a single plugin
+│       ├── devexp-plugin.js        # Entry point — imports and composes all hook modules
+│       ├── utils.js                # Shared helpers: findRoot, which, runLinter, countLines
+│       ├── secret-guard.js
+│       ├── dangerous-cmd-guard.js
+│       ├── large-file-guard.js
+│       └── lint-on-save.js
 ├── mcps/                       # MCP server registry and secrets
 │   ├── registry.json           # Curated MCP server list
 │   └── .env.example            # Template for API keys (copy to .env)
@@ -348,6 +422,32 @@ devexp/
         ├── skill-authoring-guide.md
         └── mcp-guide.md
 ```
+
+---
+
+## Team Distribution
+
+Fork this repo and edit `devexp.config.json` to customise what gets installed for your org — disable agents you don't use, set a default model, and add org-internal MCP servers.
+
+```json
+{
+  "model": "sonnet",
+  "agents": { "disabled": ["scaffold"] },
+  "hooks":  { "disabled": ["lint-on-save"] },
+  "mcps": [
+    {
+      "name": "our-internal-docs",
+      "command": "npx",
+      "args": ["-y", "@our-org/docs-mcp"],
+      "required_env": ["ORG_DOCS_TOKEN"]
+    }
+  ]
+}
+```
+
+The config is read automatically by `./install.sh` — no extra flags needed. Secrets go in `mcps/.env` (gitignored).
+
+→ Full guide: `docs/team-distribution.md`
 
 ---
 

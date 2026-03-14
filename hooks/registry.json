@@ -1,0 +1,58 @@
+[
+  {
+    "name": "secret-guard",
+    "description": "Block accidental reads of .env and secret key files",
+    "claude_code": {
+      "event": "PreToolUse",
+      "matcher": "Read",
+      "script": "hooks/claude-code/secret-guard.sh"
+    },
+    "opencode": {
+      "event": "tool.execute.before",
+      "plugin": "hooks/opencode/devexp-plugin.js"
+    },
+    "enabled": true
+  },
+  {
+    "name": "dangerous-cmd-guard",
+    "description": "Block or prompt on destructive shell commands (rm -rf /, force push, reset --hard, DROP DATABASE, etc.)",
+    "claude_code": {
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "script": "hooks/claude-code/dangerous-cmd-guard.sh"
+    },
+    "opencode": {
+      "event": "tool.execute.before",
+      "plugin": "hooks/opencode/devexp-plugin.js"
+    },
+    "enabled": true
+  },
+  {
+    "name": "large-file-guard",
+    "description": "Ask before overwriting an existing file that has more than 500 lines",
+    "claude_code": {
+      "event": "PreToolUse",
+      "matcher": "Write",
+      "script": "hooks/claude-code/large-file-guard.sh"
+    },
+    "opencode": {
+      "event": "tool.execute.before",
+      "plugin": "hooks/opencode/devexp-plugin.js"
+    },
+    "enabled": true
+  },
+  {
+    "name": "lint-on-save",
+    "description": "Run the project linter after source file edits (JS/TS, Python, Go, Ruby)",
+    "claude_code": {
+      "event": "PostToolUse",
+      "matcher": "Write|Edit",
+      "script": "hooks/claude-code/lint-on-save.sh"
+    },
+    "opencode": {
+      "event": "file.edited",
+      "plugin": "hooks/opencode/devexp-plugin.js"
+    },
+    "enabled": true
+  }
+]

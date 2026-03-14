@@ -1,6 +1,6 @@
 ---
 name: health
-description: Generate a codebase health scorecard covering tests, security, dependencies, quality, and CI status
+description: Generate a codebase health scorecard covering tests, security, dependencies, quality, and CI status — with trend tracking against previous runs
 ---
 
 # Codebase Health Check
@@ -14,6 +14,8 @@ You are generating a **codebase health scorecard** — a structured assessment o
 ## When to Use
 
 When the user wants a structured assessment of codebase quality across tests, security, dependencies, CI, and tech debt. Phrases: "check codebase health", "give me a health report", "how healthy is this project", "scorecard".
+
+On first run, a baseline is saved to `.devexp/health-baseline.json`. On subsequent runs, each dimension shows a trend indicator (↑ improving · → stable · ↓ degrading) compared to the previous baseline.
 
 ## Process
 
@@ -36,6 +38,14 @@ cat go.mod 2>/dev/null
 cat pyproject.toml 2>/dev/null
 cat Cargo.toml 2>/dev/null
 ```
+
+### 1.5. Load previous baseline (if exists)
+
+```bash
+cat .devexp/health-baseline.json 2>/dev/null
+```
+
+If the file exists, parse it as `BASELINE` — it contains the scores and summaries from the last run. Use it in Step 3 to compute trend indicators. If it doesn't exist, all trends will show `—` (no baseline) and a fresh one will be created.
 
 ### 2. Run health checks by dimension
 
@@ -176,14 +186,16 @@ Tech debt thresholds:
 
 ## Scorecard
 
-| Dimension | Status | Summary |
-|-----------|--------|---------|
-| Test Coverage | 🟢 Green / 🟡 Amber / 🔴 Red | [one-line summary, e.g., "83% overall coverage"] |
-| Security | 🟢 Green / 🟡 Amber / 🔴 Red | [e.g., "2 moderate npm vulnerabilities"] |
-| Dependencies | 🟢 Green / 🟡 Amber / 🔴 Red | [e.g., "express is 2 major versions behind"] |
-| Code Quality | 🟢 Green / 🟡 Amber / 🔴 Red | [e.g., "47 TODO comments, 3 files > 800 lines"] |
-| CI/CD | 🟢 Green / 🟡 Amber / 🔴 Red | [e.g., "CI passing, last release 12 days ago"] |
-| Tech Debt | 🟢 Green / 🟡 Amber / 🔴 Red | [e.g., "8 open tech-debt issues"] |
+| Dimension | Status | Trend | Summary |
+|-----------|--------|-------|---------|
+| Test Coverage | 🟢 Green / 🟡 Amber / 🔴 Red | ↑ / → / ↓ / — | [one-line summary, e.g., "83% overall coverage"] |
+| Security | 🟢 Green / 🟡 Amber / 🔴 Red | ↑ / → / ↓ / — | [e.g., "2 moderate npm vulnerabilities"] |
+| Dependencies | 🟢 Green / 🟡 Amber / 🔴 Red | ↑ / → / ↓ / — | [e.g., "express is 2 major versions behind"] |
+| Code Quality | 🟢 Green / 🟡 Amber / 🔴 Red | ↑ / → / ↓ / — | [e.g., "47 TODO comments, 3 files > 800 lines"] |
+| CI/CD | 🟢 Green / 🟡 Amber / 🔴 Red | ↑ / → / ↓ / — | [e.g., "CI passing, last release 12 days ago"] |
+| Tech Debt | 🟢 Green / 🟡 Amber / 🔴 Red | ↑ / → / ↓ / — | [e.g., "8 open tech-debt issues"] |
+
+Trend key: `↑` improving (was worse) · `→` stable (same status) · `↓` degrading (was better) · `—` no baseline
 
 ---
 
@@ -229,14 +241,54 @@ Tech debt thresholds:
 [List any checks that couldn't run due to missing tooling or N/A stack, and how to run them manually]
 ```
 
-### 4. Offer next steps
+### 4. Save snapshot
+
+After generating the scorecard, persist the current scores so future runs can show trends.
+
+```bash
+mkdir -p .devexp
+```
+
+Write `.devexp/health-baseline.json` with this structure:
+```json
+{
+  "date": "YYYY-MM-DD",
+  "commit": "<git rev-parse --short HEAD output>",
+  "scores": {
+    "test_coverage": "green|amber|red",
+    "security": "green|amber|red",
+    "dependencies": "green|amber|red",
+    "code_quality": "green|amber|red",
+    "ci_cd": "green|amber|red",
+    "tech_debt": "green|amber|red"
+  },
+  "summaries": {
+    "test_coverage": "<one-line summary>",
+    "security": "<one-line summary>",
+    "dependencies": "<one-line summary>",
+    "code_quality": "<one-line summary>",
+    "ci_cd": "<one-line summary>",
+    "tech_debt": "<one-line summary>"
+  }
+}
+```
+
+Then check whether `.devexp/health-baseline.json` is gitignored:
+```bash
+cat .gitignore 2>/dev/null | grep -q ".devexp/health-baseline.json" || echo "NOT_IGNORED"
+```
+
+If not already ignored, append `.devexp/health-baseline.json` to `.gitignore`. Teams that want to commit baselines for shared trend tracking can remove this entry manually.
+
+### 5. Offer next steps
 
 Based on the findings, suggest:
 - **Red security findings** → "Run the `security` agent for a full vulnerability audit"
-- **Red test coverage** → "Run the `test-gen` agent to generate tests for uncovered modules"
+- **Red or degrading (↓) test coverage** → "Run the `test-gen` agent to generate tests for uncovered modules"
 - **Red CI/CD** → "Run the `ci-cd` agent to debug and fix the pipeline"
 - **Many open tech-debt items** → "Run the `project-manager` agent to triage and schedule the backlog"
-- **Significantly outdated dependencies** → "Run the `migration` agent to plan the upgrade"
+- **Significantly outdated dependencies** → "Run the `dep-audit` agent for a full CVE and staleness report, then `migration` to plan the upgrade"
+- **Any dimension degraded since last baseline (↓)** → "This dimension has regressed since [BASELINE.date]. Consider running [relevant agent] to address it."
 
 ## Notes
 
