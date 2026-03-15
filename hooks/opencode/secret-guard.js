@@ -24,17 +24,29 @@ function isSecretFile(filePath) {
 export async function secretGuard(_ctx) {
   return {
     'tool.execute.before': async (input, output) => {
-      if (input.tool !== 'read') return;
-
-      // read tool uses filePath (camelCase) — confirmed from opencode source
-      const filePath = output.args?.filePath ?? '';
-      if (!filePath) return;
-
-      if (isSecretFile(filePath)) {
-        throw new Error(
-          `[devexp secret-guard] Blocked read of "${basename(filePath)}". ` +
-          `This file may contain secrets. If intentional, confirm with the user first.`
-        );
+      if (input.tool === 'read') {
+        const filePath = output.args?.filePath ?? '';
+        if (filePath && isSecretFile(filePath)) {
+          throw new Error(
+            `[devexp secret-guard] Blocked read of "${basename(filePath)}". ` +
+            `This file may contain secrets. If intentional, confirm with the user first.`
+          );
+        }
+      } else if (input.tool === 'bash') {
+        const cmd = output.args?.command ?? '';
+        if (!cmd) return;
+        // Tokenize and check each non-flag argument for secret file paths
+        const tokens = cmd.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
+        for (const token of tokens) {
+          if (token.startsWith('-')) continue;
+          const clean = token.replace(/^['"]|['"]$/g, '');
+          if (isSecretFile(clean)) {
+            throw new Error(
+              `[devexp secret-guard] Blocked bash access to "${basename(clean)}". ` +
+              `This file may contain secrets. If intentional, confirm with the user first.`
+            );
+          }
+        }
       }
     },
   };
