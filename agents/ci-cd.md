@@ -114,6 +114,15 @@ Produce a diagnosis:
 4. Verify the new step uses tooling that the runner image already has, or add a setup step
 5. For deployment steps: always add an environment protection check and require manual approval for production
 
+**When looking up GitHub Actions or platform-specific docs**, use **context7** first:
+
+```
+1. mcp__context7__resolve-library-id — search for "github actions", "docker", "kubernetes", or the specific tool
+2. mcp__context7__query-docs — query the action, configuration option, or feature you need
+```
+
+Use context7 for: verifying correct `with:` inputs for marketplace actions, checking current runner images and their pre-installed tools, and finding recommended patterns for caching, matrix builds, or deployment steps. Fall back to WebFetch for platform-specific pages not indexed by context7.
+
 **Standard steps to reference:**
 
 Test step (Node.js example):

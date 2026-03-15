@@ -518,13 +518,14 @@ install_mcps_claude() {
     info "Installing MCP servers (Claude Code)..."
     local count=0
 
-    python3 - "$registry" "$REPO_DIR/mcps/.env" "$($DRY_RUN && echo 1 || echo 0)" <<'PYEOF'
+    python3 - "$registry" "$REPO_DIR/mcps/.env" "$($DRY_RUN && echo 1 || echo 0)" "${SKIPPED_MCPS_FILE:-}" <<'PYEOF'
 import json, sys, subprocess, os
 
 with open(sys.argv[1]) as f:
     mcps = json.load(f)
-dotenv_path = sys.argv[2]
-dry_run     = sys.argv[3] == "1"
+dotenv_path      = sys.argv[2]
+dry_run          = sys.argv[3] == "1"
+skipped_mcps_file = sys.argv[4] if len(sys.argv) > 4 else ""
 
 # Load mcps/.env if it exists
 dotenv = {}
@@ -542,12 +543,15 @@ if os.path.exists(dotenv_path):
 merged_env = {**os.environ, **dotenv}
 
 for mcp in mcps:
-    name         = mcp['name']
-    command      = mcp['command']
-    args         = mcp.get('args', [])
-    scope        = mcp.get('scope', 'user')
-    env_vars     = mcp.get('env', {})
-    required_env = mcp.get('required_env', [])
+    name              = mcp['name']
+    transport         = mcp.get('transport', 'stdio')
+    url               = mcp.get('url', '')
+    command           = mcp.get('command', '')
+    args              = mcp.get('args', [])
+    scope             = mcp.get('scope', 'user')
+    env_vars          = mcp.get('env', {})
+    required_env      = mcp.get('required_env', [])
+    setup_instructions = mcp.get('setup_instructions', '')
 
     # Resolve env_vars: substitute from merged_env if value is empty
     resolved = {k: merged_env.get(k, v) for k, v in env_vars.items()}
@@ -558,17 +562,30 @@ for mcp in mcps:
 
     missing = [e for e in required_env if not merged_env.get(e)]
     if missing:
-        print(f"  [skip] {name} — missing env: {', '.join(missing)} (set in mcps/.env or shell)")
+        print(f"\n  \033[0;31m[REQUIRED]\033[0m {name} — missing required env vars:")
+        for key in missing:
+            print(f"    {key}=<your-value>")
+        if setup_instructions:
+            print()
+            for line in setup_instructions.split('\n'):
+                print(f"  {line}")
+        print(f"\n  {name} will not be available until these are set.\n")
+        if skipped_mcps_file:
+            with open(skipped_mcps_file, 'a') as f:
+                f.write(name + '\n')
         continue
 
-    # Build --env flags for claude mcp add
+    # Build --env flags for claude mcp add (stdio only)
     env_flags = []
     for k, v in resolved.items():
         env_flags += ['--env', f'{k}={v}']
 
     if dry_run:
-        env_preview = ' '.join(f'--env {k}=***' for k in resolved) if resolved else ''
-        print(f"  [dry-run] claude mcp add --scope {scope} {env_preview} {name} -- {command} {' '.join(args)}")
+        if transport in ('sse', 'http'):
+            print(f"  [dry-run] claude mcp add --scope {scope} --transport {transport} {name} {url}")
+        else:
+            env_preview = ' '.join(f'--env {k}=***' for k in resolved) if resolved else ''
+            print(f"  [dry-run] claude mcp add --scope {scope} {env_preview} {name} -- {command} {' '.join(args)}")
         continue
 
     result = subprocess.run(['claude', 'mcp', 'list'], capture_output=True, text=True)
@@ -576,10 +593,16 @@ for mcp in mcps:
         print(f"  [skip] {name} — already installed")
         continue
 
-    r = subprocess.run(
-        ['claude', 'mcp', 'add', '--scope', scope] + env_flags + [name, '--', command] + args,
-        capture_output=True, text=True
-    )
+    if transport in ('sse', 'http'):
+        r = subprocess.run(
+            ['claude', 'mcp', 'add', '--scope', scope, '--transport', transport, name, url],
+            capture_output=True, text=True
+        )
+    else:
+        r = subprocess.run(
+            ['claude', 'mcp', 'add', '--scope', scope] + env_flags + [name, '--', command] + args,
+            capture_output=True, text=True
+        )
     if r.returncode == 0:
         print(f"  \033[0;32m+\033[0m {name}")
     else:
@@ -596,14 +619,15 @@ install_mcps_opencode() {
     local config_path="$HOME/.config/opencode/config.json"
     info "Installing MCP servers (opencode → $config_path)..."
 
-    python3 - "$registry" "$config_path" "$REPO_DIR/mcps/.env" "$($DRY_RUN && echo 1 || echo 0)" <<'PYEOF'
+    python3 - "$registry" "$config_path" "$REPO_DIR/mcps/.env" "$($DRY_RUN && echo 1 || echo 0)" "${SKIPPED_MCPS_FILE:-}" <<'PYEOF'
 import json, sys, os
 
 with open(sys.argv[1]) as f:
     mcps = json.load(f)
-config_path = sys.argv[2]
-dotenv_path = sys.argv[3]
-dry_run     = sys.argv[4] == "1"
+config_path       = sys.argv[2]
+dotenv_path       = sys.argv[3]
+dry_run           = sys.argv[4] == "1"
+skipped_mcps_file = sys.argv[5] if len(sys.argv) > 5 else ""
 
 # Load mcps/.env if it exists
 dotenv = {}
@@ -633,11 +657,14 @@ if 'mcp' not in config:
 
 added = []
 for mcp in mcps:
-    name         = mcp['name']
-    command      = mcp['command']
-    args         = mcp.get('args', [])
-    env_vars     = mcp.get('env', {})
-    required_env = mcp.get('required_env', [])
+    name               = mcp['name']
+    transport          = mcp.get('transport', 'stdio')
+    url                = mcp.get('url', '')
+    command            = mcp.get('command', '')
+    args               = mcp.get('args', [])
+    env_vars           = mcp.get('env', {})
+    required_env       = mcp.get('required_env', [])
+    setup_instructions = mcp.get('setup_instructions', '')
 
     # Resolve env values from .env / shell
     resolved = {k: merged_env.get(k, v) for k, v in env_vars.items()}
@@ -647,16 +674,28 @@ for mcp in mcps:
 
     missing = [e for e in required_env if not merged_env.get(e)]
     if missing:
-        print(f"  [skip] {name} — missing env: {', '.join(missing)} (set in mcps/.env or shell)")
+        print(f"\n  \033[0;31m[REQUIRED]\033[0m {name} — missing required env vars:")
+        for key in missing:
+            print(f"    {key}=<your-value>")
+        if setup_instructions:
+            print()
+            for line in setup_instructions.split('\n'):
+                print(f"  {line}")
+        print(f"\n  {name} will not be available until these are set.\n")
+        if skipped_mcps_file:
+            with open(skipped_mcps_file, 'a') as f:
+                f.write(name + '\n')
         continue
 
-    entry = {'type': 'local', 'command': [command] + args}
-    if resolved:
-        entry['env'] = resolved
+    if transport in ('sse', 'http'):
+        entry = {'type': 'remote', 'url': url}
+    else:
+        entry = {'type': 'local', 'command': [command] + args}
+        if resolved:
+            entry['env'] = resolved
 
     if dry_run:
-        env_preview = f" (env: {', '.join(resolved.keys())})" if resolved else ''
-        print(f"  [dry-run] add mcp.{name} to {config_path}{env_preview}")
+        print(f"  [dry-run] add mcp.{name} ({transport}) to {config_path}")
         continue
 
     if name in config['mcp']:
@@ -970,7 +1009,10 @@ for mcp in mcps:
 
     missing = [e for e in required_env if not merged_env.get(e)]
     if missing:
-        print(f"  [skip] {name} — missing env: {', '.join(missing)}")
+        print(f"\n  \033[0;31m[REQUIRED]\033[0m {name} — missing required env vars:")
+        for key in missing:
+            print(f"    {key}=<your-value>")
+        print(f"\n  {name} will not be available until these are set.\n")
         continue
 
     entry = {'type': 'local', 'command': [command] + args}
@@ -998,9 +1040,167 @@ PYEOF
     echo ""
 }
 
+# ── Docker services ───────────────────────────────────────────────────────────
+start_docker_services() {
+    local registry="$REPO_DIR/mcps/registry.json"
+    [[ -f "$registry" ]] || return 0
+    command -v docker &>/dev/null || return 0
+
+    # Collect MCPs that have a docker_compose field and all required_env satisfied
+    local services
+    services=$(python3 - "$registry" "$REPO_DIR/mcps/.env" <<'PYEOF'
+import json, sys, os
+
+with open(sys.argv[1]) as f:
+    mcps = json.load(f)
+dotenv_path = sys.argv[2]
+
+dotenv = {}
+if os.path.exists(dotenv_path):
+    with open(dotenv_path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                k, _, v = line.partition('=')
+                dotenv[k.strip()] = v.strip()
+
+merged_env = {**os.environ, **dotenv}
+
+for mcp in mcps:
+    dc = mcp.get('docker_compose')
+    if not dc:
+        continue
+    required_env = mcp.get('required_env', [])
+    missing = [e for e in required_env if not merged_env.get(e)]
+    if missing:
+        continue
+    print(f"{mcp['name']}|{dc}")
+PYEOF
+    )
+
+    [[ -z "$services" ]] && return 0
+
+    info "Starting Docker services..."
+
+    while IFS='|' read -r name compose_rel; do
+        local compose_file="$REPO_DIR/$compose_rel"
+        [[ -f "$compose_file" ]] || continue
+
+        # Generate ov.conf for openviking before starting container
+        if [[ "$name" == "openviking" ]]; then
+            _generate_openviking_conf
+        fi
+
+        if $DRY_RUN; then
+            dryrun "docker compose -f $compose_rel up -d"
+            continue
+        fi
+
+        if docker compose -f "$compose_file" ps --quiet 2>/dev/null | grep -q .; then
+            echo -e "  ${YELLOW}[running]${RESET} $name — already up"
+        else
+            echo -e "  Starting ${BOLD}$name${RESET}..."
+            docker compose -f "$compose_file" up -d \
+                && echo -e "  ${GREEN}+${RESET} $name started" \
+                || warn "$name — docker compose failed (check: docker compose -f $compose_rel logs)"
+        fi
+    done <<< "$services"
+
+    echo ""
+}
+
+_generate_openviking_conf() {
+    local conf_dir="$HOME/.openviking"
+    local conf_file="$conf_dir/ov.conf"
+
+    [[ -f "$conf_file" ]] && return 0  # already exists, don't overwrite
+
+    # Load required VLM vars from shell or mcps/.env
+    local dotenv_file="$REPO_DIR/mcps/.env"
+    local vlm_key="${OPENVIKING_VLM_API_KEY:-}"
+    local vlm_model="${OPENVIKING_VLM_MODEL:-}"
+
+    if [[ -f "$dotenv_file" ]]; then
+        _val() { grep -E "^$1=" "$dotenv_file" | tail -1 | cut -d= -f2-; }
+        [[ -z "$vlm_key"   ]] && vlm_key="$(_val OPENVIKING_VLM_API_KEY)"
+        [[ -z "$vlm_model" ]] && vlm_model="$(_val OPENVIKING_VLM_MODEL)"
+    fi
+
+    if [[ -z "$vlm_key" || -z "$vlm_model" ]]; then
+        warn "openviking: skipping ov.conf generation — OPENVIKING_VLM_API_KEY and OPENVIKING_VLM_MODEL must be set in mcps/.env"
+        return 0
+    fi
+
+    mkdir -p "$conf_dir"
+    python3 - "$conf_file" "$vlm_key" "$vlm_model" <<'PYEOF'
+import json, sys
+
+conf_file = sys.argv[1]
+vlm_key   = sys.argv[2]
+vlm_model = sys.argv[3]
+
+conf = {
+    "storage": {
+        "workspace": "/app/data"
+    },
+    "log": {
+        "level": "INFO",
+        "output": "stdout"
+    },
+    "embedding": {
+        "dense": {
+            "api_base":  "http://jina-embed:80/v1",
+            "api_key":   "local",
+            "provider":  "openai",
+            "dimension": 768,
+            "model":     "jinaai/jina-embeddings-v2-base-en"
+        }
+    },
+    "vlm": {
+        "provider": "litellm",
+        "api_key":  vlm_key,
+        "model":    vlm_model
+    }
+}
+
+with open(conf_file, 'w') as f:
+    json.dump(conf, f, indent=2)
+
+print(f"  Generated: {conf_file}")
+PYEOF
+}
+
 # ── Run ───────────────────────────────────────────────────────────────────────
+SKIPPED_MCPS_FILE="$(mktemp)"
+export SKIPPED_MCPS_FILE
+
+start_docker_services
 $INSTALL_CLAUDE   && install_claude
 $INSTALL_OPENCODE && install_opencode
 
-echo -e "${GREEN}${BOLD}All done.${RESET}"
-echo ""
+# ── Final status ──────────────────────────────────────────────────────────────
+skipped_mcps=()
+if [[ -s "$SKIPPED_MCPS_FILE" ]]; then
+    while IFS= read -r name; do
+        [[ -n "$name" ]] && skipped_mcps+=("$name")
+    done < "$SKIPPED_MCPS_FILE"
+fi
+rm -f "$SKIPPED_MCPS_FILE"
+
+if [[ ${#skipped_mcps[@]} -gt 0 ]]; then
+    # Deduplicate
+    IFS=$'\n' read -r -d '' -a skipped_mcps < <(printf '%s\n' "${skipped_mcps[@]}" | sort -u && printf '\0') || true
+    echo -e "${YELLOW}${BOLD}Install incomplete.${RESET}"
+    echo ""
+    warn "The following MCP(s) were not installed due to missing required env vars:"
+    for name in "${skipped_mcps[@]}"; do
+        echo -e "  ${RED}✗${RESET} $name"
+    done
+    echo ""
+    warn "Set the missing vars in ${BOLD}mcps/.env${RESET} and re-run ${BOLD}./install.sh${RESET}"
+    echo ""
+    exit 1
+else
+    echo -e "${GREEN}${BOLD}All done.${RESET}"
+    echo ""
+fi

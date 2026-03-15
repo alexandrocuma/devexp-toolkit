@@ -191,7 +191,9 @@ MCP servers extend Claude's capabilities with external tools (documentation look
 
 ### Registry
 
-MCP servers are declared in `mcps/registry.json`:
+MCP servers are declared in `mcps/registry.json`. Two transport types are supported: **stdio** (default) and **HTTP/SSE**.
+
+**stdio MCP (default):**
 
 ```json
 [
@@ -207,21 +209,44 @@ MCP servers are declared in `mcps/registry.json`:
 ]
 ```
 
+**HTTP/SSE MCP (for locally-hosted servers):**
+
+```json
+[
+  {
+    "name": "openviking",
+    "description": "Context database for AI agents — tiered memory, semantic retrieval, session memory extraction",
+    "transport": "sse",
+    "url": "http://localhost:1933/mcp",
+    "docker_compose": "mcps/openviking/docker-compose.yml",
+    "scope": "user",
+    "env": {},
+    "required_env": ["OPENVIKING_VLM_API_KEY", "OPENVIKING_VLM_MODEL"],
+    "setup_instructions": "Human-readable setup guidance shown when required_env keys are missing"
+  }
+]
+```
+
 | Field | Description |
 |-------|-------------|
 | `name` | Unique MCP identifier |
 | `description` | What this MCP provides |
-| `command` | Executable to run |
-| `args` | Arguments passed to the command |
+| `transport` | `"sse"` for HTTP/SSE transport; omit for stdio (default) |
+| `url` | Server URL — required when `transport` is `"sse"` |
+| `command` | Executable to run — used for stdio MCPs |
+| `args` | Arguments passed to the command — used for stdio MCPs |
+| `docker_compose` | Path to a Docker Compose file (relative to repo root); installer auto-starts these services |
 | `scope` | `"user"` (global) or `"project"` (Claude Code only) |
 | `env` | Static environment variables to pass |
-| `required_env` | Env vars that must be set — MCP is skipped with a warning if missing |
+| `required_env` | Env vars that must be set — installer shows a loud `[REQUIRED]` warning with setup instructions if missing |
+| `setup_instructions` | Human-readable text shown when `required_env` keys are absent |
 
 ### MCPs in This Repo
 
-| Name | Description |
-|------|-------------|
-| context7 | Up-to-date library documentation and code examples for any package |
+| Name | Transport | Description |
+|------|-----------|-------------|
+| context7 | stdio | Up-to-date library documentation and code examples for any package |
+| openviking | HTTP/SSE | Context database for AI agents — tiered memory (L0/L1/L2), semantic retrieval, and session-based memory extraction via a filesystem paradigm (`viking://`). Uses local Jina embeddings (no key needed) and a configurable VLM via litellm (Claude, Kimi, DeepSeek). |
 
 ### API Keys and Secrets
 
@@ -236,15 +261,27 @@ cp mcps/.env.example mcps/.env
 The installer loads `mcps/.env` and:
 - Passes values as `--env KEY=VALUE` flags to `claude mcp add` (stored permanently in Claude Code's MCP config)
 - Writes them into the `env` field in opencode's `config.json`
-- Skips any MCP whose `required_env` keys are missing from both the file and the shell, with a clear warning
+- Shows a loud red `[REQUIRED]` warning with the MCP's `setup_instructions` for any MCP whose `required_env` keys are missing from both the file and the shell — the MCP is skipped until the keys are provided
 
 `mcps/.env.example` is committed to the repo and documents what keys are expected. Never commit `mcps/.env`.
+
+### Docker-backed MCPs
+
+MCPs with a `docker_compose` field run as local Docker services. The installer automatically starts them:
+
+```bash
+# installer runs this for each docker_compose MCP:
+docker compose -f <docker_compose_path> up -d
+```
+
+The `docker_compose` file is also generated or configured from env vars where needed (e.g. openviking generates `~/.openviking/ov.conf` from `OPENVIKING_VLM_API_KEY` and `OPENVIKING_VLM_MODEL` before starting).
 
 ### Adding a New MCP
 
 1. Add an entry to `mcps/registry.json`
-2. If it needs secrets, add the key names to `required_env` and document them in `mcps/.env.example`
-3. Run `./install.sh` to register it (or `--dry-run` to preview)
+2. If it needs secrets, add the key names to `required_env`, set `setup_instructions`, and document the keys in `mcps/.env.example`
+3. If it runs as a local Docker service, add a `docker_compose` field pointing to the Compose file and create the file under `mcps/<name>/docker-compose.yml`
+4. Run `./install.sh` to register it (or `--dry-run` to preview)
 
 ### CLI compatibility
 

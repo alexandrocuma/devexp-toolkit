@@ -91,11 +91,12 @@ Hook configuration lives in `hooks/registry.json`. Each hook is a separate file 
 
 MCP (Model Context Protocol) servers extend Claude with additional tool capabilities. devexp manages a registry of curated MCP servers and installs them alongside agents, skills, and hooks.
 
-| MCP | Description |
-|-----|-------------|
-| **context7** | Up-to-date library documentation and code examples for any package — fetched at query time, not from training data. |
+| MCP | Transport | Description |
+|-----|-----------|-------------|
+| **context7** | stdio | Up-to-date library documentation and code examples for any package — fetched at query time, not from training data. |
+| **openviking** | HTTP/SSE | Context database for AI agents — tiered memory (L0/L1/L2), semantic retrieval, and session-based memory extraction via a filesystem paradigm (`viking://`). Uses a local Jina embedding model (no API key needed) and a configurable VLM via litellm (Claude, Kimi, DeepSeek). Runs as a Docker Compose service started automatically by the installer. |
 
-MCP configuration lives in `mcps/registry.json`. API keys and secrets go in `mcps/.env` (gitignored).
+MCP configuration lives in `mcps/registry.json`. API keys and secrets go in `mcps/.env` (gitignored). MCPs with a `docker_compose` field are started automatically by the installer via `docker compose up -d`.
 
 ---
 
@@ -323,7 +324,7 @@ See `docs/development/hook-authoring-guide.md` for a full guide.
 
 ## Adding a New MCP
 
-1. Add an entry to `mcps/registry.json`:
+1. Add an entry to `mcps/registry.json`. For a stdio MCP:
    ```json
    {
      "name": "my-mcp",
@@ -335,10 +336,26 @@ See `docs/development/hook-authoring-guide.md` for a full guide.
      "required_env": []
    }
    ```
+   For an HTTP/SSE MCP (locally-hosted server):
+   ```json
+   {
+     "name": "my-mcp",
+     "description": "What this MCP does",
+     "transport": "sse",
+     "url": "http://localhost:PORT/mcp",
+     "docker_compose": "mcps/my-mcp/docker-compose.yml",
+     "scope": "user",
+     "env": {},
+     "required_env": ["MY_MCP_API_KEY"],
+     "setup_instructions": "Set MY_MCP_API_KEY in mcps/.env and re-run ./install.sh"
+   }
+   ```
 
-2. If the MCP requires an API key, add the key name to `required_env` and document it in `mcps/.env.example`.
+2. If the MCP requires an API key, add the key name to `required_env`, add `setup_instructions`, and document the key in `mcps/.env.example`.
 
-3. Run `./install.sh` — the MCP is registered with the CLI automatically.
+3. If the MCP runs as a Docker service, add a `docker_compose` field and create `mcps/<name>/docker-compose.yml`. The installer will run `docker compose up -d` automatically.
+
+4. Run `./install.sh` — the MCP is registered with the CLI automatically.
 
 See `docs/development/mcp-guide.md` for a full guide to the registry format and secrets handling.
 
@@ -418,7 +435,9 @@ devexp/
 │       └── format-on-save.js
 ├── mcps/                       # MCP server registry and secrets
 │   ├── registry.json           # Curated MCP server list
-│   └── .env.example            # Template for API keys (copy to .env)
+│   ├── .env.example            # Template for API keys (copy to .env)
+│   └── openviking/             # Docker Compose config for the OpenViking MCP
+│       └── docker-compose.yml
 ├── templates/                  # Starting points for new agents and skills
 │   ├── agent-template.md
 │   └── skill-template.md
