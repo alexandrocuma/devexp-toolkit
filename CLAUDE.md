@@ -214,14 +214,14 @@ MCP servers are declared in `mcps/registry.json`. Two transport types are suppor
 ```json
 [
   {
-    "name": "openviking",
-    "description": "Context database for AI agents — tiered memory, semantic retrieval, session memory extraction",
+    "name": "my-mcp",
+    "description": "Short description of what this MCP provides",
     "transport": "sse",
-    "url": "http://localhost:1933/mcp",
-    "docker_compose": "mcps/openviking/docker-compose.yml",
+    "url": "http://localhost:1234/mcp",
+    "docker_compose": "mcps/my-mcp/docker-compose.yml",
     "scope": "user",
     "env": {},
-    "required_env": ["OPENVIKING_VLM_API_KEY", "OPENVIKING_VLM_MODEL"],
+    "required_env": ["MY_MCP_API_KEY"],
     "setup_instructions": "Human-readable setup guidance shown when required_env keys are missing"
   }
 ]
@@ -246,7 +246,6 @@ MCP servers are declared in `mcps/registry.json`. Two transport types are suppor
 | Name | Transport | Description |
 |------|-----------|-------------|
 | context7 | stdio | Up-to-date library documentation and code examples for any package |
-| openviking | HTTP/SSE | Context database for AI agents — tiered memory (L0/L1/L2), semantic retrieval, and session-based memory extraction via a filesystem paradigm (`viking://`). Uses local Jina embeddings (no key needed) and a configurable VLM via litellm (Claude, Kimi, DeepSeek). |
 
 ### API Keys and Secrets
 
@@ -273,8 +272,6 @@ MCPs with a `docker_compose` field run as local Docker services. The installer a
 # installer runs this for each docker_compose MCP:
 docker compose -f <docker_compose_path> up -d
 ```
-
-The `docker_compose` file is also generated or configured from env vars where needed (e.g. openviking generates `~/.openviking/ov.conf` from `OPENVIKING_VLM_API_KEY` and `OPENVIKING_VLM_MODEL` before starting).
 
 ### Adding a New MCP
 

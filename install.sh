@@ -519,7 +519,7 @@ install_mcps_claude() {
     local count=0
 
     python3 - "$registry" "$REPO_DIR/mcps/.env" "$($DRY_RUN && echo 1 || echo 0)" "${SKIPPED_MCPS_FILE:-}" <<'PYEOF'
-import json, sys, subprocess, os
+import json, sys, subprocess, os, re
 
 with open(sys.argv[1]) as f:
     mcps = json.load(f)
@@ -552,6 +552,7 @@ for mcp in mcps:
     env_vars          = mcp.get('env', {})
     required_env      = mcp.get('required_env', [])
     setup_instructions = mcp.get('setup_instructions', '')
+    headers           = mcp.get('headers', {})
 
     # Resolve env_vars: substitute from merged_env if value is empty
     resolved = {k: merged_env.get(k, v) for k, v in env_vars.items()}
@@ -559,6 +560,11 @@ for mcp in mcps:
     for key in required_env:
         if key in merged_env and key not in resolved:
             resolved[key] = merged_env[key]
+
+    # Resolve ${VAR} patterns in header values
+    def resolve_str(s):
+        return re.sub(r'\$\{(\w+)\}', lambda m: merged_env.get(m.group(1), ''), s)
+    resolved_headers = {k: resolve_str(v) for k, v in headers.items()}
 
     missing = [e for e in required_env if not merged_env.get(e)]
     if missing:
@@ -580,9 +586,15 @@ for mcp in mcps:
     for k, v in resolved.items():
         env_flags += ['--env', f'{k}={v}']
 
+    # Build -H flags for SSE/HTTP MCPs
+    header_flags = []
+    for k, v in resolved_headers.items():
+        header_flags += ['-H', f'{k}: {v}']
+
     if dry_run:
         if transport in ('sse', 'http'):
-            print(f"  [dry-run] claude mcp add --scope {scope} --transport {transport} {name} {url}")
+            h_preview = ' '.join(f'-H "{k}: ***"' for k in resolved_headers) if resolved_headers else ''
+            print(f"  [dry-run] claude mcp add --scope {scope} --transport {transport} {h_preview} {name} {url}")
         else:
             env_preview = ' '.join(f'--env {k}=***' for k in resolved) if resolved else ''
             print(f"  [dry-run] claude mcp add --scope {scope} {env_preview} {name} -- {command} {' '.join(args)}")
@@ -595,7 +607,7 @@ for mcp in mcps:
 
     if transport in ('sse', 'http'):
         r = subprocess.run(
-            ['claude', 'mcp', 'add', '--scope', scope, '--transport', transport, name, url],
+            ['claude', 'mcp', 'add', '--scope', scope, '--transport', transport] + header_flags + [name, url],
             capture_output=True, text=True
         )
     else:
@@ -620,7 +632,7 @@ install_mcps_opencode() {
     info "Installing MCP servers (opencode → $config_path)..."
 
     python3 - "$registry" "$config_path" "$REPO_DIR/mcps/.env" "$($DRY_RUN && echo 1 || echo 0)" "${SKIPPED_MCPS_FILE:-}" <<'PYEOF'
-import json, sys, os
+import json, sys, os, re
 
 with open(sys.argv[1]) as f:
     mcps = json.load(f)
@@ -665,12 +677,18 @@ for mcp in mcps:
     env_vars           = mcp.get('env', {})
     required_env       = mcp.get('required_env', [])
     setup_instructions = mcp.get('setup_instructions', '')
+    headers            = mcp.get('headers', {})
 
     # Resolve env values from .env / shell
     resolved = {k: merged_env.get(k, v) for k, v in env_vars.items()}
     for key in required_env:
         if key in merged_env and key not in resolved:
             resolved[key] = merged_env[key]
+
+    # Resolve ${VAR} patterns in header values
+    def resolve_str(s):
+        return re.sub(r'\$\{(\w+)\}', lambda m: merged_env.get(m.group(1), ''), s)
+    resolved_headers = {k: resolve_str(v) for k, v in headers.items()}
 
     missing = [e for e in required_env if not merged_env.get(e)]
     if missing:
@@ -689,6 +707,8 @@ for mcp in mcps:
 
     if transport in ('sse', 'http'):
         entry = {'type': 'remote', 'url': url}
+        if resolved_headers:
+            entry['headers'] = resolved_headers
     else:
         entry = {'type': 'local', 'command': [command] + args}
         if resolved:
@@ -1086,88 +1106,25 @@ PYEOF
         local compose_file="$REPO_DIR/$compose_rel"
         [[ -f "$compose_file" ]] || continue
 
-        # Generate ov.conf for openviking before starting container
-        if [[ "$name" == "openviking" ]]; then
-            _generate_openviking_conf
-        fi
+        # Per-MCP pre-start setup
+        local compose_profile_flag=""
 
         if $DRY_RUN; then
-            dryrun "docker compose -f $compose_rel up -d"
+            dryrun "docker compose -f $compose_rel $compose_profile_flag up -d"
             continue
         fi
 
-        if docker compose -f "$compose_file" ps --quiet 2>/dev/null | grep -q .; then
+        if docker compose -f "$compose_file" $compose_profile_flag ps --quiet 2>/dev/null | grep -q .; then
             echo -e "  ${YELLOW}[running]${RESET} $name — already up"
         else
             echo -e "  Starting ${BOLD}$name${RESET}..."
-            docker compose -f "$compose_file" up -d \
+            docker compose -f "$compose_file" $compose_profile_flag up -d \
                 && echo -e "  ${GREEN}+${RESET} $name started" \
                 || warn "$name — docker compose failed (check: docker compose -f $compose_rel logs)"
         fi
     done <<< "$services"
 
     echo ""
-}
-
-_generate_openviking_conf() {
-    local conf_dir="$HOME/.openviking"
-    local conf_file="$conf_dir/ov.conf"
-
-    [[ -f "$conf_file" ]] && return 0  # already exists, don't overwrite
-
-    # Load required VLM vars from shell or mcps/.env
-    local dotenv_file="$REPO_DIR/mcps/.env"
-    local vlm_key="${OPENVIKING_VLM_API_KEY:-}"
-    local vlm_model="${OPENVIKING_VLM_MODEL:-}"
-
-    if [[ -f "$dotenv_file" ]]; then
-        _val() { grep -E "^$1=" "$dotenv_file" | tail -1 | cut -d= -f2-; }
-        [[ -z "$vlm_key"   ]] && vlm_key="$(_val OPENVIKING_VLM_API_KEY)"
-        [[ -z "$vlm_model" ]] && vlm_model="$(_val OPENVIKING_VLM_MODEL)"
-    fi
-
-    if [[ -z "$vlm_key" || -z "$vlm_model" ]]; then
-        warn "openviking: skipping ov.conf generation — OPENVIKING_VLM_API_KEY and OPENVIKING_VLM_MODEL must be set in mcps/.env"
-        return 0
-    fi
-
-    mkdir -p "$conf_dir"
-    python3 - "$conf_file" "$vlm_key" "$vlm_model" <<'PYEOF'
-import json, sys
-
-conf_file = sys.argv[1]
-vlm_key   = sys.argv[2]
-vlm_model = sys.argv[3]
-
-conf = {
-    "storage": {
-        "workspace": "/app/data"
-    },
-    "log": {
-        "level": "INFO",
-        "output": "stdout"
-    },
-    "embedding": {
-        "dense": {
-            "api_base":  "http://jina-embed:80/v1",
-            "api_key":   "local",
-            "provider":  "openai",
-            "dimension": 768,
-            "model":     "jinaai/jina-embeddings-v2-base-en"
-        }
-    },
-    "vlm": {
-        "provider": "litellm",
-        "api_key":  vlm_key,
-        "model":    vlm_model
-    }
-}
-
-with open(conf_file, 'w') as f:
-    json.dump(conf, f, indent=2)
-
-print(f"  Generated: {conf_file}")
-PYEOF
 }
 
 # ── Run ───────────────────────────────────────────────────────────────────────

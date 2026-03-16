@@ -94,7 +94,6 @@ MCP (Model Context Protocol) servers extend Claude with additional tool capabili
 | MCP | Transport | Description |
 |-----|-----------|-------------|
 | **context7** | stdio | Up-to-date library documentation and code examples for any package — fetched at query time, not from training data. |
-| **openviking** | HTTP/SSE | Context database for AI agents — tiered memory (L0/L1/L2), semantic retrieval, and session-based memory extraction via a filesystem paradigm (`viking://`). Uses a local Jina embedding model (no API key needed) and a configurable VLM via litellm (Claude, Kimi, DeepSeek). Runs as a Docker Compose service started automatically by the installer. |
 
 MCP configuration lives in `mcps/registry.json`. API keys and secrets go in `mcps/.env` (gitignored). MCPs with a `docker_compose` field are started automatically by the installer via `docker compose up -d`.
 
@@ -435,9 +434,7 @@ devexp/
 │       └── format-on-save.js
 ├── mcps/                       # MCP server registry and secrets
 │   ├── registry.json           # Curated MCP server list
-│   ├── .env.example            # Template for API keys (copy to .env)
-│   └── openviking/             # Docker Compose config for the OpenViking MCP
-│       └── docker-compose.yml
+│   └── .env.example            # Template for API keys (copy to .env)
 ├── templates/                  # Starting points for new agents and skills
 │   ├── agent-template.md
 │   └── skill-template.md

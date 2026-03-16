@@ -7,16 +7,5 @@
     "scope": "user",
     "env": {},
     "required_env": []
-  },
-  {
-    "name": "openviking",
-    "description": "Context database for AI agents — tiered memory (L0/L1/L2), semantic retrieval, and automatic session-based memory extraction via a filesystem paradigm (viking://)",
-    "transport": "sse",
-    "url": "http://localhost:1933/mcp",
-    "docker_compose": "mcps/openviking/docker-compose.yml",
-    "scope": "user",
-    "env": {},
-    "required_env": ["OPENVIKING_VLM_API_KEY", "OPENVIKING_VLM_MODEL"],
-    "setup_instructions": "OpenViking uses a local Jina embedding model (no key needed).\nSet your VLM provider API key and model in mcps/.env:\n\n  OPENVIKING_VLM_API_KEY=your-key\n  OPENVIKING_VLM_MODEL=claude-sonnet-4-6\n\nSupported models (litellm format):\n  Claude   -> claude-sonnet-4-6\n  Kimi     -> moonshot/kimi-k2.5\n  DeepSeek -> deepseek/deepseek-chat\n\nThen re-run: ./install.sh"
   }
 ]
