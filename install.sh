@@ -1104,8 +1104,9 @@ _setup_jina_pip() {
     python_bin=$(which python3.11 2>/dev/null || which python3 2>/dev/null)
     if $DRY_RUN; then
         dryrun "$python_bin -m venv $venv_dir"
-    elif [[ ! -x "$python" ]]; then
+    elif [[ ! -x "$python" || ! -x "$pip" ]]; then
         echo -e "  Creating Jina venv at ${BOLD}$venv_dir${RESET} (using $python_bin)..."
+        rm -rf "$venv_dir"
         "$python_bin" -m venv "$venv_dir" \
             || { warn "jina: failed to create venv"; return 1; }
         echo -e "  ${GREEN}+${RESET} venv created"
@@ -1284,11 +1285,12 @@ _setup_openviking() {
         rm -f "$pid_file"
     fi
 
-    # 1. Create venv if it doesn't exist
+    # 1. Create venv if it doesn't exist or is broken (missing pip)
     if $DRY_RUN; then
         dryrun "python3 -m venv $venv_dir"
-    elif [[ ! -x "$python" ]]; then
+    elif [[ ! -x "$python" || ! -x "$pip" ]]; then
         echo -e "  Creating venv at ${BOLD}$venv_dir${RESET}..."
+        rm -rf "$venv_dir"
         python3 -m venv "$venv_dir" \
             || { warn "openviking: failed to create venv"; return 1; }
         echo -e "  ${GREEN}+${RESET} venv created"
