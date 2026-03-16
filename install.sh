@@ -14,6 +14,7 @@ DRY_RUN=false
 SELECTED_MODEL=""
 REINSTALL_OPENVIKING=false
 REINSTALL_JINA=false
+MCPS_ONLY=false
 for arg in "$@"; do
     case "$arg" in
         --dry-run|-n)           DRY_RUN=true ;;
@@ -21,12 +22,14 @@ for arg in "$@"; do
         --model)                shift; SELECTED_MODEL="$1" ;;
         --reinstall-openviking) REINSTALL_OPENVIKING=true ;;
         --reinstall-jina)       REINSTALL_JINA=true ;;
+        --mcps-only)            MCPS_ONLY=true ;;
         --help|-h)
-            echo "Usage: ./install.sh [--dry-run|-n] [--model <alias|model-id>] [--reinstall-openviking] [--reinstall-jina]"
+            echo "Usage: ./install.sh [--dry-run|-n] [--model <alias|model-id>] [--reinstall-openviking] [--reinstall-jina] [--mcps-only]"
             echo "  --dry-run, -n           Preview what would be installed without making changes"
             echo "  --model <value>         Override model for all agents (optional — agents inherit CLI default if omitted)"
             echo "  --reinstall-openviking  Wipe ~/.openviking/venv and reinstall from scratch"
             echo "  --reinstall-jina        Wipe Jina embeddings server and reinstall from scratch"
+            echo "  --mcps-only             Only register MCP servers — skip agents, skills, and hooks"
             echo ""
             echo "  Aliases:"
             echo "    Anthropic : sonnet, opus, haiku"
@@ -209,6 +212,16 @@ install_claude() {
     info "Installing for Claude Code..."
     echo ""
 
+    if $MCPS_ONLY; then
+        info "MCPs only — skipping agents, skills, and hooks."
+        echo ""
+        install_mcps_claude
+        install_extra_mcps_claude
+        success "Claude Code MCP installation complete."
+        echo ""
+        return 0
+    fi
+
     run_mkdir "$AGENTS_TARGET" || die "Failed to create $AGENTS_TARGET"
     run_mkdir "$SKILLS_TARGET"  || die "Failed to create $SKILLS_TARGET"
 
@@ -383,6 +396,16 @@ install_opencode() {
 
     info "Installing for opencode..."
     echo ""
+
+    if $MCPS_ONLY; then
+        info "MCPs only — skipping agents, skills, and hooks."
+        echo ""
+        install_mcps_opencode
+        install_extra_mcps_opencode
+        success "opencode MCP installation complete."
+        echo ""
+        return 0
+    fi
 
     command -v python3 &>/dev/null || die "python3 is required for opencode install (used for frontmatter transformation)"
 
@@ -1076,35 +1099,41 @@ _setup_jina_pip() {
     local python="$venv_dir/bin/python"
     local pip="$venv_dir/bin/pip"
 
-    # 1. Create venv
+    # 1. Create venv — use Python 3.11 for compatibility with infinity-emb/optimum
+    local python_bin
+    python_bin=$(which python3.11 2>/dev/null || which python3 2>/dev/null)
     if $DRY_RUN; then
-        dryrun "python3 -m venv $venv_dir"
+        dryrun "$python_bin -m venv $venv_dir"
     elif [[ ! -x "$python" ]]; then
-        echo -e "  Creating Jina venv at ${BOLD}$venv_dir${RESET}..."
-        python3 -m venv "$venv_dir" \
+        echo -e "  Creating Jina venv at ${BOLD}$venv_dir${RESET} (using $python_bin)..."
+        "$python_bin" -m venv "$venv_dir" \
             || { warn "jina: failed to create venv"; return 1; }
         echo -e "  ${GREEN}+${RESET} venv created"
     fi
 
-    # 2. Install infinity-emb with ONNX backend (lighter than torch, no Rust needed)
+    # 2. Install infinity-emb (torch backend — avoids optimum.bettertransformer compat issues)
+    # click is pinned to <8.2 separately after infinity-emb resolves its own typer version,
+    # because click 8.3+ added stricter secondary-flag validation that breaks infinity-emb's CLI.
     if $DRY_RUN; then
-        dryrun "$pip install 'infinity-emb[optimum]' --upgrade -q"
+        dryrun "$pip install 'infinity-emb[server,torch]==0.0.76' -q && $pip install 'click==8.1.8' -q"
     else
-        echo -e "  Installing ${BOLD}infinity-emb[optimum]${RESET} (first run downloads ~200MB model)..."
-        "$pip" install "infinity-emb[optimum]" --upgrade -q \
+        echo -e "  Installing ${BOLD}infinity-emb[server,torch]${RESET} (first run downloads ~200MB model)..."
+        "$pip" install "infinity-emb[server,torch]==0.0.76" -q \
+            && "$pip" install "click==8.1.8" -q \
             && echo -e "  ${GREEN}+${RESET} infinity-emb installed" \
             || { warn "jina: pip install failed"; return 1; }
     fi
 
     # 3. Start server
     if $DRY_RUN; then
-        dryrun "nohup $venv_dir/bin/infinity_emb v2 --model-id jinaai/jina-embeddings-v2-base-en --engine optimum --port $JINA_PORT > $log_file 2>&1 &"
+        dryrun "nohup $venv_dir/bin/infinity_emb v2 --model-id jinaai/jina-embeddings-v2-base-en --engine torch --no-bettertransformer --port $JINA_PORT > $log_file 2>&1 &"
         return 0
     fi
 
     nohup "$venv_dir/bin/infinity_emb" v2 \
         --model-id jinaai/jina-embeddings-v2-base-en \
-        --engine optimum \
+        --engine torch \
+        --no-bettertransformer \
         --port "$JINA_PORT" \
         --host 0.0.0.0 \
         > "$log_file" 2>&1 &
@@ -1177,8 +1206,8 @@ _setup_jina_embeddings() {
         rm -f "$pid_file"  # stale — continue
     fi
 
-    # Also skip if something is already bound to the port
-    if lsof -ti:"$JINA_PORT" >/dev/null 2>&1; then
+    # Also skip if something is already bound to the port (but not during reinstall — we just killed it)
+    if ! $REINSTALL_JINA && lsof -ti:"$JINA_PORT" >/dev/null 2>&1; then
         echo -e "  ${YELLOW}[running]${RESET} Port $JINA_PORT already in use — assuming Jina is running, skipping"
         return 0
     fi
@@ -1299,7 +1328,7 @@ conf = {
             "provider":  "openai",
             "model":     "jinaai/jina-embeddings-v2-base-en",
             "api_key":   "local",
-            "api_base":  f"http://localhost:{jina_port}/v1",
+            "api_base":  f"http://localhost:{jina_port}",
             "dimension": 768
         }
     },

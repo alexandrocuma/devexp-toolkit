@@ -18,6 +18,17 @@ The framework has three types of components:
 
 Agents live as Markdown files in `~/.claude/agents/` on the user's machine. Each file is loaded by Claude Code and made available as a sub-agent that can be launched with the `Agent` tool.
 
+### How to Invoke Custom Agents (Important)
+
+Custom agents are **role and instruction definitions** — they shape how Claude behaves, they are not separate processes. The `Agent` tool's `subagent_type` parameter only accepts a hardcoded set of built-in types (`dev-agent`, `general-purpose`, `test-runner`, etc.) — **custom agent names are not valid `subagent_type` values**.
+
+The correct way to use a custom agent:
+1. A task comes in that matches a custom agent's description
+2. Read `~/.claude/agents/<name>.md` (or `agents/<name>.md` in this repo)
+3. Adopt its role and follow its instructions directly — no spawning needed
+
+**Never call `Agent` tool with `subagent_type` set to a custom agent name.** It will fail. Instead, read the agent file and execute its instructions in the current context.
+
 ### File Format
 
 Every agent file is a Markdown file with YAML frontmatter followed by a system-prompt body:
@@ -152,6 +163,8 @@ The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed a
 ./install.sh --model sonnet          # skip model prompt, use claude-sonnet-4-6
 ./install.sh --model opus            # skip model prompt, use claude-opus-4-6
 ./install.sh --reinstall-openviking  # wipe and reinstall the OpenViking MCP from scratch
+./install.sh --reinstall-jina        # wipe and reinstall the Jina embeddings server from scratch
+./install.sh --mcps-only             # only register MCP servers — skip agents, skills, and hooks
 ```
 
 Behavior:
@@ -160,7 +173,7 @@ Behavior:
 - **opencode**: transforms agent frontmatter (model aliases, tool mapping, adds `mode: subagent`) and installs to `~/.config/opencode/agents/`; skills go to `~/.claude/skills/` (opencode reads this path natively); MCPs are written to `~/.config/opencode/config.json`
 - Backs up any conflicting files before overwriting
 - If neither CLI is detected, still allows manual target selection
-- Skips OpenViking setup if the server is already running (healthy PID); use `--reinstall-openviking` to force a clean reinstall
+- Skips OpenViking and Jina setup if the services are already running (healthy PID); use `--reinstall-openviking` or `--reinstall-jina` to force a clean reinstall
 
 ### uninstall.sh
 
