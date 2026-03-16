@@ -147,10 +147,11 @@ The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed a
 ### install.sh
 
 ```bash
-./install.sh                     # interactive
-./install.sh --dry-run           # preview what would be installed, no changes made
-./install.sh --model sonnet      # skip model prompt, use claude-sonnet-4-6
-./install.sh --model opus        # skip model prompt, use claude-opus-4-6
+./install.sh                         # interactive
+./install.sh --dry-run               # preview what would be installed, no changes made
+./install.sh --model sonnet          # skip model prompt, use claude-sonnet-4-6
+./install.sh --model opus            # skip model prompt, use claude-opus-4-6
+./install.sh --reinstall-openviking  # wipe and reinstall the OpenViking MCP from scratch
 ```
 
 Behavior:
@@ -159,6 +160,7 @@ Behavior:
 - **opencode**: transforms agent frontmatter (model aliases, tool mapping, adds `mode: subagent`) and installs to `~/.config/opencode/agents/`; skills go to `~/.claude/skills/` (opencode reads this path natively); MCPs are written to `~/.config/opencode/config.json`
 - Backs up any conflicting files before overwriting
 - If neither CLI is detected, still allows manual target selection
+- Skips OpenViking setup if the server is already running (healthy PID); use `--reinstall-openviking` to force a clean reinstall
 
 ### uninstall.sh
 
@@ -216,7 +218,7 @@ MCP servers are declared in `mcps/registry.json`. Two transport types are suppor
   {
     "name": "my-mcp",
     "description": "Short description of what this MCP provides",
-    "transport": "sse",
+    "transport": "http",
     "url": "http://localhost:1234/mcp",
     "docker_compose": "mcps/my-mcp/docker-compose.yml",
     "scope": "user",
@@ -231,8 +233,8 @@ MCP servers are declared in `mcps/registry.json`. Two transport types are suppor
 |-------|-------------|
 | `name` | Unique MCP identifier |
 | `description` | What this MCP provides |
-| `transport` | `"sse"` for HTTP/SSE transport; omit for stdio (default) |
-| `url` | Server URL — required when `transport` is `"sse"` |
+| `transport` | `"http"` for streamable-HTTP transport; `"sse"` for legacy SSE-only servers; omit for stdio (default) |
+| `url` | Server URL — required when `transport` is `"http"` or `"sse"` |
 | `command` | Executable to run — used for stdio MCPs |
 | `args` | Arguments passed to the command — used for stdio MCPs |
 | `docker_compose` | Path to a Docker Compose file (relative to repo root); installer auto-starts these services |
@@ -246,6 +248,7 @@ MCP servers are declared in `mcps/registry.json`. Two transport types are suppor
 | Name | Transport | Description |
 |------|-----------|-------------|
 | context7 | stdio | Up-to-date library documentation and code examples for any package |
+| openviking | http | Context database for AI agents — tiered memory (L0/L1/L2), semantic retrieval, and document ingestion via filesystem paradigm (viking://) |
 
 ### API Keys and Secrets
 
@@ -313,15 +316,19 @@ hooks/
   registry.json               # Source of truth — one entry per hook
   claude-code/                # One .sh file per hook
   └── secret-guard.sh
+  └── secret-in-write-guard.sh
   └── dangerous-cmd-guard.sh
   └── large-file-guard.sh
   └── lint-on-save.sh
+  └── format-on-save.sh
   opencode/                   # One .js module per hook + shared utils + entry point
   └── utils.js                # Shared: findRoot, which, runLinter, countLines
   └── secret-guard.js
+  └── secret-in-write-guard.js
   └── dangerous-cmd-guard.js
   └── large-file-guard.js
   └── lint-on-save.js
+  └── format-on-save.js
   └── devexp-plugin.js        # Composes all modules into a single plugin export
   └── package.json            # { "type": "module" } — required for ESM
 ```
@@ -361,7 +368,7 @@ hooks/
 
 | Hook | Event | Matcher | What it does |
 |------|-------|---------|--------------|
-| `secret-guard` | PreToolUse | `Read` | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
+| `secret-guard` | PreToolUse | `Read\|Bash` | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
 | `secret-in-write-guard` | PreToolUse | `Write\|Edit` | Hard-blocks writing content that contains secret patterns (API keys, GitHub tokens, private key blocks, etc.) |
 | `dangerous-cmd-guard` | PreToolUse | `Bash` | Hard-blocks `rm -rf /`, fork bombs, `DROP DATABASE`, `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
 | `large-file-guard` | PreToolUse | `Write` | Asks for confirmation before overwriting a file with >500 lines |
