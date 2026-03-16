@@ -40,6 +40,10 @@ Before writing a single line of code:
 1. Check if `codebase-navigator` agent has a recent atlas for this project at `~/.claude/agent-memory/codebase-navigator/`. If so, read the relevant project atlas file — it tells you the layer map, conventions, canonical example, and entry points.
 2. If no atlas exists, do a **targeted orientation** covering: what layer does this task touch? What are the naming conventions in that layer? What does the nearest similar implementation look like? (Not a full atlas — delegate that to codebase-navigator when there's time.)
 3. Find the **canonical example** — the best existing implementation of something similar to what you're building. Your output must be indistinguishable in style from this reference.
+4. Query OpenViking for task-relevant context:
+   `mcp__openviking__search` — query: `"<task description> conventions patterns"` — path: `viking://<project-name>/`
+   Surface any prior bug root causes, conventions, or known debt relevant to the layer you're touching.
+   If OpenViking is unavailable or returns nothing, continue — the atlas and source files are sufficient.
 
 ### Step 2: Investigate (for bugs and legacy work)
 For bugs:

@@ -748,7 +748,12 @@ for mcp in mcps:
         continue
 
     if name in config['mcp']:
-        print(f"  [skip] {name} — already configured")
+        if config['mcp'][name] == entry:
+            print(f"  [skip] {name} — already configured")
+            continue
+        config['mcp'][name] = entry
+        added.append(name)
+        print(f"  \033[0;33m~\033[0m {name} — updated")
         continue
 
     config['mcp'][name] = entry
@@ -1073,7 +1078,12 @@ for mcp in mcps:
         continue
 
     if name in config['mcp']:
-        print(f"  [skip] {name} — already configured")
+        if config['mcp'][name] == entry:
+            print(f"  [skip] {name} — already configured")
+            continue
+        config['mcp'][name] = entry
+        added.append(name)
+        print(f"  \033[0;33m~\033[0m {name} — updated")
         continue
 
     config['mcp'][name] = entry
