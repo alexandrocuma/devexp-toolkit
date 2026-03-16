@@ -35,6 +35,9 @@ Agents are specialized sub-agents that Claude Code or opencode can spawn to hand
 | **postmortem** | Produces structured blameless incident postmortem documents. |
 | **tech-lead** | Architecture Decision Records, design review, and engineering standards documentation. |
 | **docs-sync** | Syncs documentation surfaces (CLAUDE.md, README, authoring guides) with actual repo state after changes to agents, skills, hooks, or MCPs. |
+| **pr-feedback** | Implements reviewer comments from an existing GitHub PR. |
+| **dep-audit** | Dependency vulnerability (CVE) and staleness audit. |
+| **runbook** | Generates operational runbooks from actual project config. |
 
 **opencode-exclusive agents** (in `agents/opencode/`):
 
@@ -69,7 +72,7 @@ Skills are invoked as slash commands (`/skill-name`) in Claude Code or opencode.
 | `/ticket` | Create a well-structured GitHub Issue for a bug, feature, or tech-debt item. |
 | `/scope` | Break a large feature or epic into atomic tickets with dependencies. |
 | `/health` | Generate a codebase health scorecard with RAG status per dimension. |
-| `/init-claude` | Crawl a project's docs and codebase to generate a directive CLAUDE.md with architecture map, conventions, and implementation playbooks. |
+| `/gen-claude-md` | Crawl a project's docs and codebase to generate a directive CLAUDE.md with architecture map, conventions, and implementation playbooks. |
 | `/postmortem` | Generate a structured blameless postmortem document. |
 
 ### Hooks
@@ -78,7 +81,7 @@ Hooks are safety and quality guards that run automatically on every tool call �
 
 | Hook | Trigger | What it does |
 |------|---------|--------------|
-| **secret-guard** | Any `Read` call | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
+| **secret-guard** | Any `Read` or `Bash` call | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
 | **secret-in-write-guard** | Any `Write` or `Edit` call | Hard-blocks writing content containing secret patterns (API keys, GitHub tokens, private key blocks, etc.) |
 | **dangerous-cmd-guard** | Any `Bash` call | Hard-blocks `rm -rf /`, fork bombs, `DROP DATABASE`, `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
 | **large-file-guard** | Any `Write` call | Asks for confirmation before overwriting a file with >500 lines |
@@ -91,11 +94,12 @@ Hook configuration lives in `hooks/registry.json`. Each hook is a separate file 
 
 MCP (Model Context Protocol) servers extend Claude with additional tool capabilities. devexp manages a registry of curated MCP servers and installs them alongside agents, skills, and hooks.
 
-| MCP | Description |
-|-----|-------------|
-| **context7** | Up-to-date library documentation and code examples for any package — fetched at query time, not from training data. |
+| MCP | Transport | Description |
+|-----|-----------|-------------|
+| **context7** | stdio | Up-to-date library documentation and code examples for any package — fetched at query time, not from training data. |
+| **openviking** | http | Context database for AI agents — tiered memory (L0/L1/L2), semantic retrieval, and document ingestion via filesystem paradigm (viking://). Requires `OPENVIKING_VLM_API_KEY` and `OPENVIKING_VLM_MODEL`. |
 
-MCP configuration lives in `mcps/registry.json`. API keys and secrets go in `mcps/.env` (gitignored).
+MCP configuration lives in `mcps/registry.json`. API keys and secrets go in `mcps/.env` (gitignored). MCPs with a `docker_compose` field are started automatically by the installer via `docker compose up -d`.
 
 ---
 
@@ -131,6 +135,16 @@ After installation, restart your CLI to activate the new agents and skills.
 ```
 
 Prints what would be installed without making any changes.
+
+### Reinstall process-managed services from scratch
+
+```bash
+./install.sh --reinstall-openviking   # wipe ~/.openviking/venv, kill server, regenerate ov.conf
+./install.sh --reinstall-jina         # wipe ~/.openviking/jina-venv (or stop Docker container), restart Jina
+./install.sh --reinstall-openviking --reinstall-jina   # both at once
+```
+
+During a normal install, setup is skipped automatically if the services are already running. Use these flags if a service is in a bad state or you want to pick up a newer version.
 
 ### What gets installed where
 
@@ -323,7 +337,7 @@ See `docs/development/hook-authoring-guide.md` for a full guide.
 
 ## Adding a New MCP
 
-1. Add an entry to `mcps/registry.json`:
+1. Add an entry to `mcps/registry.json`. For a stdio MCP:
    ```json
    {
      "name": "my-mcp",
@@ -335,10 +349,26 @@ See `docs/development/hook-authoring-guide.md` for a full guide.
      "required_env": []
    }
    ```
+   For an HTTP/SSE MCP (locally-hosted server):
+   ```json
+   {
+     "name": "my-mcp",
+     "description": "What this MCP does",
+     "transport": "http",
+     "url": "http://localhost:PORT/mcp",
+     "docker_compose": "mcps/my-mcp/docker-compose.yml",
+     "scope": "user",
+     "env": {},
+     "required_env": ["MY_MCP_API_KEY"],
+     "setup_instructions": "Set MY_MCP_API_KEY in mcps/.env and re-run ./install.sh"
+   }
+   ```
 
-2. If the MCP requires an API key, add the key name to `required_env` and document it in `mcps/.env.example`.
+2. If the MCP requires an API key, add the key name to `required_env`, add `setup_instructions`, and document the key in `mcps/.env.example`.
 
-3. Run `./install.sh` — the MCP is registered with the CLI automatically.
+3. If the MCP runs as a Docker service, add a `docker_compose` field and create `mcps/<name>/docker-compose.yml`. The installer will run `docker compose up -d` automatically.
+
+4. Run `./install.sh` — the MCP is registered with the CLI automatically.
 
 See `docs/development/mcp-guide.md` for a full guide to the registry format and secrets handling.
 
@@ -372,6 +402,10 @@ devexp/
 │   ├── ci-cd.md
 │   ├── postmortem.md
 │   ├── tech-lead.md
+│   ├── docs-sync.md
+│   ├── pr-feedback.md
+│   ├── dep-audit.md
+│   ├── runbook.md
 │   └── opencode/               # opencode-exclusive agents (installed as-is)
 │       └── orchestrator.md
 ├── skills/                     # Skill subdirectories, each with skill.md
@@ -396,12 +430,12 @@ devexp/
 │   ├── ticket/skill.md
 │   ├── scope/skill.md
 │   ├── health/skill.md
-│   ├── init-claude/skill.md
+│   ├── gen-claude-md/skill.md
 │   └── postmortem/skill.md
 ├── hooks/                      # Safety and quality hooks (one file per hook)
 │   ├── registry.json           # Hook registry — source of truth for all hooks
 │   ├── claude-code/            # Shell scripts registered in ~/.claude/settings.json
-│   │   ├── secret-guard.sh             # Blocks reads of .env and key files (matcher: Read)
+│   │   ├── secret-guard.sh             # Blocks reads of .env and key files (matcher: Read|Bash)
 │   │   ├── secret-in-write-guard.sh    # Blocks writing secret patterns in content (matcher: Write|Edit)
 │   │   ├── dangerous-cmd-guard.sh      # Hard-blocks destructive shell commands (matcher: Bash)
 │   │   ├── large-file-guard.sh         # Confirms large file overwrites (matcher: Write)
@@ -418,7 +452,10 @@ devexp/
 │       └── format-on-save.js
 ├── mcps/                       # MCP server registry and secrets
 │   ├── registry.json           # Curated MCP server list
-│   └── .env.example            # Template for API keys (copy to .env)
+│   ├── .env.example            # Template for API keys (copy to .env)
+│   └── openviking/             # OpenViking MCP (HTTP, pip-based)
+│       ├── server.py           # Self-contained MCP server (port 2033)
+│       └── ov.conf.example     # Config template (copied to ~/.openviking/ov.conf)
 ├── templates/                  # Starting points for new agents and skills
 │   ├── agent-template.md
 │   └── skill-template.md

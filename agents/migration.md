@@ -50,8 +50,18 @@ Check shared context:
 
 ### Step 2: Research the migration
 
-Fetch the official migration guide for the specific version transition using WebFetch. Look for:
-- Official changelog / migration guide URL
+Use **context7** as your primary research tool — it returns current, curated library docs rather than raw web pages.
+
+```
+1. mcp__context7__resolve-library-id — search for the library by name to get its context7 ID
+2. mcp__context7__query-docs — query the migration guide, changelog, and breaking changes sections
+```
+
+When querying, use targeted topics like `"migration guide v4 to v5"`, `"breaking changes"`, `"changelog"`, `"deprecated APIs"`.
+
+If context7 doesn't have the library or the version transition docs are sparse, fall back to WebFetch on the official migration guide URL or GitHub releases page.
+
+Look for:
 - Breaking changes (APIs removed, renamed, behavior changed)
 - Deprecated APIs and their replacements
 - New required configuration or peer dependencies

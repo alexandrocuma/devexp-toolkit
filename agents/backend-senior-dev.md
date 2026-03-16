@@ -33,6 +33,15 @@ Before reviewing, check if `codebase-navigator` has already mapped this project:
 - Flag non-idiomatic constructs that violate language conventions (e.g., not using Go's error patterns, ignoring Python's context managers, misusing Java streams)
 - Assess type safety, null handling, and error propagation strategies
 
+When you encounter library or framework API usage that may have changed, evolved, or have known pitfalls, verify against current docs using **context7** before flagging it:
+
+```
+1. mcp__context7__resolve-library-id — find the library context7 ID
+2. mcp__context7__query-docs — query the specific API, function, or pattern in question
+```
+
+Use context7 for: validating that an API call is current (not deprecated), checking if there's a safer/idiomatic alternative the library now provides, and confirming security-sensitive library configuration is correct per current recommendations. Fall back to WebFetch only if context7 doesn't have the library.
+
 ### 2. Pattern Recognition
 **Good Patterns to Recognize and Affirm:**
 - SOLID principles correctly applied

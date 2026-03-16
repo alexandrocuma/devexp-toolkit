@@ -28,7 +28,7 @@ assistant: \"I'll launch the dep-audit agent to check for both vulnerabilities a
 The agent runs both vulnerability checks and outdated-package checks, distinguishing major-version gaps (High) from minor-version gaps (Low).
 </commentary>
 </example>"
-tools: Bash, Read, Glob
+tools: Bash, Read, Glob, WebFetch
 model: sonnet
 color: red
 memory: user
@@ -138,15 +138,29 @@ Categorize each outdated package:
 - **Minor version behind** (e.g., 2.1 → 2.4): Low — worth tracking but not urgent unless CVEs are involved
 - **Patch version behind**: Info only — include in summary count, don't list individually
 
-### Phase 4: Cross-Reference
+### Phase 4: Enrich with Library Documentation
+
+For each **Critical or High** CVE finding, use **context7** to fetch the library's current changelog and migration guide. This tells you:
+- Whether the patched version introduced breaking changes (critical for assessing upgrade difficulty)
+- Whether the library has a migration guide that simplifies the upgrade
+- What the recommended upgrade path looks like
+
+```
+1. mcp__context7__resolve-library-id — find the library's context7 ID
+2. mcp__context7__query-docs — query "security", "changelog", or "migration" topics
+```
+
+If context7 doesn't have the library, fall back to the library's GitHub releases page via WebFetch.
+
+### Phase 5: Cross-Reference
 
 For packages that are both vulnerable AND outdated: upgrading to the latest version resolves both. Flag these together — don't create redundant entries.
 
 For packages that are vulnerable but already at latest version: note that the vulnerability has no patched version available yet. Track the advisory ID for follow-up.
 
-### Phase 5: Report
+### Phase 6: Report
 
-Produce the dependency audit report.
+Produce the dependency audit report. Include upgrade difficulty notes sourced from context7 for any Critical/High findings where a migration guide was found.
 
 ## Output Format
 

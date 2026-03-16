@@ -1,10 +1,10 @@
 [
   {
     "name": "secret-guard",
-    "description": "Block accidental reads of .env and secret key files",
+    "description": "Block accidental reads of .env and secret key files via Read tool or Bash commands",
     "claude_code": {
       "event": "PreToolUse",
-      "matcher": "Read",
+      "matcher": "Read|Bash",
       "script": "hooks/claude-code/secret-guard.sh"
     },
     "opencode": {

@@ -12,15 +12,24 @@ RESET='\033[0m'
 # ── Flags ─────────────────────────────────────────────────────────────────────
 DRY_RUN=false
 SELECTED_MODEL=""
+REINSTALL_OPENVIKING=false
+REINSTALL_JINA=false
+MCPS_ONLY=false
 for arg in "$@"; do
     case "$arg" in
-        --dry-run|-n) DRY_RUN=true ;;
-        --model=*)    SELECTED_MODEL="${arg#--model=}" ;;
-        --model)      shift; SELECTED_MODEL="$1" ;;
+        --dry-run|-n)           DRY_RUN=true ;;
+        --model=*)              SELECTED_MODEL="${arg#--model=}" ;;
+        --model)                shift; SELECTED_MODEL="$1" ;;
+        --reinstall-openviking) REINSTALL_OPENVIKING=true ;;
+        --reinstall-jina)       REINSTALL_JINA=true ;;
+        --mcps-only)            MCPS_ONLY=true ;;
         --help|-h)
-            echo "Usage: ./install.sh [--dry-run|-n] [--model <alias|model-id>]"
-            echo "  --dry-run, -n     Preview what would be installed without making changes"
-            echo "  --model <value>   Override model for all agents (optional — agents inherit CLI default if omitted)"
+            echo "Usage: ./install.sh [--dry-run|-n] [--model <alias|model-id>] [--reinstall-openviking] [--reinstall-jina] [--mcps-only]"
+            echo "  --dry-run, -n           Preview what would be installed without making changes"
+            echo "  --model <value>         Override model for all agents (optional — agents inherit CLI default if omitted)"
+            echo "  --reinstall-openviking  Wipe ~/.openviking/venv and reinstall from scratch"
+            echo "  --reinstall-jina        Wipe Jina embeddings server and reinstall from scratch"
+            echo "  --mcps-only             Only register MCP servers — skip agents, skills, and hooks"
             echo ""
             echo "  Aliases:"
             echo "    Anthropic : sonnet, opus, haiku"
@@ -203,6 +212,16 @@ install_claude() {
     info "Installing for Claude Code..."
     echo ""
 
+    if $MCPS_ONLY; then
+        info "MCPs only — skipping agents, skills, and hooks."
+        echo ""
+        install_mcps_claude
+        install_extra_mcps_claude
+        success "Claude Code MCP installation complete."
+        echo ""
+        return 0
+    fi
+
     run_mkdir "$AGENTS_TARGET" || die "Failed to create $AGENTS_TARGET"
     run_mkdir "$SKILLS_TARGET"  || die "Failed to create $SKILLS_TARGET"
 
@@ -378,6 +397,16 @@ install_opencode() {
     info "Installing for opencode..."
     echo ""
 
+    if $MCPS_ONLY; then
+        info "MCPs only — skipping agents, skills, and hooks."
+        echo ""
+        install_mcps_opencode
+        install_extra_mcps_opencode
+        success "opencode MCP installation complete."
+        echo ""
+        return 0
+    fi
+
     command -v python3 &>/dev/null || die "python3 is required for opencode install (used for frontmatter transformation)"
 
     run_mkdir "$AGENTS_TARGET" || die "Failed to create $AGENTS_TARGET"
@@ -518,13 +547,14 @@ install_mcps_claude() {
     info "Installing MCP servers (Claude Code)..."
     local count=0
 
-    python3 - "$registry" "$REPO_DIR/mcps/.env" "$($DRY_RUN && echo 1 || echo 0)" <<'PYEOF'
-import json, sys, subprocess, os
+    python3 - "$registry" "$REPO_DIR/mcps/.env" "$($DRY_RUN && echo 1 || echo 0)" "${SKIPPED_MCPS_FILE:-}" <<'PYEOF'
+import json, sys, subprocess, os, re
 
 with open(sys.argv[1]) as f:
     mcps = json.load(f)
-dotenv_path = sys.argv[2]
-dry_run     = sys.argv[3] == "1"
+dotenv_path      = sys.argv[2]
+dry_run          = sys.argv[3] == "1"
+skipped_mcps_file = sys.argv[4] if len(sys.argv) > 4 else ""
 
 # Load mcps/.env if it exists
 dotenv = {}
@@ -542,12 +572,16 @@ if os.path.exists(dotenv_path):
 merged_env = {**os.environ, **dotenv}
 
 for mcp in mcps:
-    name         = mcp['name']
-    command      = mcp['command']
-    args         = mcp.get('args', [])
-    scope        = mcp.get('scope', 'user')
-    env_vars     = mcp.get('env', {})
-    required_env = mcp.get('required_env', [])
+    name              = mcp['name']
+    transport         = mcp.get('transport', 'stdio')
+    url               = mcp.get('url', '')
+    command           = mcp.get('command', '')
+    args              = mcp.get('args', [])
+    scope             = mcp.get('scope', 'user')
+    env_vars          = mcp.get('env', {})
+    required_env      = mcp.get('required_env', [])
+    setup_instructions = mcp.get('setup_instructions', '')
+    headers           = mcp.get('headers', {})
 
     # Resolve env_vars: substitute from merged_env if value is empty
     resolved = {k: merged_env.get(k, v) for k, v in env_vars.items()}
@@ -556,19 +590,43 @@ for mcp in mcps:
         if key in merged_env and key not in resolved:
             resolved[key] = merged_env[key]
 
+    # Resolve ${VAR} patterns in header values
+    def resolve_str(s):
+        return re.sub(r'\$\{(\w+)\}', lambda m: merged_env.get(m.group(1), ''), s)
+    resolved_headers = {k: resolve_str(v) for k, v in headers.items()}
+
     missing = [e for e in required_env if not merged_env.get(e)]
     if missing:
-        print(f"  [skip] {name} — missing env: {', '.join(missing)} (set in mcps/.env or shell)")
+        print(f"\n  \033[0;31m[REQUIRED]\033[0m {name} — missing required env vars:")
+        for key in missing:
+            print(f"    {key}=<your-value>")
+        if setup_instructions:
+            print()
+            for line in setup_instructions.split('\n'):
+                print(f"  {line}")
+        print(f"\n  {name} will not be available until these are set.\n")
+        if skipped_mcps_file:
+            with open(skipped_mcps_file, 'a') as f:
+                f.write(name + '\n')
         continue
 
-    # Build --env flags for claude mcp add
+    # Build --env flags for claude mcp add (stdio only)
     env_flags = []
     for k, v in resolved.items():
         env_flags += ['--env', f'{k}={v}']
 
+    # Build -H flags for SSE/HTTP MCPs
+    header_flags = []
+    for k, v in resolved_headers.items():
+        header_flags += ['-H', f'{k}: {v}']
+
     if dry_run:
-        env_preview = ' '.join(f'--env {k}=***' for k in resolved) if resolved else ''
-        print(f"  [dry-run] claude mcp add --scope {scope} {env_preview} {name} -- {command} {' '.join(args)}")
+        if transport in ('sse', 'http'):
+            h_preview = ' '.join(f'-H "{k}: ***"' for k in resolved_headers) if resolved_headers else ''
+            print(f"  [dry-run] claude mcp add --scope {scope} --transport {transport} {h_preview} {name} {url}")
+        else:
+            env_preview = ' '.join(f'--env {k}=***' for k in resolved) if resolved else ''
+            print(f"  [dry-run] claude mcp add --scope {scope} {env_preview} {name} -- {command} {' '.join(args)}")
         continue
 
     result = subprocess.run(['claude', 'mcp', 'list'], capture_output=True, text=True)
@@ -576,10 +634,16 @@ for mcp in mcps:
         print(f"  [skip] {name} — already installed")
         continue
 
-    r = subprocess.run(
-        ['claude', 'mcp', 'add', '--scope', scope] + env_flags + [name, '--', command] + args,
-        capture_output=True, text=True
-    )
+    if transport in ('sse', 'http'):
+        r = subprocess.run(
+            ['claude', 'mcp', 'add', '--scope', scope, '--transport', transport] + header_flags + [name, url],
+            capture_output=True, text=True
+        )
+    else:
+        r = subprocess.run(
+            ['claude', 'mcp', 'add', '--scope', scope] + env_flags + [name, '--', command] + args,
+            capture_output=True, text=True
+        )
     if r.returncode == 0:
         print(f"  \033[0;32m+\033[0m {name}")
     else:
@@ -596,14 +660,15 @@ install_mcps_opencode() {
     local config_path="$HOME/.config/opencode/config.json"
     info "Installing MCP servers (opencode → $config_path)..."
 
-    python3 - "$registry" "$config_path" "$REPO_DIR/mcps/.env" "$($DRY_RUN && echo 1 || echo 0)" <<'PYEOF'
-import json, sys, os
+    python3 - "$registry" "$config_path" "$REPO_DIR/mcps/.env" "$($DRY_RUN && echo 1 || echo 0)" "${SKIPPED_MCPS_FILE:-}" <<'PYEOF'
+import json, sys, os, re
 
 with open(sys.argv[1]) as f:
     mcps = json.load(f)
-config_path = sys.argv[2]
-dotenv_path = sys.argv[3]
-dry_run     = sys.argv[4] == "1"
+config_path       = sys.argv[2]
+dotenv_path       = sys.argv[3]
+dry_run           = sys.argv[4] == "1"
+skipped_mcps_file = sys.argv[5] if len(sys.argv) > 5 else ""
 
 # Load mcps/.env if it exists
 dotenv = {}
@@ -633,11 +698,15 @@ if 'mcp' not in config:
 
 added = []
 for mcp in mcps:
-    name         = mcp['name']
-    command      = mcp['command']
-    args         = mcp.get('args', [])
-    env_vars     = mcp.get('env', {})
-    required_env = mcp.get('required_env', [])
+    name               = mcp['name']
+    transport          = mcp.get('transport', 'stdio')
+    url                = mcp.get('url', '')
+    command            = mcp.get('command', '')
+    args               = mcp.get('args', [])
+    env_vars           = mcp.get('env', {})
+    required_env       = mcp.get('required_env', [])
+    setup_instructions = mcp.get('setup_instructions', '')
+    headers            = mcp.get('headers', {})
 
     # Resolve env values from .env / shell
     resolved = {k: merged_env.get(k, v) for k, v in env_vars.items()}
@@ -645,18 +714,37 @@ for mcp in mcps:
         if key in merged_env and key not in resolved:
             resolved[key] = merged_env[key]
 
+    # Resolve ${VAR} patterns in header values
+    def resolve_str(s):
+        return re.sub(r'\$\{(\w+)\}', lambda m: merged_env.get(m.group(1), ''), s)
+    resolved_headers = {k: resolve_str(v) for k, v in headers.items()}
+
     missing = [e for e in required_env if not merged_env.get(e)]
     if missing:
-        print(f"  [skip] {name} — missing env: {', '.join(missing)} (set in mcps/.env or shell)")
+        print(f"\n  \033[0;31m[REQUIRED]\033[0m {name} — missing required env vars:")
+        for key in missing:
+            print(f"    {key}=<your-value>")
+        if setup_instructions:
+            print()
+            for line in setup_instructions.split('\n'):
+                print(f"  {line}")
+        print(f"\n  {name} will not be available until these are set.\n")
+        if skipped_mcps_file:
+            with open(skipped_mcps_file, 'a') as f:
+                f.write(name + '\n')
         continue
 
-    entry = {'type': 'local', 'command': [command] + args}
-    if resolved:
-        entry['env'] = resolved
+    if transport in ('sse', 'http'):
+        entry = {'type': 'remote', 'url': url}
+        if resolved_headers:
+            entry['headers'] = resolved_headers
+    else:
+        entry = {'type': 'local', 'command': [command] + args}
+        if resolved:
+            entry['env'] = resolved
 
     if dry_run:
-        env_preview = f" (env: {', '.join(resolved.keys())})" if resolved else ''
-        print(f"  [dry-run] add mcp.{name} to {config_path}{env_preview}")
+        print(f"  [dry-run] add mcp.{name} ({transport}) to {config_path}")
         continue
 
     if name in config['mcp']:
@@ -970,7 +1058,10 @@ for mcp in mcps:
 
     missing = [e for e in required_env if not merged_env.get(e)]
     if missing:
-        print(f"  [skip] {name} — missing env: {', '.join(missing)}")
+        print(f"\n  \033[0;31m[REQUIRED]\033[0m {name} — missing required env vars:")
+        for key in missing:
+            print(f"    {key}=<your-value>")
+        print(f"\n  {name} will not be available until these are set.\n")
         continue
 
     entry = {'type': 'local', 'command': [command] + args}
@@ -998,9 +1089,399 @@ PYEOF
     echo ""
 }
 
+# ── Jina embeddings server ────────────────────────────────────────────────────
+JINA_PORT=8080
+
+_setup_jina_pip() {
+    local venv_dir="$HOME/.openviking/jina-venv"
+    local pid_file="$HOME/.openviking/jina.pid"
+    local log_file="$HOME/.openviking/jina.log"
+    local python="$venv_dir/bin/python"
+    local pip="$venv_dir/bin/pip"
+
+    # 1. Create venv — use Python 3.11 for compatibility with infinity-emb/optimum
+    local python_bin
+    python_bin=$(which python3.11 2>/dev/null || which python3 2>/dev/null)
+    if $DRY_RUN; then
+        dryrun "$python_bin -m venv $venv_dir"
+    elif [[ ! -x "$python" ]]; then
+        echo -e "  Creating Jina venv at ${BOLD}$venv_dir${RESET} (using $python_bin)..."
+        "$python_bin" -m venv "$venv_dir" \
+            || { warn "jina: failed to create venv"; return 1; }
+        echo -e "  ${GREEN}+${RESET} venv created"
+    fi
+
+    # 2. Install infinity-emb (torch backend — avoids optimum.bettertransformer compat issues)
+    # click is pinned to <8.2 separately after infinity-emb resolves its own typer version,
+    # because click 8.3+ added stricter secondary-flag validation that breaks infinity-emb's CLI.
+    if $DRY_RUN; then
+        dryrun "$pip install 'infinity-emb[server,torch]==0.0.76' -q && $pip install 'click==8.1.8' -q"
+    else
+        echo -e "  Installing ${BOLD}infinity-emb[server,torch]${RESET} (first run downloads ~200MB model)..."
+        "$pip" install "infinity-emb[server,torch]==0.0.76" -q \
+            && "$pip" install "click==8.1.8" -q \
+            && echo -e "  ${GREEN}+${RESET} infinity-emb installed" \
+            || { warn "jina: pip install failed"; return 1; }
+    fi
+
+    # 3. Start server
+    if $DRY_RUN; then
+        dryrun "nohup $venv_dir/bin/infinity_emb v2 --model-id jinaai/jina-embeddings-v2-base-en --engine torch --no-bettertransformer --port $JINA_PORT > $log_file 2>&1 &"
+        return 0
+    fi
+
+    nohup "$venv_dir/bin/infinity_emb" v2 \
+        --model-id jinaai/jina-embeddings-v2-base-en \
+        --engine torch \
+        --no-bettertransformer \
+        --port "$JINA_PORT" \
+        --host 0.0.0.0 \
+        > "$log_file" 2>&1 &
+    echo $! > "$pid_file"
+    echo -e "  ${GREEN}+${RESET} Jina embeddings server started via pip (pid $(cat "$pid_file"), port $JINA_PORT)"
+    echo -e "  ${YELLOW}[note]${RESET} First run downloads the model — check $log_file if slow"
+}
+
+_setup_jina_docker() {
+    local container="devexp-jina-embed"
+    local pid_file="$HOME/.openviking/jina.pid"
+
+    if $DRY_RUN; then
+        dryrun "docker run -d --name $container -p 127.0.0.1:$JINA_PORT:80 ghcr.io/huggingface/text-embeddings-inference:cpu-1.8 --model-id jinaai/jina-embeddings-v2-base-en"
+        return 0
+    fi
+
+    # Remove stopped container if it exists
+    docker rm -f "$container" 2>/dev/null || true
+
+    docker run -d \
+        --name "$container" \
+        --restart unless-stopped \
+        -p "127.0.0.1:$JINA_PORT:80" \
+        ghcr.io/huggingface/text-embeddings-inference:cpu-1.8 \
+        --model-id jinaai/jina-embeddings-v2-base-en \
+        && echo -e "  ${GREEN}+${RESET} Jina embeddings server started via Docker (port $JINA_PORT)" \
+        || { warn "jina: docker run failed — falling back to pip"; _setup_jina_pip; return; }
+
+    # Store container name as PID marker for consistency
+    echo "docker:$container" > "$pid_file"
+}
+
+_setup_jina_embeddings() {
+    local pid_file="$HOME/.openviking/jina.pid"
+
+    mkdir -p "$HOME/.openviking"
+
+    # Reinstall: kill/remove existing, wipe venv
+    if $REINSTALL_JINA; then
+        info "jina: reinstalling from scratch..."
+        if [[ -f "$pid_file" ]]; then
+            local entry; entry=$(cat "$pid_file")
+            if [[ "$entry" == docker:* ]]; then
+                docker rm -f "${entry#docker:}" 2>/dev/null && echo -e "  Removed Docker container"
+            else
+                kill "$entry" 2>/dev/null && echo -e "  Stopped process (pid $entry)"
+            fi
+            rm -f "$pid_file"
+        fi
+        rm -rf "$HOME/.openviking/jina-venv"
+        echo -e "  ${GREEN}+${RESET} wiped Jina install"
+    fi
+
+    # Already running — skip
+    if ! $REINSTALL_JINA && [[ -f "$pid_file" ]]; then
+        local entry; entry=$(cat "$pid_file")
+        if [[ "$entry" == docker:* ]]; then
+            local cname="${entry#docker:}"
+            if docker ps --filter "name=$cname" --format '{{.Names}}' 2>/dev/null | grep -q "$cname"; then
+                echo -e "  ${YELLOW}[running]${RESET} Jina embeddings Docker container already up — skipping"
+                echo -e "  To reinstall: ./install.sh --reinstall-jina"
+                return 0
+            fi
+        elif kill -0 "$entry" 2>/dev/null; then
+            echo -e "  ${YELLOW}[running]${RESET} Jina embeddings server already up (pid $entry) — skipping"
+            echo -e "  To reinstall: ./install.sh --reinstall-jina"
+            return 0
+        fi
+        rm -f "$pid_file"  # stale — continue
+    fi
+
+    # Also skip if something is already bound to the port (but not during reinstall — we just killed it)
+    if ! $REINSTALL_JINA && lsof -ti:"$JINA_PORT" >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}[running]${RESET} Port $JINA_PORT already in use — assuming Jina is running, skipping"
+        return 0
+    fi
+
+    info "Setting up Jina embeddings server (port $JINA_PORT)..."
+
+    local os_type; os_type=$(uname -s)
+
+    if [[ "$os_type" == "Darwin" ]]; then
+        # Mac: pip path (Docker TEI has no official Mac image)
+        echo -e "  macOS detected — using pip (infinity-emb)"
+        _setup_jina_pip
+    elif command -v docker &>/dev/null; then
+        # Linux + Docker: native TEI image (faster, no pip deps)
+        echo -e "  Linux + Docker detected — using HuggingFace TEI image"
+        _setup_jina_docker
+    else
+        # Linux without Docker: pip fallback
+        echo -e "  Linux (no Docker) — using pip (infinity-emb)"
+        _setup_jina_pip
+    fi
+}
+
+# ── OpenViking setup ──────────────────────────────────────────────────────────
+_setup_openviking() {
+    local conf_file="$HOME/.openviking/ov.conf"
+    local server_script="$REPO_DIR/mcps/openviking/server.py"
+    local venv_dir="$HOME/.openviking/venv"
+    local pid_file="$HOME/.openviking/mcp.pid"
+    local log_file="$HOME/.openviking/mcp.log"
+    local python="$venv_dir/bin/python"
+    local pip="$venv_dir/bin/pip"
+
+    # Load required vars from shell or mcps/.env
+    local dotenv_file="$REPO_DIR/mcps/.env"
+    local vlm_key="${OPENVIKING_VLM_API_KEY:-}"
+    local vlm_model="${OPENVIKING_VLM_MODEL:-}"
+
+    if [[ -f "$dotenv_file" ]]; then
+        _val() { grep -E "^$1=" "$dotenv_file" | tail -1 | cut -d= -f2- | tr -d '\r' | xargs; }
+        [[ -z "$vlm_key"   ]] && vlm_key="$(_val OPENVIKING_VLM_API_KEY)"
+        [[ -z "$vlm_model" ]] && vlm_model="$(_val OPENVIKING_VLM_MODEL)"
+    fi
+
+    if [[ -z "$vlm_key" || -z "$vlm_model" ]]; then
+        warn "openviking: skipping — OPENVIKING_VLM_API_KEY and OPENVIKING_VLM_MODEL must be set in mcps/.env"
+        return 0
+    fi
+
+    mkdir -p "$HOME/.openviking"
+
+    # Reinstall: wipe venv, config, and kill running server
+    if $REINSTALL_OPENVIKING; then
+        info "openviking: reinstalling from scratch..."
+        if [[ -f "$pid_file" ]]; then
+            local old_pid; old_pid=$(cat "$pid_file")
+            kill "$old_pid" 2>/dev/null && echo -e "  Stopped running server (pid $old_pid)"
+            rm -f "$pid_file"
+        fi
+        rm -rf "$venv_dir"
+        rm -f "$conf_file"
+        echo -e "  ${GREEN}+${RESET} wiped venv and config"
+    fi
+
+    # Already running and healthy — skip unless reinstalling
+    if ! $REINSTALL_OPENVIKING && [[ -f "$pid_file" ]]; then
+        local running_pid; running_pid=$(cat "$pid_file")
+        if kill -0 "$running_pid" 2>/dev/null; then
+            echo -e "  ${YELLOW}[running]${RESET} openviking MCP server already up (pid $running_pid) — skipping"
+            echo -e "  To reinstall: ./install.sh --reinstall-openviking"
+            return 0
+        fi
+        # Stale PID — clean it up and continue
+        rm -f "$pid_file"
+    fi
+
+    # 1. Create venv if it doesn't exist
+    if $DRY_RUN; then
+        dryrun "python3 -m venv $venv_dir"
+    elif [[ ! -x "$python" ]]; then
+        echo -e "  Creating venv at ${BOLD}$venv_dir${RESET}..."
+        python3 -m venv "$venv_dir" \
+            || { warn "openviking: failed to create venv"; return 1; }
+        echo -e "  ${GREEN}+${RESET} venv created"
+    fi
+
+    # 2. Install packages into the venv
+    if $DRY_RUN; then
+        dryrun "$pip install openviking mcp --upgrade --force-reinstall"
+    else
+        echo -e "  Installing ${BOLD}openviking${RESET} + mcp into venv..."
+        "$pip" install openviking mcp --upgrade --force-reinstall -q \
+            && echo -e "  ${GREEN}+${RESET} packages installed" \
+            || { warn "openviking: pip install failed"; return 1; }
+    fi
+
+    # 3. Generate ov.conf (skip if already exists)
+    if [[ ! -f "$conf_file" ]]; then
+        if $DRY_RUN; then
+            dryrun "generate $conf_file"
+        else
+            python3 - "$conf_file" "$vlm_key" "$vlm_model" "$JINA_PORT" <<'PYEOF'
+import json, sys, os
+
+conf_file = sys.argv[1]
+vlm_key   = sys.argv[2]
+vlm_model = sys.argv[3]
+jina_port = sys.argv[4]
+
+conf = {
+    "storage": {
+        "workspace": os.path.expanduser("~/.openviking/data"),
+        "vectordb": {"name": "context", "backend": "local", "project": "default"},
+        "agfs": {"port": 1833, "log_level": "warn", "backend": "local", "timeout": 10, "retry_times": 3}
+    },
+    "embedding": {
+        "dense": {
+            "provider":  "openai",
+            "model":     "jinaai/jina-embeddings-v2-base-en",
+            "api_key":   "local",
+            "api_base":  f"http://localhost:{jina_port}",
+            "dimension": 768
+        }
+    },
+    "vlm": {
+        "provider":    "litellm",
+        "model":       vlm_model,
+        "api_key":     vlm_key,
+        "temperature": 0.0,
+        "max_retries": 2,
+        "thinking":    False
+    },
+    "auto_generate_l0": True,
+    "auto_generate_l1": True,
+    "default_search_mode": "thinking",
+    "default_search_limit": 3,
+    "enable_memory_decay": True,
+    "log": {"level": "INFO", "output": "stdout"}
+}
+
+os.makedirs(os.path.dirname(conf_file), exist_ok=True)
+with open(conf_file, 'w') as f:
+    json.dump(conf, f, indent=2)
+
+print(f"  Generated: {conf_file}")
+PYEOF
+        fi
+    fi
+
+    # 4. Start the MCP server using the venv Python
+    if $DRY_RUN; then
+        dryrun "nohup $python $server_script --config $conf_file > $log_file 2>&1 &"
+        return 0
+    fi
+
+    # Kill existing server if running
+    if [[ -f "$pid_file" ]]; then
+        local old_pid
+        old_pid=$(cat "$pid_file")
+        if kill -0 "$old_pid" 2>/dev/null; then
+            kill "$old_pid" 2>/dev/null
+            sleep 1
+        fi
+        rm -f "$pid_file"
+    fi
+
+    nohup "$python" "$server_script" \
+        --config "$conf_file" \
+        --data "$HOME/.openviking/data" \
+        > "$log_file" 2>&1 &
+    echo $! > "$pid_file"
+    echo -e "  ${GREEN}+${RESET} openviking MCP server started (pid $(cat "$pid_file"), log: $log_file)"
+}
+
+# ── Docker services ───────────────────────────────────────────────────────────
+start_docker_services() {
+    local registry="$REPO_DIR/mcps/registry.json"
+    [[ -f "$registry" ]] || return 0
+    command -v docker &>/dev/null || return 0
+
+    # Collect MCPs that have a docker_compose field and all required_env satisfied
+    local services
+    services=$(python3 - "$registry" "$REPO_DIR/mcps/.env" <<'PYEOF'
+import json, sys, os
+
+with open(sys.argv[1]) as f:
+    mcps = json.load(f)
+dotenv_path = sys.argv[2]
+
+dotenv = {}
+if os.path.exists(dotenv_path):
+    with open(dotenv_path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                k, _, v = line.partition('=')
+                dotenv[k.strip()] = v.strip()
+
+merged_env = {**os.environ, **dotenv}
+
+for mcp in mcps:
+    dc = mcp.get('docker_compose')
+    if not dc:
+        continue
+    required_env = mcp.get('required_env', [])
+    missing = [e for e in required_env if not merged_env.get(e)]
+    if missing:
+        continue
+    print(f"{mcp['name']}|{dc}")
+PYEOF
+    )
+
+    [[ -z "$services" ]] && return 0
+
+    info "Starting Docker services..."
+
+    while IFS='|' read -r name compose_rel; do
+        local compose_file="$REPO_DIR/$compose_rel"
+        [[ -f "$compose_file" ]] || continue
+
+        # Per-MCP pre-start setup
+        local compose_profile_flag=""
+
+        if $DRY_RUN; then
+            dryrun "docker compose -f $compose_rel $compose_profile_flag up -d"
+            continue
+        fi
+
+        if docker compose -f "$compose_file" $compose_profile_flag ps --quiet 2>/dev/null | grep -q .; then
+            echo -e "  ${YELLOW}[running]${RESET} $name — already up"
+        else
+            echo -e "  Starting ${BOLD}$name${RESET}..."
+            docker compose -f "$compose_file" $compose_profile_flag up -d \
+                && echo -e "  ${GREEN}+${RESET} $name started" \
+                || warn "$name — docker compose failed (check: docker compose -f $compose_rel logs)"
+        fi
+    done <<< "$services"
+
+    echo ""
+}
+
 # ── Run ───────────────────────────────────────────────────────────────────────
+SKIPPED_MCPS_FILE="$(mktemp)"
+export SKIPPED_MCPS_FILE
+
+start_docker_services
+_setup_jina_embeddings
+_setup_openviking
 $INSTALL_CLAUDE   && install_claude
 $INSTALL_OPENCODE && install_opencode
 
-echo -e "${GREEN}${BOLD}All done.${RESET}"
-echo ""
+# ── Final status ──────────────────────────────────────────────────────────────
+skipped_mcps=()
+if [[ -s "$SKIPPED_MCPS_FILE" ]]; then
+    while IFS= read -r name; do
+        [[ -n "$name" ]] && skipped_mcps+=("$name")
+    done < "$SKIPPED_MCPS_FILE"
+fi
+rm -f "$SKIPPED_MCPS_FILE"
+
+if [[ ${#skipped_mcps[@]} -gt 0 ]]; then
+    # Deduplicate
+    IFS=$'\n' read -r -d '' -a skipped_mcps < <(printf '%s\n' "${skipped_mcps[@]}" | sort -u && printf '\0') || true
+    echo -e "${YELLOW}${BOLD}Install incomplete.${RESET}"
+    echo ""
+    warn "The following MCP(s) were not installed due to missing required env vars:"
+    for name in "${skipped_mcps[@]}"; do
+        echo -e "  ${RED}✗${RESET} $name"
+    done
+    echo ""
+    warn "Set the missing vars in ${BOLD}mcps/.env${RESET} and re-run ${BOLD}./install.sh${RESET}"
+    echo ""
+    exit 1
+else
+    echo -e "${GREEN}${BOLD}All done.${RESET}"
+    echo ""
+fi

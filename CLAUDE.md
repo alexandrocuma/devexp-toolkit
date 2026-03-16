@@ -18,6 +18,17 @@ The framework has three types of components:
 
 Agents live as Markdown files in `~/.claude/agents/` on the user's machine. Each file is loaded by Claude Code and made available as a sub-agent that can be launched with the `Agent` tool.
 
+### How to Invoke Custom Agents (Important)
+
+Custom agents are **role and instruction definitions** — they shape how Claude behaves, they are not separate processes. The `Agent` tool's `subagent_type` parameter only accepts a hardcoded set of built-in types (`dev-agent`, `general-purpose`, `test-runner`, etc.) — **custom agent names are not valid `subagent_type` values**.
+
+The correct way to use a custom agent:
+1. A task comes in that matches a custom agent's description
+2. Read `~/.claude/agents/<name>.md` (or `agents/<name>.md` in this repo)
+3. Adopt its role and follow its instructions directly — no spawning needed
+
+**Never call `Agent` tool with `subagent_type` set to a custom agent name.** It will fail. Instead, read the agent file and execute its instructions in the current context.
+
 ### File Format
 
 Every agent file is a Markdown file with YAML frontmatter followed by a system-prompt body:
@@ -147,10 +158,13 @@ The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed a
 ### install.sh
 
 ```bash
-./install.sh                     # interactive
-./install.sh --dry-run           # preview what would be installed, no changes made
-./install.sh --model sonnet      # skip model prompt, use claude-sonnet-4-6
-./install.sh --model opus        # skip model prompt, use claude-opus-4-6
+./install.sh                         # interactive
+./install.sh --dry-run               # preview what would be installed, no changes made
+./install.sh --model sonnet          # skip model prompt, use claude-sonnet-4-6
+./install.sh --model opus            # skip model prompt, use claude-opus-4-6
+./install.sh --reinstall-openviking  # wipe and reinstall the OpenViking MCP from scratch
+./install.sh --reinstall-jina        # wipe and reinstall the Jina embeddings server from scratch
+./install.sh --mcps-only             # only register MCP servers — skip agents, skills, and hooks
 ```
 
 Behavior:
@@ -159,6 +173,7 @@ Behavior:
 - **opencode**: transforms agent frontmatter (model aliases, tool mapping, adds `mode: subagent`) and installs to `~/.config/opencode/agents/`; skills go to `~/.claude/skills/` (opencode reads this path natively); MCPs are written to `~/.config/opencode/config.json`
 - Backs up any conflicting files before overwriting
 - If neither CLI is detected, still allows manual target selection
+- Skips OpenViking and Jina setup if the services are already running (healthy PID); use `--reinstall-openviking` or `--reinstall-jina` to force a clean reinstall
 
 ### uninstall.sh
 
@@ -191,7 +206,9 @@ MCP servers extend Claude's capabilities with external tools (documentation look
 
 ### Registry
 
-MCP servers are declared in `mcps/registry.json`:
+MCP servers are declared in `mcps/registry.json`. Two transport types are supported: **stdio** (default) and **HTTP/SSE**.
+
+**stdio MCP (default):**
 
 ```json
 [
@@ -207,21 +224,44 @@ MCP servers are declared in `mcps/registry.json`:
 ]
 ```
 
+**HTTP/SSE MCP (for locally-hosted servers):**
+
+```json
+[
+  {
+    "name": "my-mcp",
+    "description": "Short description of what this MCP provides",
+    "transport": "http",
+    "url": "http://localhost:1234/mcp",
+    "docker_compose": "mcps/my-mcp/docker-compose.yml",
+    "scope": "user",
+    "env": {},
+    "required_env": ["MY_MCP_API_KEY"],
+    "setup_instructions": "Human-readable setup guidance shown when required_env keys are missing"
+  }
+]
+```
+
 | Field | Description |
 |-------|-------------|
 | `name` | Unique MCP identifier |
 | `description` | What this MCP provides |
-| `command` | Executable to run |
-| `args` | Arguments passed to the command |
+| `transport` | `"http"` for streamable-HTTP transport; `"sse"` for legacy SSE-only servers; omit for stdio (default) |
+| `url` | Server URL — required when `transport` is `"http"` or `"sse"` |
+| `command` | Executable to run — used for stdio MCPs |
+| `args` | Arguments passed to the command — used for stdio MCPs |
+| `docker_compose` | Path to a Docker Compose file (relative to repo root); installer auto-starts these services |
 | `scope` | `"user"` (global) or `"project"` (Claude Code only) |
 | `env` | Static environment variables to pass |
-| `required_env` | Env vars that must be set — MCP is skipped with a warning if missing |
+| `required_env` | Env vars that must be set — installer shows a loud `[REQUIRED]` warning with setup instructions if missing |
+| `setup_instructions` | Human-readable text shown when `required_env` keys are absent |
 
 ### MCPs in This Repo
 
-| Name | Description |
-|------|-------------|
-| context7 | Up-to-date library documentation and code examples for any package |
+| Name | Transport | Description |
+|------|-----------|-------------|
+| context7 | stdio | Up-to-date library documentation and code examples for any package |
+| openviking | http | Context database for AI agents — tiered memory (L0/L1/L2), semantic retrieval, and document ingestion via filesystem paradigm (viking://) |
 
 ### API Keys and Secrets
 
@@ -236,15 +276,25 @@ cp mcps/.env.example mcps/.env
 The installer loads `mcps/.env` and:
 - Passes values as `--env KEY=VALUE` flags to `claude mcp add` (stored permanently in Claude Code's MCP config)
 - Writes them into the `env` field in opencode's `config.json`
-- Skips any MCP whose `required_env` keys are missing from both the file and the shell, with a clear warning
+- Shows a loud red `[REQUIRED]` warning with the MCP's `setup_instructions` for any MCP whose `required_env` keys are missing from both the file and the shell — the MCP is skipped until the keys are provided
 
 `mcps/.env.example` is committed to the repo and documents what keys are expected. Never commit `mcps/.env`.
+
+### Docker-backed MCPs
+
+MCPs with a `docker_compose` field run as local Docker services. The installer automatically starts them:
+
+```bash
+# installer runs this for each docker_compose MCP:
+docker compose -f <docker_compose_path> up -d
+```
 
 ### Adding a New MCP
 
 1. Add an entry to `mcps/registry.json`
-2. If it needs secrets, add the key names to `required_env` and document them in `mcps/.env.example`
-3. Run `./install.sh` to register it (or `--dry-run` to preview)
+2. If it needs secrets, add the key names to `required_env`, set `setup_instructions`, and document the keys in `mcps/.env.example`
+3. If it runs as a local Docker service, add a `docker_compose` field pointing to the Compose file and create the file under `mcps/<name>/docker-compose.yml`
+4. Run `./install.sh` to register it (or `--dry-run` to preview)
 
 ### CLI compatibility
 
@@ -279,15 +329,19 @@ hooks/
   registry.json               # Source of truth — one entry per hook
   claude-code/                # One .sh file per hook
   └── secret-guard.sh
+  └── secret-in-write-guard.sh
   └── dangerous-cmd-guard.sh
   └── large-file-guard.sh
   └── lint-on-save.sh
+  └── format-on-save.sh
   opencode/                   # One .js module per hook + shared utils + entry point
   └── utils.js                # Shared: findRoot, which, runLinter, countLines
   └── secret-guard.js
+  └── secret-in-write-guard.js
   └── dangerous-cmd-guard.js
   └── large-file-guard.js
   └── lint-on-save.js
+  └── format-on-save.js
   └── devexp-plugin.js        # Composes all modules into a single plugin export
   └── package.json            # { "type": "module" } — required for ESM
 ```
@@ -327,7 +381,7 @@ hooks/
 
 | Hook | Event | Matcher | What it does |
 |------|-------|---------|--------------|
-| `secret-guard` | PreToolUse | `Read` | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
+| `secret-guard` | PreToolUse | `Read\|Bash` | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
 | `secret-in-write-guard` | PreToolUse | `Write\|Edit` | Hard-blocks writing content that contains secret patterns (API keys, GitHub tokens, private key blocks, etc.) |
 | `dangerous-cmd-guard` | PreToolUse | `Bash` | Hard-blocks `rm -rf /`, fork bombs, `DROP DATABASE`, `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
 | `large-file-guard` | PreToolUse | `Write` | Asks for confirmation before overwriting a file with >500 lines |

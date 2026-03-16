@@ -43,11 +43,15 @@ devexp manages a curated registry of MCP servers in `mcps/registry.json`. The in
 |-------|------|----------|-------------|
 | `name` | string | Yes | Unique identifier. Used as the MCP server name in CLI config. |
 | `description` | string | Yes | What the MCP does. Shown in installer output and documentation. |
-| `command` | string | Yes | The executable to run. Usually `npx`, `uvx`, or `node`. |
-| `args` | array | Yes | Arguments passed to `command`. For npx packages, typically `["-y", "package-name"]`. |
+| `transport` | string | No | `"http"` for streamable-HTTP transport (preferred); `"sse"` for legacy SSE-only servers. Omit for stdio (default). |
+| `url` | string | Conditional | Server URL — required when `transport` is `"http"` or `"sse"`. |
+| `command` | string | Conditional | The executable to run. Required for stdio MCPs. Usually `npx`, `uvx`, or `node`. |
+| `args` | array | Conditional | Arguments passed to `command`. Required for stdio MCPs. |
+| `docker_compose` | string | No | Path to a Docker Compose file (relative to repo root). The installer runs `docker compose up -d` automatically before registering the MCP. |
 | `scope` | string | No | `"user"` (default) — installed at the user level, available in all projects. Use `"project"` to scope to a specific project. |
 | `env` | object | No | Environment variables passed to the MCP server. Values can be empty strings — they'll be resolved from `mcps/.env` or the shell at install time. |
 | `required_env` | array | No | Environment variable names that must be present for the MCP to install. If any are missing, the MCP is skipped with a warning. |
+| `setup_instructions` | string | No | Human-readable guidance shown alongside the `[REQUIRED]` warning when `required_env` keys are missing. |
 
 ### Minimal entry (no API key required)
 
@@ -83,6 +87,26 @@ When `MY_API_KEY` is in `required_env`, the installer:
 - Checks `mcps/.env` and the current shell environment for the value
 - Skips the MCP and prints a warning if the key is not found
 - Passes the key to the CLI when registering if found
+
+### HTTP/SSE entry (locally-hosted server)
+
+Use `"transport": "http"` for MCP servers that run as a local HTTP service rather than a subprocess (streamable-HTTP, the current MCP protocol). Use `"transport": "sse"` only for legacy servers that speak the older SSE-only protocol.
+
+```json
+{
+  "name": "my-mcp",
+  "description": "What this MCP provides",
+  "transport": "http",
+  "url": "http://localhost:2033/mcp",
+  "docker_compose": "mcps/my-mcp/docker-compose.yml",
+  "scope": "user",
+  "env": {},
+  "required_env": ["MY_MCP_API_KEY"],
+  "setup_instructions": "Set MY_MCP_API_KEY in mcps/.env and re-run ./install.sh"
+}
+```
+
+When `docker_compose` is set, the installer runs `docker compose -f <path> up -d` before registering the MCP, so the service is available by the time Claude tries to connect.
 
 ---
 
@@ -228,6 +252,21 @@ Open `mcps/registry.json` and add your entry:
    # MY_MCP_API_KEY=your_key_here
    ```
 
+### Step 3b: If the MCP is a locally-hosted HTTP/SSE server
+
+Set `"transport": "http"` (or `"sse"` for legacy SSE-only servers) and `"url"` in the registry entry. Add a `"setup_instructions"` field to explain what the user needs to configure.
+
+The server process can be started in two ways:
+
+**Docker-backed** — add a `docker_compose` field pointing to a Compose file; the installer runs `docker compose up -d` automatically:
+
+1. Create `mcps/<name>/docker-compose.yml` with the service definition.
+2. Set `"docker_compose": "mcps/<name>/docker-compose.yml"` in the registry entry.
+
+**Process-based (pip/native)** — manage the process yourself (e.g. a Python venv started by the installer or a separate daemon). In this case, omit `docker_compose` from the registry entry and handle startup in `install.sh`. Reference implementations:
+- `_setup_openviking` — Python venv at `~/.openviking/venv`, idempotent with PID-based skip, supports `--reinstall-openviking`
+- `_setup_jina_embeddings` — OS-aware setup (Mac → pip `infinity-emb`, Linux+Docker → HuggingFace TEI image, Linux → pip fallback), port-based skip, supports `--reinstall-jina`
+
 ### Step 4: Test the install
 
 ```bash
@@ -244,15 +283,24 @@ Verify the MCP is registered:
 - Claude Code: `claude mcp list`
 - opencode: check `~/.config/opencode/config.json`
 
-### Step 5: Update the README
+### Step 5: Update the docs
 
-Add the new MCP to the "MCP Servers" table in `README.md`.
+Add the new MCP to the "MCP Servers" table in both `README.md` and `CLAUDE.md`.
 
 ---
 
 ## Updating or Removing an MCP
 
 MCPs that are already installed are skipped by the installer. To force a re-install after changing an entry:
+
+> **Note — process-managed MCPs (OpenViking + Jina):** The installer automatically skips setup if the server is already running. Stale PIDs and occupied ports are detected and handled.
+>
+> To force a clean reinstall:
+> ```bash
+> ./install.sh --reinstall-openviking   # wipe ~/.openviking/venv, kill server, regenerate ov.conf
+> ./install.sh --reinstall-jina         # wipe ~/.openviking/jina-venv (or stop Docker container), restart Jina
+> ./install.sh --reinstall-openviking --reinstall-jina   # both at once
+> ```
 
 **Claude Code:**
 ```bash

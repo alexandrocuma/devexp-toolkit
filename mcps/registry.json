@@ -7,5 +7,15 @@
     "scope": "user",
     "env": {},
     "required_env": []
+  },
+  {
+    "name": "openviking",
+    "description": "Context database for AI agents — tiered memory (L0/L1/L2), semantic retrieval, and document ingestion via filesystem paradigm (viking://)",
+    "transport": "http",
+    "url": "http://localhost:2033/mcp",
+    "scope": "user",
+    "env": {},
+    "required_env": ["OPENVIKING_VLM_API_KEY", "OPENVIKING_VLM_MODEL"],
+    "setup_instructions": "OpenViking runs as a local Python process in an isolated venv (~/.openviking/venv).\nEmbeddings run via your local Jina server — no key needed.\nOnly a VLM API key is required for RAG answer generation.\n\nAdd to mcps/.env:\n  OPENVIKING_VLM_API_KEY=your-api-key\n  OPENVIKING_VLM_MODEL=claude-sonnet-4-6\n\nVLM model examples (litellm format):\n  Claude    -> claude-sonnet-4-6\n  OpenAI    -> gpt-4o\n  DeepSeek  -> deepseek/deepseek-chat\n  Kimi      -> moonshot/kimi-k2.5\n\nThen run: ./install.sh"
   }
 ]

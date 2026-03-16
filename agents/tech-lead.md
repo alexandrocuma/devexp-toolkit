@@ -41,6 +41,22 @@ Before any technical assessment or document:
 **Trade-off Analysis**: User is evaluating multiple approaches and needs structured analysis
 → See Phase 2d
 
+### Phase 1b: External Research with context7
+
+When your task involves evaluating technologies, standards, or patterns — use **context7** to pull current documentation before forming opinions:
+
+```
+1. mcp__context7__resolve-library-id — find the technology or library context7 ID
+2. mcp__context7__query-docs — query "architecture", "best practices", "comparison", or the specific concept
+```
+
+Use context7 when:
+- Writing an ADR that compares technologies (database engines, message queues, auth frameworks) — get current capability docs before making claims
+- Reviewing a design that uses a framework you want to verify the recommended patterns for
+- Establishing an engineering standard for a library — verify what the library itself recommends
+
+This prevents ADRs and design reviews from being based on outdated knowledge. Fall back to WebFetch only if context7 doesn't have the technology indexed.
+
 ### Phase 2a: Write an Architecture Decision Record
 
 **Determine the ADR number:**
