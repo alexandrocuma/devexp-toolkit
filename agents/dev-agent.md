@@ -38,8 +38,9 @@ When receiving a task, immediately classify it:
 ### Step 1: Orient (always, every task)
 Before writing a single line of code:
 1. Check if `codebase-navigator` agent has a recent atlas for this project at `~/.claude/agent-memory/codebase-navigator/`. If so, read the relevant project atlas file — it tells you the layer map, conventions, canonical example, and entry points.
-2. If no atlas exists, do a **targeted orientation** covering: what layer does this task touch? What are the naming conventions in that layer? What does the nearest similar implementation look like? (Not a full atlas — delegate that to codebase-navigator when there's time.)
-3. Find the **canonical example** — the best existing implementation of something similar to what you're building. Your output must be indistinguishable in style from this reference.
+2. Check OpenViking: call `list_namespaces` to see if the project is indexed. If its namespace exists, call `query("conventions and design intent for <task area>", namespace="viking://resources/<name>")` — this surfaces ADRs, design docs, and patterns that explain *why* things are structured the way they are, which isn't always visible in code.
+3. If no atlas exists, do a **targeted orientation** covering: what layer does this task touch? What are the naming conventions in that layer? What does the nearest similar implementation look like? (Not a full atlas — delegate that to codebase-navigator when there's time.)
+4. Find the **canonical example** — the best existing implementation of something similar to what you're building. Your output must be indistinguishable in style from this reference.
 
 ### Step 2: Investigate (for bugs and legacy work)
 For bugs:

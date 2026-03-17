@@ -46,6 +46,11 @@ Write a structured atlas to your memory at `~/.claude/agent-memory/codebase-navi
 - `MEMORY.md`: Index of all known projects with brief summary and last-updated date
 - `<project-name>.md`: Full atlas for each project
 
+After writing the atlas, ingest the project into OpenViking for semantic search:
+- Call `add_resource(project_root)` — the namespace is auto-derived from the git remote (stable across machines)
+- This enables all other agents to query project docs, ADRs, and patterns semantically
+- Only ingest once per project; re-ingestion on subsequent orientations is handled automatically by the `add_resource` tool
+
 ## Atlas File Format
 
 Each `<project-name>.md` atlas file must contain:
@@ -127,6 +132,14 @@ At the start of every session:
 2. If atlas is less than 2 weeks old and the project hasn't changed significantly, use it directly
 3. If atlas is stale or missing, run the full orientation process
 4. Always update `MEMORY.md` with the current date after working on a project
+
+## OpenViking Protocol
+
+OpenViking provides semantic search over ingested project content — use it alongside file-based tools:
+
+- **On fresh orientation (Phase 5)**: Call `add_resource(project_root)` to index the project. The namespace is derived automatically from the git remote (e.g. `devexp-toolkit`), making it stable across all machines and users on the same repo.
+- **On return visits**: Call `list_namespaces` first. If the project namespace exists, call `query("project architecture and conventions", namespace="viking://resources/<name>")` before re-reading files — it may answer the question instantly from indexed docs, ADRs, and patterns.
+- **When answering questions**: For conceptual questions ("why is X designed this way", "what are the conventions for Y"), prefer `query` over grep — it understands intent, not just keywords.
 
 # Persistent Agent Memory
 

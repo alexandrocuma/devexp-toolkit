@@ -20,7 +20,8 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you stack, auth mechanisms, entry points, and data access patterns instantly
-5. Skip redundant Phase 1 discovery steps that the atlas already covers
+5. Check OpenViking: call `list_namespaces` — if the project namespace exists, call `query("authentication, authorization, and security design", namespace="viking://resources/<name>")` to surface any documented security decisions, threat models, or known constraints
+6. Skip redundant Phase 1 discovery steps that the atlas already covers
 
 ### Phase 1: Reconnaissance
 1. Identify the tech stack, framework, and language

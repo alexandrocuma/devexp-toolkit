@@ -157,6 +157,23 @@ During a normal install, setup is skipped automatically if the services are alre
 
 Existing files are backed up automatically before any overwrite.
 
+### Restart Services (without data loss)
+
+After a machine restart or session, MCP services may have stopped. Use `start-services.sh` to bring them back — it **never touches your data or venvs**:
+
+```bash
+./start-services.sh            # start anything that isn't running
+./start-services.sh --status   # check service health without starting
+```
+
+What it does:
+- **Jina** (Docker): checks health via HTTP, restarts the container if needed — no model re-download
+- **OpenViking** (Python): restarts the server process using the existing venv and `~/.openviking/ov.conf` — no data wipe, no index rebuild
+
+> **Do not use `./install.sh --reinstall-openviking`** unless you want a full wipe. That deletes the venv and all indexed knowledge.
+
+After running `start-services.sh`, reconnect your MCP in Claude Code (via `/mcp`) or opencode.
+
 ### Uninstall
 
 ```bash
@@ -380,6 +397,7 @@ See `docs/development/mcp-guide.md` for a full guide to the registry format and 
 devexp/
 ├── install.sh                  # Installs agents, skills, and MCPs
 ├── uninstall.sh                # Removes devexp components
+├── start-services.sh           # Restarts MCP services (Jina + OpenViking) without data loss
 ├── CLAUDE.md                   # Instructions for Claude when working in this repo
 ├── agents/                     # Agent markdown files (Claude Code format)
 │   ├── dev-agent.md

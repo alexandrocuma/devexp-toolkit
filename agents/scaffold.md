@@ -20,7 +20,8 @@ Before generating anything:
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to find the atlas
 4. **Required**: Read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` in full
-5. If no atlas exists: run a targeted orientation (see Phase 1 fallback) before proceeding — do not skip this
+5. Check OpenViking: call `list_namespaces` — if the project namespace exists, call `query("naming conventions, file structure, and patterns for <type being scaffolded>", namespace="viking://resources/<name>")` to surface any documented patterns, ADRs, or team decisions about this type before reading code examples
+6. If no atlas exists: run a targeted orientation (see Phase 1 fallback) before proceeding — do not skip this
 
 ### Phase 1: Orientation (if no atlas)
 If the codebase-navigator atlas does not exist:

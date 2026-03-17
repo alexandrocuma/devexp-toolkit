@@ -20,7 +20,8 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you stack, architecture, layer map, entry points, and conventions instantly
-5. Skip redundant Phase 1 discovery steps that the atlas already covers
+5. Check OpenViking: call `list_namespaces` — if the project namespace exists, call `query("architecture decisions and design patterns", namespace="viking://resources/<name>")` to surface ADRs, design docs, and known architectural constraints before reviewing
+6. Skip redundant Phase 1 discovery steps that the atlas already covers
 
 ### Phase 1: Discovery (always first)
 1. Read `README.md`, `CLAUDE.md`, `CONTRIBUTING.md` for stated architecture intent
