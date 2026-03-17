@@ -204,10 +204,21 @@ Read the user's request and answer:
 - What is the expected final output? (implementation, report, review, plan...)
 
 ### Step 2: Orient (always)
-Before dispatching specialists, check if `codebase-navigator` has a recent atlas:
+Before dispatching specialists, gather both structural and semantic context:
+
+**2a. Structural context — codebase atlas**
 - Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md`
-- If atlas exists and is recent: skip this step and share atlas context with subagents
+- If atlas exists and is recent: use it directly
 - If atlas is missing or stale: **always run `codebase-navigator` first** — it saves all subsequent agents significant discovery time
+
+**2b. Semantic context — OpenViking knowledge query**
+Query OpenViking for prior knowledge relevant to the goal before decomposing tasks:
+- Use `mcp__openviking__query` with terms derived from the user's request (e.g. affected module, feature area, technology)
+- Look for: past ADRs or tech decisions, known bugs or incidents, team conventions, previous audit findings, architectural constraints
+- If OpenViking returns relevant results: incorporate them into the task plan and subagent prompts to avoid duplicated discovery and improve prompt specificity
+- If OpenViking returns nothing useful: proceed without it — don't block on empty results
+
+Combine atlas + OpenViking findings before writing the task plan.
 
 ### Step 3: Decompose into tasks
 Write out the task plan explicitly before dispatching:
