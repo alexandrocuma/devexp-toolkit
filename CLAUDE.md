@@ -165,6 +165,8 @@ The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed a
 ./install.sh --reinstall-openviking  # wipe and reinstall the OpenViking MCP from scratch
 ./install.sh --reinstall-jina        # wipe and reinstall the Jina embeddings server from scratch
 ./install.sh --mcps-only             # only register MCP servers — skip agents, skills, and hooks
+./install.sh --agents-only           # only install agents — skip skills, hooks, and MCPs
+./install.sh --skills-only           # only install skills — skip agents, hooks, and MCPs
 ```
 
 Behavior:
@@ -174,6 +176,24 @@ Behavior:
 - Backs up any conflicting files before overwriting
 - If neither CLI is detected, still allows manual target selection
 - Skips OpenViking and Jina setup if the services are already running (healthy PID); use `--reinstall-openviking` or `--reinstall-jina` to force a clean reinstall
+
+### start-services.sh
+
+Use this after a machine restart or when MCP services have stopped. **Never wipes data or venvs.**
+
+```bash
+./start-services.sh            # start anything that isn't running
+./start-services.sh --status   # check service health without starting
+```
+
+Behavior:
+- **Jina** (Docker): health-checks via HTTP, restarts the container if needed — no model re-download
+- **OpenViking** (Python): restarts the server process using the existing venv and `~/.openviking/ov.conf` — no data wipe, no index rebuild
+- Safe to run at any time — skips services that are already running
+
+> Do **not** use `./install.sh --reinstall-openviking` to restart — it wipes the venv and all indexed knowledge. Use `start-services.sh` instead.
+
+After running, reconnect your MCP in Claude Code (`/mcp`) or opencode.
 
 ### uninstall.sh
 

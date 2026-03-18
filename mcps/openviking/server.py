@@ -24,6 +24,8 @@ import asyncio
 import json
 import logging
 import os
+import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -40,6 +42,11 @@ _config_path: str = os.getenv("OV_CONFIG", "./ov.conf")
 _data_path: str = os.getenv("OV_DATA", "./data")
 _client: Optional[ov.SyncOpenViking] = None
 _config_dict: Optional[Dict] = None
+
+# Tracks in-progress and completed background ingestion jobs
+# { uri: { "status": "indexing"|"done"|"error", "namespace": str, "started_at": float, "finished_at": float|None, "error": str|None } }
+_ingestion_jobs: Dict[str, Dict] = {}
+_ingestion_lock = threading.Lock()
 
 
 def _get_client() -> ov.SyncOpenViking:
@@ -59,6 +66,52 @@ def _get_config() -> Dict:
         with open(_config_path) as f:
             _config_dict = json.load(f)
     return _config_dict
+
+
+# ── Namespace helpers ─────────────────────────────────────────────────────────
+
+def _derive_namespace(path: str) -> str:
+    """Derive a deterministic namespace from a path.
+
+    Priority:
+    1. Git remote origin URL slug (stable across machines/users/paths)
+    2. Git repo root directory name (stable within a machine)
+    3. Directory name of the path itself (last resort)
+    """
+    dir_path = path if os.path.isdir(path) else str(Path(path).parent)
+
+    # 1. Try git remote origin
+    try:
+        result = subprocess.run(
+            ["git", "-C", dir_path, "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            remote = result.stdout.strip()
+            # Normalize: strip .git suffix, take last path segment
+            # Handles both https://github.com/org/repo.git and git@github.com:org/repo.git
+            slug = remote.rstrip("/")
+            if slug.endswith(".git"):
+                slug = slug[:-4]
+            slug = slug.replace(":", "/").split("/")[-1]
+            if slug:
+                return slug
+    except Exception:
+        pass
+
+    # 2. Try git repo root name
+    try:
+        result = subprocess.run(
+            ["git", "-C", dir_path, "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            return Path(result.stdout.strip()).name
+    except Exception:
+        pass
+
+    # 3. Directory name fallback
+    return Path(dir_path).name
 
 
 # ── RAG helpers ───────────────────────────────────────────────────────────────
@@ -110,11 +163,12 @@ def _call_llm(messages: List[Dict], temperature: float, max_tokens: int) -> str:
 
     else:  # litellm (default — supports Anthropic, DeepSeek, Gemini, Ollama, etc.)
         import litellm
+        kwargs: Dict[str, Any] = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
         if api_key:
-            litellm.api_key = api_key
+            kwargs["api_key"] = api_key
         if api_base:
-            litellm.api_base = api_base
-        resp = litellm.completion(model=model, messages=messages, temperature=temperature, max_tokens=max_tokens)
+            kwargs["api_base"] = api_base
+        resp = litellm.completion(**kwargs)
         return resp.choices[0].message.content or ""
 
 
@@ -125,11 +179,12 @@ def _query_sync(
     max_tokens: int = 2048,
     score_threshold: float = 0.2,
     system_prompt: Optional[str] = None,
+    namespace: Optional[str] = None,
 ) -> Dict[str, Any]:
     t0 = time.perf_counter()
 
     t_search = time.perf_counter()
-    search_results = _search_sync(user_query, top_k=top_k, score_threshold=score_threshold)
+    search_results = _search_sync(user_query, top_k=top_k, score_threshold=score_threshold, target_uri=namespace)
     search_time = time.perf_counter() - t_search
 
     if search_results:
@@ -194,6 +249,7 @@ def create_server(host: str = "0.0.0.0", port: int = 2033) -> FastMCP:
         max_tokens: int = 2048,
         score_threshold: float = 0.2,
         system_prompt: str = "",
+        namespace: str = "",
     ) -> str:
         """
         Ask a question and get an answer using RAG (Retrieval-Augmented Generation).
@@ -208,6 +264,8 @@ def create_server(host: str = "0.0.0.0", port: int = 2033) -> FastMCP:
             max_tokens:       Maximum tokens in the response (default: 2048).
             score_threshold:  Minimum relevance score 0.0–1.0 (default: 0.2).
             system_prompt:    Optional system prompt to guide the LLM response style.
+            namespace:        Optional viking:// URI to scope the search to a specific knowledge base
+                              (e.g. "viking://my-project"). Use list_namespaces to discover available namespaces.
         """
         result = await asyncio.to_thread(
             _query_sync,
@@ -217,6 +275,7 @@ def create_server(host: str = "0.0.0.0", port: int = 2033) -> FastMCP:
             max_tokens=max_tokens,
             score_threshold=score_threshold,
             system_prompt=system_prompt or None,
+            namespace=namespace or None,
         )
 
         output = result["answer"]
@@ -236,6 +295,56 @@ def create_server(host: str = "0.0.0.0", port: int = 2033) -> FastMCP:
         return output
 
     @mcp.tool()
+    async def remove_resource(uri: str) -> str:
+        """
+        Remove a resource or entire namespace from the OpenViking knowledge base.
+
+        Deletes the resource and all its indexed data recursively. Use list_namespaces
+        to find the URI to remove.
+
+        Args:
+            uri: The viking:// URI to remove (e.g. "viking://resources/my-project").
+                 Supports any URI depth — removes everything under it recursively.
+        """
+        def _remove():
+            with open(_config_path) as f:
+                cfg = json.load(f)
+            config = OpenVikingConfig.from_dict(cfg)
+            client = ov.SyncOpenViking(path=_data_path, config=config)
+            try:
+                client.initialize()
+                client.rm(uri, recursive=True)
+                return f"Removed: {uri}"
+            finally:
+                client.close()
+
+        return await asyncio.to_thread(_remove)
+
+    @mcp.tool()
+    async def list_namespaces() -> str:
+        """
+        List all available namespaces (ingested knowledge bases) in OpenViking.
+
+        Returns the viking:// URIs you can pass as the `namespace` parameter to
+        `query` or `search` to scope results to a specific knowledge base.
+        """
+        def _list():
+            data_dir = Path(_data_path)
+            resources_dir = data_dir / "viking" / "default" / "resources"
+            if not resources_dir.exists():
+                return []
+            return sorted(
+                f"viking://resources/{p.name}"
+                for p in resources_dir.iterdir()
+                if p.is_dir() and not p.name.startswith(".")
+            )
+
+        namespaces = await asyncio.to_thread(_list)
+        if not namespaces:
+            return "No namespaces found. Use add_resource to ingest documents first."
+        return "Available namespaces:\n" + "\n".join(f"  {ns}" for ns in namespaces)
+
+    @mcp.tool()
     async def search(
         query: str,
         top_k: int = 5,
@@ -252,7 +361,8 @@ def create_server(host: str = "0.0.0.0", port: int = 2033) -> FastMCP:
             query:            The search query.
             top_k:            Number of results to return (default: 5).
             score_threshold:  Minimum relevance score 0.0–1.0 (default: 0.2).
-            target_uri:       Optional viking:// URI to scope the search.
+            target_uri:       Optional viking:// URI to scope the search to a specific namespace.
+                              Use list_namespaces to discover available namespaces.
         """
         results = await asyncio.to_thread(
             _search_sync,
@@ -273,7 +383,7 @@ def create_server(host: str = "0.0.0.0", port: int = 2033) -> FastMCP:
         return f"Found {len(results)} results:\n\n" + "\n\n".join(parts)
 
     @mcp.tool()
-    async def add_resource(resource_path: str) -> str:
+    async def add_resource(resource_path: str, namespace: str = "") -> str:
         """
         Add a document, file, directory, or URL to the OpenViking knowledge base.
 
@@ -282,6 +392,11 @@ def create_server(host: str = "0.0.0.0", port: int = 2033) -> FastMCP:
 
         Args:
             resource_path: Local file/directory path, or a URL to ingest.
+            namespace:     Logical name to scope this resource under (e.g. "devexp-toolkit",
+                           "my-project"). Stored as viking://resources/<namespace>.
+                           If omitted, auto-derived from the git remote origin URL
+                           (stable across machines and users), falling back to the
+                           git repo root name, then the directory name.
         """
         config_path = _config_path
         data_path = _data_path
@@ -291,26 +406,100 @@ def create_server(host: str = "0.0.0.0", port: int = 2033) -> FastMCP:
                 cfg = json.load(f)
             config = OpenVikingConfig.from_dict(cfg)
             client = ov.SyncOpenViking(path=data_path, config=config)
-            try:
-                client.initialize()
-                path = resource_path
-                if not path.startswith("http"):
-                    resolved = Path(path).expanduser()
-                    if not resolved.exists():
-                        return f"Error: path not found: {resolved}"
-                    path = str(resolved)
-                result = client.add_resource(path=path)
-                if result and "root_uri" in result:
-                    client.wait_processed(timeout=300)
-                    return f"Added and indexed: {result['root_uri']}"
-                elif result and result.get("status") == "error":
-                    errors = result.get("errors", [])[:3]
-                    return "Partial error:\n" + "\n".join(f"  - {e}" for e in errors)
-                return "Failed to add resource."
-            finally:
+            client.initialize()
+            path = resource_path
+            if not path.startswith("http"):
+                resolved = Path(path).expanduser()
+                if not resolved.exists():
+                    client.close()
+                    return f"Error: path not found: {resolved}"
+                path = str(resolved)
+            resolved_ns = namespace or _derive_namespace(path)
+            ns_uri = f"viking://resources/{resolved_ns}"
+            ns_dir = Path(data_path) / "viking" / "default" / "resources" / resolved_ns
+            if ns_dir.exists():
+                result = client.add_resource(path=path, parent=ns_uri)
+            else:
+                result = client.add_resource(path=path, to=ns_uri)
+            if result:
+                result["_namespace"] = resolved_ns
+            if result and "root_uri" in result:
+                root_uri = result["root_uri"]
+                job_ns = result.get("_namespace", resolved_ns)
+                with _ingestion_lock:
+                    _ingestion_jobs[root_uri] = {
+                        "status": "indexing",
+                        "namespace": job_ns,
+                        "started_at": time.time(),
+                        "finished_at": None,
+                        "error": None,
+                    }
+
+                # Run wait_processed in a background thread so the MCP response
+                # returns immediately — avoids HTTP timeout on large files/dirs.
+                def _bg_finish(uri=root_uri):
+                    try:
+                        client.wait_processed(timeout=600)
+                        with _ingestion_lock:
+                            _ingestion_jobs[uri]["status"] = "done"
+                            _ingestion_jobs[uri]["finished_at"] = time.time()
+                        logger.info(f"Indexing complete: {uri}")
+                    except Exception as e:
+                        with _ingestion_lock:
+                            _ingestion_jobs[uri]["status"] = "error"
+                            _ingestion_jobs[uri]["finished_at"] = time.time()
+                            _ingestion_jobs[uri]["error"] = str(e)
+                        logger.warning(f"wait_processed error for {uri}: {e}")
+                    finally:
+                        client.close()
+
+                threading.Thread(target=_bg_finish, daemon=True).start()
+                return (
+                    f"Ingestion started: {root_uri} "
+                    f"(namespace: {job_ns})\n"
+                    "Indexing in background — call check_ingestion() to monitor progress."
+                )
+            elif result and result.get("status") == "error":
                 client.close()
+                errors = result.get("errors", [])[:3]
+                return "Partial error:\n" + "\n".join(f"  - {e}" for e in errors)
+            client.close()
+            return "Failed to add resource."
 
         return await asyncio.to_thread(_add)
+
+    @mcp.tool()
+    async def check_ingestion(uri: str = "") -> str:
+        """
+        Check the status of background ingestion jobs started by add_resource.
+
+        Args:
+            uri: Optional viking:// URI returned by add_resource to check a specific job.
+                 If omitted, returns the status of all known jobs.
+        """
+        with _ingestion_lock:
+            if not _ingestion_jobs:
+                return "No ingestion jobs recorded in this server session."
+
+            jobs = (
+                {uri: _ingestion_jobs[uri]} if uri and uri in _ingestion_jobs
+                else dict(_ingestion_jobs)
+            )
+            if uri and uri not in _ingestion_jobs:
+                return f"No job found for URI: {uri}"
+
+        lines = []
+        for job_uri, info in sorted(jobs.items(), key=lambda x: x[1]["started_at"], reverse=True):
+            status = info["status"]
+            ns = info["namespace"]
+            elapsed = (info["finished_at"] or time.time()) - info["started_at"]
+            icon = {"indexing": "⏳", "done": "✅", "error": "❌"}.get(status, "?")
+            line = f"{icon} [{status}] {job_uri}  (ns: {ns}, elapsed: {elapsed:.0f}s)"
+            if info["error"]:
+                line += f"\n   error: {info['error']}"
+            lines.append(line)
+
+        return "\n".join(lines)
 
     @mcp.resource("openviking://status")
     def server_status() -> str:

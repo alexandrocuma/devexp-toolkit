@@ -48,7 +48,8 @@ Before reviewing, check if `codebase-navigator` has already mapped this project:
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md`
-5. Skip redundant discovery steps that the atlas already covers
+5. Check OpenViking: call `list_namespaces` — if the project namespace exists, call `query("contribution guidelines and review standards", namespace="viking://resources/<name>")` to surface any documented standards, patterns, or decisions relevant to the PR being reviewed
+6. Skip redundant discovery steps that the atlas already covers
 
 ### Step 1: Get the diff
 
