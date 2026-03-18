@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -41,6 +42,11 @@ _config_path: str = os.getenv("OV_CONFIG", "./ov.conf")
 _data_path: str = os.getenv("OV_DATA", "./data")
 _client: Optional[ov.SyncOpenViking] = None
 _config_dict: Optional[Dict] = None
+
+# Tracks in-progress and completed background ingestion jobs
+# { uri: { "status": "indexing"|"done"|"error", "namespace": str, "started_at": float, "finished_at": float|None, "error": str|None } }
+_ingestion_jobs: Dict[str, Dict] = {}
+_ingestion_lock = threading.Lock()
 
 
 def _get_client() -> ov.SyncOpenViking:
@@ -400,34 +406,100 @@ def create_server(host: str = "0.0.0.0", port: int = 2033) -> FastMCP:
                 cfg = json.load(f)
             config = OpenVikingConfig.from_dict(cfg)
             client = ov.SyncOpenViking(path=data_path, config=config)
-            try:
-                client.initialize()
-                path = resource_path
-                if not path.startswith("http"):
-                    resolved = Path(path).expanduser()
-                    if not resolved.exists():
-                        return f"Error: path not found: {resolved}"
-                    path = str(resolved)
-                resolved_ns = namespace or _derive_namespace(path)
-                ns_uri = f"viking://resources/{resolved_ns}"
-                ns_dir = Path(data_path) / "viking" / "default" / "resources" / resolved_ns
-                if ns_dir.exists():
-                    result = client.add_resource(path=path, parent=ns_uri)
-                else:
-                    result = client.add_resource(path=path, to=ns_uri)
-                if result:
-                    result["_namespace"] = resolved_ns
-                if result and "root_uri" in result:
-                    client.wait_processed(timeout=300)
-                    return f"Added and indexed: {result['root_uri']} (namespace: {result.get('_namespace', resolved_ns)})"
-                elif result and result.get("status") == "error":
-                    errors = result.get("errors", [])[:3]
-                    return "Partial error:\n" + "\n".join(f"  - {e}" for e in errors)
-                return "Failed to add resource."
-            finally:
+            client.initialize()
+            path = resource_path
+            if not path.startswith("http"):
+                resolved = Path(path).expanduser()
+                if not resolved.exists():
+                    client.close()
+                    return f"Error: path not found: {resolved}"
+                path = str(resolved)
+            resolved_ns = namespace or _derive_namespace(path)
+            ns_uri = f"viking://resources/{resolved_ns}"
+            ns_dir = Path(data_path) / "viking" / "default" / "resources" / resolved_ns
+            if ns_dir.exists():
+                result = client.add_resource(path=path, parent=ns_uri)
+            else:
+                result = client.add_resource(path=path, to=ns_uri)
+            if result:
+                result["_namespace"] = resolved_ns
+            if result and "root_uri" in result:
+                root_uri = result["root_uri"]
+                job_ns = result.get("_namespace", resolved_ns)
+                with _ingestion_lock:
+                    _ingestion_jobs[root_uri] = {
+                        "status": "indexing",
+                        "namespace": job_ns,
+                        "started_at": time.time(),
+                        "finished_at": None,
+                        "error": None,
+                    }
+
+                # Run wait_processed in a background thread so the MCP response
+                # returns immediately — avoids HTTP timeout on large files/dirs.
+                def _bg_finish(uri=root_uri):
+                    try:
+                        client.wait_processed(timeout=600)
+                        with _ingestion_lock:
+                            _ingestion_jobs[uri]["status"] = "done"
+                            _ingestion_jobs[uri]["finished_at"] = time.time()
+                        logger.info(f"Indexing complete: {uri}")
+                    except Exception as e:
+                        with _ingestion_lock:
+                            _ingestion_jobs[uri]["status"] = "error"
+                            _ingestion_jobs[uri]["finished_at"] = time.time()
+                            _ingestion_jobs[uri]["error"] = str(e)
+                        logger.warning(f"wait_processed error for {uri}: {e}")
+                    finally:
+                        client.close()
+
+                threading.Thread(target=_bg_finish, daemon=True).start()
+                return (
+                    f"Ingestion started: {root_uri} "
+                    f"(namespace: {job_ns})\n"
+                    "Indexing in background — call check_ingestion() to monitor progress."
+                )
+            elif result and result.get("status") == "error":
                 client.close()
+                errors = result.get("errors", [])[:3]
+                return "Partial error:\n" + "\n".join(f"  - {e}" for e in errors)
+            client.close()
+            return "Failed to add resource."
 
         return await asyncio.to_thread(_add)
+
+    @mcp.tool()
+    async def check_ingestion(uri: str = "") -> str:
+        """
+        Check the status of background ingestion jobs started by add_resource.
+
+        Args:
+            uri: Optional viking:// URI returned by add_resource to check a specific job.
+                 If omitted, returns the status of all known jobs.
+        """
+        with _ingestion_lock:
+            if not _ingestion_jobs:
+                return "No ingestion jobs recorded in this server session."
+
+            jobs = (
+                {uri: _ingestion_jobs[uri]} if uri and uri in _ingestion_jobs
+                else dict(_ingestion_jobs)
+            )
+            if uri and uri not in _ingestion_jobs:
+                return f"No job found for URI: {uri}"
+
+        lines = []
+        for job_uri, info in sorted(jobs.items(), key=lambda x: x[1]["started_at"], reverse=True):
+            status = info["status"]
+            ns = info["namespace"]
+            elapsed = (info["finished_at"] or time.time()) - info["started_at"]
+            icon = {"indexing": "⏳", "done": "✅", "error": "❌"}.get(status, "?")
+            line = f"{icon} [{status}] {job_uri}  (ns: {ns}, elapsed: {elapsed:.0f}s)"
+            if info["error"]:
+                line += f"\n   error: {info['error']}"
+            lines.append(line)
+
+        return "\n".join(lines)
 
     @mcp.resource("openviking://status")
     def server_status() -> str:
