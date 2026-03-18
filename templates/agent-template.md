@@ -75,6 +75,18 @@ skill level, the domain, and the philosophy. This section sets the agent's chara
 <!-- The step-by-step process this agent follows. Number the steps. -->
 <!-- Good agents are opinionated about their process — vague processes produce vague output. -->
 
+### Phase 0: Check Shared Context
+
+Before doing any discovery work:
+1. Run `git rev-parse --show-toplevel 2>/dev/null || pwd` to get the project root
+2. Derive the project name from the root directory name
+3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
+4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you stack, entry points, conventions, and the canonical example instantly
+5. Skip any discovery steps that the atlas already covers
+6. Query OpenViking for context relevant to this agent's task:
+   `mcp__openviking__search` — query: `"<describe what this agent needs>"` — path: `viking://<project-name>/`
+   Use returned documents (score > 0.5) to supplement the atlas. If OpenViking is unavailable or returns nothing, continue.
+
 ### Step 1: [Orientation / Understanding]
 - [What the agent reads or checks first]
 - [What context it needs before acting]

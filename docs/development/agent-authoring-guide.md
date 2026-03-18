@@ -171,9 +171,13 @@ Before doing any discovery work:
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives
    you stack, entry points, conventions, and the canonical example instantly
 5. Skip any discovery steps that the atlas already covers
+6. Query OpenViking for context relevant to this agent's task:
+   `mcp__openviking__search` — query: `"<describe what this agent needs>"` — path: `viking://<project-name>/`
+   Use returned documents (score > 0.5) to supplement the atlas. If OpenViking is unavailable
+   or returns nothing, continue.
 ```
 
-This pattern is used by all agents in the devexp framework. Follow it.
+This pattern is used by all agents in the devexp framework. Follow it. See [OpenViking Integration Patterns](#openviking-integration-patterns) for full guidance on querying and ingesting.
 
 ### Define a Clear Process
 
@@ -342,6 +346,70 @@ After completing analysis, chain into action when appropriate:
 - **Database issues found** → invoke `/db-design` skill
 - **Quick wins available** → invoke `/bugfix` skill
 ```
+
+---
+
+## OpenViking Integration Patterns
+
+OpenViking is the devexp semantic knowledge base — a tiered memory store (L0/L1/L2) that agents can query and populate. It runs as an HTTP MCP server and is available in both Claude Code and opencode sessions.
+
+### When to Query
+
+Query OpenViking in **Phase 0**, as the last step after reading the atlas. Use `mcp__openviking__search` (not `mcp__openviking__query`) — search returns ranked documents that the agent reasons over; query synthesizes an answer directly, which is less controllable.
+
+```markdown
+mcp__openviking__search — query: "<domain-first description>" — path: viking://<project-name>/
+```
+
+Only act on results with a relevance score > 0.5. If OpenViking is unavailable or returns nothing, continue — never block on it.
+
+### Query String Guidelines
+
+- **Domain first**: `"payment service error handling patterns"` not `"patterns in payment"`
+- **Scope to project**: always pass `path: viking://<project-name>/` to limit retrieval to this project's knowledge
+- **Descriptive not imperative**: `"React component test style"` not `"how do I test React components"`
+
+### When to Ingest
+
+Only knowledge-producing agents should ingest — agents that generate durable artifacts that future agents or runs will benefit from. Builders (dev-agent, scaffold) do not ingest.
+
+| Agent | What to ingest | Path format |
+|-------|---------------|-------------|
+| `codebase-navigator` | Atlas file, `docs/` folder | `viking://<project>/atlas`, `viking://<project>/docs` |
+| `arch-review` | Architecture review report | `viking://<project>/arch-review/<date-slug>` |
+| `root-cause` | Root cause analysis report | `viking://<project>/root-cause/<incident-slug>` |
+
+Use `mcp__openviking__add_resource` for ingestion:
+
+```markdown
+mcp__openviking__add_resource — resource: "<file path or content>"
+                              — path: viking://<project-name>/<category>/<slug>
+```
+
+Always guard ingestion: "If OpenViking is unavailable, skip silently."
+
+### What NOT to Ingest
+
+- Ephemeral execution traces (version-dependent, go stale quickly)
+- Changelogs and commit messages (already in git)
+- In-progress work or draft outputs
+- Code files (the source tree is the authoritative reference)
+
+### The Fallback Chain
+
+Every OpenViking interaction must follow this fallback order:
+
+```
+OpenViking → atlas file (~/.claude/agent-memory/) → read source files directly
+```
+
+Never fail hard if OpenViking is unavailable. The system works without it.
+
+### opencode Compatibility
+
+OpenViking is registered as an HTTP MCP in both Claude Code and opencode — tool calls (`mcp__openviking__search`, `mcp__openviking__add_resource`) work in both environments.
+
+One exception: ingestion of `~/.claude/agent-memory/` paths (e.g., the codebase-navigator atlas) only fires in Claude Code sessions, since that directory does not exist in opencode. Treat it as a best-effort Claude Code enhancement and document this in agents that do it.
 
 ---
 

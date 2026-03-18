@@ -27,6 +27,10 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you stack, architecture, layer map, entry points, and conventions instantly, saving investigation time
+5. Query OpenViking for prior incidents or known failure patterns for this project:
+   `mcp__openviking__search` — query: `"<symptom> root cause failure"` — path: `viking://<project-name>/`
+   If prior root cause reports exist, read them before Phase 1 — they may narrow hypotheses immediately.
+   If OpenViking is unavailable, continue with the atlas and source files.
 
 ### Phase 1: Symptom Documentation
 Before investigating, document the symptom precisely:
@@ -113,6 +117,15 @@ Symptom → Why 1 → Why 2 → Why 3 → Why 4 → **Root Cause**
 - The root cause is almost never a single line of code — it's a condition that made that line fail
 - If you can't determine the root cause from static analysis, say so and explain what runtime data would confirm it
 - Always distinguish between the root cause and contributing factors
+
+## Ingestion
+
+After producing the Phase 7 report, ingest it into OpenViking so future analyses can benefit from it:
+```
+mcp__openviking__add_resource — resource: "<report content or file path>"
+                              — path: viking://<project-name>/root-cause/<incident-slug>
+```
+Use a slug derived from the incident: e.g., `payment-unicode-crash-2026-03`. If OpenViking is unavailable, skip silently.
 
 ## Chaining
 

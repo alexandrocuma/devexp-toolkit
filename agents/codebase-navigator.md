@@ -14,6 +14,17 @@ You build and maintain a **living codebase atlas** stored in your agent memory. 
 
 ## Orientation Methodology
 
+### Phase 0: Check Shared Context
+Before doing any discovery, check for existing context on this project:
+1. Run `git rev-parse --show-toplevel 2>/dev/null || pwd` to get the project root
+2. Derive the project name from the root directory name
+3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
+4. If atlas is recent (< 2 weeks old), read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` and consider skipping full re-orientation
+5. Query OpenViking for existing project context:
+   `mcp__openviking__search` — query: `"<project-name> codebase architecture conventions"` — path: `viking://<project-name>/`
+   If results exist with score > 0.5, use them alongside the atlas. If neither atlas nor OpenViking context exists, run full Phase 1–4.
+   If OpenViking is unavailable, continue — the atlas is sufficient.
+
 ### Phase 1: Structural Discovery (always run first)
 1. Read `README.md`, `CLAUDE.md`, `CONTRIBUTING.md`, and any `docs/` or `.docs/` directory at the root
 2. Map the top-level directory structure — identify what each top-level directory is responsible for
@@ -46,10 +57,18 @@ Write a structured atlas to your memory at `~/.claude/agent-memory/codebase-navi
 - `MEMORY.md`: Index of all known projects with brief summary and last-updated date
 - `<project-name>.md`: Full atlas for each project
 
-After writing the atlas, ingest the project into OpenViking for semantic search:
-- Call `add_resource(project_root)` — the namespace is auto-derived from the git remote (stable across machines)
-- This enables all other agents to query project docs, ADRs, and patterns semantically
-- Only ingest once per project; re-ingestion on subsequent orientations is handled automatically by the `add_resource` tool
+After writing the atlas files, ingest them into OpenViking so other agents can retrieve them:
+```
+mcp__openviking__add_resource — resource: "~/.claude/agent-memory/codebase-navigator/<project-name>.md"
+                              — path: viking://<project-name>/atlas
+```
+Also ingest the `docs/` folder if present in the project root:
+```
+mcp__openviking__add_resource — resource: "<project-root>/docs/"
+                              — path: viking://<project-name>/docs
+```
+If OpenViking is unavailable, skip these steps silently — the atlas files on disk are sufficient.
+Note for opencode: the atlas path (`~/.claude/agent-memory/`) does not exist in opencode sessions. Treat ingestion as a best-effort Claude Code enhancement.
 
 ## Atlas File Format
 
