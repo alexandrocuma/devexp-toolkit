@@ -15,6 +15,8 @@ SELECTED_MODEL=""
 REINSTALL_OPENVIKING=false
 REINSTALL_JINA=false
 MCPS_ONLY=false
+AGENTS_ONLY=false
+SKILLS_ONLY=false
 for arg in "$@"; do
     case "$arg" in
         --dry-run|-n)           DRY_RUN=true ;;
@@ -23,13 +25,17 @@ for arg in "$@"; do
         --reinstall-openviking) REINSTALL_OPENVIKING=true ;;
         --reinstall-jina)       REINSTALL_JINA=true ;;
         --mcps-only)            MCPS_ONLY=true ;;
+        --agents-only)          AGENTS_ONLY=true ;;
+        --skills-only)          SKILLS_ONLY=true ;;
         --help|-h)
-            echo "Usage: ./install.sh [--dry-run|-n] [--model <alias|model-id>] [--reinstall-openviking] [--reinstall-jina] [--mcps-only]"
+            echo "Usage: ./install.sh [--dry-run|-n] [--model <alias|model-id>] [--reinstall-openviking] [--reinstall-jina] [--mcps-only] [--agents-only] [--skills-only]"
             echo "  --dry-run, -n           Preview what would be installed without making changes"
             echo "  --model <value>         Override model for all agents (optional — agents inherit CLI default if omitted)"
             echo "  --reinstall-openviking  Wipe ~/.openviking/venv and reinstall from scratch"
             echo "  --reinstall-jina        Wipe Jina embeddings server and reinstall from scratch"
             echo "  --mcps-only             Only register MCP servers — skip agents, skills, and hooks"
+            echo "  --agents-only           Only install agents — skip skills, hooks, and MCPs"
+            echo "  --skills-only           Only install skills — skip agents, hooks, and MCPs"
             echo ""
             echo "  Aliases:"
             echo "    Anthropic : sonnet, opus, haiku"
@@ -227,72 +233,82 @@ install_claude() {
 
     # Collect conflicts
     local conflicts=()
-    for f in "$REPO_DIR/agents/"*.md; do
-        [[ -f "$f" ]] || continue
-        [[ "$(basename "$f")" == "README.md" ]] && continue
-        local t="$AGENTS_TARGET/$(basename "$f")"
-        [[ -f "$t" ]] && conflicts+=("$t")
-    done
-    for d in "$REPO_DIR/skills/"/*/; do
-        [[ -d "$d" ]] || continue
-        local t="$SKILLS_TARGET/$(basename "$d")/skill.md"
-        [[ -f "$t" ]] && conflicts+=("$t")
-    done
+    if ! $SKILLS_ONLY; then
+        for f in "$REPO_DIR/agents/"*.md; do
+            [[ -f "$f" ]] || continue
+            [[ "$(basename "$f")" == "README.md" ]] && continue
+            local t="$AGENTS_TARGET/$(basename "$f")"
+            [[ -f "$t" ]] && conflicts+=("$t")
+        done
+    fi
+    if ! $AGENTS_ONLY; then
+        for d in "$REPO_DIR/skills/"/*/; do
+            [[ -d "$d" ]] || continue
+            local t="$SKILLS_TARGET/$(basename "$d")/skill.md"
+            [[ -f "$t" ]] && conflicts+=("$t")
+        done
+    fi
 
     $DRY_RUN || backup_conflicts "$BACKUP_DIR" "${conflicts[@]+"${conflicts[@]}"}"
 
-    # Install agents (skip README.md and any non-agent .md files)
-    local count=0
-    info "Installing agents..."
-    for f in "$REPO_DIR/agents/"*.md; do
-        [[ -f "$f" ]] || continue
-        [[ "$(basename "$f")" == "README.md" ]] && continue
-        local agent_name
-        agent_name="$(basename "$f" .md)"
-        if is_disabled "$agent_name" "${CONFIG_DISABLED_AGENTS[@]+"${CONFIG_DISABLED_AGENTS[@]}"}"; then
-            echo -e "  ${YELLOW}[skip]${RESET} $(basename "$f") (disabled in devexp.config.json)"
-            continue
-        fi
-        local dest="$AGENTS_TARGET/$(basename "$f")"
-        if $DRY_RUN; then
-            dryrun "write $dest"
-        elif [[ -n "$SELECTED_MODEL" ]]; then
-            sed "s/^model:.*/model: $SELECTED_MODEL/" "$f" > "$dest"
-        else
-            cp "$f" "$dest"
-        fi
-        echo -e "  ${GREEN}+${RESET} $(basename "$f")"
-        (( count++ )) || true
-    done
-    success "Installed $count agent(s)."
-    echo ""
-
-    # Install skills
-    count=0
-    info "Installing skills..."
-    for d in "$REPO_DIR/skills/"/*/; do
-        [[ -d "$d" ]] || continue
-        local skill="$(basename "$d")"
-        if is_disabled "$skill" "${CONFIG_DISABLED_SKILLS[@]+"${CONFIG_DISABLED_SKILLS[@]}"}"; then
-            echo -e "  ${YELLOW}[skip]${RESET} $skill (disabled in devexp.config.json)"
-            continue
-        fi
-        run_mkdir "$SKILLS_TARGET/$skill"
-        if [[ -f "$d/skill.md" ]]; then
-            run_cp "$d/skill.md" "$SKILLS_TARGET/$skill/skill.md"
-            echo -e "  ${GREEN}+${RESET} $skill/skill.md"
+    if ! $SKILLS_ONLY; then
+        # Install agents (skip README.md and any non-agent .md files)
+        local count=0
+        info "Installing agents..."
+        for f in "$REPO_DIR/agents/"*.md; do
+            [[ -f "$f" ]] || continue
+            [[ "$(basename "$f")" == "README.md" ]] && continue
+            local agent_name
+            agent_name="$(basename "$f" .md)"
+            if is_disabled "$agent_name" "${CONFIG_DISABLED_AGENTS[@]+"${CONFIG_DISABLED_AGENTS[@]}"}"; then
+                echo -e "  ${YELLOW}[skip]${RESET} $(basename "$f") (disabled in devexp.config.json)"
+                continue
+            fi
+            local dest="$AGENTS_TARGET/$(basename "$f")"
+            if $DRY_RUN; then
+                dryrun "write $dest"
+            elif [[ -n "$SELECTED_MODEL" ]]; then
+                sed "s/^model:.*/model: $SELECTED_MODEL/" "$f" > "$dest"
+            else
+                cp "$f" "$dest"
+            fi
+            echo -e "  ${GREEN}+${RESET} $(basename "$f")"
             (( count++ )) || true
-        fi
-    done
-    success "Installed $count skill(s)."
-    echo ""
+        done
+        success "Installed $count agent(s)."
+        echo ""
+    fi
 
-    # Install MCPs (base registry + config extras)
-    install_mcps_claude
-    install_extra_mcps_claude
+    if ! $AGENTS_ONLY; then
+        # Install skills
+        local count=0
+        info "Installing skills..."
+        for d in "$REPO_DIR/skills/"/*/; do
+            [[ -d "$d" ]] || continue
+            local skill="$(basename "$d")"
+            if is_disabled "$skill" "${CONFIG_DISABLED_SKILLS[@]+"${CONFIG_DISABLED_SKILLS[@]}"}"; then
+                echo -e "  ${YELLOW}[skip]${RESET} $skill (disabled in devexp.config.json)"
+                continue
+            fi
+            run_mkdir "$SKILLS_TARGET/$skill"
+            if [[ -f "$d/skill.md" ]]; then
+                run_cp "$d/skill.md" "$SKILLS_TARGET/$skill/skill.md"
+                echo -e "  ${GREEN}+${RESET} $skill/skill.md"
+                (( count++ )) || true
+            fi
+        done
+        success "Installed $count skill(s)."
+        echo ""
+    fi
 
-    # Install hooks
-    install_hooks_claude "${CONFIG_DISABLED_HOOKS[@]+"${CONFIG_DISABLED_HOOKS[@]}"}"
+    if ! $AGENTS_ONLY && ! $SKILLS_ONLY; then
+        # Install MCPs (base registry + config extras)
+        install_mcps_claude
+        install_extra_mcps_claude
+
+        # Install hooks
+        install_hooks_claude "${CONFIG_DISABLED_HOOKS[@]+"${CONFIG_DISABLED_HOOKS[@]}"}"
+    fi
 
     success "Claude Code installation complete."
     echo "  Agents: $AGENTS_TARGET"
@@ -407,37 +423,44 @@ install_opencode() {
         return 0
     fi
 
-    command -v python3 &>/dev/null || die "python3 is required for opencode install (used for frontmatter transformation)"
+    if ! $SKILLS_ONLY; then
+        command -v python3 &>/dev/null || die "python3 is required for opencode install (used for frontmatter transformation)"
+    fi
 
     run_mkdir "$AGENTS_TARGET" || die "Failed to create $AGENTS_TARGET"
     run_mkdir "$SKILLS_TARGET"  || die "Failed to create $SKILLS_TARGET"
 
     # Collect conflicts
     local conflicts=()
-    for f in "$REPO_DIR/agents/"*.md; do
-        [[ -f "$f" ]] || continue
-        [[ "$(basename "$f")" == "README.md" ]] && continue
-        local t="$AGENTS_TARGET/$(basename "$f")"
-        [[ -f "$t" ]] && conflicts+=("$t")
-    done
-    # opencode-exclusive agents (agents/opencode/) — installed as-is, no transform
-    for f in "$REPO_DIR/agents/opencode/"*.md; do
-        [[ -f "$f" ]] || continue
-        local t="$AGENTS_TARGET/$(basename "$f")"
-        [[ -f "$t" ]] && conflicts+=("$t")
-    done
-    for d in "$REPO_DIR/skills/"/*/; do
-        [[ -d "$d" ]] || continue
-        local t="$SKILLS_TARGET/$(basename "$d").md"
-        [[ -f "$t" ]] && conflicts+=("$t")
-    done
+    if ! $SKILLS_ONLY; then
+        for f in "$REPO_DIR/agents/"*.md; do
+            [[ -f "$f" ]] || continue
+            [[ "$(basename "$f")" == "README.md" ]] && continue
+            local t="$AGENTS_TARGET/$(basename "$f")"
+            [[ -f "$t" ]] && conflicts+=("$t")
+        done
+        # opencode-exclusive agents (agents/opencode/) — installed as-is, no transform
+        for f in "$REPO_DIR/agents/opencode/"*.md; do
+            [[ -f "$f" ]] || continue
+            local t="$AGENTS_TARGET/$(basename "$f")"
+            [[ -f "$t" ]] && conflicts+=("$t")
+        done
+    fi
+    if ! $AGENTS_ONLY; then
+        for d in "$REPO_DIR/skills/"/*/; do
+            [[ -d "$d" ]] || continue
+            local t="$SKILLS_TARGET/$(basename "$d").md"
+            [[ -f "$t" ]] && conflicts+=("$t")
+        done
+    fi
 
     $DRY_RUN || backup_conflicts "$BACKUP_DIR" "${conflicts[@]+"${conflicts[@]}"}"
 
-    # Install shared agents (transformed from Claude Code format; skip READMEs)
-    local count=0
-    info "Installing agents (transformed for opencode)..."
-    for f in "$REPO_DIR/agents/"*.md; do
+    if ! $SKILLS_ONLY; then
+        # Install shared agents (transformed from Claude Code format; skip READMEs)
+        local count=0
+        info "Installing agents (transformed for opencode)..."
+        for f in "$REPO_DIR/agents/"*.md; do
         [[ -f "$f" ]] || continue
         [[ "$(basename "$f")" == "README.md" ]] && continue
         local agent_name
@@ -494,41 +517,46 @@ PYEOF
             (( count++ )) || true
         done
     fi
-    success "Installed $count agent(s)."
-    echo ""
+        success "Installed $count agent(s)."
+        echo ""
+    fi
 
-    # Install skills as opencode commands (flat .md files, name: line stripped — filename is the command name)
-    count=0
-    info "Installing skills (to ~/.config/opencode/commands — opencode slash commands)..."
-    run_mkdir "$SKILLS_TARGET"
-    for d in "$REPO_DIR/skills/"/*/; do
-        [[ -d "$d" ]] || continue
-        local skill="$(basename "$d")"
-        if is_disabled "$skill" "${CONFIG_DISABLED_SKILLS[@]+"${CONFIG_DISABLED_SKILLS[@]}"}"; then
-            echo -e "  ${YELLOW}[skip]${RESET} $skill (disabled in devexp.config.json)"
-            continue
-        fi
-        if [[ -f "$d/skill.md" ]]; then
-            local dest="$SKILLS_TARGET/$skill.md"
-            if $DRY_RUN; then
-                dryrun "write $dest"
-            else
-                # Strip 'name:' line from frontmatter — opencode derives name from filename
-                sed '/^name:/d' "$d/skill.md" > "$dest"
+    if ! $AGENTS_ONLY; then
+        # Install skills as opencode commands (flat .md files, name: line stripped — filename is the command name)
+        local count=0
+        info "Installing skills (to ~/.config/opencode/commands — opencode slash commands)..."
+        run_mkdir "$SKILLS_TARGET"
+        for d in "$REPO_DIR/skills/"/*/; do
+            [[ -d "$d" ]] || continue
+            local skill="$(basename "$d")"
+            if is_disabled "$skill" "${CONFIG_DISABLED_SKILLS[@]+"${CONFIG_DISABLED_SKILLS[@]}"}"; then
+                echo -e "  ${YELLOW}[skip]${RESET} $skill (disabled in devexp.config.json)"
+                continue
             fi
-            echo -e "  ${GREEN}+${RESET} $skill.md"
-            (( count++ )) || true
-        fi
-    done
-    success "Installed $count skill(s)."
-    echo ""
+            if [[ -f "$d/skill.md" ]]; then
+                local dest="$SKILLS_TARGET/$skill.md"
+                if $DRY_RUN; then
+                    dryrun "write $dest"
+                else
+                    # Strip 'name:' line from frontmatter — opencode derives name from filename
+                    sed '/^name:/d' "$d/skill.md" > "$dest"
+                fi
+                echo -e "  ${GREEN}+${RESET} $skill.md"
+                (( count++ )) || true
+            fi
+        done
+        success "Installed $count skill(s)."
+        echo ""
+    fi
 
-    # Install MCPs (base registry + config extras)
-    install_mcps_opencode
-    install_extra_mcps_opencode
+    if ! $AGENTS_ONLY && ! $SKILLS_ONLY; then
+        # Install MCPs (base registry + config extras)
+        install_mcps_opencode
+        install_extra_mcps_opencode
 
-    # Install hooks (opencode plugin)
-    install_hooks_opencode "${CONFIG_DISABLED_HOOKS[@]+"${CONFIG_DISABLED_HOOKS[@]}"}"
+        # Install hooks (opencode plugin)
+        install_hooks_opencode "${CONFIG_DISABLED_HOOKS[@]+"${CONFIG_DISABLED_HOOKS[@]}"}"
+    fi
 
     success "opencode installation complete."
     echo "  Agents: $AGENTS_TARGET"

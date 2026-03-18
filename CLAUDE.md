@@ -165,6 +165,8 @@ The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed a
 ./install.sh --reinstall-openviking  # wipe and reinstall the OpenViking MCP from scratch
 ./install.sh --reinstall-jina        # wipe and reinstall the Jina embeddings server from scratch
 ./install.sh --mcps-only             # only register MCP servers — skip agents, skills, and hooks
+./install.sh --agents-only           # only install agents — skip skills, hooks, and MCPs
+./install.sh --skills-only           # only install skills — skip agents, hooks, and MCPs
 ```
 
 Behavior:
