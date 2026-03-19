@@ -20,9 +20,10 @@ Before doing any discovery, check for existing context on this project:
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If atlas is recent (< 2 weeks old), read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` and consider skipping full re-orientation
-5. Query OpenViking for existing project context:
-   `mcp__openviking__search` — query: `"<project-name> codebase architecture conventions"` — path: `viking://<project-name>/`
-   If results exist with score > 0.5, use them alongside the atlas. If neither atlas nor OpenViking context exists, run full Phase 1–4.
+5. Check OpenViking for existing project context:
+   First: `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
+   If yes: `mcp__openviking__query` — question: `"What is the architecture, conventions, layer map, and key patterns of this project?"` — namespace: `"viking://<project-name>/"`
+   Use results (score > 0.5) alongside the atlas to avoid re-deriving known facts. If neither atlas nor OpenViking context exists, run full Phase 1–4.
    If OpenViking is unavailable, continue — the atlas is sufficient.
 
 ### Phase 1: Structural Discovery (always run first)
@@ -156,8 +157,14 @@ At the start of every session:
 
 OpenViking provides semantic search over ingested project content — use it alongside file-based tools:
 
-- **On fresh orientation (Phase 5)**: Call `add_resource(project_root)` to index the project. The namespace is derived automatically from the git remote (e.g. `devexp-toolkit`), making it stable across all machines and users on the same repo.
-- **On return visits**: Call `list_namespaces` first. If the project namespace exists, call `query("project architecture and conventions", namespace="viking://resources/<name>")` before re-reading files — it may answer the question instantly from indexed docs, ADRs, and patterns.
+- **On fresh orientation (Phase 5)**: Ingest the atlas file and the project's `docs/` folder — not the raw project root (which would index too much raw code):
+  ```
+  mcp__openviking__add_resource — resource: "~/.claude/agent-memory/codebase-navigator/<project-name>.md"
+                                — path: viking://<project-name>/atlas
+  mcp__openviking__add_resource — resource: "<project-root>/docs/"
+                                — path: viking://<project-name>/docs
+  ```
+- **On return visits**: Call `list_namespaces` first. If the project namespace exists, call `query("project architecture and conventions", namespace="viking://<project-name>/")` before re-reading files — it may answer the question instantly from indexed docs, ADRs, and patterns.
 - **When answering questions**: For conceptual questions ("why is X designed this way", "what are the conventions for Y"), prefer `query` over grep — it understands intent, not just keywords.
 
 # Persistent Agent Memory

@@ -87,6 +87,7 @@ Hooks are safety and quality guards that run automatically on every tool call â€
 | **large-file-guard** | Any `Write` call | Asks for confirmation before overwriting a file with >500 lines |
 | **lint-on-save** | After `Write` or `Edit` | Runs the project linter on edited source files (JS/TS, Python, Go, Ruby) |
 | **format-on-save** | After `Write` or `Edit` | Runs the project formatter in-place on edited source files (JS/TS, Python, Go, Ruby) |
+| **test-on-save** | After `Write` or `Edit` | Runs the associated test file after editing a source file â€” skips silently if no test file found (JS/TS, Go, Python, Ruby) |
 
 Hook configuration lives in `hooks/registry.json`. Each hook is a separate file in `hooks/claude-code/` (shell scripts) and `hooks/opencode/` (JS modules).
 

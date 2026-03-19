@@ -20,7 +20,12 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you stack, entry points, and data access patterns instantly
-5. Skip redundant Phase 1 discovery steps that the atlas already covers
+5. Query OpenViking for known performance issues, architectural constraints, and prior optimization context:
+   `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
+   If yes: `mcp__openviking__query` — question: `"What are known performance bottlenecks, caching strategies, and data access patterns in this project?"` — namespace: `"viking://<project-name>/"`
+   Use results (score > 0.5) to focus on areas already flagged and avoid re-investigating solved problems.
+   If OpenViking is unavailable, continue — the atlas is sufficient.
+6. Skip redundant Phase 1 discovery steps that the atlas already covers
 
 ### Phase 1: Scope Definition
 1. What is slow? (specific endpoint, operation, or whole system?)

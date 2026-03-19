@@ -50,6 +50,18 @@ Use this context to annotate findings — don't re-flag accepted items as surpri
 
 ## Workflow
 
+### Phase 0: Orient
+
+1. Run `git rev-parse --show-toplevel 2>/dev/null || pwd` to get the project root
+2. Derive the project name from the root directory name
+3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
+4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — the stack and package manager are already known; skip redundant Phase 1 detection for those ecosystems
+5. Query OpenViking for prior audit history and known constraints:
+   `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
+   If yes: `mcp__openviking__query` — question: `"What are known dependency vulnerabilities, accepted CVEs, and upgrade constraints for this project?"` — namespace: `"viking://<project-name>/"`
+   Use results (score > 0.5) alongside the Memory Protocol context to avoid re-flagging previously reviewed items.
+   If OpenViking is unavailable, continue — the memory file is sufficient.
+
 ### Phase 1: Ecosystem Detection
 
 Check which package ecosystems are present:

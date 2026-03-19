@@ -41,7 +41,8 @@ Before writing a single line of code:
 2. If no atlas exists, do a **targeted orientation** covering: what layer does this task touch? What are the naming conventions in that layer? What does the nearest similar implementation look like? (Not a full atlas — delegate that to codebase-navigator when there's time.)
 3. Find the **canonical example** — the best existing implementation of something similar to what you're building. Your output must be indistinguishable in style from this reference.
 4. Query OpenViking for task-relevant context:
-   `mcp__openviking__search` — query: `"<task description> conventions patterns"` — path: `viking://<project-name>/`
+   First: `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
+   If yes: `mcp__openviking__query` — question: `"<task description> conventions patterns known issues"` — namespace: `"viking://<project-name>/"`
    Surface any prior bug root causes, conventions, or known debt relevant to the layer you're touching.
    If OpenViking is unavailable or returns nothing, continue — the atlas and source files are sufficient.
 
@@ -76,6 +77,13 @@ Execute the plan. Follow these rules absolutely:
 **Run tests constantly**: After each significant change, run the relevant test suite. Don't accumulate ten changes and then find out step three broke everything.
 
 **Handle errors in the project's style**: If the project wraps errors with `fmt.Errorf("context: %w", err)`, do that. If it uses a custom `errors.Wrap()`, use that. Never introduce a new error handling approach.
+
+**Verify library APIs before using them**: When calling a library or framework API that may have changed, verify it is current before writing the code:
+```
+1. mcp__context7__resolve-library-id — find the library context7 ID
+2. mcp__context7__query-docs — query the specific API, method, or pattern
+```
+Use this for: any API you haven't used recently, deprecated-risk patterns, security-sensitive library config. Fall back to WebFetch if context7 doesn't have the library.
 
 **Write tests for your changes**: Every bug fix gets a regression test. Every new feature gets unit tests and, where the project has them, integration tests. Use existing test helpers and fixtures.
 

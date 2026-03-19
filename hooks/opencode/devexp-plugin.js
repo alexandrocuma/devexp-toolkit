@@ -10,6 +10,7 @@
  *   large-file-guard.js       blocks full overwrites of large files (>500 lines)
  *   lint-on-save.js           runs the project linter after source file edits
  *   format-on-save.js         runs the project formatter after source file edits
+ *   test-on-save.js           runs the associated test file after source file edits
  *
  * @see https://opencode.ai/docs/plugins
  */
@@ -20,6 +21,7 @@ import { dangerousCmdGuard }    from './dangerous-cmd-guard.js';
 import { largeFileGuard }       from './large-file-guard.js';
 import { lintOnSave }           from './lint-on-save.js';
 import { formatOnSave }         from './format-on-save.js';
+import { testOnSave }           from './test-on-save.js';
 
 export const DevExpPlugin = async (ctx) => {
   const modules = await Promise.all([
@@ -29,6 +31,7 @@ export const DevExpPlugin = async (ctx) => {
     largeFileGuard(ctx),
     lintOnSave(ctx),
     formatOnSave(ctx),
+    testOnSave(ctx),
   ]);
 
   return {

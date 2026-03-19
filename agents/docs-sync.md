@@ -56,6 +56,8 @@ This framework has fixed documentation surfaces. Know which changes affect which
 | `hooks/opencode/utils.js` | `docs/development/hook-authoring-guide.md` utils reference |
 | `mcps/registry.json` | CLAUDE.md MCPs section, README.md MCPs section |
 | `install.sh` | CLAUDE.md install section (if flags or behavior changed) |
+| `CLAUDE.md` (any edit) | OpenViking `viking://<project-name>/claude-md` (re-ingest) |
+| `README.md` (any edit) | OpenViking `viking://<project-name>/readme` (re-ingest) |
 
 ## Workflow
 
@@ -113,6 +115,13 @@ Apply each planned change using Edit. Be surgical:
 - For code blocks: match the full block including fences
 - For descriptions: update only the changed field, not the whole paragraph
 
+**After edits**: If `CLAUDE.md` or `README.md` was among the updated files, re-ingest them into OpenViking to keep the knowledge base current:
+```
+mcp__openviking__add_resource — resource: "<project-root>/CLAUDE.md"  — path: viking://<project-name>/claude-md
+mcp__openviking__add_resource — resource: "<project-root>/README.md"  — path: viking://<project-name>/readme
+```
+Derive `<project-name>` from `git rev-parse --show-toplevel` (basename). If OpenViking is unavailable, skip silently — do not block the sync.
+
 **Table row format conventions** (match the style of existing rows):
 
 CLAUDE.md agents table:
@@ -146,6 +155,10 @@ After all edits are applied, produce a concise report:
 - CLAUDE.md: added row for `<name>` to hooks table
 - README.md: added row for `<name>` to hooks table
 - docs/development/hook-authoring-guide.md: updated devexp-plugin.js example
+
+### OpenViking ingestion
+- CLAUDE.md: re-ingested at viking://<project-name>/claude-md (or "not updated — skipped" / "OpenViking unavailable — skipped")
+- README.md: re-ingested at viking://<project-name>/readme (or "not updated — skipped" / "OpenViking unavailable — skipped")
 
 ### No changes needed
 - <doc surface>: already accurate

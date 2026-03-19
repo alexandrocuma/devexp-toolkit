@@ -48,7 +48,7 @@ Before reviewing, check if `codebase-navigator` has already mapped this project:
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md`
-5. Check OpenViking: call `list_namespaces` — if the project namespace exists, call `query("contribution guidelines and review standards", namespace="viking://resources/<name>")` to surface any documented standards, patterns, or decisions relevant to the PR being reviewed
+5. Check OpenViking: `mcp__openviking__list_namespaces` — if `<project-name>` namespace exists, call `mcp__openviking__query` — question: `"What are the contribution guidelines, review standards, ADRs, and conventions for this project?"` — namespace: `"viking://<project-name>/"` — to surface any documented standards, patterns, or decisions relevant to the PR being reviewed
 6. Skip redundant discovery steps that the atlas already covers
 
 ### Step 1: Get the diff
@@ -168,3 +168,12 @@ File: `path/to/file.ts`, line N
 - **Distinguish opinions from issues**: if it's a style preference, label it as such — don't block merges on opinions
 - **Respect the author's intent**: understand what they were trying to do before concluding they did it wrong
 - **Check your assumptions**: read the full context before flagging something as a bug — it might be intentional or handled elsewhere
+
+## Chaining
+
+After the review:
+- **Critical bugs or security issues** → suggest invoking `security` agent for a targeted deep audit of the affected code paths
+- **Request changes** verdict → suggest invoking `pr-feedback` agent to implement the review comments autonomously
+- **Performance concerns flagged** → suggest invoking `performance` agent for bottleneck analysis on the changed code
+- **Missing tests** → suggest invoking `test-gen` agent to generate coverage for the new or changed code
+- **Architectural questions raised** → suggest invoking `tech-lead` agent to produce an ADR for the decision

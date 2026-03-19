@@ -82,5 +82,19 @@
       "plugin": "hooks/opencode/devexp-plugin.js"
     },
     "enabled": true
+  },
+  {
+    "name": "test-on-save",
+    "description": "Run the associated test file after editing a source file — skips if no test file found (JS/TS, Go, Python, Ruby). Advisory only.",
+    "claude_code": {
+      "event": "PostToolUse",
+      "matcher": "Write|Edit",
+      "script": "hooks/claude-code/test-on-save.sh"
+    },
+    "opencode": {
+      "event": "file.edited",
+      "plugin": "hooks/opencode/devexp-plugin.js"
+    },
+    "enabled": true
   }
 ]
