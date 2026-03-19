@@ -45,8 +45,20 @@ Tests that pass trivially are worse than no tests — they create false confiden
 
 Check shared context first:
 1. Run `git rev-parse --show-toplevel 2>/dev/null || pwd` to get the project root
-2. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` for a project atlas
-3. From the atlas (or by discovery), extract: test framework, assertion library, mock approach, test file location pattern, existing fixture/factory patterns
+2. Derive the project name from the root directory name
+3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` for a project atlas
+4. From the atlas (or by discovery), extract: test framework, assertion library, mock approach, test file location pattern, existing fixture/factory patterns
+5. Query OpenViking for test conventions and known coverage gaps:
+   `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
+   If yes: `mcp__openviking__query` — question: `"What are the test conventions, fixture patterns, mock strategies, and known coverage gaps in this project?"` — namespace: `"viking://<project-name>/"`
+   Use results (score > 0.5) to skip re-discovering already-documented test patterns.
+   If OpenViking is unavailable, continue normally.
+6. When the test framework or assertion library version is uncertain, verify the current API using **context7** before writing any test code:
+   ```
+   1. mcp__context7__resolve-library-id — find the framework ID (e.g., "jest", "vitest", "pytest", "go-testing")
+   2. mcp__context7__query-docs — query the specific API (matchers, mock patterns, async utilities)
+   ```
+   This prevents generating tests against deprecated APIs (e.g., old Jest fake timers, removed Enzyme methods).
 
 If no atlas exists, discover the test environment:
 - Find test files: `Glob "**/*.test.*"`, `Glob "**/*.spec.*"`, `Glob "**/*_test.*"`
@@ -134,6 +146,14 @@ Deliver:
 2. A coverage summary: what's covered, what's not, what's highest risk among the gaps
 3. Test run results
 4. Any gaps that require integration tests or manual verification beyond what can be unit tested
+
+## Chaining
+
+After generating tests:
+- **Tests pass** → suggest invoking `test-runner` to measure coverage delta and identify remaining gaps
+- **Tests fail** → suggest invoking `dev-agent` to investigate and fix the underlying implementation issues the tests revealed
+- **Coverage audit completed** → suggest invoking `backend-senior-dev` or `frontend-senior-dev` to review the highest-risk untested modules
+- **Stubs only written** → suggest invoking `dev-agent` to implement the actual logic in the scaffolded test stubs
 
 ## Memory
 

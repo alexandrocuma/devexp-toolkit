@@ -22,7 +22,8 @@ Before generating anything:
 4. **Required**: Read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` in full
 5. If no atlas exists: run a targeted orientation (see Phase 1 fallback) before proceeding — do not skip this
 6. Query OpenViking for convention details not fully captured in the atlas:
-   `mcp__openviking__search` — query: `"<type being scaffolded> conventions naming pattern"` — path: `viking://<project-name>/`
+   First: `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
+   If yes: `mcp__openviking__query` — question: `"<type being scaffolded> conventions naming pattern error handling test style"` — namespace: `"viking://<project-name>/"`
    Examples: `"service naming error handling"`, `"React component test style"`. Use returned documents to refine pattern extraction before Phase 2.
    If OpenViking is unavailable, continue with the atlas and canonical examples.
 
@@ -89,6 +90,13 @@ Generate each file following these absolute rules:
 8. **Test helpers**: use the same mock factories, test fixtures, and assertion helpers that existing tests use — never introduce new test utilities
 9. **Constructor injection**: if canonical examples use dependency injection, use the same pattern
 10. **Configuration**: if the service reads config, use the same config access pattern
+
+**Verify library APIs before generating code**: When generating code that calls an external library or framework API, verify it is current:
+```
+1. mcp__context7__resolve-library-id — find the library context7 ID
+2. mcp__context7__query-docs — query the specific API or usage pattern
+```
+Use this when the library version in `package.json` / `go.mod` differs from what you know, or when generating code for APIs that evolve quickly (ORMs, auth libs, HTTP clients). Fall back to WebFetch if context7 doesn't have the library.
 
 Fill in realistic placeholder logic:
 - For a service: implement the method signatures with `// TODO: implement` and a sensible return shape

@@ -27,6 +27,11 @@ Before reviewing, check if `codebase-navigator` has already mapped this project:
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — the stack, conventions, canonical example, and error handling patterns are essential context for a calibrated review
+5. Query OpenViking for project-specific conventions and known patterns:
+   `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
+   If yes: `mcp__openviking__query` — question: `"What are the error handling, naming, and architecture conventions for this project?"` — namespace: `"viking://<project-name>/"`
+   Use results (score > 0.5) to calibrate your review — don't flag intentional project patterns as anti-patterns.
+   If OpenViking is unavailable, continue — the atlas is sufficient.
 
 ### 1. Language & Idiom Assessment
 - Verify idiomatic usage for the specific language and version
@@ -232,9 +237,18 @@ Example: if the atlas says "errors are always returned without wrapping at the h
 - `/api-design` — review or design API contracts
 - `/db-design` — database schema review
 
-## Available Agents
+## Chaining
 
-Launch these via the `Agent` tool:
-- `security` — deep security vulnerability audit
-- `performance` — performance bottleneck analysis
-- `arch-review` — architecture pattern review
+After completing a review:
+- **Critical issues found** → offer Fix Mode; for multi-file structural changes spawn `dev-agent` with a precise spec
+- **Security vulnerabilities identified** → suggest invoking `security` agent for a full OWASP-level audit of the codebase
+- **Performance concerns** → suggest invoking `performance` agent for bottleneck analysis with profiling
+- **Architectural pattern violations** → suggest invoking `arch-review` for a deeper structural health assessment
+- **New code reviewed** → suggest invoking `test-gen` to generate tests for any untested changes
+
+## Available Skills
+
+- `/quality` — code quality and style review
+- `/logic-review` — logic correctness analysis
+- `/api-design` — review or design API contracts
+- `/db-design` — database schema review

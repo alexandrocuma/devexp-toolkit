@@ -47,6 +47,11 @@ Check shared context:
 1. Run `git rev-parse --show-toplevel 2>/dev/null || pwd` to get the project root
 2. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` for the project atlas
 3. From the atlas (or discovery): identify the stack, package manager, test framework, CI setup
+4. Query OpenViking for prior migration notes, ADRs, and known caveats:
+   `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
+   If yes: `mcp__openviking__query` — question: `"What are prior migration decisions, upgrade constraints, and library version history for this project?"` — namespace: `"viking://<project-name>/"`
+   Use results (score > 0.5) to surface any ADRs or documented constraints that affect this migration.
+   If OpenViking is unavailable, continue normally.
 
 ### Step 2: Research the migration
 

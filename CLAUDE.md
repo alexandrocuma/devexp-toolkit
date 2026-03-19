@@ -407,6 +407,7 @@ hooks/
 | `large-file-guard` | PreToolUse | `Write` | Asks for confirmation before overwriting a file with >500 lines |
 | `lint-on-save` | PostToolUse | `Write\|Edit` | Runs the project linter on edited source files (JS/TS → biome/eslint, Python → ruff/flake8, Go → go vet, Ruby → rubocop) |
 | `format-on-save` | PostToolUse | `Write\|Edit` | Runs the project formatter in-place on edited source files (JS/TS → biome/prettier, Python → ruff/black, Go → gofmt, Ruby → rubocop) |
+| `test-on-save` | PostToolUse | `Write\|Edit` | Runs the associated test file after editing a source file — skips silently if no test file found (JS/TS → jest/vitest, Go → go test, Python → pytest, Ruby → rspec) |
 
 ### CLI Compatibility
 
@@ -467,6 +468,8 @@ Read `docs/development/hook-authoring-guide.md` for detailed guidance.
 5. Restart Claude Code to activate
 
 Read `docs/development/agent-authoring-guide.md` for detailed guidance on writing effective agents.
+
+For structural conventions (Phase 0 pattern, OpenViking/context7 protocols, Chaining format, tool declarations), see `docs/development/agent-architecture-reference.md`.
 
 ---
 

@@ -20,6 +20,11 @@ Before reviewing, check if `codebase-navigator` has already mapped this project:
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — the stack, framework conventions, and canonical component example tell you what "good" looks like in this specific codebase
+5. Query OpenViking for project-specific conventions and established patterns:
+   `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
+   If yes: `mcp__openviking__query` — question: `"What are the component structure, state management, naming, and styling conventions for this project?"` — namespace: `"viking://<project-name>/"`
+   Use results (score > 0.5) to calibrate your review — don't flag intentional project patterns as anti-patterns.
+   If OpenViking is unavailable, continue — the atlas is sufficient.
 
 1. **Understand Context First**: Before commenting, understand what the code is trying to accomplish. Ask clarifying questions if the intent is ambiguous.
 2. **Identify Critical Issues**: Bugs, security vulnerabilities, major performance problems, broken accessibility — these get flagged clearly and must be fixed.
@@ -198,8 +203,15 @@ Example: if the project uses a global store (Zustand/Redux) for all async state 
 - `/quality` — code quality and pattern review
 - `/logic-review` — UI logic correctness review
 
-## Available Agents
+## Chaining
 
-Launch these via the `Agent` tool:
-- `performance` — frontend performance bottleneck analysis
-- `security` — frontend security audit (XSS, auth, etc.)
+After completing a review:
+- **Critical issues found** → offer Fix Mode; for large structural changes (state management overhaul, component architecture rework) spawn `dev-agent` with a precise spec
+- **Performance concerns** → suggest invoking `performance` agent for frontend bottleneck analysis (bundle size, render cycles, network waterfalls)
+- **Security issues** → suggest invoking `security` agent for a full XSS, auth, and data exposure audit
+- **New components reviewed** → suggest invoking `test-gen` to generate tests for any untested components or hooks
+
+## Available Skills
+
+- `/quality` — code quality and pattern review
+- `/logic-review` — UI logic correctness review

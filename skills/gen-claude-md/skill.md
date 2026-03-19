@@ -61,6 +61,12 @@ ls ~/.claude/agent-memory/codebase-navigator/ 2>/dev/null
 
 Read the root `README.md` for the project's own description of itself.
 
+5. Query OpenViking for existing project knowledge:
+   `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
+   If yes: `mcp__openviking__query` — question: `"What are the architecture, conventions, ADRs, and implementation patterns for this project?"` — namespace: `"viking://<project-name>/"`
+   If results return (score > 0.5), use them to pre-populate your understanding of conventions, ADRs, and known issues — skip re-reading already-indexed docs.
+   If OpenViking is unavailable, continue normally.
+
 Identify the stack from manifest files — check all that exist:
 ```bash
 cat package.json 2>/dev/null | head -30
@@ -433,7 +439,14 @@ Full index: `docs/README.md`
 
 ### Phase 5 — Report
 
-After writing, output:
+After writing CLAUDE.md, ingest it into OpenViking so other agents can retrieve it semantically:
+```
+mcp__openviking__add_resource — resource: "<project-root>/CLAUDE.md"
+                              — path: viking://<project-name>/claude-md
+```
+If OpenViking is unavailable, skip silently.
+
+After ingestion, output:
 
 ```
 CLAUDE.md written to: <path>
@@ -447,6 +460,7 @@ Sections needing review:
 Next steps:
 - Review [NOT FOUND] sections and fill manually
 - Run the `codebase-navigator` agent to build a full persistent atlas alongside this CLAUDE.md
+- CLAUDE.md ingested into OpenViking at viking://<project-name>/claude-md (or "OpenViking unavailable — skipped")
 ```
 
 ---
