@@ -293,7 +293,7 @@ See `docs/development/agent-authoring-guide.md` for a comprehensive guide.
 1. Create the skill directory and file:
    ```bash
    mkdir -p skills/my-skill
-   cp templates/skill-template.md skills/my-skill/skill.md
+   cp templates/skill-template.md skills/my-skill/SKILL.md
    ```
 
 2. Fill in the frontmatter and write the skill body.
@@ -427,30 +427,30 @@ devexp/
 │   ├── runbook.md
 │   └── opencode/               # opencode-exclusive agents (installed as-is)
 │       └── orchestrator.md
-├── skills/                     # Skill subdirectories, each with skill.md
-│   ├── bugfix/skill.md
-│   ├── feature/skill.md
-│   ├── refactor/skill.md
-│   ├── docs/skill.md
-│   ├── test-gen/skill.md
-│   ├── regression/skill.md
-│   ├── logic-review/skill.md
-│   ├── quality/skill.md
-│   ├── api-design/skill.md
-│   ├── db-design/skill.md
-│   ├── migrate/skill.md
-│   ├── explain/skill.md
-│   ├── adr/skill.md
-│   ├── commit/skill.md
-│   ├── pr/skill.md
-│   ├── changelog/skill.md
-│   ├── release/skill.md
-│   ├── standup/skill.md
-│   ├── ticket/skill.md
-│   ├── scope/skill.md
-│   ├── health/skill.md
-│   ├── gen-claude-md/skill.md
-│   └── postmortem/skill.md
+├── skills/                     # Skill subdirectories, each with SKILL.md
+│   ├── bugfix/SKILL.md
+│   ├── feature/SKILL.md
+│   ├── refactor/SKILL.md
+│   ├── docs/SKILL.md
+│   ├── test-gen/SKILL.md
+│   ├── regression/SKILL.md
+│   ├── logic-review/SKILL.md
+│   ├── quality/SKILL.md
+│   ├── api-design/SKILL.md
+│   ├── db-design/SKILL.md
+│   ├── migrate/SKILL.md
+│   ├── explain/SKILL.md
+│   ├── adr/SKILL.md
+│   ├── commit/SKILL.md
+│   ├── pr/SKILL.md
+│   ├── changelog/SKILL.md
+│   ├── release/SKILL.md
+│   ├── standup/SKILL.md
+│   ├── ticket/SKILL.md
+│   ├── scope/SKILL.md
+│   ├── health/SKILL.md
+│   ├── gen-claude-md/SKILL.md
+│   └── postmortem/SKILL.md
 ├── hooks/                      # Safety and quality hooks (one file per hook)
 │   ├── registry.json           # Hook registry — source of truth for all hooks
 │   ├── claude-code/            # Shell scripts registered in ~/.claude/settings.json

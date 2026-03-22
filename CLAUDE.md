@@ -104,9 +104,9 @@ Full instructions for how this agent should behave...
 
 ## How Skills Work
 
-Skills live as Markdown files at `~/.claude/skills/<name>/skill.md`. Each skill is invoked using a slash command: `/skill-name` in Claude Code.
+Skills live as Markdown files at `~/.claude/skills/<name>/SKILL.md`. Each skill is invoked using a slash command: `/skill-name` in Claude Code.
 
-When a skill is invoked, its `skill.md` content is injected into the conversation context, shaping Claude's behavior for that task.
+When a skill is invoked, its `SKILL.md` content is injected into the conversation context, shaping Claude's behavior for that task.
 
 ### File Format
 
@@ -476,7 +476,7 @@ For structural conventions (Phase 0 pattern, OpenViking/context7 protocols, Chai
 ## Adding a New Skill
 
 1. Create `skills/<skill-name>/` directory
-2. Copy `templates/skill-template.md` to `skills/<skill-name>/skill.md`
+2. Copy `templates/skill-template.md` to `skills/<skill-name>/SKILL.md`
 3. Fill in the frontmatter and write the skill body
 4. Add a "Triggered by" section listing agents or skills that invoke it
 5. Run `./install.sh` to deploy to `~/.claude/skills/`
@@ -505,7 +505,7 @@ The schema is in `devexp.config.schema.json`. Full guide: `docs/team-distributio
 ## Repo Conventions
 
 - Agent files go in `agents/` — one file per agent, named `<agent-name>.md`
-- Skill files go in `skills/<skill-name>/skill.md` — each skill in its own subdirectory
+- Skill files go in `skills/<skill-name>/SKILL.md` — each skill in its own subdirectory
 - Skill directory names use short, descriptive kebab-case names without a namespace prefix (e.g., `bugfix`, not `devexp-bugfix`)
 - Skills include a "Triggered by" section listing which agents/skills invoke them
 - Hook files go in `hooks/claude-code/<hook-name>.sh` and `hooks/opencode/<hook-name>.js` — one file per hook per CLI

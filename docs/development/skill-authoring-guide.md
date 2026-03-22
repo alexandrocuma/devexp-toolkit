@@ -6,7 +6,7 @@ This guide covers everything you need to write effective skills for the devexp f
 
 ## What Is a Skill?
 
-A skill is a Markdown file at `~/.claude/skills/<name>/skill.md`. When a user invokes `/skill-name` in Claude Code or opencode, the skill's content is injected into the conversation context. This shapes how Claude behaves for the duration of that task.
+A skill is a Markdown file at `~/.claude/skills/<name>/SKILL.md`. When a user invokes `/skill-name` in Claude Code or opencode, the skill's content is injected into the conversation context. This shapes how Claude behaves for the duration of that task.
 
 Key differences from agents:
 
@@ -35,7 +35,7 @@ description: One-line description of what this skill does
 Body content — instructions, process, output format...
 ```
 
-The file lives at `skills/my-skill/skill.md`. The directory name must match the `name` field exactly.
+The file lives at `skills/my-skill/SKILL.md`. The directory name must match the `name` field exactly.
 
 ---
 

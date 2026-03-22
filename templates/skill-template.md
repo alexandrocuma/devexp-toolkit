@@ -89,7 +89,7 @@ Provide [output type] with:
 <!--
 TIPS FOR WRITING EFFECTIVE SKILLS:
 
-1. Skills inject context, not just instructions. When your skill.md is loaded, its full
+1. Skills inject context, not just instructions. When your SKILL.md is loaded, its full
    content becomes part of Claude's context for that conversation. Write it as instructions
    to Claude, not documentation about the skill.
 

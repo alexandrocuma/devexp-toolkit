@@ -48,8 +48,8 @@ This framework has fixed documentation surfaces. Know which changes affect which
 | `agents/<name>.md` (new) | CLAUDE.md agents table, README.md agents table |
 | `agents/<name>.md` (modified) | CLAUDE.md agents table description if changed |
 | `agents/<name>.md` (deleted) | Remove row from CLAUDE.md and README.md |
-| `skills/<name>/skill.md` (new) | CLAUDE.md skills table, README.md skills table |
-| `skills/<name>/skill.md` (deleted) | Remove row from CLAUDE.md and README.md |
+| `skills/<name>/SKILL.md` (new) | CLAUDE.md skills table, README.md skills table |
+| `skills/<name>/SKILL.md` (deleted) | Remove row from CLAUDE.md and README.md |
 | `hooks/registry.json` | CLAUDE.md hooks table, README.md hooks table |
 | `hooks/claude-code/<name>.sh` | CLAUDE.md hooks table (behavior description) |
 | `hooks/opencode/devexp-plugin.js` | `docs/development/hook-authoring-guide.md` plugin example |
@@ -87,7 +87,7 @@ Key reads per change type:
 
 **New hook**: Read `hooks/registry.json` for the hook's entry — `name`, `description`, `claude_code.event`, `claude_code.matcher`. Read the `.sh` file header comment for the behavior description.
 
-**New skill**: Read `skills/<name>/skill.md` frontmatter for `name` and `description`.
+**New skill**: Read `skills/<name>/SKILL.md` frontmatter for `name` and `description`.
 
 **Modified hook behavior**: Read the hook's `.sh` and `.js` files to understand the new behavior.
 

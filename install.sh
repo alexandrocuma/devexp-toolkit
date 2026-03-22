@@ -244,7 +244,7 @@ install_claude() {
     if ! $AGENTS_ONLY; then
         for d in "$REPO_DIR/skills/"/*/; do
             [[ -d "$d" ]] || continue
-            local t="$SKILLS_TARGET/$(basename "$d")/skill.md"
+            local t="$SKILLS_TARGET/$(basename "$d")/SKILL.md"
             [[ -f "$t" ]] && conflicts+=("$t")
         done
     fi
@@ -291,9 +291,9 @@ install_claude() {
                 continue
             fi
             run_mkdir "$SKILLS_TARGET/$skill"
-            if [[ -f "$d/skill.md" ]]; then
-                run_cp "$d/skill.md" "$SKILLS_TARGET/$skill/skill.md"
-                echo -e "  ${GREEN}+${RESET} $skill/skill.md"
+            if [[ -f "$d/SKILL.md" ]]; then
+                run_cp "$d/SKILL.md" "$SKILLS_TARGET/$skill/SKILL.md"
+                echo -e "  ${GREEN}+${RESET} $skill/SKILL.md"
                 (( count++ )) || true
             fi
         done
@@ -533,13 +533,13 @@ PYEOF
                 echo -e "  ${YELLOW}[skip]${RESET} $skill (disabled in devexp.config.json)"
                 continue
             fi
-            if [[ -f "$d/skill.md" ]]; then
+            if [[ -f "$d/SKILL.md" ]]; then
                 local dest="$SKILLS_TARGET/$skill.md"
                 if $DRY_RUN; then
                     dryrun "write $dest"
                 else
                     # Strip 'name:' line from frontmatter — opencode derives name from filename
-                    sed '/^name:/d' "$d/skill.md" > "$dest"
+                    sed '/^name:/d' "$d/SKILL.md" > "$dest"
                 fi
                 echo -e "  ${GREEN}+${RESET} $skill.md"
                 (( count++ )) || true

@@ -2,7 +2,7 @@
 
 Each subdirectory here contains one skill. Skills are invoked in Claude Code via slash commands: `/skill-name`.
 
-Install them by running `../install.sh` from the repo root. Installed skills land in `~/.claude/skills/<name>/skill.md`.
+Install them by running `../install.sh` from the repo root. Installed skills land in `~/.claude/skills/<name>/SKILL.md`.
 
 ---
 
