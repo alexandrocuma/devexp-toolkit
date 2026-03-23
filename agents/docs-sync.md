@@ -56,6 +56,8 @@ This framework has fixed documentation surfaces. Know which changes affect which
 | `hooks/opencode/utils.js` | `docs/development/hook-authoring-guide.md` utils reference |
 | `mcps/registry.json` | CLAUDE.md MCPs section, README.md MCPs section |
 | `install.sh` | CLAUDE.md install section (if flags or behavior changed) |
+| `docs/<folder>/<file>.md` (new) | `docs/<folder>/README.md` folder index, `docs/README.md` top-level index |
+| `docs/<folder>/<file>.md` (deleted) | Remove row from `docs/<folder>/README.md`; remove from `docs/README.md` if last in section |
 | `CLAUDE.md` (any edit) | OpenViking `viking://<project-name>/claude-md` (re-ingest) |
 | `README.md` (any edit) | OpenViking `viking://<project-name>/readme` (re-ingest) |
 
@@ -89,6 +91,8 @@ Key reads per change type:
 
 **New skill**: Read `skills/<name>/SKILL.md` frontmatter for `name` and `description`.
 
+**New doc file in `docs/<folder>/`**: Read `docs/<folder>/README.md` to find the existing index (or note it's missing). Read the new doc's title and opening description. If the folder has no `README.md`, plan to create one using the sub-folder README template.
+
 **Modified hook behavior**: Read the hook's `.sh` and `.js` files to understand the new behavior.
 
 **devexp-plugin.js changed**: Read the current import list and `Promise.all([...])` array.
@@ -121,6 +125,22 @@ mcp__openviking__add_resource — resource: "<project-root>/CLAUDE.md"  — path
 mcp__openviking__add_resource — resource: "<project-root>/README.md"  — path: viking://<project-name>/readme
 ```
 Derive `<project-name>` from `git rev-parse --show-toplevel` (basename). If OpenViking is unavailable, skip silently — do not block the sync.
+
+**Sub-folder README enforcement**: When adding or removing a doc file in any `docs/<folder>/`, always update that folder's `README.md`. If the folder has no `README.md`, create one using this format:
+
+```markdown
+# <Folder Name>
+
+Brief description of what this folder contains.
+
+## Files
+
+| File | Description | Status |
+|------|-------------|--------|
+| [<filename>.md](<filename>.md) | One-line description | ready |
+```
+
+Valid status values: `ready`, `draft`, `reference`, `blocked`.
 
 **Table row format conventions** (match the style of existing rows):
 

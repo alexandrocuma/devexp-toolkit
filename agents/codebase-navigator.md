@@ -27,7 +27,7 @@ Before doing any discovery, check for existing context on this project:
    If OpenViking is unavailable, continue — the atlas is sufficient.
 
 ### Phase 1: Structural Discovery (always run first)
-1. Read `README.md`, `CLAUDE.md`, `CONTRIBUTING.md`, and any `docs/` or `.docs/` directory at the root
+1. Read `README.md`, `CLAUDE.md`, `CONTRIBUTING.md`. For `docs/` — use the folder-index fast-path: check for `docs/README.md` first; if it exists, read it as a navigation map before reading any individual files. Then check for `docs/*/README.md` sub-folder indexes before drilling into individual files in each subfolder.
 2. Map the top-level directory structure — identify what each top-level directory is responsible for
 3. Find build/config files: `package.json`, `go.mod`, `Cargo.toml`, `pyproject.toml`, `pom.xml`, `*.csproj`, `Makefile`, `justfile`, `Dockerfile`, `docker-compose.yml`
 4. Identify the tech stack: language(s), frameworks, test frameworks, linters, ORM/DB library, HTTP library, auth mechanism

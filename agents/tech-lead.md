@@ -123,6 +123,24 @@ Increment by 1. If no ADRs exist, start at 0001.
 [Optional: Specific guidance for implementing this decision. Links to relevant code, migration guides, or follow-up ADRs that should be written.]
 ```
 
+After writing the ADR file, update `docs/architecture/adr/README.md` (or `docs/adr/README.md` — whichever matches the location used). Create it if missing:
+
+```markdown
+# Architecture Decision Records
+
+Decisions that shaped how this system is built. Read before implementing anything significant.
+
+## Decisions
+
+| ADR | Title | Status | Impact |
+|-----|-------|--------|--------|
+| [NNNN](NNNN-<title>.md) | <Title> | Accepted | One line: what this means for implementation today |
+```
+
+Add a row for the new ADR. If it supersedes an older one, update that row's status to `Superseded by [NNNN](link)`.
+
+---
+
 ### Phase 2b: Design Review
 
 A design review evaluates a proposed architecture against:

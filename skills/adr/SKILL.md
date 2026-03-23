@@ -91,7 +91,25 @@ Use this exact format:
 [Optional: Links to follow-up work, migration guides, or related ADRs. Specific gotchas for implementing this decision correctly.]
 ```
 
-### 4. Save and report
+### 4. Update the ADR index
+
+After writing the ADR file, update `docs/architecture/adr/README.md` (create it if missing):
+
+```markdown
+# Architecture Decision Records
+
+Decisions that shaped how this system is built. Read before implementing anything significant.
+
+## Decisions
+
+| ADR | Title | Status | Impact |
+|-----|-------|--------|--------|
+| [NNNN](NNNN-<title>.md) | <Title> | Accepted | One line: what this means for how you write code today |
+```
+
+Add a row for the new ADR. If superseding an older one, update that row's status to `Superseded by [NNNN](NNNN-title.md)`.
+
+### 5. Save and report
 
 Write the file. Then report:
 - Full path of the ADR created

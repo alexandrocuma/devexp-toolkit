@@ -27,13 +27,20 @@ Every repo this framework works in uses this structure. You create missing folde
 ```
 docs/
 ├── README.md               # Navigation index — always kept up to date
-├── api/                    # API reference (one file per resource or module)
-├── guides/                 # How-to guides, tutorials, and business logic docs
+├── api/
+│   └── README.md           # Folder index: lists every API doc with one-line description
+├── guides/
+│   └── README.md           # Folder index: lists every guide with description and status
 ├── architecture/
-│   └── adr/               # Architecture Decision Records (NNNN-kebab-title.md)
-├── development/            # Dev setup, contributing, local workflows, env vars
-└── postmortems/            # Incident postmortems
+│   ├── README.md           # Folder index: links to ADR index and any architecture overviews
+│   └── adr/
+│       └── README.md       # ADR index: lists every decision with status (Accepted/Superseded)
+├── development/
+│   └── README.md           # Folder index: lists every dev doc with one-line description
+└── postmortems/            # Incident postmortems (no index required)
 ```
+
+Every folder that contains documentation files **must have a `README.md` index**. This is enforced — create it if missing. Sub-folder READMEs are the navigation layer that `gen-claude-md`, `codebase-navigator`, and other agents rely on to orient without reading every file.
 
 Root-level files that are also in scope:
 - `README.md` — project root README (quickstart + links to docs/)
@@ -284,6 +291,56 @@ Navigation index for all project documentation.
 - [<Topic>](development/<topic>.md) — brief description
 ```
 
+#### Sub-folder README Index — `docs/<folder>/README.md`
+
+Every subfolder uses this format. The `status` field lets agents and humans skip files that aren't relevant without opening them.
+
+```markdown
+# <Folder Name>
+
+Brief description of what this folder contains and when to look here.
+
+## Files
+
+| File | Description | Status |
+|------|-------------|--------|
+| [<filename>.md](<filename>.md) | One-line description of what it covers | ready |
+| [<filename>.md](<filename>.md) | One-line description | reference |
+
+## Status Values
+
+- **ready** — current, accurate, safe to rely on
+- **draft** — work in progress, may be incomplete
+- **reference** — historical or background context, not actionable today
+- **blocked** — waiting on something before it can be completed
+
+## Notes
+
+Any warnings, gotchas, or cross-references relevant to this folder.
+```
+
+#### ADR Index — `docs/architecture/adr/README.md`
+
+```markdown
+# Architecture Decision Records
+
+Decisions that shaped how this system is built. Read before implementing anything significant.
+
+## Decisions
+
+| ADR | Title | Status | Impact |
+|-----|-------|--------|--------|
+| [0001](0001-<title>.md) | <Decision title> | Accepted | One line: what this means for how you write code today |
+| [0002](0002-<title>.md) | <Decision title> | Superseded by [0005](0005-<title>.md) | — |
+
+## Status Values
+
+- **Accepted** — active, follow this
+- **Superseded** — replaced by a later ADR (linked above)
+- **Deprecated** — no longer applies
+- **Proposed** — under discussion, not yet binding
+```
+
 #### Root README — `README.md`
 
 ```markdown
@@ -314,12 +371,17 @@ For source files: add docstrings to all public functions/classes/methods. Add in
 
 ---
 
-### Phase 3 — Maintain Index
+### Phase 3 — Maintain Indexes
 
-After writing any documentation file:
-1. Open `docs/README.md` (create it if missing using the template above)
-2. Add or update the entry for the file you just wrote
-3. Keep sections sorted logically, not chronologically
+After writing any documentation file, update **two levels** of indexes:
+
+1. **Sub-folder index** — open `docs/<folder>/README.md` (create it if missing using the sub-folder template above). Add or update the row for the file you just wrote. Set the correct status (`ready`, `draft`, `reference`, or `blocked`).
+
+2. **Top-level index** — open `docs/README.md` (create it if missing). Ensure the folder section links to the sub-folder `README.md`. Add or update the entry for the specific file.
+
+3. Keep entries sorted logically, not chronologically.
+
+**Rule**: never write a doc file without also updating its folder's `README.md`. Agents that traverse docs rely on these indexes to avoid reading every file blindly.
 
 ### Phase 4 — Report
 

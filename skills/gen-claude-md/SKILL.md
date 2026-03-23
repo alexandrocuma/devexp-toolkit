@@ -95,11 +95,21 @@ ls docs/guides/ 2>/dev/null
 ls docs/api/ 2>/dev/null
 ```
 
+**Folder index fast-path**: Before reading individual files, check whether each folder has a `README.md`. If it does, read that first — it summarizes every file in the folder and may make individual file reads unnecessary.
+
+```bash
+# Check for folder-level indexes
+ls docs/*/README.md docs/*/*/README.md 2>/dev/null
+```
+
+Read any that exist. A folder README typically contains: file list with one-line descriptions, status (ready/blocked/reference), and critical warnings. Use them as a navigation layer — only drill into individual files when the folder README says they're relevant to what you're generating.
+
 1. **`docs/README.md`** — read fully: understand what's documented and what's missing
-2. **`docs/development/`** — read all files: extract setup steps, env vars, contributing rules, local workflows
-3. **`docs/architecture/adr/`** — list all files, read the **3 most recent** (highest NNNN). Extract the decision title and its direct implementation impact
-4. **`docs/guides/`** — scan filenames; read any that describe business rules, domain logic, or workflows
-5. **`docs/api/`** — scan filenames only; note resource names but don't read in full unless small project
+2. **`docs/development/README.md`** (if exists) — use as index; then read individual files only if needed
+3. **`docs/architecture/README.md`** (if exists) — use as index; then read ADRs from `adr/README.md` or individual files
+4. **`docs/architecture/adr/`** — read `README.md` if present; otherwise list files and read the **3 most recent** (highest NNNN)
+5. **`docs/guides/README.md`** (if exists) — use as index with workstream status; only read individual guides flagged as relevant
+6. **`docs/api/`** — scan filenames only; note resource names but don't read in full unless small project
 
 Record:
 - Which docs exist vs. are missing
