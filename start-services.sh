@@ -26,7 +26,7 @@ OV_DATA="$OV_DIR/data"
 OV_PID="$OV_DIR/mcp.pid"
 OV_LOG="$OV_DIR/mcp.log"
 OV_PORT=2033
-JINA_PORT=8080
+JINA_PORT=8081
 JINA_PID_FILE="$OV_DIR/jina.pid"
 
 STATUS_ONLY=false
