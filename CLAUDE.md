@@ -148,6 +148,7 @@ Body: instructions, process steps, output format...
 | scope | `/scope` | Break a large feature or epic into atomic tickets with dependencies |
 | health | `/health` | Generate a codebase health scorecard with RAG status per dimension |
 | gen-claude-md | `/gen-claude-md` | Crawl a project's docs and codebase to generate a directive CLAUDE.md with architecture map, conventions, and implementation playbooks |
+| review-pr | `/review-pr` | Surgical pre-merge code review using RISEN framework — diffs `origin/<base>...origin/<branch>` to avoid stale local refs |
 
 ---
 
