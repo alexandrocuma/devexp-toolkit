@@ -54,12 +54,30 @@ Before reviewing, check if `codebase-navigator` has already mapped this project:
 ### Step 1: Get the diff
 
 Determine the source of the review:
-- If a PR number is given: `gh pr diff <number>` and `gh pr view <number>`
-- If a branch is given: `git diff main...<branch> --stat` then `git diff main...<branch>`
-- If no argument: `git diff main...HEAD` (current branch vs main)
+- If a PR number is given: `gh pr diff <number>` and `gh pr view <number>` — GitHub computes the correct diff, skip fetch
+- If a branch is given or no argument: fetch first, then diff against remote refs (see below)
+
+**Always fetch before diffing local branches** — local refs may be stale:
+```bash
+git fetch origin --prune
+```
+
+**Detect base branch** (in order):
+```bash
+gh pr view --json baseRefName --jq '.baseRefName' 2>/dev/null  # from existing PR
+gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null  # repo default
+```
+
+**Diff using remote refs** (three-dot = merge-base, only what the branch added):
+```bash
+git diff origin/<base>...origin/<branch> --stat
+git diff origin/<base>...origin/<branch>
+git log origin/<base>...origin/<branch> --oneline
+```
+
+> Using `origin/<base>...origin/<branch>` instead of `main...<branch>` ensures the diff reflects only commits unique to the branch — not any divergence in main that happened since branching. This is what GitHub shows in the PR diff.
 
 Also collect:
-- `git log main...HEAD --oneline` — commit history
 - `gh pr view` (if PR exists) — title, description, labels, reviewers
 
 ### Step 2: Read codebase context
