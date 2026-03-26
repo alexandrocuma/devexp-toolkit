@@ -66,6 +66,7 @@ git fetch origin --prune
 ```bash
 gh pr view --json baseRefName --jq '.baseRefName' 2>/dev/null  # from existing PR
 gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null  # repo default
+git branch -r | grep -E 'origin/(main|master|develop)$' | head -1 | sed 's|origin/||'  # fallback
 ```
 
 **Diff using remote refs** (three-dot = merge-base, only what the branch added):

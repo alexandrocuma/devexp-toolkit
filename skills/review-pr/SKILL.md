@@ -11,7 +11,6 @@ You are a **Senior Staff Engineer** conducting a surgical pre-merge code review.
 
 - User typing `/review-pr [branch-or-PR-number]`
 - `dev-agent` — after completing a feature branch, before opening a PR
-- `pr-review` agent — when a RISEN-format review is needed
 
 ## When to Use
 
@@ -38,14 +37,18 @@ Record: `PR_NUMBER=42`, `BRANCH=headRefName`, `BASE=baseRefName`. Skip Step 2.
 
 **If a branch name is given** (e.g. `/review-pr feat/my-feature`):
 ```bash
-git branch --show-current   # or use the given name
-gh pr view --head <branch> --json number,baseRefName 2>/dev/null   # check if PR exists
+# Use the given argument as the branch name directly — do NOT run git branch --show-current
+PR_JSON=$(gh pr list --head <branch> --json number,baseRefName --limit 1 2>/dev/null)
+PR_NUMBER=$(echo "$PR_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['number'] if d else '')" 2>/dev/null)
+BASE=$(echo "$PR_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['baseRefName'] if d else '')" 2>/dev/null)
 ```
 
 **If no argument given**:
 ```bash
-git branch --show-current       # <branch>
-gh pr view --json number,baseRefName 2>/dev/null   # check if PR exists for current branch
+BRANCH=$(git branch --show-current)
+PR_JSON=$(gh pr view --json number,baseRefName 2>/dev/null)
+PR_NUMBER=$(echo "$PR_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('number',''))" 2>/dev/null)
+BASE=$(echo "$PR_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('baseRefName',''))" 2>/dev/null)
 ```
 
 Track whether a PR exists — it determines whether inline comments can be posted (Step 5).
@@ -166,13 +169,27 @@ Format each comment `body` as:
 ```bash
 REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
 
-# Write the review payload to a temp file
-cat > /tmp/review_payload.json << 'PAYLOAD'
-{
-  "body": "<overall-review-body>",
-  "comments": [ ... ]
-}
-PAYLOAD
+# Build the JSON payload with Python to safely handle backticks, quotes, and newlines
+# REVIEW_BODY and COMMENTS_LIST are populated from the findings in Step 4
+python3 - << 'EOF'
+import json
+
+review_body = """<overall-review-body>"""
+
+comments = [
+    {
+        "path": "<file>",
+        "line": <line-number>,
+        "side": "RIGHT",
+        "body": "<formatted-comment-body>"
+    },
+    # ... one object per finding
+]
+
+payload = {"body": review_body, "comments": comments}
+with open("/tmp/review_payload.json", "w") as f:
+    json.dump(payload, f)
+EOF
 
 # POST without "event" field = pending/draft (not yet visible to others)
 REVIEW_RESPONSE=$(gh api repos/$REPO/pulls/$PR_NUMBER/reviews \
