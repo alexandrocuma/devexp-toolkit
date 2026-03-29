@@ -20,7 +20,7 @@
       "provider": "openai",
       "model": "jinaai/jina-embeddings-v2-base-en",
       "api_key": "local",
-      "api_base": "http://localhost:8081/v1",
+      "api_base": "http://localhost:8082/v1",
       "dimension": 768
     }
   },

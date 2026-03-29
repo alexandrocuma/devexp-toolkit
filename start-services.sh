@@ -26,7 +26,7 @@ OV_DATA="$OV_DIR/data"
 OV_PID="$OV_DIR/mcp.pid"
 OV_LOG="$OV_DIR/mcp.log"
 OV_PORT=2033
-JINA_PORT=8081
+JINA_PORT=8082
 JINA_PID_FILE="$OV_DIR/jina.pid"
 
 STATUS_ONLY=false
@@ -96,6 +96,61 @@ check_jina() {
 
     warn "Jina is not running and no known restart method found"
     echo -e "  Run ./install.sh to set it up"
+}
+
+# ── OpenViking embedding health check ────────────────────────────────────────
+
+validate_embedding_config() {
+    info "OpenViking embedding config"
+
+    # Read api_base from ov.conf
+    local api_base
+    api_base=$(python3 -c "import json,sys; d=json.load(open('$OV_CONF')); print(d['embedding']['dense']['api_base'])" 2>/dev/null)
+
+    if [[ -z "$api_base" ]]; then
+        warn "Could not read embedding api_base from $OV_CONF"
+        return 1
+    fi
+
+    # Test a real embedding request
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
+        -X POST "$api_base/embed" \
+        -H "Content-Type: application/json" \
+        -d '{"inputs": ["health check"]}' 2>/dev/null)
+
+    if [[ "$http_code" == "200" ]]; then
+        ok "Embedding endpoint OK → $api_base"
+        return 0
+    fi
+
+    # Failed — try to detect the real Jina port
+    warn "Embedding endpoint unreachable (HTTP $http_code) → $api_base"
+
+    local actual_port=""
+    for port in 8080 8081 8082 8083; do
+        local test_code
+        test_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 \
+            -X POST "http://localhost:$port/embed" \
+            -H "Content-Type: application/json" \
+            -d '{"inputs": ["health check"]}' 2>/dev/null)
+        if [[ "$test_code" == "200" ]]; then
+            actual_port="$port"
+            break
+        fi
+    done
+
+    if [[ -n "$actual_port" ]]; then
+        echo -e "  Jina is responding on port ${BOLD}$actual_port${RESET} but ov.conf points to ${BOLD}$api_base${RESET}"
+        echo -e "  Fix: update api_base in $OV_CONF"
+        echo -e "    python3 -c \"import json; d=json.load(open('$OV_CONF')); d['embedding']['dense']['api_base']='http://localhost:$actual_port'; json.dump(d, open('$OV_CONF','w'), indent=2)\""
+        echo -e "  Then restart: ./start-services.sh"
+    else
+        echo -e "  Jina does not appear to be responding on any standard port (8080-8083)"
+        echo -e "  Check: docker ps | grep jina"
+    fi
+
+    return 1
 }
 
 # ── OpenViking status/start ───────────────────────────────────────────────────
@@ -173,6 +228,8 @@ echo ""
 check_jina
 echo ""
 start_openviking
+echo ""
+validate_embedding_config
 echo ""
 
 if ! $STATUS_ONLY; then

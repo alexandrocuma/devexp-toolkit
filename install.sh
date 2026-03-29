@@ -1128,7 +1128,7 @@ PYEOF
 }
 
 # ── Jina embeddings server ────────────────────────────────────────────────────
-JINA_PORT=8081
+JINA_PORT=8082
 
 _setup_jina_pip() {
     local venv_dir="$HOME/.openviking/jina-venv"
