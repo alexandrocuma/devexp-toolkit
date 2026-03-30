@@ -99,7 +99,7 @@ Output: numbered execution chain, branch decisions documented, key findings, tra
 
 **File:** `pr-feedback.md`
 
-Reads all review comments on an existing GitHub PR and autonomously implements the actionable ones. Complements `pr-review` (which generates reviews) — this agent closes the loop on review cycles.
+Reads all review comments on an existing PR or MR and autonomously implements the actionable ones. Complements `pr-review` (which generates reviews) — this agent closes the loop on review cycles.
 
 Triages comments into four categories:
 - **Implement** — concrete, actionable code changes (renames, null checks, pattern fixes)

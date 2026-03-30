@@ -14,7 +14,7 @@ You are the **Ticket Groomer**. Your job is to take a ticket and produce a verif
 
 ## When to Use
 
-When a ticket exists in Linear and needs a full, verified implementation plan before a developer picks it up. Phrases: "groom this ticket", "plan PAY-1179", "prepare this ticket for dev", "what does it take to implement X?".
+When a ticket exists in any issue tracker (Linear, Jira, GitHub Issues, GitLab, Notion) and needs a full, verified implementation plan before a developer picks it up. Phrases: "groom this ticket", "plan PAY-1179", "prepare this ticket for dev", "what does it take to implement X?".
 
 ---
 
@@ -22,11 +22,27 @@ When a ticket exists in Linear and needs a full, verified implementation plan be
 
 ### Phase 1 — Fetch & Classify
 
-#### 1a. Fetch from Linear
+#### 1a. Detect Platform and Fetch the Ticket
 
-```
-get_issue("<TICKET-ID>")
-```
+Inspect available MCP tool namespaces and CLIs to determine the ticket platform:
+
+| Priority | Signal | Platform |
+|----------|--------|----------|
+| 1 | `mcp__linear__*` tools present | Linear |
+| 2 | `mcp__jira__*` or `mcp__atlassian__*` tools present | Jira |
+| 3 | `mcp__github__*` tools present or `gh auth status` succeeds | GitHub Issues |
+| 4 | `mcp__notion__*` tools present | Notion |
+| 5 | None | Ask user to paste ticket content |
+
+Use the platform's fetch operation:
+
+| Platform | Fetch | Update | Save plan |
+|----------|-------|--------|-----------|
+| Linear | `mcp__linear__get_issue(id)` | `mcp__linear__update_issue(id, ...)` | `mcp__linear__create_document` + `create_attachment` |
+| Jira | `mcp__jira__get_issue(issueKey)` | `mcp__jira__update_issue(issueKey, ...)` | `mcp__jira__add_comment(issueKey, body)` |
+| GitHub Issues | `gh issue view <id> --json title,body,labels,url` | `gh issue edit <id> --body <content>` | `gh issue comment <id> --body <plan>` |
+| Notion | `mcp__notion__retrieve_page(page_id)` | `mcp__notion__update_page(page_id, ...)` | `mcp__notion__create_page(parent_id, ...)` |
+| None | User pastes content | Show corrections, ask user to apply | Save to `<TICKET-ID>-plan.md` locally |
 
 Extract: title, description, acceptance criteria, labels, linked tickets, assignee.
 
@@ -115,10 +131,10 @@ READY TO GROOM | NEEDS TICKET CORRECTION | BLOCKED
 
 **Verdicts:**
 - **READY TO GROOM** — all claims validated, proceed to plan
-- **NEEDS TICKET CORRECTION** — the ticket has wrong/missing info; report to user and optionally update the Linear ticket before continuing
+- **NEEDS TICKET CORRECTION** — the ticket has wrong/missing info; report to user and optionally update the ticket (using the detected platform's update operation) before continuing
 - **BLOCKED** — a hard dependency is missing (another ticket not done, external decision pending); do not plan
 
-If **NEEDS TICKET CORRECTION**: present the corrections to the user. Ask whether to update the Linear ticket and proceed, or stop for human review.
+If **NEEDS TICKET CORRECTION**: present the corrections to the user. Ask whether to update the ticket and proceed, or stop for human review.
 
 If **BLOCKED**: stop. Report the blocker clearly.
 
@@ -200,19 +216,9 @@ Only write the plan after Phase 3 passes. The plan must reflect what the codebas
 
 ### Phase 7 — Persist
 
-**7a. Save to Linear (source of truth)**
+**7a. Save to ticket platform (source of truth)**
 
-```
-create_document(
-  title: "<TICKET-ID> — Execution Plan",
-  content: <full verified plan>
-)
-```
-
-Attach to the ticket:
-```
-create_attachment(issueId, title: "Execution Plan", url: <document-url>)
-```
+Use the save plan operation from the platform adapter table (Phase 1) to attach the verified execution plan to the original ticket. The plan must be retrievable directly from the ticket without requiring OpenViking access.
 
 **7b. Save to OpenViking (semantic index)**
 
@@ -242,11 +248,11 @@ Plan summary:
   Steps:              K
 
 Persisted to:
-  Linear document:    <url>  (source of truth)
+  Ticket platform:    <url>  (source of truth — retrieve via platform's fetch/view operation)
   OpenViking:         viking://resources/Atlas.Webapp.Plans/<TICKET-ID> ✅
 
 Retrieve later:
-  get_document(<id>)  ← full plan, always
+  Platform fetch operation (see adapter table, Phase 1)
   query("Give me the full execution plan for <TICKET-ID>", namespace: "viking://resources/Atlas.Webapp.Plans")  ← semantic search
 ```
 
@@ -261,7 +267,7 @@ Retrieve later:
 - [ ] "Files NOT Changing" section is explicit and reasoned
 - [ ] Execution steps are ordered — each step unblocked by previous
 - [ ] Verification section is specific — not "run tests", but "run `npm run test:e2e`, navigate to X, confirm only one `$pageview` fires"
-- [ ] Plan saved to Linear before OpenViking — Linear is the authoritative source
+- [ ] Plan saved to ticket platform before OpenViking — ticket platform is the authoritative source
 
 ## What Makes a Bad Groom
 
@@ -269,5 +275,5 @@ Retrieve later:
 - Skipping agents because "the ticket seems clear" — clarity is not correctness
 - Vague steps: "update the config" → "add `capture_pageview: false` to `posthog.init()` in `app/entry.client.tsx:16`"
 - Missing blast radius — failing to find all callers of a changing function
-- Plan only in OpenViking — RAG chunking means retrieval may be incomplete; Linear is the authoritative source
+- Plan only in OpenViking — RAG chunking means retrieval may be incomplete; the ticket platform is the authoritative source
 - Marking READY TO GROOM when there are unresolved ⚠️ or 🔴 findings

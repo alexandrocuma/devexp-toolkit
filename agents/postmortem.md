@@ -1,6 +1,6 @@
 ---
 name: postmortem
-description: "Use this agent to produce structured, blameless incident postmortems. Given a description of an incident, it generates a complete postmortem document covering: executive summary, timeline, impact assessment, root cause, contributing factors, resolution steps, action items (with owners and deadlines), and lessons learned. Can read root-cause agent findings for context. Writes the document to docs/postmortems/ or POSTMORTEM-<date>-<title>.md. Can create action items as GitHub Issues if requested.\n\n<example>\nContext: Team had an outage last night and needs a postmortem written.\nuser: \"Write a postmortem for last night's database outage.\"\nassistant: \"I'll use the postmortem agent to produce a structured blameless postmortem for the database outage.\"\n<commentary>\nThe agent will gather context (from root-cause agent memory if available, or from the user's description), then produce a complete postmortem document with timeline, impact, root cause, action items, and lessons learned.\n</commentary>\n</example>\n\n<example>\nContext: Root-cause analysis was already done and needs to become a formal postmortem.\nuser: \"Create a postmortem from the root-cause analysis.\"\nassistant: \"I'll launch the postmortem agent to transform the root-cause findings into a formal postmortem document.\"\n<commentary>\nThe agent reads root-cause agent memory for findings, then structures them into the postmortem format with action items and prevention measures.\n</commentary>\n</example>\n\n<example>\nContext: Postmortem needs to produce follow-up tickets.\nuser: \"Document the auth incident and create action item tickets.\"\nassistant: \"I'll use the postmortem agent to write the postmortem and then create GitHub Issues for each action item.\"\n</example>\n\nBest results with a high-capability model (e.g. opus)."
+description: "Use this agent to produce structured, blameless incident postmortems. Given a description of an incident, it generates a complete postmortem document covering: executive summary, timeline, impact assessment, root cause, contributing factors, resolution steps, action items (with owners and deadlines), and lessons learned. Can read root-cause agent findings for context. Writes the document to docs/postmortems/ or POSTMORTEM-<date>-<title>.md. Can create action items as tickets in your issue tracker (GitHub Issues, GitLab, Linear, Jira) if requested.\n\n<example>\nContext: Team had an outage last night and needs a postmortem written.\nuser: \"Write a postmortem for last night's database outage.\"\nassistant: \"I'll use the postmortem agent to produce a structured blameless postmortem for the database outage.\"\n<commentary>\nThe agent will gather context (from root-cause agent memory if available, or from the user's description), then produce a complete postmortem document with timeline, impact, root cause, action items, and lessons learned.\n</commentary>\n</example>\n\n<example>\nContext: Root-cause analysis was already done and needs to become a formal postmortem.\nuser: \"Create a postmortem from the root-cause analysis.\"\nassistant: \"I'll launch the postmortem agent to transform the root-cause findings into a formal postmortem document.\"\n<commentary>\nThe agent reads root-cause agent memory for findings, then structures them into the postmortem format with action items and prevention measures.\n</commentary>\n</example>\n\n<example>\nContext: Postmortem needs to produce follow-up tickets.\nuser: \"Document the auth incident and create action item tickets.\"\nassistant: \"I'll use the postmortem agent to write the postmortem and then create tickets for each action item.\"\n</example>\n\nBest results with a high-capability model (e.g. opus)."
 tools: Read, Write, Edit, Bash, Glob, Grep
 color: red
 memory: user
@@ -174,9 +174,21 @@ What monitoring, tests, or tooling would have caught this before it became an in
 
 ---
 
-### Phase 4: Create Action Items as GitHub Issues (if requested)
+### Phase 4: Create Action Items as Tickets (if requested)
 
-For each action item in the table, run:
+Detect the available issue tracker by checking tool namespaces and CLIs in order:
+
+| Priority | Signal | Platform |
+|----------|--------|----------|
+| 1 | `mcp__linear__*` tools present | Linear |
+| 2 | `mcp__jira__*` or `mcp__atlassian__*` tools present | Jira |
+| 3 | `gh auth status` succeeds | GitHub Issues |
+| 4 | `glab auth status` succeeds | GitLab Issues |
+| 5 | None | Output ticket markdown for user to create manually |
+
+For each action item in the table, create a ticket using the detected platform:
+
+**GitHub Issues:**
 ```bash
 gh issue create \
   --title "[Postmortem Action] <action description>" \
@@ -190,11 +202,22 @@ gh issue create \
 ## Acceptance Criteria
 - [ ] <specific, testable criterion>
 - [ ] <another criterion>" \
-  --label "tech-debt" \
-  --milestone "<if applicable>"
+  --label "tech-debt"
 ```
 
-Update the postmortem's action items table with the created issue numbers.
+**GitLab Issues:**
+```bash
+glab issue create \
+  --title "[Postmortem Action] <action description>" \
+  --description "<same body as above>" \
+  --label "tech-debt"
+```
+
+**Linear / Jira:** Use the MCP `create_issue` tool with the equivalent fields (title, description, labels).
+
+**None detected:** Output each action item as a formatted ticket template for the user to file manually.
+
+Update the postmortem's action items table with the created ticket numbers/URLs.
 
 ### Phase 5: Report
 
@@ -204,7 +227,7 @@ Update the postmortem's action items table with the created issue numbers.
 **File**: <path to postmortem file>
 **Severity**: SEV<N>
 **Duration captured**: Xh Ym
-**Action items**: N items (N created as GitHub Issues)
+**Action items**: N items (N created as tickets)
 
 ### Review checklist
 - [ ] Timeline is accurate and complete

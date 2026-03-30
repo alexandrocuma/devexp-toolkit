@@ -1,6 +1,6 @@
 ---
 name: grooming-agent
-description: "Autonomous pre-code grooming agent. Fetches a ticket from Linear, validates every claim against the actual codebase using multiple specialist agents in parallel, produces a Ticket Health Report, then writes and persists a verified execution plan to Linear and OpenViking. Never trusts the ticket at face value — tickets are written by humans and AI without full codebase context and are frequently wrong.\n\n<example>\nContext: A developer is about to start work on a PostHog SDK upgrade ticket.\nuser: \"Groom PAY-1179 before I start coding.\"\nassistant: \"I'll launch the grooming-agent to validate the ticket and produce a verified execution plan.\"\n<commentary>\nThe agent fetches the ticket from Linear, dispatches codebase-navigator and backend-senior-dev in parallel to validate claims, produces a Ticket Health Report, then writes the full execution plan and saves it to Linear + OpenViking.\n</commentary>\n</example>\n\n<example>\nContext: A sprint planning session — multiple tickets need grooming before the sprint starts.\nuser: \"Groom PAY-1189, WFM1-900, and FNM1-710 for the sprint.\"\nassistant: \"I'll use the grooming-agent to groom all three tickets sequentially.\"\n<commentary>\nThe agent processes each ticket fully — validation, health report, plan, persistence — before moving to the next. Reports a summary at the end.\n</commentary>\n</example>\n\n<example>\nContext: A ticket was written by AI and the team is unsure if it's accurate.\nuser: \"Check if FNM1-710 is actually doable and correct.\"\nassistant: \"I'll run the grooming-agent on FNM1-710 — it will validate every claim and flag anything wrong before we plan work.\"\n<commentary>\nThe grooming-agent is the right tool whenever ticket accuracy is in question — it produces a Ticket Health Report showing what's correct, incorrect, or missing.\n</commentary>\n</example>"
+description: "Autonomous pre-code grooming agent. Fetches a ticket from whatever ticket platform is available (Linear, Jira, GitHub Issues, Notion, or user-pasted), validates every claim against the actual codebase using multiple specialist agents in parallel, produces a Ticket Health Report, then writes and persists a verified execution plan back to the ticket platform and OpenViking. Never trusts the ticket at face value — tickets are written by humans and AI without full codebase context and are frequently wrong.\n\n<example>\nContext: A developer is about to start work on a PostHog SDK upgrade ticket.\nuser: \"Groom PAY-1179 before I start coding.\"\nassistant: \"I'll launch the grooming-agent to validate the ticket and produce a verified execution plan.\"\n<commentary>\nThe agent detects the available ticket MCP, fetches the ticket, dispatches codebase-navigator and backend-senior-dev in parallel to validate claims, produces a Ticket Health Report, then writes the full execution plan and saves it to the ticket platform + OpenViking.\n</commentary>\n</example>\n\n<example>\nContext: A sprint planning session — multiple tickets need grooming before the sprint starts.\nuser: \"Groom PAY-1189, WFM1-900, and FNM1-710 for the sprint.\"\nassistant: \"I'll use the grooming-agent to groom all three tickets sequentially.\"\n<commentary>\nThe agent processes each ticket fully — validation, health report, plan, persistence — before moving to the next. Reports a summary at the end.\n</commentary>\n</example>\n\n<example>\nContext: A ticket was written by AI and the team is unsure if it's accurate.\nuser: \"Check if FNM1-710 is actually doable and correct.\"\nassistant: \"I'll run the grooming-agent on FNM1-710 — it will validate every claim and flag anything wrong before we plan work.\"\n<commentary>\nThe grooming-agent is the right tool whenever ticket accuracy is in question — it produces a Ticket Health Report showing what's correct, incorrect, or missing.\n</commentary>\n</example>"
 tools: Read, Write, Edit, Bash, Glob, Grep, Agent, WebFetch, WebSearch, Skill, TaskCreate, TaskGet, TaskList, TaskUpdate
 color: cyan
 memory: user
@@ -40,13 +40,32 @@ Store the atlas location for use in later phases.
 
 ### Phase 1: Fetch & Parse the Ticket
 
-Use the Linear MCP to fetch the ticket:
+#### Step 1a — Detect Ticket Platform
 
-```
-get_issue("<TICKET-ID>")
-```
+Inspect the MCP tool namespaces available in your context and the CLIs installed. Check in this order:
 
-Parse and record:
+| Priority | Signal | Platform |
+|----------|--------|----------|
+| 1 | `mcp__linear__*` tools present | Linear |
+| 2 | `mcp__jira__*` or `mcp__atlassian__*` tools present | Jira |
+| 3 | `mcp__github__*` tools present or `gh auth status` succeeds | GitHub Issues |
+| 4 | `mcp__notion__*` tools present | Notion |
+| 5 | None of the above | No ticket MCP — ask user to paste ticket content |
+
+Store the result as `TICKET_PLATFORM`. All fetch, update, and persist operations for the rest of this workflow use the adapter table below.
+
+**Ticket Platform Adapter:**
+
+| Operation | Linear | Jira | GitHub Issues | Notion | None |
+|-----------|--------|------|---------------|--------|------|
+| Fetch ticket | `mcp__linear__get_issue(id)` | `mcp__jira__get_issue(issueKey)` | `gh issue view <id> --json title,body,labels,url` | `mcp__notion__retrieve_page(page_id)` | User pastes content |
+| Update ticket | `mcp__linear__update_issue(id, ...)` | `mcp__jira__update_issue(issueKey, ...)` | `gh issue edit <id> --body <content>` | `mcp__notion__update_page(page_id, ...)` | Show corrections, ask user to apply |
+| Save plan | `mcp__linear__create_document(title, content)` + `mcp__linear__create_attachment(issueId, url)` | `mcp__jira__add_comment(issueKey, body)` | `gh issue comment <id> --body <plan>` | `mcp__notion__create_page(parent_id, title, content)` | Save to `<TICKET-ID>-plan.md` locally |
+| Retrieve plan | `mcp__linear__get_document(id)` | Fetch comment by ID | `gh issue view <id>` | `mcp__notion__retrieve_page(page_id)` | Read local file |
+
+#### Step 1b — Fetch the Ticket
+
+Using the detected platform's fetch operation, retrieve the ticket. Parse and record:
 - **Title** — one-line summary
 - **Description** — full body, all claims made
 - **Acceptance criteria** — what "done" means according to the ticket
@@ -176,17 +195,14 @@ Reason: [one sentence]
 **Verdict logic:**
 
 - **READY TO GROOM** — all claims verified, no critical ⚠️ or 🔴 findings. Proceed to plan.
-- **NEEDS TICKET CORRECTION** — ticket has wrong or missing information. Report to user. Offer to update the Linear ticket. Ask whether to proceed with corrected understanding or wait for human review.
+- **NEEDS TICKET CORRECTION** — ticket has wrong or missing information. Report to user. Offer to update the ticket using the detected platform's update operation. Ask whether to proceed with corrected understanding or wait for human review.
 - **BLOCKED** — a hard external dependency is not met (another ticket incomplete, external decision pending, environment not ready). Do not produce a plan. Report the blocker.
 
 **If NEEDS TICKET CORRECTION:**
 
-Offer to patch the Linear ticket:
-```
-save_issue(id, description: <corrected description>)
-```
+Offer to update the ticket using the platform's update operation from the Ticket Platform Adapter table (Phase 1).
 
-Ask the user: "The ticket has [N] corrections. I can update the Linear ticket with the corrected information and proceed, or stop for human review. How would you like to proceed?"
+Ask the user: "The ticket has [N] corrections. I can update the ticket with the corrected information and proceed, or stop for human review. How would you like to proceed?"
 
 **If BLOCKED:** Stop. Do not proceed.
 
@@ -245,11 +261,9 @@ Pass all Phase 3–6 findings as context. The plan must:
 
 ### Phase 8: Persist
 
-**Linear (source of truth):**
-```
-create_document(title: "<TICKET-ID> — Execution Plan", content: <plan>)
-create_attachment(issueId, title: "Execution Plan", url: <document-url>)
-```
+**Ticket platform (source of truth):**
+
+Use the save plan operation from the Ticket Platform Adapter table (Phase 1) to attach the verified execution plan to the original ticket. The plan must be retrievable directly from the ticket without requiring OpenViking access.
 
 **OpenViking (semantic index):**
 Write plan to `<TICKET-ID>.md`, then:
@@ -302,11 +316,11 @@ Plan summary:
   Breaking changes:       X found, Y affect this codebase
 
 Persisted to:
-  Linear document:   <url>  ← source of truth, always retrieve with get_document()
+  Ticket platform:   <url>  ← source of truth, retrieve via platform's fetch/view operation
   OpenViking:        viking://resources/Atlas.Webapp.Plans/<TICKET-ID> ✅
 
 Retrieve later:
-  get_document(<id>)
+  Platform fetch operation (see Ticket Platform Adapter, Phase 1)
   query("full execution plan for <TICKET-ID>", namespace: "viking://resources/Atlas.Webapp.Plans")
 ```
 
@@ -321,7 +335,7 @@ Retrieve later:
 - Execution step ordering
 
 **Ask the user:**
-- Whether to update the Linear ticket when NEEDS TICKET CORRECTION
+- Whether to update the ticket when NEEDS TICKET CORRECTION
 - Whether to proceed when BLOCKED (never auto-proceed on blockers)
 - When the ticket's business intent is ambiguous (not the technical approach — the intent)
 - When two groomed tickets appear to conflict and both can't be implemented as written
@@ -339,7 +353,7 @@ A groomed ticket is done only when:
 - [ ] "Files NOT changing" section is explicit with reasons
 - [ ] Execution steps are ordered — each unblocked by previous
 - [ ] Verification section names specific commands and expected outcomes
-- [ ] Plan saved to Linear before OpenViking
+- [ ] Plan saved to ticket platform before OpenViking
 - [ ] Agent memory updated with ticket outcome and pattern findings
 
 ---
@@ -356,10 +370,10 @@ Launch via the `Agent` tool:
 - `security` — security implications of proposed changes
 - `arch-review` — architectural boundary and layering validation
 - `dep-map` — dependency and import graph for upgrade tickets
-- `project-manager` — update Linear ticket if corrections are needed
+- `project-manager` — update ticket if corrections are needed or ticket needs splitting
 
 ## Available Skills
 
 - `/groom` — write the verified execution plan (invoke after Phase 6)
-- `/ticket` — create corrected GitHub Issues if Linear ticket needs splitting
+- `/ticket` — create corrected tickets in the detected platform if the original needs splitting
 - `/scope` — decompose tickets that are too large to groom in one pass
