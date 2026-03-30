@@ -38,6 +38,7 @@ Agents are specialized sub-agents that Claude Code or opencode can spawn to hand
 | **pr-feedback** | Implements reviewer comments from an existing PR or MR (GitHub and GitLab). |
 | **dep-audit** | Dependency vulnerability (CVE) and staleness audit. |
 | **runbook** | Generates operational runbooks from actual project config. |
+| **grooming-agent** | Autonomous pre-code ticket grooming — fetches a ticket from any platform (Linear, Jira, GitHub Issues, Notion), validates every claim against the codebase, produces a Ticket Health Report, then writes and persists a verified execution plan. |
 
 **opencode-exclusive agents** (in `agents/opencode/`):
 
@@ -74,6 +75,7 @@ Skills are invoked as slash commands (`/skill-name`) in Claude Code or opencode.
 | `/health` | Generate a codebase health scorecard with RAG status per dimension. |
 | `/gen-claude-md` | Crawl a project's docs and codebase to generate a directive CLAUDE.md with architecture map, conventions, and implementation playbooks. |
 | `/postmortem` | Generate a structured blameless postmortem document. |
+| `/groom` | Pre-code grooming — fetches a ticket, validates its claims against the codebase, challenges wrong assumptions, produces and persists a verified execution plan. |
 
 ### Hooks
 
