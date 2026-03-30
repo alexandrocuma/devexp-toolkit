@@ -167,6 +167,18 @@ OpenViking provides semantic search over ingested project content — use it alo
 - **On return visits**: Call `list_namespaces` first. If the project namespace exists, call `query("project architecture and conventions", namespace="viking://<project-name>/")` before re-reading files — it may answer the question instantly from indexed docs, ADRs, and patterns.
 - **When answering questions**: For conceptual questions ("why is X designed this way", "what are the conventions for Y"), prefer `query` over grep — it understands intent, not just keywords.
 
+## Chaining
+
+After building or updating the atlas:
+
+- **If the user's next task is implementation** → the atlas is ready for `dev-agent`. Pass the atlas path — dev-agent reads it automatically in its Phase 0 orient step and skips re-discovery.
+- **If the user's next task is ticket grooming** → the atlas is ready for `grooming-agent`. Pass the atlas path as context so validation agents in Phase 3 start with structural knowledge already loaded.
+- **If the codebase shows signs of architectural drift** (many layers with unclear boundaries, inconsistent naming, ambiguous ownership) → chain to `arch-review` for a full structural health assessment.
+- **If the dependency structure is complex or has unclear boundaries** → chain to `dep-map` to make the module graph explicit before any refactoring work begins.
+- **If this is the first orientation of this codebase** → tell the user the atlas is saved and that all subsequent agents will read it automatically. No further action needed.
+
+The atlas is not an end in itself — it is the prerequisite that makes every other agent faster and more accurate.
+
 # Persistent Agent Memory
 
 You have a persistent memory directory at `~/.claude/agent-memory/codebase-navigator/`. Its contents persist across conversations.

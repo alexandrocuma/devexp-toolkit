@@ -94,6 +94,11 @@ Full instructions for how this agent should behave...
 | `dep-audit.md` | dep-audit | Dependency vulnerability (CVE) and staleness audit | "Audit our dependencies for vulnerabilities" / "Which packages are outdated or have known CVEs?" |
 | `runbook.md` | runbook | Generates operational runbooks from actual project config | "Generate a runbook for deploying this service" / "Write an on-call runbook for the API" |
 | `grooming-agent.md` | grooming-agent | Autonomous pre-code ticket grooming — fetches a ticket from any platform (Linear, Jira, GitHub Issues, Notion), validates every claim against the codebase, produces a Ticket Health Report, then writes and persists a verified execution plan | "Groom PAY-1179 before I start coding" / "Groom PAY-1189, WFM1-900, and FNM1-710 for the sprint" |
+| `impact-analysis.md` | impact-analysis | Maps the blast radius of any change — callers, transitive dependents, dynamic references, shared state, and a prioritized test checklist | "What breaks if I change getUserById?" / "Map the impact before I refactor the payment module" |
+| `data-flow.md` | data-flow | Maps how data moves through the system end-to-end — entry points, transformations, storage, egress, and PII tracking | "Map how customer data flows before we migrate the DB" / "We need a GDPR audit of where PII is stored" |
+| `synthesis.md` | synthesis | Consolidates findings from multiple specialist agents into one prioritized action plan — deduplicates, resolves conflicts, produces a verdict | "We ran security, arch-review, and performance — synthesize the findings" / "Are we ready to ship?" |
+| `tech-debt.md` | tech-debt | Produces a business-prioritized tech debt register — what debt exists, what it costs to carry, what it costs to fix, and what to address first | "Make the case for paying down tech debt this quarter" / "This codebase is a mess — where do we start?" |
+| `onboarding.md` | onboarding | Generates structured onboarding guides for new contributors to a specific module or service — purpose, setup, key patterns, gotchas, and historical context | "Generate an onboarding guide for the payments module" / "Alice is moving to the notifications service — help her get up to speed" |
 
 **opencode-exclusive agents** live in `agents/opencode/` — written directly in opencode frontmatter format, installed as-is (no transformation). They use opencode-only capabilities like the Task tool for true parallel subagent spawning.
 
@@ -151,6 +156,13 @@ Body: instructions, process steps, output format...
 | gen-claude-md | `/gen-claude-md` | Crawl a project's docs and codebase to generate a directive CLAUDE.md with architecture map, conventions, and implementation playbooks |
 | review-pr | `/review-pr` | Surgical pre-merge code review using RISEN framework — diffs `origin/<base>...origin/<branch>` to avoid stale local refs |
 | groom | `/groom` | Pre-code grooming — fetches a ticket, validates its claims against the codebase, challenges wrong assumptions, produces and persists a verified execution plan |
+| rfc | `/rfc` | Draft a Request for Comments document for a proposed change — motivation, design, alternatives, and open questions — before any code is written |
+| convention-audit | `/convention-audit` | Audit the codebase for pattern divergence — finds all the ways the same problem is solved, identifies which pattern won, produces a standardization recommendation |
+| dead-code | `/dead-code` | Find unused exports, unreachable branches, zombie feature flags, and orphaned files — produces a verified cleanup list safe to delete |
+| estimation | `/estimation` | Evidence-based story point estimation — maps files to change, test coverage, risk factors, and comparable past work to justify the estimate |
+| retrospective | `/retrospective` | Facilitate a blameless sprint retrospective — synthesizes git activity, incidents, and team input into Start/Stop/Continue findings with actionable commitments |
+| git-archaeology | `/git-archaeology` | Reconstruct intent, ownership, and decision history from messy git history — answers "why does this code exist?" and "who understands this?" |
+| stale-work | `/stale-work` | Find orphaned branches, stale PRs, half-finished features, zombie flags, and TODO comments referencing closed tickets — produces a cleanup checklist |
 
 ---
 

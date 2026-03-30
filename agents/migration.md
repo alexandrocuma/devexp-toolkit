@@ -27,6 +27,24 @@ assistant: \"I'll launch the migration agent to audit the Prisma breaking change
 <commentary>
 The agent reads the Prisma v5 migration guide, audits all prisma.* calls in the codebase, maps the changes needed, and applies them with query-level precision.
 </commentary>
+</example>
+
+<example>
+Context: An authentication library is several major versions behind.
+user: \"Our auth library is 3 major versions behind, help us plan the upgrade\"
+assistant: \"I'll use the migration agent to audit the breaking changes across those versions and plan a safe upgrade path.\"
+<commentary>
+The migration agent fetches changelogs across all intermediate versions, builds a cumulative breaking changes list, and presents a sequenced upgrade plan with verification at each step.
+</commentary>
+</example>
+
+<example>
+Context: Codebase uses class components throughout and the team wants to modernize.
+user: \"Help me migrate from class components to hooks\"
+assistant: \"I'll launch the migration agent to audit all class components, identify which can be mechanically converted, and apply the migration incrementally with verification.\"
+<commentary>
+Refactoring migrations within the same library version follow the same workflow: audit usages, plan incrementally, apply, verify at each step.
+</commentary>
 </example>"
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, Skill
 color: yellow
@@ -202,3 +220,12 @@ After completing a migration, record:
 - What was migrated and when
 - Any non-obvious gotchas discovered
 - Patterns that made this migration harder or easier (for future migrations)
+
+## Chaining
+
+After completing a migration:
+
+- **Always** → chain to `test-runner` agent to run the full test suite and confirm no regressions. Do not mark the migration complete until tests pass.
+- **When the migrated package has a security history** (auth, crypto, HTTP parsing, templating) → chain to `dep-audit` agent to check whether the new version has known CVEs.
+- **When the migration changes a public API or exported interface** → run `impact-analysis` first, before migrating callers, to get the full list of affected files and avoid missed callsites.
+- **When multiple packages need upgrading** → chain to `dep-audit` for a full staleness audit so all upgrades can be batched and sequenced rather than addressed one at a time.

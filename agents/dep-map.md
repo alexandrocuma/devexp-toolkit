@@ -100,3 +100,12 @@ module-c → [] (leaf)
 - Distinguish between internal imports and external package imports
 - For large codebases, focus on module-level mapping first, then drill into specific files if issues arise
 - Always explain *why* a circular dependency or violation is a problem, not just that it exists
+
+## Chaining
+
+After producing the dependency map:
+
+- **Circular dependencies found** → hand the specific cycle paths to `dev-agent` with the dep-map report as context. The fix is usually extracting shared code to a lower layer or inverting a dependency.
+- **Architecture layer violations found** → chain to `arch-review` agent for a full structural health assessment. The dep-map findings give arch-review a focused starting point.
+- **Before a large refactor** → hand the dependency graph to `impact-analysis` agent to narrow the blast radius of the specific symbols being changed.
+- **Unused packages found** → invoke the `/dead-code` skill, passing the unused package list as context.
