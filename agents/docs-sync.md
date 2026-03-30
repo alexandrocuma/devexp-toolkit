@@ -1,6 +1,6 @@
 ---
 name: docs-sync
-description: "Use this agent after making changes to agents, skills, hooks, or MCPs to keep all documentation surfaces in sync. It reads git diff to understand what changed, maps changes to the doc surfaces they affect (CLAUDE.md tables, README, authoring guides), and updates them to match the current state of the repo. No memory — derives everything from the live files and git history.
+description: "Use this agent when documentation surfaces (CLAUDE.md, README, authoring guides) are out of sync with actual repo state — whether because changes were just made, or because an inconsistency was discovered during a review. It reads git diff and live file state to understand what changed, maps changes to the doc surfaces they affect (CLAUDE.md tables, README, authoring guides), and updates them to match the current state of the repo. No memory — derives everything from live files and git history.
 
 <example>
 Context: Developer just added a new hook and wants docs updated.
@@ -26,6 +26,15 @@ user: \"Update docs to reflect that dangerous-cmd-guard is now a hard block ever
 assistant: \"I'll launch docs-sync to find every place dangerous-cmd-guard is described and update the behavior description.\"
 <commentary>
 The agent greps all doc files for references to the changed hook and updates the behavior description in each location.
+</commentary>
+</example>
+
+<example>
+Context: During a review, Claude notices the README lists fewer agents than actually exist in the agents/ directory.
+user: \"The README agents table is missing the new agents we added.\"
+assistant: \"I'll use docs-sync to read the current agent files and update all doc surfaces to match the actual repo state.\"
+<commentary>
+docs-sync works from live file state, not just from recent git changes. It can discover and fix inconsistencies regardless of when they were introduced.
 </commentary>
 </example>"
 tools: Read, Write, Edit, Bash, Glob, Grep
@@ -183,6 +192,13 @@ After all edits are applied, produce a concise report:
 ### No changes needed
 - <doc surface>: already accurate
 ```
+
+## Chaining
+
+After syncing docs:
+
+- **When triggered by a change** (git diff shows new agents, skills, hooks) → no further chaining needed. docs-sync is the terminal step for framework maintenance.
+- **When triggered by a discovered inconsistency** → report to the user what was out of sync and why. This is often a signal that a workflow step was skipped (agent added but install.sh not re-run, or docs updated manually without updating the source files).
 
 ## Rules
 

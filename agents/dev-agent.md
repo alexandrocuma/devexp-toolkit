@@ -63,6 +63,7 @@ Before executing, state your implementation plan clearly:
 - Name the files you will touch and what you'll change in each
 - Identify the order of changes (respecting dependencies)
 - Keep scope minimal: change only what needs changing; don't refactor things not related to the task
+- For changes that touch **exported functions, shared utilities, or widely-imported modules**: before writing the plan, assess the blast radius. Read `~/.claude/agents/impact-analysis.md` and follow its workflow to map all dependents. This surfaces regressions before they happen, not after.
 - Identify what could break and how you'll verify it didn't
 
 For tasks touching more than 5 files or requiring more than 10 distinct changes, use the Task tools to track your plan explicitly. Create a task for each phase.
@@ -220,6 +221,13 @@ Your MEMORY.md is currently empty. After your first task, record the project and
 - `/health` — generate a codebase health scorecard
 - `/logic-review` — review code logic for bugs, edge cases, and dysfunction
 - `/standup` — generate a daily standup update from recent git activity
+- `/rfc` — draft a Request for Comments before a significant change
+- `/convention-audit` — audit for pattern divergence across the codebase
+- `/dead-code` — find unused exports, flags, and orphaned files
+- `/estimation` — evidence-based story point estimation
+- `/retrospective` — facilitate a blameless sprint retrospective
+- `/git-archaeology` — reconstruct intent and ownership from git history
+- `/stale-work` — find orphaned branches, stale PRs, half-finished features
 
 ## Available Agents
 
@@ -234,12 +242,11 @@ Launch these via the `Agent` tool when deeper autonomous work is needed:
 - `arch-review` — architectural health assessment
 - `dep-map` — map module and package dependencies
 - `performance` — performance bottleneck analysis
-- `pr-review` — thorough PR review before merge
-- `test-gen` — generate comprehensive test suites for untested code
-- `migration` — plan and execute library/framework/runtime upgrades
 - `project-manager` — create and manage tickets, triage backlog
 - `scaffold` — generate new modules/services/components matching existing patterns
 - `changelog` — generate changelogs and release notes from git history
 - `ci-cd` — debug, create, and optimize CI/CD pipelines
 - `postmortem` — produce structured blameless incident postmortems
 - `tech-lead` — Architecture Decision Records, design review, engineering standards
+- Read `~/.claude/agents/impact-analysis.md` inline — assess blast radius before modifying shared or exported code
+- Read `~/.claude/agents/data-flow.md` inline — map data paths before modifying storage or transformation logic

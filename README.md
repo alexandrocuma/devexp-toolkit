@@ -39,6 +39,11 @@ Agents are specialized sub-agents that Claude Code or opencode can spawn to hand
 | **dep-audit** | Dependency vulnerability (CVE) and staleness audit. |
 | **runbook** | Generates operational runbooks from actual project config. |
 | **grooming-agent** | Autonomous pre-code ticket grooming — fetches a ticket from any platform (Linear, Jira, GitHub Issues, Notion), validates every claim against the codebase, produces a Ticket Health Report, then writes and persists a verified execution plan. |
+| **impact-analysis** | Maps the blast radius of any change — direct callers, transitive dependents, dynamic references, shared state, and a prioritized test checklist. Prevents "it worked locally" regressions. |
+| **data-flow** | Maps how data moves through the system end-to-end — entry points, transformations, storage, egress, and PII tracking. |
+| **synthesis** | Consolidates findings from multiple specialist agents into one prioritized action plan — deduplicates, resolves conflicts, produces a verdict. The final step of any multi-agent workflow. |
+| **tech-debt** | Produces a business-prioritized tech debt register — what debt exists, what it costs to carry, what it costs to fix, and what to address first. |
+| **onboarding** | Generates structured onboarding guides for new contributors to a specific module or service — purpose, setup, key patterns, gotchas, and historical context. |
 
 **opencode-exclusive agents** (in `agents/opencode/`):
 
@@ -76,6 +81,13 @@ Skills are invoked as slash commands (`/skill-name`) in Claude Code or opencode.
 | `/gen-claude-md` | Crawl a project's docs and codebase to generate a directive CLAUDE.md with architecture map, conventions, and implementation playbooks. |
 | `/postmortem` | Generate a structured blameless postmortem document. |
 | `/groom` | Pre-code grooming — fetches a ticket, validates its claims against the codebase, challenges wrong assumptions, produces and persists a verified execution plan. |
+| `/rfc` | Draft a Request for Comments document for a proposed change — motivation, design, alternatives, and open questions — before any code is written. |
+| `/convention-audit` | Audit the codebase for pattern divergence — finds all the ways the same problem is solved, identifies which pattern won, produces a standardization recommendation. |
+| `/dead-code` | Find unused exports, unreachable branches, zombie feature flags, and orphaned files — produces a verified cleanup list safe to delete. |
+| `/estimation` | Evidence-based story point estimation — maps files to change, test coverage, risk factors, and comparable past work to justify the estimate. |
+| `/retrospective` | Facilitate a blameless sprint retrospective — synthesizes git activity, incidents, and team input into Start/Stop/Continue findings with actionable commitments. |
+| `/git-archaeology` | Reconstruct intent, ownership, and decision history from git history — answers "why does this code exist?" and "who understands this?". |
+| `/stale-work` | Find orphaned branches, stale PRs, half-finished features, zombie flags, and TODO comments referencing closed tickets — produces a cleanup checklist. |
 
 ### Hooks
 
@@ -427,6 +439,11 @@ devexp/
 │   ├── pr-feedback.md
 │   ├── dep-audit.md
 │   ├── runbook.md
+│   ├── impact-analysis.md
+│   ├── data-flow.md
+│   ├── synthesis.md
+│   ├── tech-debt.md
+│   ├── onboarding.md
 │   └── opencode/               # opencode-exclusive agents (installed as-is)
 │       └── orchestrator.md
 ├── skills/                     # Skill subdirectories, each with SKILL.md
@@ -452,7 +469,15 @@ devexp/
 │   ├── scope/SKILL.md
 │   ├── health/SKILL.md
 │   ├── gen-claude-md/SKILL.md
-│   └── postmortem/SKILL.md
+│   ├── postmortem/SKILL.md
+│   ├── groom/SKILL.md
+│   ├── rfc/SKILL.md
+│   ├── convention-audit/SKILL.md
+│   ├── dead-code/SKILL.md
+│   ├── estimation/SKILL.md
+│   ├── retrospective/SKILL.md
+│   ├── git-archaeology/SKILL.md
+│   └── stale-work/SKILL.md
 ├── hooks/                      # Safety and quality hooks (one file per hook)
 │   ├── registry.json           # Hook registry — source of truth for all hooks
 │   ├── claude-code/            # Shell scripts registered in ~/.claude/settings.json
