@@ -83,16 +83,17 @@ Full instructions for how this agent should behave...
 | `security.md` | security | Full security audit: OWASP Top 10, auth, data exposure | "Run a security audit before we deploy" / "Check for authentication vulnerabilities" |
 | `test-gen.md` | test-gen | Generate comprehensive test suites for untested code | "Generate tests for the payment module" / "Write a test suite for this service" |
 | `test-runner.md` | test-runner | Test execution, coverage analysis, flaky test detection | "Run the tests and tell me what's failing" / "What's our test coverage like?" |
-| `project-manager.md` | project-manager | GitHub Issue creation, epic decomposition, backlog triage | "Create a ticket for adding user authentication" / "Break down the notifications epic into tasks" |
+| `project-manager.md` | project-manager | Ticket creation, epic decomposition, backlog triage — detects GitHub Issues, GitLab Issues, Linear, and Jira automatically | "Create a ticket for adding user authentication" / "Break down the notifications epic into tasks" |
 | `scaffold.md` | scaffold | Pattern-matched code generation for new modules, services, and components | "Scaffold a new payments service" / "Create a UserNotifications component" |
 | `changelog.md` | changelog | Changelog and release notes generation from git history | "Generate the changelog since the last release" / "What changed between v1.2 and v1.3?" |
 | `docs-sync.md` | docs-sync | Syncs documentation surfaces (CLAUDE.md, README, authoring guides) with actual repo state after changes to agents, skills, hooks, or MCPs | "Sync the docs after these agent changes" / "Update the documentation to reflect the new hooks" |
 | `ci-cd.md` | ci-cd | CI/CD pipeline debugging, creation, and optimization | "Our GitHub Actions pipeline is failing, debug it" / "Add a test step to the CI pipeline" |
 | `postmortem.md` | postmortem | Structured blameless incident postmortem documents | "Write a postmortem for last night's database outage" |
 | `tech-lead.md` | tech-lead | Architecture Decision Records, design review, engineering standards | "Write an ADR for switching to PostgreSQL" / "Review this microservice design" |
-| `pr-feedback.md` | pr-feedback | Implements reviewer comments from an existing GitHub PR | "Implement the reviewer comments on PR #58" / "Address the feedback on my open PR" |
+| `pr-feedback.md` | pr-feedback | Implements reviewer comments from an existing PR or MR (GitHub and GitLab) | "Implement the reviewer comments on PR #58" / "Address the feedback on my open PR" |
 | `dep-audit.md` | dep-audit | Dependency vulnerability (CVE) and staleness audit | "Audit our dependencies for vulnerabilities" / "Which packages are outdated or have known CVEs?" |
 | `runbook.md` | runbook | Generates operational runbooks from actual project config | "Generate a runbook for deploying this service" / "Write an on-call runbook for the API" |
+| `grooming-agent.md` | grooming-agent | Autonomous pre-code ticket grooming — fetches a ticket from any platform (Linear, Jira, GitHub Issues, Notion), validates every claim against the codebase, produces a Ticket Health Report, then writes and persists a verified execution plan | "Groom PAY-1179 before I start coding" / "Groom PAY-1189, WFM1-900, and FNM1-710 for the sprint" |
 
 **opencode-exclusive agents** live in `agents/opencode/` — written directly in opencode frontmatter format, installed as-is (no transformation). They use opencode-only capabilities like the Task tool for true parallel subagent spawning.
 
@@ -134,7 +135,7 @@ Body: instructions, process steps, output format...
 | feature | `/feature` | Spec-driven feature implementation with tests and documentation |
 | logic-review | `/logic-review` | Reviews code logic for bugs, edge cases, and dysfunction |
 | migrate | `/migrate` | Step-by-step migration guide for a library or framework upgrade |
-| pr | `/pr` | Generate a PR description and optionally open the PR via gh |
+| pr | `/pr` | Generate a PR/MR description and optionally open it via the detected platform CLI (gh or glab) |
 | quality | `/quality` | Reviews code quality, style, complexity, and maintainability |
 | refactor | `/refactor` | Code refactoring for improved structure and maintainability |
 | regression | `/regression` | Ensures fixes don't introduce regressions |
@@ -142,13 +143,14 @@ Body: instructions, process steps, output format...
 | test-gen | `/test-gen` | Generate tests for the current file or function |
 | adr | `/adr` | Write an Architecture Decision Record saved to docs/adr/ |
 | changelog | `/changelog` | Generate a changelog entry from git history using conventional commits |
-| release | `/release` | Full release workflow: version bump, changelog, tag, and GitHub release |
+| release | `/release` | Full release workflow: version bump, changelog, tag, and platform release (GitHub, GitLab, or manual) |
 | postmortem | `/postmortem` | Generate a structured blameless postmortem document |
-| ticket | `/ticket` | Create a well-structured GitHub Issue for a bug, feature, or tech-debt item |
+| ticket | `/ticket` | Create a well-structured ticket for a bug, feature, or tech-debt item — detects GitHub Issues, GitLab Issues, Linear, and Jira |
 | scope | `/scope` | Break a large feature or epic into atomic tickets with dependencies |
 | health | `/health` | Generate a codebase health scorecard with RAG status per dimension |
 | gen-claude-md | `/gen-claude-md` | Crawl a project's docs and codebase to generate a directive CLAUDE.md with architecture map, conventions, and implementation playbooks |
 | review-pr | `/review-pr` | Surgical pre-merge code review using RISEN framework — diffs `origin/<base>...origin/<branch>` to avoid stale local refs |
+| groom | `/groom` | Pre-code grooming — fetches a ticket, validates its claims against the codebase, challenges wrong assumptions, produces and persists a verified execution plan |
 
 ---
 

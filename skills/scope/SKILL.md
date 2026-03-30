@@ -1,6 +1,6 @@
 ---
 name: scope
-description: Break a large feature or epic into atomic, implementable GitHub Issues with dependencies
+description: Break a large feature or epic into atomic, implementable tickets with dependencies — works with GitHub Issues, GitLab Issues, Linear, and Jira
 ---
 
 # Epic Scoper
@@ -23,7 +23,7 @@ When a large feature or epic needs to be broken into atomic, sprint-ready ticket
 Read any relevant context:
 - User's description of the feature
 - Existing code in the area (from codebase-navigator atlas or direct exploration)
-- Related GitHub Issues: `gh issue list --label feature --limit 20`
+- Related open issues (use the detected platform's list command, e.g. `gh issue list --label feature --limit 20` for GitHub)
 - Any design docs, PRDs, or ADRs linked or mentioned
 
 Ask for clarification only if the scope is fundamentally ambiguous (e.g., "add auth" without knowing whether OAuth, magic links, or passwords are intended).
@@ -70,7 +70,7 @@ Size each ticket:
 
 ### 5. Present the plan before creating issues
 
-Show the breakdown and dependency graph before running `gh issue create`:
+Show the breakdown and dependency graph before creating any tickets:
 
 ```
 Epic: <title>
@@ -100,14 +100,21 @@ Proceed with creating these issues? (yes/no)
 
 Wait for confirmation before creating issues.
 
-### 6. Create the issues
+### 6. Create the tickets
 
-For each ticket, create a GitHub Issue:
+First, detect the available issue tracker:
 
-```bash
-gh issue create \
-  --title "[Epic: <name>] <ticket title>" \
-  --body "$(cat <<'EOF'
+| Priority | Signal | Platform |
+|----------|--------|----------|
+| 1 | `mcp__linear__*` tools present | Linear |
+| 2 | `mcp__jira__*` or `mcp__atlassian__*` tools present | Jira |
+| 3 | `gh auth status` succeeds | GitHub Issues |
+| 4 | `glab auth status` succeeds | GitLab Issues |
+| 5 | None | Output formatted markdown for user to file manually |
+
+For each ticket, use the detected platform's create operation with this body structure:
+
+```markdown
 ## Epic
 Part of: <epic title>
 
@@ -125,12 +132,19 @@ Part of: <epic title>
 
 ## Size estimate
 <S / M / L>
-EOF
-)" \
-  --label "feature"
 ```
 
-After all issues are created, update each issue body to add the actual issue numbers for dependencies (since you now know the numbers from `gh issue create` output).
+**GitHub:** `gh issue create --title "[Epic: <name>] <ticket title>" --body "<body>" --label "feature"`
+
+**GitLab:** `glab issue create --title "[Epic: <name>] <ticket title>" --description "<body>" --label "feature"`
+
+**Linear:** `mcp__linear__create_issue(title, description, labelIds)`
+
+**Jira:** `mcp__jira__create_issue(summary, description, issueType)`
+
+**None detected:** Output each ticket as formatted markdown.
+
+After all tickets are created, update each body to add the actual ticket numbers for dependency links (now that you know them from the create output).
 
 ### 7. Report
 

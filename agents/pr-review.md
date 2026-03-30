@@ -51,11 +51,29 @@ Before reviewing, check if `codebase-navigator` has already mapped this project:
 5. Check OpenViking: `mcp__openviking__list_namespaces` — if `<project-name>` namespace exists, call `mcp__openviking__query` — question: `"What are the contribution guidelines, review standards, ADRs, and conventions for this project?"` — namespace: `"viking://<project-name>/"` — to surface any documented standards, patterns, or decisions relevant to the PR being reviewed
 6. Skip redundant discovery steps that the atlas already covers
 
-### Step 1: Get the diff
+### Step 1: Detect Platform and Get the Diff
 
-Determine the source of the review:
-- If a PR number is given: `gh pr diff <number>` and `gh pr view <number>` — GitHub computes the correct diff, skip fetch
-- If a branch is given or no argument: fetch first, then diff against remote refs (see below)
+**Detect the git hosting platform** by checking available CLIs:
+```bash
+gh auth status 2>/dev/null && echo "github" || (glab auth status 2>/dev/null && echo "gitlab" || echo "git-only")
+```
+
+| Result | Platform | PR tool |
+|--------|----------|---------|
+| `github` | GitHub | `gh` CLI |
+| `gitlab` | GitLab | `glab` CLI |
+| `git-only` | Unknown | git diff only |
+
+**Determine the source of the review:**
+
+*If a PR/MR number is given:*
+
+| Platform | Command |
+|----------|---------|
+| GitHub | `gh pr diff <number>` and `gh pr view <number>` |
+| GitLab | `glab mr diff <number>` and `glab mr view <number>` |
+
+*If a branch is given or no argument — diff against remote refs:*
 
 **Always fetch before diffing local branches** — local refs may be stale:
 ```bash
@@ -64,9 +82,13 @@ git fetch origin --prune
 
 **Detect base branch** (in order):
 ```bash
-gh pr view --json baseRefName --jq '.baseRefName' 2>/dev/null  # from existing PR
-gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null  # repo default
-git branch -r | grep -E 'origin/(main|master|develop)$' | head -1 | sed 's|origin/||'  # fallback
+# GitHub
+gh pr view --json baseRefName --jq '.baseRefName' 2>/dev/null
+gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null
+# GitLab
+glab mr view --output json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['target_branch'])" 2>/dev/null
+# Universal fallback
+git branch -r | grep -E 'origin/(main|master|develop)$' | head -1 | sed 's|origin/||'
 ```
 
 **Diff using remote refs** (three-dot = merge-base, only what the branch added):
@@ -76,10 +98,9 @@ git diff origin/<base>...origin/<branch>
 git log origin/<base>...origin/<branch> --oneline
 ```
 
-> Using `origin/<base>...origin/<branch>` instead of `main...<branch>` ensures the diff reflects only commits unique to the branch — not any divergence in main that happened since branching. This is what GitHub shows in the PR diff.
+> Using `origin/<base>...origin/<branch>` instead of `main...<branch>` ensures the diff reflects only commits unique to the branch — not any divergence in main that happened since branching.
 
-Also collect:
-- `gh pr view` (if PR exists) — title, description, labels, reviewers
+Also collect PR/MR metadata (title, description, labels, reviewers) using the detected platform CLI.
 
 ### Step 2: Read codebase context
 

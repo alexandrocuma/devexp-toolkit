@@ -1,11 +1,11 @@
 ---
 name: release
-description: Full release workflow — version bump, changelog, commit, tag, and GitHub release
+description: Full release workflow — version bump, changelog, commit, tag, and platform release (GitHub, GitLab, or manual)
 ---
 
 # Release Workflow
 
-You are executing a **full release workflow**. This covers: determining the next version, updating version files, generating the changelog entry, committing the bump, creating the git tag, and optionally creating a GitHub release.
+You are executing a **full release workflow**. This covers: determining the next version, updating version files, generating the changelog entry, committing the bump, creating the git tag, and optionally creating a platform release (GitHub, GitLab, or manual).
 
 ## Triggered by
 
@@ -159,22 +159,33 @@ git push origin HEAD
 git push origin "v<new-version>"
 ```
 
-### 9. Create GitHub release (if requested or if gh is available)
+### 9. Create platform release (if requested or if CLI is available)
 
+Extract the new changelog entry for the release notes:
 ```bash
-# Check if gh is available and authenticated
-gh auth status 2>/dev/null
-
-# Extract the new changelog entry for this version
 NOTES=$(sed -n "/## \[<new-version>\]/,/## \[/p" CHANGELOG.md | head -n -1)
+```
 
+Detect the available platform CLI and create the release:
+
+**GitHub (`gh` available):**
+```bash
+gh auth status 2>/dev/null
 gh release create "v<new-version>" \
   --title "v<new-version>" \
   --notes "$NOTES" \
   --verify-tag
 ```
 
-If `gh` is not available: provide the URL to create the release manually.
+**GitLab (`glab` available):**
+```bash
+glab auth status 2>/dev/null
+glab release create "v<new-version>" \
+  --name "v<new-version>" \
+  --notes "$NOTES"
+```
+
+**Neither available:** Provide the URL and release notes for the user to create the release manually in the platform's web UI.
 
 ### 10. Report
 
@@ -195,7 +206,7 @@ Pushed:
   - origin/main
   - v<new-version> tag
 
-GitHub release: https://github.com/<org>/<repo>/releases/tag/v<new-version>
+Release: <platform-release-url>/releases/tag/v<new-version>
 ```
 
 ## Safety Rules

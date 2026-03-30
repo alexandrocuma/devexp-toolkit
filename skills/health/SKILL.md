@@ -142,11 +142,13 @@ Quality thresholds:
 ls .github/workflows/*.yml 2>/dev/null
 ls .gitlab-ci.yml 2>/dev/null
 
-# GitHub Actions: recent run status
-gh run list --limit 5 2>/dev/null
+# Recent pipeline run status — use whichever CLI is available
+gh run list --limit 5 2>/dev/null        # GitHub Actions
+glab pipeline list --limit 5 2>/dev/null # GitLab CI
 
-# Check for open PRs
-gh pr list --limit 10 2>/dev/null | wc -l
+# Open PR/MR count — use whichever CLI is available
+gh pr list --limit 10 2>/dev/null | wc -l   # GitHub
+glab mr list --limit 10 2>/dev/null | wc -l # GitLab
 
 # Days since last release
 git describe --tags --abbrev=0 2>/dev/null
@@ -160,13 +162,19 @@ CI/CD thresholds:
 
 #### Dimension 6: Open Tech Debt
 
-```bash
-# Count open tech-debt issues
-gh issue list --label tech-debt --state open 2>/dev/null | wc -l
+Use whichever issue tracker CLI or MCP is available:
 
-# Check for stale issues
+```bash
+# GitHub
+gh issue list --label tech-debt --state open 2>/dev/null | wc -l
 gh issue list --label bug --state open --limit 50 2>/dev/null
+
+# GitLab
+glab issue list --label tech-debt --state opened 2>/dev/null | wc -l
+glab issue list --label bug --state opened --limit 50 2>/dev/null
 ```
+
+For Linear or Jira: use the MCP `list_issues` / `search_issues` tool filtered by label/type. If no platform is available, skip this dimension and note it as "N/A — no issue tracker detected".
 
 Tech debt thresholds:
 - Green: < 5 open tech-debt issues, bugs addressed promptly (< 30 days old)

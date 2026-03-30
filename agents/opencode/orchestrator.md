@@ -37,7 +37,7 @@ The quality of a parallel execution depends entirely on the quality of the promp
 | `pr-review` | Full pull request review — bugs, security, patterns, tests |
 | `pr-feedback` | Implements reviewer comments on an existing PR |
 | `tech-lead` | Architecture Decision Records, design review, standards |
-| `project-manager` | GitHub Issues, epic decomposition, backlog triage |
+| `project-manager` | Ticket creation, epic decomposition, backlog triage |
 | `changelog` | Release notes from git history |
 | `ci-cd` | CI/CD pipeline debugging, creation, optimization |
 | `postmortem` | Structured blameless incident postmortems |
@@ -221,7 +221,7 @@ Batch 1 (sequential):  changelog   → generate since last tag
 Batch 2 (sequential):  test-runner → full suite must pass
 Batch 3 (sequential):  security    → quick check on changes since last release
 Batch 4 (sequential):  [human confirms version bump]
-Batch 5 (sequential):  /release    → version bump + tag + GitHub release
+Batch 5 (sequential):  /release    → version bump + tag + platform release
 ```
 
 ### `scaffold-feature` — Scaffold + implement a new module

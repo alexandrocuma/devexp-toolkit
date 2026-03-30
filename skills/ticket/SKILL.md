@@ -1,11 +1,11 @@
 ---
 name: ticket
-description: Create a well-structured GitHub Issue for a bug, feature, or tech-debt item
+description: Create a well-structured ticket for a bug, feature, or tech-debt item — works with GitHub Issues, GitLab Issues, Linear, and Jira
 ---
 
 # Ticket Creator
 
-You are creating a **GitHub Issue** — a well-structured ticket that a developer can pick up and execute without needing to ask clarifying questions.
+You are creating a **well-structured ticket** — one that a developer can pick up and execute without needing to ask clarifying questions. You work with whatever issue tracker the team uses (GitHub Issues, GitLab Issues, Linear, Jira) and detect which is available automatically.
 
 ## Triggered by
 
@@ -14,7 +14,7 @@ You are creating a **GitHub Issue** — a well-structured ticket that a develope
 
 ## When to Use
 
-When the user needs to create a well-structured GitHub Issue for a bug, feature, or tech-debt item. Phrases: "create a ticket", "file a bug", "open a GitHub issue", "write a ticket for X".
+When the user needs to create a well-structured ticket for a bug, feature, or tech-debt item. Phrases: "create a ticket", "file a bug", "open an issue", "write a ticket for X".
 
 ## Process
 
@@ -28,13 +28,25 @@ From the user's description, classify as:
 - **security** — security vulnerability or hardening work
 - **documentation** — docs-only change
 
-### 2. Check repository context
+### 2. Detect platform and check repository context
 
-```bash
-gh repo view --json name,url 2>/dev/null
-gh label list 2>/dev/null
-gh milestone list 2>/dev/null
-```
+Detect the available issue tracker by checking tool namespaces and CLIs:
+
+| Priority | Signal | Platform |
+|----------|--------|----------|
+| 1 | `mcp__linear__*` tools present | Linear |
+| 2 | `mcp__jira__*` or `mcp__atlassian__*` tools present | Jira |
+| 3 | `gh auth status` succeeds | GitHub Issues |
+| 4 | `glab auth status` succeeds | GitLab Issues |
+| 5 | None | Output formatted markdown for user to file manually |
+
+Gather repo context using the detected platform:
+
+| Operation | GitHub | GitLab | Linear | Jira |
+|-----------|--------|--------|--------|------|
+| Repo info | `gh repo view --json name,url` | `glab repo view` | `mcp__linear__get_teams` | `mcp__jira__get_projects` |
+| Labels | `gh label list` | `glab label list` | `mcp__linear__get_issue_labels` | `mcp__jira__get_issue_types` |
+| Milestones | `gh milestone list` | `glab milestone list` | `mcp__linear__get_cycles` | `mcp__jira__get_sprints` |
 
 Use only existing labels. If the needed label doesn't exist, note it and use the closest match.
 
@@ -168,22 +180,31 @@ Labels: `tech-debt`
 
 Labels: `security`
 
-### 4. Create the issue
+### 4. Create the ticket
 
+Use the detected platform's create operation:
+
+**GitHub Issues:**
 ```bash
-gh issue create \
-  --title "<title>" \
-  --body "<body>" \
-  --label "<label>" \
-  [--milestone "<milestone>"] \
-  [--assignee "<assignee>"]
+gh issue create --title "<title>" --body "<body>" --label "<label>" [--milestone "<milestone>"] [--assignee "<assignee>"]
 ```
+
+**GitLab Issues:**
+```bash
+glab issue create --title "<title>" --description "<body>" --label "<label>" [--milestone-id "<id>"] [--assignee "<username>"]
+```
+
+**Linear:** `mcp__linear__create_issue(title, description, labelIds, assigneeId)`
+
+**Jira:** `mcp__jira__create_issue(summary, description, issueType, labels, assignee)`
+
+**None detected:** Output the ticket body as formatted markdown for the user to file manually.
 
 ### 5. Report
 
 ```
-Issue created: #<number> — <title>
-URL: <github-url>
+Ticket created: #<number> — <title>
+URL: <url>
 Labels: <labels applied>
 ```
 

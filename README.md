@@ -29,13 +29,13 @@ Agents are specialized sub-agents that Claude Code or opencode can spawn to hand
 | **dep-map** | Maps module and package dependencies, detects circular dependencies, and identifies unused packages. |
 | **migration** | Plans and executes library, framework, or runtime version migrations with step-by-step guidance. |
 | **scaffold** | Pattern-matched code generation for new modules, services, and components — matching existing project conventions exactly. |
-| **project-manager** | GitHub Issue creation, epic decomposition, and backlog triage. |
+| **project-manager** | Ticket creation, epic decomposition, and backlog triage — detects GitHub Issues, GitLab Issues, Linear, and Jira automatically. |
 | **changelog** | Generates changelogs and release notes from git history using conventional commits. |
 | **ci-cd** | CI/CD pipeline debugging, creation, and optimization across GitHub Actions, GitLab CI, and others. |
 | **postmortem** | Produces structured blameless incident postmortem documents. |
 | **tech-lead** | Architecture Decision Records, design review, and engineering standards documentation. |
 | **docs-sync** | Syncs documentation surfaces (CLAUDE.md, README, authoring guides) with actual repo state after changes to agents, skills, hooks, or MCPs. |
-| **pr-feedback** | Implements reviewer comments from an existing GitHub PR. |
+| **pr-feedback** | Implements reviewer comments from an existing PR or MR (GitHub and GitLab). |
 | **dep-audit** | Dependency vulnerability (CVE) and staleness audit. |
 | **runbook** | Generates operational runbooks from actual project config. |
 
@@ -65,11 +65,11 @@ Skills are invoked as slash commands (`/skill-name`) in Claude Code or opencode.
 | `/explain` | Explain code to a specific audience: junior, new-hire, or non-technical. |
 | `/adr` | Write an Architecture Decision Record saved to `docs/adr/`. |
 | `/commit` | Craft a conventional commit message and create the commit. |
-| `/pr` | Generate a PR description and optionally open it via `gh`. |
+| `/pr` | Generate a PR/MR description and optionally open it via the detected platform CLI (gh or glab). |
 | `/changelog` | Generate a changelog entry from git history. |
-| `/release` | Full release workflow: version bump, changelog, tag, and GitHub release. |
+| `/release` | Full release workflow: version bump, changelog, tag, and platform release (GitHub, GitLab, or manual). |
 | `/standup` | Generate a daily standup update from recent git activity. |
-| `/ticket` | Create a well-structured GitHub Issue for a bug, feature, or tech-debt item. |
+| `/ticket` | Create a well-structured ticket for a bug, feature, or tech-debt item — detects GitHub Issues, GitLab Issues, Linear, and Jira. |
 | `/scope` | Break a large feature or epic into atomic tickets with dependencies. |
 | `/health` | Generate a codebase health scorecard with RAG status per dimension. |
 | `/gen-claude-md` | Crawl a project's docs and codebase to generate a directive CLAUDE.md with architecture map, conventions, and implementation playbooks. |

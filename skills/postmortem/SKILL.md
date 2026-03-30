@@ -170,7 +170,7 @@ Action items: N
 Next steps:
 - Review with the team for timeline accuracy
 - Assign owners to action items
-- Run /ticket or project-manager to create action item GitHub Issues
+- Run /ticket or project-manager to create action item tickets in your issue tracker
 - Share with stakeholders
 ```
 

@@ -25,7 +25,7 @@ Run in parallel:
 - `git log main...HEAD --oneline` (try `main`, then `master`, then `develop`) — commits on this branch
 - `git diff main...HEAD --stat` — files changed and volume
 - `git diff main...HEAD` — full diff (read this carefully)
-- `gh pr view 2>/dev/null || true` — check if a PR already exists
+- `gh pr view 2>/dev/null || glab mr view 2>/dev/null || true` — check if a PR/MR already exists
 
 ### 2. Analyze the changes
 
@@ -81,8 +81,14 @@ If a PR already exists, offer to update its description instead of creating a ne
 Ask the user:
 - Is this ready for review, or should it be a draft PR?
 
-### 5. Open the PR (if `gh` is available)
+### 5. Open the PR/MR
 
+Detect the available platform:
+```bash
+gh auth status 2>/dev/null && echo "github" || (glab auth status 2>/dev/null && echo "gitlab" || echo "none")
+```
+
+**GitHub (`gh` available):**
 ```bash
 gh pr create \
   --title "your title here" \
@@ -91,10 +97,18 @@ gh pr create \
 EOF
 )"
 ```
+Add `--draft` for draft PRs. Add `--base <branch>` if the target isn't the default branch.
 
-Add `--draft` if the user wants a draft. Add `--base <branch>` if the target isn't the default branch.
+**GitLab (`glab` available):**
+```bash
+glab mr create \
+  --title "your title here" \
+  --description "[description]" \
+  --target-branch <base>
+```
+Add `--draft` for draft MRs.
 
-If `gh` isn't installed or the user doesn't want to open it yet, output the title and description formatted for easy copy-paste.
+**Neither available:** Output the title and description formatted for easy copy-paste into the platform's web UI.
 
 ### 6. Confirm
 

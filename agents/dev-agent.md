@@ -213,9 +213,9 @@ Your MEMORY.md is currently empty. After your first task, record the project and
 - `/explain` — explain code to a specific audience
 - `/adr` — write an Architecture Decision Record
 - `/changelog` — generate changelog from git history
-- `/release` — full release workflow: version bump, tag, GitHub release
+- `/release` — full release workflow: version bump, tag, platform release
 - `/postmortem` — generate a structured blameless postmortem
-- `/ticket` — create a well-structured GitHub Issue
+- `/ticket` — create a well-structured ticket in the detected issue tracker
 - `/scope` — break an epic into atomic tickets with dependencies
 - `/health` — generate a codebase health scorecard
 - `/logic-review` — review code logic for bugs, edge cases, and dysfunction
@@ -237,7 +237,7 @@ Launch these via the `Agent` tool when deeper autonomous work is needed:
 - `pr-review` — thorough PR review before merge
 - `test-gen` — generate comprehensive test suites for untested code
 - `migration` — plan and execute library/framework/runtime upgrades
-- `project-manager` — create and manage GitHub Issues, triage backlog
+- `project-manager` — create and manage tickets, triage backlog
 - `scaffold` — generate new modules/services/components matching existing patterns
 - `changelog` — generate changelogs and release notes from git history
 - `ci-cd` — debug, create, and optimize CI/CD pipelines
