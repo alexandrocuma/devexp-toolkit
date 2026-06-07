@@ -9,13 +9,23 @@
     "required_env": []
   },
   {
-    "name": "openviking",
-    "description": "Context database for AI agents — tiered memory (L0/L1/L2), semantic retrieval, and document ingestion via filesystem paradigm (viking://)",
-    "transport": "http",
-    "url": "http://localhost:2033/mcp",
+    "name": "obscura",
+    "description": "Built-in Obscura browser MCP — navigate, click, fill, type, eval JS, inspect network and console. Zero setup beyond installing Obscura.",
+    "command": "obscura",
+    "args": ["mcp"],
     "scope": "user",
     "env": {},
-    "required_env": ["OPENVIKING_VLM_API_KEY", "OPENVIKING_VLM_MODEL"],
-    "setup_instructions": "OpenViking runs as a local Python process in an isolated venv (~/.openviking/venv).\nEmbeddings run via your local Jina server — no key needed.\nOnly a VLM API key is required for RAG answer generation.\n\nAdd to mcps/.env:\n  OPENVIKING_VLM_API_KEY=your-api-key\n  OPENVIKING_VLM_MODEL=claude-sonnet-4-6\n\nVLM model examples (litellm format):\n  Claude    -> claude-sonnet-4-6\n  OpenAI    -> gpt-4o\n  DeepSeek  -> deepseek/deepseek-chat\n  Kimi      -> moonshot/kimi-k2.5\n\nThen run: ./install.sh"
+    "required_env": [],
+    "setup_instructions": "Install Obscura (Rust):\n  cargo install obscura\n\nOr download a pre-built binary from:\n  https://github.com/h4ckf0r0day/obscura/releases"
+  },
+  {
+    "name": "ui-inspector",
+    "description": "Visual UI/UX layer on top of Obscura — screenshots, ARIA accessibility tree, computed CSS, axe-core a11y audit. Requires 'obscura serve' running (started by start-services.sh).",
+    "command": "node",
+    "args": ["${DEVEXP_DIR}/mcps/ui-inspector/dist/index.js"],
+    "scope": "user",
+    "env": {},
+    "required_env": [],
+    "setup_instructions": "Run setup once:\n  cd ${DEVEXP_DIR}/mcps/ui-inspector && ./setup.sh\n\nThen start Obscura CDP server before each session:\n  ./start-services.sh"
   }
 ]

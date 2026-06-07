@@ -57,12 +57,15 @@ Before writing anything, decide where it goes:
 | REST/GraphQL endpoints, SDK methods | `docs/api/<resource>.md` |
 | Business rules, domain logic, workflows | `docs/guides/<feature>-logic.md` |
 | How-to guides, tutorials, walkthroughs | `docs/guides/<topic>.md` |
+| Component catalogs, CLI reference, config schemas | `docs/reference/<topic>.md` |
 | Dev environment, setup, contributing | `docs/development/<topic>.md` |
 | Architecture decisions | `docs/architecture/adr/NNNN-<title>.md` |
 | Incident postmortems | `docs/postmortems/YYYY-MM-DD-<title>.md` |
 | Project overview, quickstart | `README.md` (root) |
 | Docs navigation index | `docs/README.md` |
 | Inline docstrings / comments | In the source file itself |
+
+Note: use `docs/api/` for HTTP endpoints; use `docs/reference/` for component catalogs, tool lists, or configuration schemas that aren't REST endpoints.
 
 ---
 
@@ -374,6 +377,8 @@ For source files: add docstrings to all public functions/classes/methods. Add in
 ### Phase 3 — Maintain Indexes
 
 After writing any documentation file, update **two levels** of indexes:
+
+**CLAUDE.md check** — if this is a new or updated project, verify CLAUDE.md follows the indexer-only pattern: ≤150 lines, directives + navigation pointers only, no inlined content that duplicates docs/. If CLAUDE.md has sections that duplicate docs/ content, note them as a gap in the Phase 4 report. Full pattern guide: [`docs/guides/docs-architecture.md`](docs/guides/docs-architecture.md) (if it exists in this project).
 
 1. **Sub-folder index** — open `docs/<folder>/README.md` (create it if missing using the sub-folder template above). Add or update the row for the file you just wrote. Set the correct status (`ready`, `draft`, `reference`, or `blocked`).
 

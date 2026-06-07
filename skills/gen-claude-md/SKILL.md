@@ -28,6 +28,7 @@ These rules apply throughout every phase. Violating them produces a confidently 
 4. **Conflicting patterns beat clean patterns** — if the codebase is inconsistent, document both patterns and flag it. Don't pick one and hide the other.
 5. **Confirm before writing** — Phase 3 is mandatory. Do not write the file without user confirmation.
 6. **Link over duplicate** — if a `docs/` file already covers a topic, write a link to that file in CLAUDE.md instead of re-stating its content. CLAUDE.md is the **navigation layer**; `docs/` files are the **knowledge layer**. Only inline content that has no `docs/` equivalent. Duplicating documented content causes drift — the docs change but CLAUDE.md doesn't.
+7. **CLAUDE.md is an indexer, not a knowledge store** — target output is ≤150 lines. Never inline the full component catalog, convention patterns with code blocks, or step-by-step playbooks that already have a `docs/` equivalent. If `docs/` gaps exist that would force CLAUDE.md past the target, note them explicitly in the output so the user can decide whether to create those docs first.
 
 | Situation | What to write |
 |-----------|---------------|

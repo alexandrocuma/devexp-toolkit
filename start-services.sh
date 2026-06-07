@@ -28,6 +28,9 @@ OV_LOG="$OV_DIR/mcp.log"
 OV_PORT=2033
 JINA_PORT=8082
 JINA_PID_FILE="$OV_DIR/jina.pid"
+OBSCURA_PORT=9222
+OBSCURA_PID_FILE="$OV_DIR/obscura.pid"
+OBSCURA_LOG="$OV_DIR/obscura.log"
 
 STATUS_ONLY=false
 [[ "${1:-}" == "--status" ]] && STATUS_ONLY=true
@@ -215,6 +218,49 @@ start_openviking() {
     fi
 }
 
+# ── Obscura CDP server ────────────────────────────────────────────────────────
+
+is_obscura_running() {
+    if [[ -f "$OBSCURA_PID_FILE" ]]; then
+        local pid; pid=$(cat "$OBSCURA_PID_FILE")
+        kill -0 "$pid" 2>/dev/null && return 0
+    fi
+    lsof -ti:"$OBSCURA_PORT" >/dev/null 2>&1 && return 0
+    return 1
+}
+
+start_obscura() {
+    info "Obscura CDP server (port $OBSCURA_PORT)"
+
+    if ! command -v obscura &>/dev/null; then
+        skip "obscura not installed — skipping (run: cargo install obscura)"
+        return 0
+    fi
+
+    if is_obscura_running; then
+        skip "Already running (pid $(cat "$OBSCURA_PID_FILE" 2>/dev/null || echo '?'))"
+        return 0
+    fi
+
+    if $STATUS_ONLY; then
+        warn "Not running"
+        return 1
+    fi
+
+    echo -e "  Starting Obscura..."
+    nohup obscura serve --port "$OBSCURA_PORT" > "$OBSCURA_LOG" 2>&1 &
+    echo $! > "$OBSCURA_PID_FILE"
+
+    sleep 1
+    if is_obscura_running; then
+        ok "Started (pid $(cat "$OBSCURA_PID_FILE"), port $OBSCURA_PORT)"
+    else
+        warn "Failed to start — check $OBSCURA_LOG"
+        tail -5 "$OBSCURA_LOG" 2>/dev/null | sed 's/^/    /'
+        return 1
+    fi
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -230,6 +276,8 @@ echo ""
 start_openviking
 echo ""
 validate_embedding_config
+echo ""
+start_obscura
 echo ""
 
 if ! $STATUS_ONLY; then

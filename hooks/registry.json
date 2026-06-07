@@ -96,5 +96,47 @@
       "plugin": "hooks/opencode/devexp-plugin.js"
     },
     "enabled": true
+  },
+  {
+    "name": "graphify-read-guard",
+    "description": "Gate source-file reads/globs behind a tapering graphify-query cadence (5 → 3 → 1 queries to unlock, ~6 reads per cycle) instead of a flat timer — requires the graphify skill and an existing graphify-out/graph.json. Ships disabled; enable only in projects that maintain a graphify knowledge graph.",
+    "claude_code": {
+      "event": "PreToolUse",
+      "matcher": "Read|Glob",
+      "script": "hooks/claude-code/graphify-read-guard.sh"
+    },
+    "opencode": {
+      "event": "tool.execute.before",
+      "plugin": "hooks/opencode/devexp-plugin.js"
+    },
+    "enabled": false
+  },
+  {
+    "name": "graphify-session-sentinel",
+    "description": "Track graphify query/path/explain usage toward graphify-read-guard's tapering gate by incrementing the shared session state — pairs with graphify-read-guard. Ships disabled by default.",
+    "claude_code": {
+      "event": "PostToolUse",
+      "matcher": "Bash",
+      "script": "hooks/claude-code/graphify-session-sentinel.sh"
+    },
+    "opencode": {
+      "event": "tool.execute.before",
+      "plugin": "hooks/opencode/devexp-plugin.js"
+    },
+    "enabled": false
+  },
+  {
+    "name": "graphify-grep-nudge",
+    "description": "Soft-nudge toward `graphify query` (via additionalContext, never a block) when grep-like Bash commands or the Grep tool run and a graphify knowledge graph exists — pairs with graphify-read-guard. Ships disabled by default.",
+    "claude_code": {
+      "event": "PreToolUse",
+      "matcher": "Bash|Grep",
+      "script": "hooks/claude-code/graphify-grep-nudge.sh"
+    },
+    "opencode": {
+      "event": "tool.execute.before",
+      "plugin": "hooks/opencode/devexp-plugin.js"
+    },
+    "enabled": false
   }
 ]

@@ -4,6 +4,7 @@
 Usage: python3 install_mcps_claude.py <registry> <dotenv_path> <dry_run:0|1> [skipped_mcps_file]
 """
 import json, sys, subprocess, os, re
+from pathlib import Path
 
 with open(sys.argv[1]) as f:
     mcps = json.load(f)
@@ -23,7 +24,9 @@ if os.path.exists(dotenv_path):
     if dotenv:
         print(f"  Loaded {len(dotenv)} var(s) from mcps/.env")
 
-merged_env = {**os.environ, **dotenv}
+# DEVEXP_DIR is derived from the registry path (mcps/registry.json → repo root)
+devexp_dir = str(Path(sys.argv[1]).parent.parent)
+merged_env = {**os.environ, 'DEVEXP_DIR': devexp_dir, **dotenv}
 
 for mcp in mcps:
     name               = mcp['name']
@@ -44,6 +47,7 @@ for mcp in mcps:
 
     def resolve_str(s):
         return re.sub(r'\$\{(\w+)\}', lambda m: merged_env.get(m.group(1), ''), s)
+    resolved_args    = [resolve_str(a) for a in args]
     resolved_headers = {k: resolve_str(v) for k, v in headers.items()}
 
     missing = [e for e in required_env if not merged_env.get(e)]
@@ -61,7 +65,7 @@ for mcp in mcps:
                 f.write(name + '\n')
         continue
 
-    env_flags    = [item for k, v in resolved.items()       for item in ('--env', f'{k}={v}')]
+    env_flags    = [item for k, v in resolved.items()       for item in ('-e', f'{k}={v}')]
     header_flags = [item for k, v in resolved_headers.items() for item in ('-H', f'{k}: {v}')]
 
     if dry_run:
@@ -69,8 +73,8 @@ for mcp in mcps:
             h = ' '.join(f'-H "{k}: ***"' for k in resolved_headers) if resolved_headers else ''
             print(f"  [dry-run] claude mcp add --scope {scope} --transport {transport} {h} {name} {url}")
         else:
-            e = ' '.join(f'--env {k}=***' for k in resolved) if resolved else ''
-            print(f"  [dry-run] claude mcp add --scope {scope} {e} {name} -- {command} {' '.join(args)}")
+            e = ' '.join(f'-e {k}=***' for k in resolved) if resolved else ''
+            print(f"  [dry-run] claude mcp add --scope {scope} {e} {name} -- {command} {' '.join(resolved_args)}")
         continue
 
     result = subprocess.run(['claude', 'mcp', 'list'], capture_output=True, text=True)
@@ -85,7 +89,7 @@ for mcp in mcps:
         )
     else:
         r = subprocess.run(
-            ['claude', 'mcp', 'add', '--scope', scope] + env_flags + [name, '--', command] + args,
+            ['claude', 'mcp', 'add', '--scope', scope] + env_flags + [name, '--', command] + resolved_args,
             capture_output=True, text=True
         )
     if r.returncode == 0:
