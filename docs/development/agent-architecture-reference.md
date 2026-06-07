@@ -17,15 +17,14 @@ Every agent that operates on a codebase must begin with **Phase 0: Orient** befo
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — use stack, layer map, canonical example, and conventions; skip re-deriving what's already there
-5. Query OpenViking for existing project knowledge:
-   `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
-   If yes: `mcp__openviking__query` — question: "<domain-specific question for this agent>" — namespace: "viking://<project-name>/"
-   Use results (score > 0.5) to surface conventions, ADRs, and known issues relevant to the agent's task.
-   If OpenViking is unavailable, continue — the atlas is sufficient.
-6. Skip redundant discovery steps that the atlas or OpenViking already covers
+5. Check for an existing knowledge graph:
+   Check whether `graphify-out/graph.json` exists in the project root.
+   If yes: run `graphify query "<domain-specific question for this agent>"` and use the results to surface conventions, ADRs, and known issues relevant to the agent's task.
+   If no graph exists, continue — the atlas is sufficient; building one is the user's call (`/graphify`), not the agent's.
+6. Skip redundant discovery steps that the atlas or graph already covers
 ```
 
-### What to ask OpenViking in step 5
+### What to ask graphify in step 5
 
 Tailor the query to the agent's role:
 
@@ -49,37 +48,56 @@ Tailor the query to the agent's role:
 
 ---
 
-## OpenViking Protocol
+## graphify Protocol
 
-OpenViking is the framework's semantic knowledge store. All agents that write outputs (not just read) must also **write back** so the knowledge base stays current.
+graphify turns a codebase into a persistent, queryable knowledge graph (`graphify-out/graph.json`). It's optional per project — a project only has a graph if someone has run `/graphify` in it. Agents that write durable artifacts should keep an existing graph current, not build one on the agent's own initiative.
 
 ### Read protocol (all agents, Phase 0)
 
-1. `list_namespaces` — check if the project namespace exists before querying (avoids errors on first run)
-2. `query` with namespace `"viking://<project-name>/"` — use results with score > 0.5
-3. Never use bare `search` for the Phase 0 pre-check — always `list_namespaces` → `query`
+1. Check whether `graphify-out/graph.json` exists before querying — querying a project with no graph wastes a turn
+2. If `mcp__graphify__query_graph` (or sibling tools `get_node`, `get_neighbors`, `shortest_path`) are available in the session, prefer them — they return structured results over stdio without spawning a subprocess per call. See "Optional: graphify as a project MCP" below for how a project gets these tools.
+3. Otherwise, fall back to the CLI via `Bash`/`Skill`: `graphify query "<question>"` — BFS for broad context, `--dfs` to trace one specific path; `graphify path "<A>" "<B>"` for relationships between two named concepts, `graphify explain "<node>"` for a plain-language explanation of one
+4. Prefer graphify (either form) over grep for conceptual questions ("why is X designed this way", "what are the conventions for Y") — it understands intent, not just keywords
+
+### Optional: graphify as a project MCP
+
+graphify can run as a stdio MCP server (`graphify <path> --mcp`) exposing `query_graph`, `get_node`, `get_neighbors`, and `shortest_path` as structured tools — faster and cheaper than shelling out to the CLI on every lookup, since the graph stays loaded in the server process.
+
+This is **per-project and opt-in, not part of the curated `mcps/registry.json`** (that registry is installed globally via `./install.sh` and would try to spawn `graphify --mcp` in every project regardless of whether a graph exists — most don't have one). Instead, a team that has built a graph for a specific project can register it there with `scope: "project"`:
+
+```json
+{
+  "name": "graphify",
+  "description": "Structured queries over this project's knowledge graph",
+  "command": "graphify",
+  "args": [".", "--mcp"],
+  "scope": "project"
+}
+```
+
+Add this via `claude mcp add --scope project` (Claude Code) once `graphify-out/graph.json` exists. Agents should check for `mcp__graphify__*` tools first (step 2 above) and transparently fall back to the CLI — never assume the MCP form is present.
 
 ### Write protocol (documentation and orientation agents)
 
-After producing an artifact that represents project knowledge, ingest it:
+After producing an artifact that represents project knowledge, trigger an incremental rebuild so the graph reflects it:
 
-| Agent | What to ingest | Path |
-|-------|---------------|------|
-| `codebase-navigator` | Atlas file + `docs/` folder | `viking://<project-name>/atlas`, `viking://<project-name>/docs` |
-| `gen-claude-md` skill | Generated `CLAUDE.md` | `viking://<project-name>/claude-md` |
-| `docs-sync` | Updated `CLAUDE.md` and/or `README.md` | `viking://<project-name>/claude-md`, `viking://<project-name>/readme` |
+| Agent | What changed | Action |
+|-------|-------------|--------|
+| `codebase-navigator` | Atlas file + `docs/` folder | `/graphify --update` |
+| `gen-claude-md` skill | Generated `CLAUDE.md` | `/graphify --update` |
+| `docs-sync` | Updated `CLAUDE.md` and/or `README.md` | `/graphify --update` |
 
-**Never ingest the raw project root** — it would index all source files including generated code. Always ingest specific high-signal files: the atlas, `docs/`, `CLAUDE.md`, `README.md`.
+`--update` re-extracts only new/changed files — cheap to run after every write. Only run it if `graphify-out/graph.json` already exists; never bootstrap a graph (`/graphify` with no `--update`) on an agent's own initiative — that's an expensive, user-directed operation.
 
 ### Availability
 
-OpenViking is a locally-hosted HTTP service. It may not be running. Every agent must handle unavailability gracefully:
+graphify is a skill backed by a local Python package, and most projects won't have a graph built. Every agent must handle both cases gracefully:
 
 ```
-If OpenViking is unavailable, skip silently — [atlas / memory file / source files] are sufficient.
+If graphify-out/graph.json doesn't exist or graphify is unavailable, skip silently — [atlas / memory file / source files] are sufficient.
 ```
 
-Never block execution or report an error when OpenViking is down.
+Never block execution, prompt the user to run `/graphify`, or report an error when there's no graph to query.
 
 ---
 
@@ -145,7 +163,7 @@ After completing [task]:
 
 ## Tool Declaration in Frontmatter
 
-The `tools:` field in agent frontmatter lists Claude's **built-in tools only** — not MCP tools. MCP tools (OpenViking, context7) are globally available in the session and do not need to be declared.
+The `tools:` field in agent frontmatter lists Claude's **built-in tools only** — not MCP tools. MCP tools (context7) are globally available in the session and do not need to be declared. graphify is a skill, not an MCP — agents invoke it via `Bash` (`graphify query ...`) or the `Skill` tool, both of which must be declared if used.
 
 **Built-in tools reference:**
 
@@ -175,7 +193,7 @@ Agents with `memory: user` in frontmatter have a persistent memory directory at 
 - Topic files hold detail: `patterns.md`, `projects.md`, `gotchas.md`
 - Save stable, cross-session facts — not session-specific context
 - Always update when the user explicitly asks you to remember or forget something
-- OpenViking is a complement to memory, not a replacement — memory is agent-private, OpenViking is shared across all agents
+- graphify is a complement to memory, not a replacement — memory is agent-private, the knowledge graph (when one exists) is shared and per-project
 
 ---
 
@@ -185,9 +203,9 @@ Before submitting a new agent file, verify:
 
 - [ ] Frontmatter has `name`, `description` (with `<example>` blocks), `tools`, `color`
 - [ ] Body starts with Phase 0 (unless explicitly exempted above)
-- [ ] Phase 0 includes `list_namespaces` → `query` OpenViking pattern
+- [ ] Phase 0 includes the `graphify-out/graph.json` existence-check → `graphify query` pattern
 - [ ] context7 usage documented where the agent writes code or reviews library usage
 - [ ] `## Chaining` section present at end of body
-- [ ] OpenViking write-back included if the agent produces knowledge artifacts
+- [ ] `/graphify --update` write-back included if the agent produces knowledge artifacts
 - [ ] All tools in `tools:` frontmatter are actually used in the body
 - [ ] Installed via `./install.sh` after changes

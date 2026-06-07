@@ -92,23 +92,23 @@ The atlas tells you: stack, key files, patterns, known issues. Without it, your 
 - Atlas found and recent → extract relevant context, record it
 - Atlas missing or stale → dispatch `codebase-navigator` first, wait for it to complete, then continue
 
-### 3 — Query OpenViking
-Call `mcp__openviking__query` with 1–2 terms from the user's request.
+### 3 — Query graphify
+Check whether `graphify-out/graph.json` exists in the project root. If it does, run `graphify query "<1-2 terms from the user's request>"`.
 
-OpenViking holds prior knowledge: ADRs, team conventions, past audit findings, architectural constraints, known bugs. This is context your agents cannot discover from the codebase alone. Query it before you write a single agent prompt — even if the task seems straightforward.
+graphify holds prior knowledge extracted from the codebase and docs: ADRs, conventions, architectural relationships, known issues. This is context your agents cannot discover from a flat file search alone. Query it before you write a single agent prompt — even if the task seems straightforward.
 
-- Results found → record them, they will enrich your agent prompts
-- Nothing found → record "OpenViking: no prior context" and continue
+- Graph exists and results found → record them, they will enrich your agent prompts
+- No graph, or nothing found → record "graphify: no prior context" and continue
 
 ### 4 — Write the Task Plan
-Now you have: classification + atlas context + OpenViking context. Use all three to write the task plan.
+Now you have: classification + atlas context + graphify context. Use all three to write the task plan.
 
 ```
 TASK PLAN
 ─────────
 Context:
   • Stack / key files: <from atlas>
-  • Prior knowledge:   <from OpenViking, or "none">
+  • Prior knowledge:   <from graphify, or "none">
 
 Batch 1 (parallel):
   • <agent> — <specific prompt including context>
@@ -124,7 +124,7 @@ Batch 3 (sequential):
 A good prompt is specific: it names files, states the exact question, and includes relevant context from steps 2 and 3. A vague prompt wastes the agent.
 
 **Weak:** "Review the codebase for security issues"
-**Strong:** "Audit `src/middleware/auth.go` and `src/handlers/user.go` for OWASP A01–A04. Stack: Go + PostgreSQL. Session tokens stored in Redis with 24h TTL per the atlas. OpenViking flagged a prior issue with token invalidation on logout — verify it was fixed."
+**Strong:** "Audit `src/middleware/auth.go` and `src/handlers/user.go` for OWASP A01–A04. Stack: Go + PostgreSQL. Session tokens stored in Redis with 24h TTL per the atlas. graphify flagged a prior issue with token invalidation on logout — verify it was fixed."
 
 ### 5 — Dispatch
 Execute the task plan. Send all agents in a batch as multiple Task calls in a single message. Wait for the batch to complete before starting the next.
@@ -145,12 +145,14 @@ These presets define what to dispatch in Step 5 for common task types. They do n
 ### `feature` — Implement a new feature
 ```
 Batch 1 (sequential):  codebase-navigator → atlas
-Batch 2 (sequential):  dev-agent          → implement using atlas + OpenViking context
+Batch 2 (sequential):  dev-agent          → implement using atlas + graphify context
 Batch 3 (parallel):    test-gen           → generate tests
                        backend-senior-dev or frontend-senior-dev → review implementation
 Batch 4 (sequential):  test-runner        → run suite, verify coverage
 Batch 5 (sequential):  pr-review          → final review before merge
 ```
+
+Before dispatching `dev-agent` in Batch 2, route the idea through the `/feature` skill's discover → plan → verify chain rather than handing it raw context: graphify discovery for relevant files/conventions, an actionable plan with an explicit "External Dependencies" list, and a **mandatory context7 lookup** for every dependency on that list before any code is written. Hand `dev-agent` the verified plan, not the raw idea — it implements against facts, not assumptions about library APIs that may have drifted since training.
 
 ### `bugfix` — Find and fix a bug
 ```

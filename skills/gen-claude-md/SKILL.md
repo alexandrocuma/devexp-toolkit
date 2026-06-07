@@ -62,11 +62,9 @@ ls ~/.claude/agent-memory/codebase-navigator/ 2>/dev/null
 
 Read the root `README.md` for the project's own description of itself.
 
-5. Query OpenViking for existing project knowledge:
-   `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
-   If yes: `mcp__openviking__query` — question: `"What are the architecture, conventions, ADRs, and implementation patterns for this project?"` — namespace: `"viking://<project-name>/"`
-   If results return (score > 0.5), use them to pre-populate your understanding of conventions, ADRs, and known issues — skip re-reading already-indexed docs.
-   If OpenViking is unavailable, continue normally.
+5. Check for an existing knowledge graph: if `graphify-out/graph.json` exists in the project root, run `graphify query "What are the architecture, conventions, ADRs, and implementation patterns for this project?"`.
+   Use returned results to pre-populate your understanding of conventions, ADRs, and known issues — skip re-reading already-indexed docs.
+   If no graph exists, continue normally — the atlas and source files are sufficient.
 
 Identify the stack from manifest files — check all that exist:
 ```bash
@@ -450,14 +448,13 @@ Full index: `docs/README.md`
 
 ### Phase 5 — Report
 
-After writing CLAUDE.md, ingest it into OpenViking so other agents can retrieve it semantically:
+After writing CLAUDE.md, if `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild so the new CLAUDE.md is reflected in the graph:
 ```
-mcp__openviking__add_resource — resource: "<project-root>/CLAUDE.md"
-                              — path: viking://<project-name>/claude-md
+/graphify --update
 ```
-If OpenViking is unavailable, skip silently.
+If there's no graph, or graphify is unavailable, skip silently — the file on disk is sufficient.
 
-After ingestion, output:
+After that, output:
 
 ```
 CLAUDE.md written to: <path>
@@ -471,7 +468,7 @@ Sections needing review:
 Next steps:
 - Review [NOT FOUND] sections and fill manually
 - Run the `codebase-navigator` agent to build a full persistent atlas alongside this CLAUDE.md
-- CLAUDE.md ingested into OpenViking at viking://<project-name>/claude-md (or "OpenViking unavailable — skipped")
+- Knowledge graph updated via `/graphify --update` (or "no graph present — skipped")
 ```
 
 ---

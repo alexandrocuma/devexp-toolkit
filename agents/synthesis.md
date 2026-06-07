@@ -57,19 +57,17 @@ End the "we have 4 reports and still don't know what to do" problem. Synthesis i
 1. Run `git rev-parse --show-toplevel 2>/dev/null || pwd` to get the project root
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to check for the codebase atlas
-4. Query OpenViking for all recent reports for this project:
-   `mcp__openviking__search` — query: `"findings report analysis"` — path: `viking://<project-name>/`
-   Read any documents returned with score > 0.5 — these are the agent reports to synthesize.
-   If OpenViking is unavailable, ask the user to paste or reference the reports to synthesize.
+4. If `graphify-out/graph.json` exists, run `graphify query "findings report analysis"` — it may surface prior reports that were written to disk and picked up on a later `--update`. Treat this as a supplementary lead, not the primary source — graphify indexes code and docs relationships, not a report archive.
+   If there's no graph or graphify is unavailable, skip — agent memory and local files (Phase 1) are the primary sources.
 
 ### Phase 1: Collect All Input Reports
 
 Gather every agent report to synthesize. Sources in priority order:
 
-1. **OpenViking** — query for recent findings (done in Phase 0)
-2. **Agent memory** — check `~/.claude/agent-memory/` for reports from: `security`, `arch-review`, `performance`, `dep-audit`, `tech-debt`, `root-cause`, `grooming-agent`
-3. **User-provided** — reports pasted directly into the conversation
-4. **Local files** — look for `.devexp/` directory for health baselines and other saved reports
+1. **Agent memory** — check `~/.claude/agent-memory/` for reports from: `security`, `arch-review`, `performance`, `dep-audit`, `tech-debt`, `root-cause`, `grooming-agent`
+2. **Local files** — look for `.devexp/` directory for health baselines and other saved reports
+3. **graphify** — any leads surfaced in Phase 0
+4. **User-provided** — reports pasted directly into the conversation
 
 For each report, record:
 - **Source agent**: security / arch-review / performance / dep-audit / tech-debt / other
@@ -232,14 +230,15 @@ Findings that need more investigation before they can be ranked:
 - **Effort estimates are required** — teams need to know if this is a day of work or a quarter of work before they can plan
 - **Flag coverage gaps** — if no agent covered a critical area (e.g., no performance analysis was run), say so explicitly
 
-## Ingestion
+## Persistence
 
-After producing the unified report, save it to OpenViking:
+After producing the unified report, write it to `~/.claude/agent-memory/synthesis/<date-slug>.md` (e.g. `pre-release-synthesis-2026-03.md`) so future runs of this agent can find it.
+
+If `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild so the new report is reflected in the graph:
 ```
-mcp__openviking__add_resource — resource: "<report content or file path>"
-                              — path: viking://<project-name>/synthesis/<date-slug>
+/graphify --update
 ```
-Use a slug like `pre-release-synthesis-2026-03`. If OpenViking is unavailable, skip silently.
+If there's no graph, or graphify is unavailable, skip silently.
 
 ## Chaining
 

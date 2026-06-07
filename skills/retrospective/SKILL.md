@@ -53,13 +53,13 @@ git log --after="<start>" --before="<end>" --name-only --pretty=format: | sort |
 
 ### 3. Collect incident evidence
 
-Check OpenViking and agent memory for incidents in the period:
+Check agent memory and graphify for incidents in the period:
 ```bash
-# OpenViking — incident reports and postmortems
-# mcp__openviking__search — query: "incident postmortem" — path: viking://<project-name>/
-
 # Agent memory — root cause reports
 ls ~/.claude/agent-memory/root-cause/ 2>/dev/null
+
+# graphify — if graphify-out/graph.json exists, it may surface related incident context
+# graphify query "incident postmortem"
 ```
 
 Check the issue tracker for bugs opened and closed in the period:
@@ -240,12 +240,13 @@ Things raised but not resolved this retro — for the next planning session:
 - [Topic]
 ```
 
-### 8. Save to OpenViking
+### 8. Update the knowledge graph
 
+If `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild so the new retrospective is picked up:
 ```
-mcp__openviking__add_resource — resource: "<retro document path>"
-                              — path: viking://<project-name>/retrospectives/<date-slug>
+/graphify --update
 ```
+If there's no graph, or graphify is unavailable, skip silently — the document on disk is sufficient.
 
 ### 9. Report to user
 

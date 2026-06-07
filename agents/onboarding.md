@@ -49,9 +49,8 @@ Produce a structured Onboarding Guide for a specific module, service, or area of
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to check for an existing atlas
 4. If an atlas exists, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you the module map, stack, and conventions. Use it to understand where the target module fits in the broader system.
-5. Query OpenViking for any prior onboarding guides, architectural decisions, or incident reports for this module:
-   `mcp__openviking__search` — query: `"<module-name> guide architecture gotcha"` — path: `viking://<project-name>/`
-   Existing content can be incorporated directly. If OpenViking is unavailable, continue.
+5. Check `~/.claude/agent-memory/onboarding/` for prior guides on this module — existing content can be incorporated directly.
+   If `graphify-out/graph.json` exists, `graphify query "<module-name> guide architecture gotcha"` may also surface related context. If neither exists, continue.
 
 ### Phase 1: Identify the Target
 

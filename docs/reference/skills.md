@@ -31,7 +31,7 @@ Body: instructions, process steps, output format...
 | docs | `/docs` | Documentation generation (API docs, guides, README, code comments) |
 | api-design | `/api-design` | Designs API contracts, endpoints, schemas, and error handling |
 | db-design | `/db-design` | Designs database schemas, migrations, and indexes |
-| feature | `/feature` | Spec-driven feature implementation with tests and documentation |
+| feature | `/feature` | Turn an idea into a feature — graphify discovery, an actionable plan, mandatory context7 verification for any external library, then implementation |
 | logic-review | `/logic-review` | Reviews code logic for bugs, edge cases, and dysfunction |
 | migrate | `/migrate` | Step-by-step migration guide for a library or framework upgrade |
 | pr | `/pr` | Generate a PR/MR description and optionally open it via gh or glab |

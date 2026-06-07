@@ -58,7 +58,7 @@ Skills are invoked as slash commands (`/skill-name`) in Claude Code or opencode.
 | Skill | Description |
 |-------|-------------|
 | `/bugfix` | Root cause analysis and bug fixing with built-in verification. |
-| `/feature` | Spec-driven feature implementation with tests and documentation. |
+| `/feature` | Turn an idea into a feature: graphify discovery, an actionable plan, mandatory context7 verification for any external library, then implementation. |
 | `/refactor` | Code refactoring for improved structure and maintainability. |
 | `/docs` | Documentation generation: API docs, code comments, usage examples, README. |
 | `/test-gen` | Generate tests for the current file or function. |
@@ -112,7 +112,8 @@ MCP (Model Context Protocol) servers extend Claude with additional tool capabili
 | MCP | Transport | Description |
 |-----|-----------|-------------|
 | **context7** | stdio | Up-to-date library documentation and code examples for any package — fetched at query time, not from training data. |
-| **openviking** | http | Context database for AI agents — tiered memory (L0/L1/L2), semantic retrieval, and document ingestion via filesystem paradigm (viking://). Requires `OPENVIKING_VLM_API_KEY` and `OPENVIKING_VLM_MODEL`. |
+| **obscura** | stdio | Built-in Obscura browser MCP — navigate, click, fill, type, eval JS, inspect network and console. Zero setup beyond installing the `obscura` binary. |
+| **ui-inspector** | stdio | Visual UI/UX layer on top of Obscura — screenshots, ARIA accessibility tree, computed CSS, axe-core a11y audit. Requires `obscura serve` running (started by `start-services.sh`). |
 
 MCP configuration lives in `mcps/registry.json`. API keys and secrets go in `mcps/.env` (gitignored). MCPs with a `docker_compose` field are started automatically by the installer via `docker compose up -d`.
 
@@ -151,15 +152,13 @@ After installation, restart your CLI to activate the new agents and skills.
 
 Prints what would be installed without making any changes.
 
-### Reinstall process-managed services from scratch
+### Force a clean MCP config refresh
 
 ```bash
-./install.sh --reinstall-openviking   # wipe ~/.openviking/venv, kill server, regenerate ov.conf
-./install.sh --reinstall-jina         # wipe ~/.openviking/jina-venv (or stop Docker container), restart Jina
-./install.sh --reinstall-openviking --reinstall-jina   # both at once
+./install.sh --reinstall-mcps   # remove registry MCPs then re-add them
 ```
 
-During a normal install, setup is skipped automatically if the services are already running. Use these flags if a service is in a bad state or you want to pick up a newer version.
+During a normal install, MCPs already registered with Claude Code or opencode are skipped. Use this flag to force every registry MCP to be removed and re-added — useful after editing `mcps/registry.json` or when an MCP's config looks stale.
 
 ### What gets installed where
 
@@ -174,7 +173,7 @@ Existing files are backed up automatically before any overwrite.
 
 ### Restart Services (without data loss)
 
-After a machine restart or session, MCP services may have stopped. Use `start-services.sh` to bring them back — it **never touches your data or venvs**:
+After a machine restart or session, MCP services may have stopped. Use `start-services.sh` to bring them back:
 
 ```bash
 ./start-services.sh            # start anything that isn't running
@@ -182,10 +181,7 @@ After a machine restart or session, MCP services may have stopped. Use `start-se
 ```
 
 What it does:
-- **Jina** (Docker): checks health via HTTP, restarts the container if needed — no model re-download
-- **OpenViking** (Python): restarts the server process using the existing venv and `~/.openviking/ov.conf` — no data wipe, no index rebuild
-
-> **Do not use `./install.sh --reinstall-openviking`** unless you want a full wipe. That deletes the venv and all indexed knowledge.
+- **Obscura** (native binary): starts `obscura serve` on port 9222 if it isn't already running — backs the `obscura` and `ui-inspector` MCPs
 
 After running `start-services.sh`, reconnect your MCP in Claude Code (via `/mcp`) or opencode.
 
@@ -412,7 +408,7 @@ See `docs/development/mcp-guide.md` for a full guide to the registry format and 
 devexp/
 ├── install.sh                  # Installs agents, skills, and MCPs
 ├── uninstall.sh                # Removes devexp components
-├── start-services.sh           # Restarts MCP services (Jina + OpenViking) without data loss
+├── start-services.sh           # Starts the Obscura CDP server
 ├── CLAUDE.md                   # Instructions for Claude when working in this repo
 ├── agents/                     # Agent markdown files (Claude Code format)
 │   ├── dev-agent.md
@@ -497,11 +493,9 @@ devexp/
 │       ├── lint-on-save.js
 │       └── format-on-save.js
 ├── mcps/                       # MCP server registry and secrets
-│   ├── registry.json           # Curated MCP server list
+│   ├── registry.json           # Curated MCP server list (context7, obscura, ui-inspector)
 │   ├── .env.example            # Template for API keys (copy to .env)
-│   └── openviking/             # OpenViking MCP (HTTP, pip-based)
-│       ├── server.py           # Self-contained MCP server (port 2033)
-│       └── ov.conf.example     # Config template (copied to ~/.openviking/ov.conf)
+│   └── ui-inspector/           # ui-inspector MCP server (Node, talks to `obscura serve`)
 ├── templates/                  # Starting points for new agents and skills
 │   ├── agent-template.md
 │   └── skill-template.md

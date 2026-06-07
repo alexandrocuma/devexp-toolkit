@@ -23,21 +23,22 @@ You can also grab a binary manually from the [Releases page](https://github.com/
 
 ## install.sh (from a clone)
 
-If you're contributing to the toolkit — editing agents, skills, or hooks — clone the repo and use `install.sh`. Because `devexp` prefers live files on disk over its embedded copies, your edits are picked up immediately without rebuilding.
+If you're contributing to the toolkit — editing agents, skills, or hooks — clone the repo and use `install.sh`. `install.sh` is now a thin wrapper: it builds the `devexp` Go CLI from `cli/` (requires a local Go toolchain) and execs `devexp install` with whatever flags you pass through. Because `devexp` prefers live files on disk over its embedded copies, your edits are picked up immediately without rebuilding the binary.
 
 The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed and asks which to target. Supported CLIs: **Claude Code** and **opencode**.
 
 ```bash
 ./install.sh                         # interactive
-./install.sh --dry-run               # preview what would be installed, no changes made
+./install.sh --dry-run               # preview what would be installed, no changes made (-n)
 ./install.sh --model sonnet          # skip model prompt, use claude-sonnet-4-6
 ./install.sh --model opus            # skip model prompt, use claude-opus-4-6
-./install.sh --reinstall-openviking  # wipe and reinstall the OpenViking MCP from scratch
-./install.sh --reinstall-jina        # wipe and reinstall the Jina embeddings server from scratch
+./install.sh --reinstall-mcps        # remove registry MCPs then re-add them (forces a config refresh)
 ./install.sh --mcps-only             # only register MCP servers
 ./install.sh --agents-only           # only install agents
 ./install.sh --skills-only           # only install skills
 ```
+
+`--model` accepts a short alias (`sonnet`, `opus`, `haiku`, `gpt4o`, `deepseek`, `kimi`, …) or a full model ID — see `cli/internal/agents/installer.go` for the alias table.
 
 **Behavior:**
 - Detects `claude` and/or `opencode` in PATH and prompts which to install for
@@ -58,11 +59,8 @@ Use this after a machine restart or when MCP services have stopped. Never wipes 
 ```
 
 **Behavior:**
-- **Jina** (Docker): health-checks via HTTP, restarts the container if needed — no model re-download
-- **OpenViking** (Python): restarts the server process using the existing venv — no data wipe, no index rebuild
+- **Obscura** (native binary): starts `obscura serve` on port 9222 if it isn't already running — backs the `obscura` and `ui-inspector` MCPs
 - Safe to run at any time — skips services that are already running
-
-> Do **not** use `./install.sh --reinstall-openviking` to restart — it wipes the venv and all indexed knowledge. Use `start-services.sh` instead.
 
 After running, reconnect your MCP in Claude Code (`/mcp`) or opencode.
 

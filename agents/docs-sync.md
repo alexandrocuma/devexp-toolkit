@@ -67,8 +67,8 @@ This framework has fixed documentation surfaces. Know which changes affect which
 | `install.sh` | CLAUDE.md install section (if flags or behavior changed) |
 | `docs/<folder>/<file>.md` (new) | `docs/<folder>/README.md` folder index, `docs/README.md` top-level index |
 | `docs/<folder>/<file>.md` (deleted) | Remove row from `docs/<folder>/README.md`; remove from `docs/README.md` if last in section |
-| `CLAUDE.md` (any edit) | OpenViking `viking://<project-name>/claude-md` (re-ingest) |
-| `README.md` (any edit) | OpenViking `viking://<project-name>/readme` (re-ingest) |
+| `CLAUDE.md` (any edit) | `/graphify --update` (if `graphify-out/graph.json` exists) |
+| `README.md` (any edit) | `/graphify --update` (if `graphify-out/graph.json` exists) |
 
 ## Workflow
 
@@ -128,12 +128,11 @@ Apply each planned change using Edit. Be surgical:
 - For code blocks: match the full block including fences
 - For descriptions: update only the changed field, not the whole paragraph
 
-**After edits**: If `CLAUDE.md` or `README.md` was among the updated files, re-ingest them into OpenViking to keep the knowledge base current:
+**After edits**: If `CLAUDE.md` or `README.md` was among the updated files, and `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild so the graph reflects the change:
 ```
-mcp__openviking__add_resource — resource: "<project-root>/CLAUDE.md"  — path: viking://<project-name>/claude-md
-mcp__openviking__add_resource — resource: "<project-root>/README.md"  — path: viking://<project-name>/readme
+/graphify --update
 ```
-Derive `<project-name>` from `git rev-parse --show-toplevel` (basename). If OpenViking is unavailable, skip silently — do not block the sync.
+If there's no graph, or graphify is unavailable, skip silently — do not block the sync.
 
 **Sub-folder README enforcement**: When adding or removing a doc file in any `docs/<folder>/`, always update that folder's `README.md`. If the folder has no `README.md`, create one using this format:
 
@@ -185,9 +184,8 @@ After all edits are applied, produce a concise report:
 - README.md: added row for `<name>` to hooks table
 - docs/development/hook-authoring-guide.md: updated devexp-plugin.js example
 
-### OpenViking ingestion
-- CLAUDE.md: re-ingested at viking://<project-name>/claude-md (or "not updated — skipped" / "OpenViking unavailable — skipped")
-- README.md: re-ingested at viking://<project-name>/readme (or "not updated — skipped" / "OpenViking unavailable — skipped")
+### graphify update
+- Triggered `/graphify --update` (or "no graph present — skipped" / "graphify unavailable — skipped")
 
 ### No changes needed
 - <doc surface>: already accurate

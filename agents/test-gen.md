@@ -48,11 +48,8 @@ Check shared context first:
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` for a project atlas
 4. From the atlas (or by discovery), extract: test framework, assertion library, mock approach, test file location pattern, existing fixture/factory patterns
-5. Query OpenViking for test conventions and known coverage gaps:
-   `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
-   If yes: `mcp__openviking__query` — question: `"What are the test conventions, fixture patterns, mock strategies, and known coverage gaps in this project?"` — namespace: `"viking://<project-name>/"`
-   Use results (score > 0.5) to skip re-discovering already-documented test patterns.
-   If OpenViking is unavailable, continue normally.
+5. Check for an existing knowledge graph: if `graphify-out/graph.json` exists, run `graphify query "What are the test conventions, fixture patterns, mock strategies, and known coverage gaps in this project?"` and use the results to skip re-discovering already-documented test patterns.
+   If there's no graph or graphify is unavailable, continue normally.
 6. When the test framework or assertion library version is uncertain, verify the current API using **context7** before writing any test code:
    ```
    1. mcp__context7__resolve-library-id — find the framework ID (e.g., "jest", "vitest", "pytest", "go-testing")

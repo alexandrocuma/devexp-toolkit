@@ -21,10 +21,8 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md`
 5. Use the atlas to understand the layer structure — it tells you which directories contain handlers, services, repositories, etc., accelerating the trace significantly
-6. Query OpenViking for prior traces or architectural notes on this path:
-   `mcp__openviking__search` — query: `"<entry point or feature name> execution flow"` — path: `viking://<project-name>/`
-   If a prior trace exists, verify it is still current rather than re-tracing from scratch.
-   If OpenViking is unavailable, continue with the atlas.
+6. Check `~/.claude/agent-memory/feature-path-tracer/` for prior traces of this path — if one exists, verify it is still current rather than re-tracing from scratch.
+   If `graphify-out/graph.json` exists, `graphify path "<entry point>" "<outcome>"` may also help confirm the route. If neither exists, continue with the atlas.
 
 ### Step 1: Identify the Entry Point
 - Locate the exact entry point of the feature or function being traced (e.g., route definition, public API method, event listener, cron job trigger)

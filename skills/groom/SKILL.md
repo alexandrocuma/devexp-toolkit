@@ -218,17 +218,15 @@ Only write the plan after Phase 3 passes. The plan must reflect what the codebas
 
 **7a. Save to ticket platform (source of truth)**
 
-Use the save plan operation from the platform adapter table (Phase 1) to attach the verified execution plan to the original ticket. The plan must be retrievable directly from the ticket without requiring OpenViking access.
+Use the save plan operation from the platform adapter table (Phase 1) to attach the verified execution plan to the original ticket. The plan must be retrievable directly from the ticket without requiring local file access.
 
-**7b. Save to OpenViking (semantic index)**
+**7b. Save a local copy (for future grooming runs and graphify)**
 
-Write plan to `<TICKET-ID>.md` then:
+Write the plan to `~/.claude/agent-memory/grooming-agent/plans/<TICKET-ID>.md`. If `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild so it's queryable later:
 ```
-add_resource("./<TICKET-ID>.md", namespace: "Atlas.Webapp.Plans")
-check_ingestion("viking://resources/Atlas.Webapp.Plans/<TICKET-ID>")
+/graphify --update
 ```
-
-Wait for ingestion to complete.
+If there's no graph, or graphify is unavailable, skip the rebuild — the ticket platform and the local copy are sufficient.
 
 ---
 
@@ -249,11 +247,11 @@ Plan summary:
 
 Persisted to:
   Ticket platform:    <url>  (source of truth — retrieve via platform's fetch/view operation)
-  OpenViking:         viking://resources/Atlas.Webapp.Plans/<TICKET-ID> ✅
+  Local copy:         ~/.claude/agent-memory/grooming-agent/plans/<TICKET-ID>.md ✅
 
 Retrieve later:
   Platform fetch operation (see adapter table, Phase 1)
-  query("Give me the full execution plan for <TICKET-ID>", namespace: "viking://resources/Atlas.Webapp.Plans")  ← semantic search
+  Read the local copy directly, or `graphify query "execution plan for <TICKET-ID>"` if a graph exists
 ```
 
 ---
@@ -267,7 +265,7 @@ Retrieve later:
 - [ ] "Files NOT Changing" section is explicit and reasoned
 - [ ] Execution steps are ordered — each step unblocked by previous
 - [ ] Verification section is specific — not "run tests", but "run `npm run test:e2e`, navigate to X, confirm only one `$pageview` fires"
-- [ ] Plan saved to ticket platform before OpenViking — ticket platform is the authoritative source
+- [ ] Plan saved to ticket platform before the local copy — ticket platform is the authoritative source
 
 ## What Makes a Bad Groom
 
@@ -275,5 +273,5 @@ Retrieve later:
 - Skipping agents because "the ticket seems clear" — clarity is not correctness
 - Vague steps: "update the config" → "add `capture_pageview: false` to `posthog.init()` in `app/entry.client.tsx:16`"
 - Missing blast radius — failing to find all callers of a changing function
-- Plan only in OpenViking — RAG chunking means retrieval may be incomplete; the ticket platform is the authoritative source
+- Plan only in the local copy — graphify indexes code/doc relationships, not a full-text plan archive; the ticket platform is the authoritative source
 - Marking READY TO GROOM when there are unresolved ⚠️ or 🔴 findings

@@ -20,11 +20,8 @@ Before reviewing, check if `codebase-navigator` has already mapped this project:
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — the stack, framework conventions, and canonical component example tell you what "good" looks like in this specific codebase
-5. Query OpenViking for project-specific conventions and established patterns:
-   `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
-   If yes: `mcp__openviking__query` — question: `"What are the component structure, state management, naming, and styling conventions for this project?"` — namespace: `"viking://<project-name>/"`
-   Use results (score > 0.5) to calibrate your review — don't flag intentional project patterns as anti-patterns.
-   If OpenViking is unavailable, continue — the atlas is sufficient.
+5. Check for an existing knowledge graph: if `graphify-out/graph.json` exists, run `graphify query "What are the component structure, state management, naming, and styling conventions for this project?"` and use the results to calibrate your review — don't flag intentional project patterns as anti-patterns.
+   If there's no graph or graphify is unavailable, continue — the atlas is sufficient.
 
 1. **Understand Context First**: Before commenting, understand what the code is trying to accomplish. Ask clarifying questions if the intent is ambiguous.
 2. **Identify Critical Issues**: Bugs, security vulnerabilities, major performance problems, broken accessibility — these get flagged clearly and must be fixed.

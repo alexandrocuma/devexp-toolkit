@@ -263,9 +263,7 @@ The server process can be started in two ways:
 1. Create `mcps/<name>/docker-compose.yml` with the service definition.
 2. Set `"docker_compose": "mcps/<name>/docker-compose.yml"` in the registry entry.
 
-**Process-based (pip/native)** — manage the process yourself (e.g. a Python venv started by the installer or a separate daemon). In this case, omit `docker_compose` from the registry entry and handle startup in `install.sh`. Reference implementations:
-- `_setup_openviking` — Python venv at `~/.openviking/venv`, idempotent with PID-based skip, supports `--reinstall-openviking`
-- `_setup_jina_embeddings` — OS-aware setup (Mac → pip `infinity-emb`, Linux+Docker → HuggingFace TEI image, Linux → pip fallback), port-based skip, supports `--reinstall-jina`
+**Process-based (native binary/daemon)** — manage the process yourself and document its lifecycle in `setup_instructions`; the daemon is started separately via `start-services.sh`. Reference implementation: `obscura` + `ui-inspector` — `obscura` is a standalone binary the user installs once (`cargo install obscura`), `ui-inspector` is a Node MCP that talks to a running `obscura serve` instance. Neither requires installer-managed venvs or Docker — `start-services.sh` just launches `obscura serve` before a session.
 
 ### Step 4: Test the install
 
@@ -293,13 +291,9 @@ Add the new MCP to the "MCP Servers" table in both `README.md` and `CLAUDE.md`.
 
 MCPs that are already installed are skipped by the installer. To force a re-install after changing an entry:
 
-> **Note — process-managed MCPs (OpenViking + Jina):** The installer automatically skips setup if the server is already running. Stale PIDs and occupied ports are detected and handled.
->
-> To force a clean reinstall:
+> **Note — forcing an MCP config refresh:** MCPs already registered with Claude Code or opencode are skipped by default. To remove and re-add every registry MCP (forces a fresh config write without touching unrelated entries):
 > ```bash
-> ./install.sh --reinstall-openviking   # wipe ~/.openviking/venv, kill server, regenerate ov.conf
-> ./install.sh --reinstall-jina         # wipe ~/.openviking/jina-venv (or stop Docker container), restart Jina
-> ./install.sh --reinstall-openviking --reinstall-jina   # both at once
+> ./install.sh --reinstall-mcps
 > ```
 
 **Claude Code:**

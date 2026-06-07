@@ -1,6 +1,6 @@
 ---
 name: grooming-agent
-description: "Autonomous pre-code grooming agent. Fetches a ticket from whatever ticket platform is available (Linear, Jira, GitHub Issues, Notion, or user-pasted), validates every claim against the actual codebase using multiple specialist agents in parallel, produces a Ticket Health Report, then writes and persists a verified execution plan back to the ticket platform and OpenViking. Never trusts the ticket at face value — tickets are written by humans and AI without full codebase context and are frequently wrong.\n\n<example>\nContext: A developer is about to start work on a PostHog SDK upgrade ticket.\nuser: \"Groom PAY-1179 before I start coding.\"\nassistant: \"I'll launch the grooming-agent to validate the ticket and produce a verified execution plan.\"\n<commentary>\nThe agent detects the available ticket MCP, fetches the ticket, dispatches codebase-navigator and backend-senior-dev in parallel to validate claims, produces a Ticket Health Report, then writes the full execution plan and saves it to the ticket platform + OpenViking.\n</commentary>\n</example>\n\n<example>\nContext: A sprint planning session — multiple tickets need grooming before the sprint starts.\nuser: \"Groom PAY-1189, WFM1-900, and FNM1-710 for the sprint.\"\nassistant: \"I'll use the grooming-agent to groom all three tickets sequentially.\"\n<commentary>\nThe agent processes each ticket fully — validation, health report, plan, persistence — before moving to the next. Reports a summary at the end.\n</commentary>\n</example>\n\n<example>\nContext: A ticket was written by AI and the team is unsure if it's accurate.\nuser: \"Check if FNM1-710 is actually doable and correct.\"\nassistant: \"I'll run the grooming-agent on FNM1-710 — it will validate every claim and flag anything wrong before we plan work.\"\n<commentary>\nThe grooming-agent is the right tool whenever ticket accuracy is in question — it produces a Ticket Health Report showing what's correct, incorrect, or missing.\n</commentary>\n</example>"
+description: "Autonomous pre-code grooming agent. Fetches a ticket from whatever ticket platform is available (Linear, Jira, GitHub Issues, Notion, or user-pasted), validates every claim against the actual codebase using multiple specialist agents in parallel, produces a Ticket Health Report, then writes and persists a verified execution plan back to the ticket platform and a local copy. Never trusts the ticket at face value — tickets are written by humans and AI without full codebase context and are frequently wrong.\n\n<example>\nContext: A developer is about to start work on a PostHog SDK upgrade ticket.\nuser: \"Groom PAY-1179 before I start coding.\"\nassistant: \"I'll launch the grooming-agent to validate the ticket and produce a verified execution plan.\"\n<commentary>\nThe agent detects the available ticket MCP, fetches the ticket, dispatches codebase-navigator and backend-senior-dev in parallel to validate claims, produces a Ticket Health Report, then writes the full execution plan and saves it to the ticket platform + a local copy.\n</commentary>\n</example>\n\n<example>\nContext: A sprint planning session — multiple tickets need grooming before the sprint starts.\nuser: \"Groom PAY-1189, WFM1-900, and FNM1-710 for the sprint.\"\nassistant: \"I'll use the grooming-agent to groom all three tickets sequentially.\"\n<commentary>\nThe agent processes each ticket fully — validation, health report, plan, persistence — before moving to the next. Reports a summary at the end.\n</commentary>\n</example>\n\n<example>\nContext: A ticket was written by AI and the team is unsure if it's accurate.\nuser: \"Check if FNM1-710 is actually doable and correct.\"\nassistant: \"I'll run the grooming-agent on FNM1-710 — it will validate every claim and flag anything wrong before we plan work.\"\n<commentary>\nThe grooming-agent is the right tool whenever ticket accuracy is in question — it produces a Ticket Health Report showing what's correct, incorrect, or missing.\n</commentary>\n</example>"
 tools: Read, Write, Edit, Bash, Glob, Grep, Agent, WebFetch, WebSearch, Skill, TaskCreate, TaskGet, TaskList, TaskUpdate
 color: cyan
 memory: user
@@ -263,16 +263,14 @@ Pass all Phase 3–6 findings as context. The plan must:
 
 **Ticket platform (source of truth):**
 
-Use the save plan operation from the Ticket Platform Adapter table (Phase 1) to attach the verified execution plan to the original ticket. The plan must be retrievable directly from the ticket without requiring OpenViking access.
+Use the save plan operation from the Ticket Platform Adapter table (Phase 1) to attach the verified execution plan to the original ticket. The plan must be retrievable directly from the ticket without requiring local file access.
 
-**OpenViking (semantic index):**
-Write plan to `<TICKET-ID>.md`, then:
+**Local copy (for future grooming runs and graphify):**
+Write the plan to `~/.claude/agent-memory/grooming-agent/plans/<TICKET-ID>.md`. If `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild so it's queryable later:
 ```
-add_resource("./<TICKET-ID>.md", namespace: "Atlas.Webapp.Plans")
-check_ingestion("viking://resources/Atlas.Webapp.Plans/<TICKET-ID>")
+/graphify --update
 ```
-
-Wait for ingestion to complete before reporting done.
+If there's no graph, or graphify is unavailable, skip the rebuild — the ticket platform and the local copy are sufficient.
 
 ---
 
@@ -317,11 +315,11 @@ Plan summary:
 
 Persisted to:
   Ticket platform:   <url>  ← source of truth, retrieve via platform's fetch/view operation
-  OpenViking:        viking://resources/Atlas.Webapp.Plans/<TICKET-ID> ✅
+  Local copy:        ~/.claude/agent-memory/grooming-agent/plans/<TICKET-ID>.md ✅
 
 Retrieve later:
   Platform fetch operation (see Ticket Platform Adapter, Phase 1)
-  query("full execution plan for <TICKET-ID>", namespace: "viking://resources/Atlas.Webapp.Plans")
+  Read the local copy directly, or `graphify query "execution plan for <TICKET-ID>"` if a graph exists
 ```
 
 ---
@@ -353,7 +351,7 @@ A groomed ticket is done only when:
 - [ ] "Files NOT changing" section is explicit with reasons
 - [ ] Execution steps are ordered — each unblocked by previous
 - [ ] Verification section names specific commands and expected outcomes
-- [ ] Plan saved to ticket platform before OpenViking
+- [ ] Plan saved to ticket platform before the local copy
 - [ ] Agent memory updated with ticket outcome and pattern findings
 
 ---

@@ -171,13 +171,11 @@ Before doing any discovery work:
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives
    you stack, entry points, conventions, and the canonical example instantly
 5. Skip any discovery steps that the atlas already covers
-6. Query OpenViking for context relevant to this agent's task:
-   `mcp__openviking__search` — query: `"<describe what this agent needs>"` — path: `viking://<project-name>/`
-   Use returned documents (score > 0.5) to supplement the atlas. If OpenViking is unavailable
-   or returns nothing, continue.
+6. Check whether `graphify-out/graph.json` exists in the project root:
+   If yes: run `graphify query "<describe what this agent needs>"` and use the results to supplement the atlas. If the graph doesn't exist, or graphify is unavailable, or the query returns nothing, continue.
 ```
 
-This pattern is used by all agents in the devexp framework. Follow it. See [OpenViking Integration Patterns](#openviking-integration-patterns) for full guidance on querying and ingesting.
+This pattern is used by all agents in the devexp framework. Follow it. See [graphify Integration Patterns](#graphify-integration-patterns) for full guidance on querying and triggering updates.
 
 ### Define a Clear Process
 
@@ -349,67 +347,64 @@ After completing analysis, chain into action when appropriate:
 
 ---
 
-## OpenViking Integration Patterns
+## graphify Integration Patterns
 
-OpenViking is the devexp semantic knowledge base — a tiered memory store (L0/L1/L2) that agents can query and populate. It runs as an HTTP MCP server and is available in both Claude Code and opencode sessions.
+graphify turns a codebase (or any folder of files) into a persistent, queryable knowledge graph written to `graphify-out/`. Unlike an always-on MCP knowledge store, a project only has a graph if someone has explicitly run `/graphify` in it — treat its presence as optional and its absence as the normal case.
 
 ### When to Query
 
-Query OpenViking in **Phase 0**, as the last step after reading the atlas. Use `mcp__openviking__search` (not `mcp__openviking__query`) — search returns ranked documents that the agent reasons over; query synthesizes an answer directly, which is less controllable.
+Query graphify in **Phase 0**, as the last step after reading the atlas — and only if `graphify-out/graph.json` exists.
+
+If the session has `mcp__graphify__query_graph` (or sibling tools `get_node`, `get_neighbors`, `shortest_path`) available, prefer those — they're structured MCP calls against a live server, cheaper than spawning a CLI subprocess per lookup. This requires the project to have registered graphify as a project-scoped MCP (`graphify <path> --mcp`) — opt-in, not part of the default install. See [graphify Protocol](agent-architecture-reference.md#graphify-protocol) for the registration pattern.
+
+Otherwise, fall back to the CLI form via `Bash`/`Skill`:
 
 ```markdown
-mcp__openviking__search — query: "<domain-first description>" — path: viking://<project-name>/
+graphify query "<domain-first description>"          # BFS traversal — broad context
+graphify query "<domain-first description>" --dfs    # DFS — trace one specific path
+graphify path "<ConceptA>" "<ConceptB>"               # shortest path between two named concepts
+graphify explain "<ConceptName>"                      # plain-language explanation of one node
 ```
 
-Only act on results with a relevance score > 0.5. If OpenViking is unavailable or returns nothing, continue — never block on it.
+If the graph doesn't exist, or graphify is unavailable in either form, or the query returns nothing, continue — never block on it.
 
 ### Query String Guidelines
 
 - **Domain first**: `"payment service error handling patterns"` not `"patterns in payment"`
-- **Scope to project**: always pass `path: viking://<project-name>/` to limit retrieval to this project's knowledge
 - **Descriptive not imperative**: `"React component test style"` not `"how do I test React components"`
+- **Reach for `path`/`explain` over `query`** when the question names two concrete things to relate, or one thing to define — they're cheaper and more precise than a full graph traversal
 
-### When to Ingest
+### When to Trigger an Update
 
-Only knowledge-producing agents should ingest — agents that generate durable artifacts that future agents or runs will benefit from. Builders (dev-agent, scaffold) do not ingest.
+Only knowledge-producing agents should trigger an update — agents that generate durable artifacts (atlas, docs, ADRs, reports) that future runs will benefit from having reflected in the graph. Builders (dev-agent, scaffold) do not.
 
-| Agent | What to ingest | Path format |
-|-------|---------------|-------------|
-| `codebase-navigator` | Atlas file, `docs/` folder | `viking://<project>/atlas`, `viking://<project>/docs` |
-| `arch-review` | Architecture review report | `viking://<project>/arch-review/<date-slug>` |
-| `root-cause` | Root cause analysis report | `viking://<project>/root-cause/<incident-slug>` |
-
-Use `mcp__openviking__add_resource` for ingestion:
+| Agent | What changed | Action |
+|-------|-------------|--------|
+| `codebase-navigator` | Atlas file, `docs/` folder | `/graphify --update` |
+| `arch-review` | Architecture review report | `/graphify --update` |
+| `root-cause` | Root cause analysis report | `/graphify --update` |
 
 ```markdown
-mcp__openviking__add_resource — resource: "<file path or content>"
-                              — path: viking://<project-name>/<category>/<slug>
+/graphify --update   # incremental — re-extracts only new/changed files, cheap to run after a write
 ```
 
-Always guard ingestion: "If OpenViking is unavailable, skip silently."
-
-### What NOT to Ingest
-
-- Ephemeral execution traces (version-dependent, go stale quickly)
-- Changelogs and commit messages (already in git)
-- In-progress work or draft outputs
-- Code files (the source tree is the authoritative reference)
+Only run `--update` if `graphify-out/graph.json` already exists. Never bootstrap a graph from scratch (`/graphify` with no flags) on an agent's own initiative — building one is an expensive, user-directed operation. Always guard it: "If graphify-out/ doesn't exist or graphify is unavailable, skip silently."
 
 ### The Fallback Chain
 
-Every OpenViking interaction must follow this fallback order:
+Every graphify interaction must follow this fallback order:
 
 ```
-OpenViking → atlas file (~/.claude/agent-memory/) → read source files directly
+graphify query (if graphify-out/graph.json exists) → atlas file (~/.claude/agent-memory/) → read source files directly
 ```
 
-Never fail hard if OpenViking is unavailable. The system works without it.
+Never fail hard if there's no graph or graphify is unavailable. The system works without it.
 
 ### opencode Compatibility
 
-OpenViking is registered as an HTTP MCP in both Claude Code and opencode — tool calls (`mcp__openviking__search`, `mcp__openviking__add_resource`) work in both environments.
+graphify is a skill (`/graphify`), invoked via Bash or the `Skill` tool — both work the same way in Claude Code and opencode sessions, since neither depends on an MCP registration.
 
-One exception: ingestion of `~/.claude/agent-memory/` paths (e.g., the codebase-navigator atlas) only fires in Claude Code sessions, since that directory does not exist in opencode. Treat it as a best-effort Claude Code enhancement and document this in agents that do it.
+One exception: the codebase-navigator atlas that graphify results are often cross-referenced against lives at `~/.claude/agent-memory/`, which only exists in Claude Code sessions. In opencode, graphify still works against the project's own files — just without that atlas to cross-reference.
 
 ---
 

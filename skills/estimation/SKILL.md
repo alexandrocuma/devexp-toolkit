@@ -57,8 +57,10 @@ If an atlas exists, read it to understand where the affected area sits in the mo
 
 Check for a groomed execution plan (from `grooming-agent`):
 ```bash
-# OpenViking — check if this ticket was already groomed
-# mcp__openviking__search — query: "<ticket-id> execution plan"
+# Local copy — check if this ticket was already groomed
+ls ~/.claude/agent-memory/grooming-agent/plans/<ticket-id>.md 2>/dev/null
+# graphify — if graphify-out/graph.json exists, it may also surface a prior plan
+# graphify query "execution plan for <ticket-id>"
 # If a plan exists, it already has the file list — use it directly
 ```
 

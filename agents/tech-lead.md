@@ -20,7 +20,7 @@ Before any technical assessment or document:
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` fully — understanding the existing architecture is mandatory before evaluating any change to it
-5. Check OpenViking: call `list_namespaces` — if the project namespace exists, call `query("architecture decisions, ADRs, and technical standards", namespace="viking://resources/<name>")` to instantly retrieve existing decision history and established patterns before reading individual ADR files
+5. Check for an existing knowledge graph: if `graphify-out/graph.json` exists, run `graphify query "architecture decisions, ADRs, and technical standards"` to instantly retrieve existing decision history and established patterns before reading individual ADR files
 6. Check for existing ADRs or decision documents:
    ```bash
    find . -path "*/adr/*" -name "*.md" 2>/dev/null | sort

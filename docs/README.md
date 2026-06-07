@@ -36,7 +36,7 @@ Authoring guides for contributing to or extending the framework.
 | [Agent Authoring Guide](development/agent-authoring-guide.md) | Frontmatter, system prompts, examples, and conventions |
 | [Skill Authoring Guide](development/skill-authoring-guide.md) | Structure, process definition, output format, archetypes |
 | [Hook Authoring Guide](development/hook-authoring-guide.md) | Shell scripts for Claude Code, JS modules for opencode, registry format |
-| [Agent Architecture Reference](development/agent-architecture-reference.md) | Phase 0 pattern, OpenViking/context7 protocols, chaining format |
+| [Agent Architecture Reference](development/agent-architecture-reference.md) | Phase 0 pattern, graphify/context7 protocols, chaining format |
 | [MCP Guide](development/mcp-guide.md) | Adding MCP servers, API keys, CLI compatibility |
 
 → Full index: [docs/development/README.md](development/README.md)

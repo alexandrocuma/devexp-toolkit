@@ -21,11 +21,8 @@ Before generating anything:
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to find the atlas
 4. **Required**: Read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` in full
 5. If no atlas exists: run a targeted orientation (see Phase 1 fallback) before proceeding — do not skip this
-6. Query OpenViking for convention details not fully captured in the atlas:
-   First: `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
-   If yes: `mcp__openviking__query` — question: `"<type being scaffolded> conventions naming pattern error handling test style"` — namespace: `"viking://<project-name>/"`
-   Examples: `"service naming error handling"`, `"React component test style"`. Use returned documents to refine pattern extraction before Phase 2.
-   If OpenViking is unavailable, continue with the atlas and canonical examples.
+6. Check for an existing knowledge graph: if `graphify-out/graph.json` exists, run `graphify query "<type being scaffolded> conventions naming pattern error handling test style"` (e.g. `"service naming error handling"`, `"React component test style"`) and use the results to refine pattern extraction before Phase 2.
+   If there's no graph or graphify is unavailable, continue with the atlas and canonical examples.
 
 ### Phase 1: Orientation (if no atlas)
 If the codebase-navigator atlas does not exist:

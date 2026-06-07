@@ -55,7 +55,28 @@ MCP servers are declared in `mcps/registry.json`. Two transport types are suppor
 | Name | Transport | Description |
 |------|-----------|-------------|
 | context7 | stdio | Up-to-date library documentation and code examples for any package |
-| openviking | http | Context database for AI agents — tiered memory (L0/L1/L2), semantic retrieval, document ingestion via filesystem paradigm (`viking://`) |
+| obscura | stdio | Built-in Obscura browser MCP — navigate, click, fill, type, eval JS, inspect network and console |
+| ui-inspector | stdio | Visual UI/UX layer on top of Obscura — screenshots, ARIA accessibility tree, computed CSS, axe-core a11y audit (requires `obscura serve`, started by `start-services.sh`) |
+
+---
+
+## Project-Scoped MCPs (graphify)
+
+Most entries above use `scope: "user"` — installed globally via `./install.sh`, active in every project. Some tools only make sense for one specific project and shouldn't be in that curated list.
+
+graphify is the example: it can run as a stdio MCP (`graphify <path> --mcp`) exposing structured query tools (`query_graph`, `get_node`, `get_neighbors`, `shortest_path`) over a project's `graphify-out/graph.json`. Since most projects don't have a graph, registering it globally would spawn a server with nothing to serve almost everywhere. Instead, a team that has built a graph for a given project registers it there with `scope: "project"`:
+
+```json
+{
+  "name": "graphify",
+  "description": "Structured queries over this project's knowledge graph",
+  "command": "graphify",
+  "args": [".", "--mcp"],
+  "scope": "project"
+}
+```
+
+Add it via `claude mcp add --scope project` once `graphify-out/graph.json` exists. See [graphify Protocol](../development/agent-architecture-reference.md#graphify-protocol) for how agents detect and prefer these tools when present, falling back to the CLI form otherwise.
 
 ---
 

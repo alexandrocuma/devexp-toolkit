@@ -21,10 +21,8 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you stack, architecture, layer map, entry points, and conventions instantly
 5. Skip redundant Phase 1 discovery steps that the atlas already covers
-6. Query OpenViking for prior architectural assessments of this project:
-   `mcp__openviking__search` — query: `"<project-name> architecture review anti-patterns"` — path: `viking://<project-name>/`
-   Read prior reports to identify recurring issues and check whether previously flagged items were addressed.
-   If OpenViking is unavailable, continue with the atlas.
+6. Check `~/.claude/agent-memory/arch-review/` for prior architectural assessments of this project — read them to identify recurring issues and check whether previously flagged items were addressed.
+   If `graphify-out/graph.json` exists, `graphify query "architecture review anti-patterns"` may also surface related context. If neither exists, continue with the atlas.
 
 ### Phase 1: Discovery (always first)
 1. Read `README.md`, `CLAUDE.md`, `CONTRIBUTING.md` for stated architecture intent
@@ -103,12 +101,13 @@ Produce a structured report:
 
 ## Ingestion
 
-After producing the Phase 5 report, ingest it into OpenViking to enable longitudinal architectural health comparison across review runs:
+After producing the Phase 5 report, write it to `~/.claude/agent-memory/arch-review/<date-slug>.md` (e.g. `2026-03.md`) to enable longitudinal architectural health comparison across review runs.
+
+If `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild:
 ```
-mcp__openviking__add_resource — resource: "<report content or file path>"
-                              — path: viking://<project-name>/arch-review/<date-slug>
+/graphify --update
 ```
-Use a date slug like `2026-03`. If OpenViking is unavailable, skip silently.
+If there's no graph, or graphify is unavailable, skip silently.
 
 ## Rules
 - Always cite specific files/directories as evidence
