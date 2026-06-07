@@ -1,6 +1,7 @@
 mcps/.env
 node_modules/
 bin/
+dist/
 cli/vendor/
 cli/internal/assets/agents/
 cli/internal/assets/skills/

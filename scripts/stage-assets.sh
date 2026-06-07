@@ -7,7 +7,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$ROOT/cli/internal/assets"
 
-rm -rf "$DEST"
+# Only remove the staged copies — assets.go (the //go:embed source file) lives
+# in this same directory and must survive re-staging.
+rm -rf "$DEST/agents" "$DEST/skills" "$DEST/hooks" "$DEST/mcps" "$DEST/devexp.config.json" "$DEST/uninstall.sh"
 mkdir -p "$DEST"
 
 for dir in agents skills hooks; do
