@@ -38,7 +38,7 @@ The config file is committed to the repo — it travels with your fork and appli
   },
 
   "skills": {
-    "disabled": ["gen-claude-md", "release"]
+    "disabled": ["gen-indexer", "release"]
   },
 
   "hooks": {

@@ -35,7 +35,7 @@ Tailor the query to the agent's role:
 | Testing (test-gen) | `"What are the test conventions, fixture patterns, and known coverage gaps?"` |
 | Security audit | `"What are known vulnerabilities, security decisions, and auth patterns?"` |
 | Performance analysis | `"What are known bottlenecks, caching strategies, and data access patterns?"` |
-| Documentation (gen-claude-md, docs-sync) | `"What are the architecture, conventions, ADRs, and implementation patterns?"` |
+| Documentation (gen-indexer, docs-sync) | `"What are the architecture, conventions, ADRs, and implementation patterns?"` |
 | Dependency audit | `"What are known dependency vulnerabilities, accepted CVEs, and upgrade constraints?"` |
 | Migration | `"What are prior migration decisions, upgrade constraints, and library version history?"` |
 
@@ -84,7 +84,7 @@ After producing an artifact that represents project knowledge, trigger an increm
 | Agent | What changed | Action |
 |-------|-------------|--------|
 | `codebase-navigator` | Atlas file + `docs/` folder | `/graphify --update` |
-| `gen-claude-md` skill | Generated `CLAUDE.md` | `/graphify --update` |
+| `gen-indexer` skill | Generated `CLAUDE.md` | `/graphify --update` |
 | `docs-sync` | Updated `CLAUDE.md` and/or `README.md` | `/graphify --update` |
 
 `--update` re-extracts only new/changed files — cheap to run after every write. Only run it if `graphify-out/graph.json` already exists; never bootstrap a graph (`/graphify` with no `--update`) on an agent's own initiative — that's an expensive, user-directed operation.

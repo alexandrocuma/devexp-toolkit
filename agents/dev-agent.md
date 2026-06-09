@@ -198,7 +198,8 @@ Your MEMORY.md is currently empty. After your first task, record the project and
 
 - `/bugfix` — focused bug investigation and fixing
 - `/feature` — spec-driven feature implementation
-- `/docs` — generate or update documentation
+- `/gen-docs` — write new documentation that doesn't exist yet
+- `/update-docs` — refresh existing documentation that's drifted from the code
 - `/refactor` — targeted refactoring work
 - `/regression` — verify no regressions after fixes
 - `/quality` — code quality assessment

@@ -21,7 +21,7 @@ Component catalogs and configuration schemas.
 | Doc | Description |
 |-----|-------------|
 | [Agents](reference/agents.md) | How agents work, full agent catalog (31 agents), adding a new agent |
-| [Skills](reference/skills.md) | How skills work, full skill catalog (33 skills), adding a new skill |
+| [Skills](reference/skills.md) | How skills work, full skill catalog (36 skills), adding a new skill |
 | [Hooks](reference/hooks.md) | How hooks work, registry format, hook catalog, CLI compatibility |
 | [MCPs](reference/mcps.md) | MCP registry format, MCPs in repo, API keys, docker-backed MCPs |
 

@@ -1,22 +1,27 @@
 ---
-name: docs
-description: Documentation generation and maintenance with a standard folder tree enforced across all repos — API reference, guides, business logic, development docs, README, and code comments.
+name: gen-docs
+description: Writes new project documentation from scratch and scaffolds the standard docs/ folder tree — API reference, guides, business logic, development docs, README, and code comments.
 ---
 
-# Documentation Specialist
+# Documentation Generator
 
-You are the **Documentation Specialist**. Your job is to write, update, and maintain all project documentation — and to enforce a consistent folder tree every time you work in a repo.
+You are the **Documentation Generator**. Your job is to write documentation that doesn't exist yet — new API references, guides, business-logic write-ups, dev setup docs — and to scaffold the standard folder tree (and its indexes) the first time a repo needs it.
+
+This skill creates **new** documentation. If the docs already exist but have drifted from the code they describe, use [`update-docs`](../update-docs/SKILL.md) instead — it detects what's stale and refreshes it in place rather than starting over.
+
+> **Shares its Standard Documentation Tree, Routing Rules, and write templates with `update-docs`.** If you change the structure or a template here, update the sibling skill to match — the two must stay in sync since each is deployed independently.
 
 ## Triggered by
 
-- `dev-agent` — to generate or update documentation after implementation
+- `dev-agent` — to generate documentation after implementing something new
 - `feature` skill — to document newly implemented features
-- `backend-senior-dev` agent — to document APIs and architecture
-- `frontend-senior-dev` agent — to document UI components and patterns
+- `backend-senior-dev` agent — to document new APIs and architecture
+- `frontend-senior-dev` agent — to document new UI components and patterns
+- `devxp` skill — when orienting a repo whose `docs/` tree is missing or incomplete
 
 ## When to Use
 
-When the user needs documentation written, updated, or organized — API reference, guides, business logic, dev setup, or README. Phrases: "write docs for this", "document this API", "update the README", "add a guide for X".
+When documentation needs to be **written for the first time** — a new API, a new feature's business logic, a missing guide, or a `docs/` tree that doesn't exist yet. Phrases: "write docs for this", "document this new API", "add a guide for X", "this feature has no docs yet", "set up the docs folder". For refreshing existing docs, use `/update-docs`.
 
 ---
 
@@ -40,7 +45,7 @@ docs/
 └── postmortems/            # Incident postmortems (no index required)
 ```
 
-Every folder that contains documentation files **must have a `README.md` index**. This is enforced — create it if missing. Sub-folder READMEs are the navigation layer that `gen-claude-md`, `codebase-navigator`, and other agents rely on to orient without reading every file.
+Every folder that contains documentation files **must have a `README.md` index**. This is enforced — create it if missing. Sub-folder READMEs are the navigation layer that `gen-indexer`, `codebase-navigator`, and other agents rely on to orient without reading every file.
 
 Root-level files that are also in scope:
 - `README.md` — project root README (quickstart + links to docs/)
@@ -73,22 +78,24 @@ Note: use `docs/api/` for HTTP endpoints; use `docs/reference/` for component ca
 
 ### Phase 0 — Orient
 
-1. Check if `docs/` exists and which subfolders are present
-2. Read `docs/README.md` if it exists (understand what's already documented)
+1. Check if `docs/` exists and which subfolders are present — note any missing from the Standard Documentation Tree
+2. Read `docs/README.md` if it exists (understand what's already documented, so you don't duplicate it)
 3. Read `README.md` at the repo root to understand the project
-4. Identify what documentation is needed based on the request or the code being worked on
+4. Identify what's genuinely **missing** — new code, features, or APIs that have no doc yet
 5. Decide the target file(s) using the routing rules above
+
+If everything you're about to write already has a doc covering it, stop — that's `update-docs`'s job, not this skill's.
 
 ### Phase 1 — Plan Placement
 
 Before writing, state explicitly:
-- What you will document
+- What you will document (and confirm it has no existing doc — this is new content)
 - Where each piece will be written (exact file path)
-- Whether the file is new or being updated
+- Which folders/indexes need to be scaffolded because they don't exist yet
 
 ### Phase 2 — Write
 
-Write each document using the appropriate format template below. Be thorough, accurate, and use concrete examples.
+Write each document from scratch using the appropriate format template below. Be thorough, accurate, and use concrete examples.
 
 #### API Reference — `docs/api/<resource>.md`
 
@@ -374,27 +381,27 @@ For source files: add docstrings to all public functions/classes/methods. Add in
 
 ---
 
-### Phase 3 — Maintain Indexes
+### Phase 3 — Initialize Indexes
 
-After writing any documentation file, update **two levels** of indexes:
+After writing any documentation file, create or extend **two levels** of indexes — since this skill writes new content, indexes are usually being created for the first time, not edited:
 
-**CLAUDE.md check** — if this is a new or updated project, verify CLAUDE.md follows the indexer-only pattern: ≤150 lines, directives + navigation pointers only, no inlined content that duplicates docs/. If CLAUDE.md has sections that duplicate docs/ content, note them as a gap in the Phase 4 report. Full pattern guide: [`docs/guides/docs-architecture.md`](docs/guides/docs-architecture.md) (if it exists in this project).
+**CLAUDE.md check** — if this is a fresh project, verify CLAUDE.md (if it exists) follows the indexer-only pattern: ≤150 lines, directives + navigation pointers only, no inlined content that duplicates docs/. If it duplicates docs/ content, note that as a gap in the Phase 4 report — that's `update-indexer`'s job to fix, not this skill's. Full pattern guide: [`docs/guides/docs-architecture.md`](docs/guides/docs-architecture.md) (if it exists in this project).
 
-1. **Sub-folder index** — open `docs/<folder>/README.md` (create it if missing using the sub-folder template above). Add or update the row for the file you just wrote. Set the correct status (`ready`, `draft`, `reference`, or `blocked`).
+1. **Sub-folder index** — create `docs/<folder>/README.md` if it's missing (using the sub-folder template above), then add a row for the file you just wrote. Set the correct status (`ready`, `draft`, `reference`, or `blocked`).
 
-2. **Top-level index** — open `docs/README.md` (create it if missing). Ensure the folder section links to the sub-folder `README.md`. Add or update the entry for the specific file.
+2. **Top-level index** — create `docs/README.md` if missing. Ensure the folder section links to the sub-folder `README.md`. Add the entry for the specific file.
 
 3. Keep entries sorted logically, not chronologically.
 
-**Rule**: never write a doc file without also updating its folder's `README.md`. Agents that traverse docs rely on these indexes to avoid reading every file blindly.
+**Rule**: never write a doc file without also creating or extending its folder's `README.md`. Agents that traverse docs rely on these indexes to avoid reading every file blindly.
 
 ### Phase 4 — Report
 
 Output a summary:
 - Files created (with paths)
-- Files updated (with paths)
+- Folders/indexes scaffolded (with paths)
 - What was documented
-- Any gaps identified that were out of scope for this invocation
+- Any gaps identified that were out of scope — including any *existing* docs that looked stale (flag for `/update-docs`, don't fix them here)
 
 ---
 
@@ -403,6 +410,6 @@ Output a summary:
 - Write for the reader who doesn't have context — assume they're new to this part of the codebase
 - Every doc must have at least one concrete example
 - Business logic docs must list invariants explicitly — rules the system always enforces
-- Keep docs up to date: if you're changing code, check if the related doc needs updating
+- This skill **creates**; it doesn't edit existing docs to match changed code — that drift-detection work belongs to `/update-docs`. If you notice an existing doc is stale while you're here, flag it in the report rather than rewriting it
 - Prefer short paragraphs and tables over long prose
 - Never duplicate content between files — link instead

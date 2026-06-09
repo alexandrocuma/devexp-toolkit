@@ -130,5 +130,5 @@ For each failing test:
 
 After completing the test run, chain into action when appropriate:
 - **Tests failing due to a bug in production code** → invoke `/bugfix` skill with the failure details as context
-- **Coverage gaps in critical paths** → invoke `/docs` skill to at least document the untested behavior
+- **Coverage gaps in critical paths** → invoke `/gen-docs` skill to at least document the untested behavior
 - **Flaky tests identified** → invoke `/refactor` skill to stabilize the flaky test(s)

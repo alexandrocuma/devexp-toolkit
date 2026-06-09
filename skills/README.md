@@ -6,7 +6,42 @@ Install them by running `../install.sh` from the repo root. Installed skills lan
 
 ---
 
+## Start Here — Lifecycle Orchestrators
+
+These four commands cover the full development cycle. Use them as your entry points; the specialists below are available when you need precision.
+
+| Directory | Slash Command | When to use |
+|-----------|---------------|------------|
+| `devxp/` | `/devxp` | First time on a repo — orient, set up CLAUDE.md and docs/ |
+| `refine/` | `/refine` | You have an idea or feature request to turn into a groomed ticket |
+| `deliver/` | `/deliver <ticket>` | You have a groomed ticket and want to build and ship it |
+| `improve/` | `/improve` | Sprint end or maintenance window — health, cleanup, retrospective |
+
+```
+/devxp  →  /refine  →  /deliver  →  /improve
+  ↑                                      |
+  └──────────── next sprint ─────────────┘
+```
+
+---
+
 ## Skill Index
+
+### Entry Point
+
+| Directory | Slash Command | Description |
+|-----------|---------------|-------------|
+| `devxp/` | `/devxp` | Orients on any repo — ensures CLAUDE.md and the docs/ index exist (generating or refreshing as needed) and optionally enriches with graphify. Start here. |
+
+---
+
+### Discovery & Requirements
+
+| Directory | Slash Command | Description |
+|-----------|---------------|-------------|
+| `requirements/` | `/requirements` | Structure a vague idea or stakeholder input into user stories, acceptance criteria, and a ticket-ready spec |
+
+---
 
 ### Implementation
 
@@ -18,6 +53,9 @@ Install them by running `../install.sh` from the repo root. Installed skills lan
 | `api-design/` | `/api-design` | Design API contracts, endpoints, request/response schemas, and error handling |
 | `db-design/` | `/db-design` | Design database schemas, migrations, indexes, and query patterns |
 | `migrate/` | `/migrate` | Step-by-step migration guide for a library or framework upgrade |
+| `instrument/` | `/instrument` | Add structured observability — logs, metrics, tracing — matching the project's existing conventions |
+| `feature-flag/` | `/feature-flag` | Full feature flag lifecycle: create, gate code, track rollout status, retire flags cleanly |
+| `env-audit/` | `/env-audit` | Audit env vars — detect undocumented reads, leaked secrets, and config drift |
 
 ---
 
@@ -40,6 +78,7 @@ Install them by running `../install.sh` from the repo root. Installed skills lan
 | Directory | Slash Command | Description |
 |-----------|---------------|-------------|
 | `test-gen/` | `/test-gen` | Generate tests for the current file or function |
+| `load-test/` | `/load-test` | Generate load test scenarios for critical endpoints using the project's existing tool |
 
 ---
 
@@ -75,8 +114,22 @@ Install them by running `../install.sh` from the repo root. Installed skills lan
 
 | Directory | Slash Command | Description |
 |-----------|---------------|-------------|
-| `docs/` | `/docs` | Documentation generation: API docs, code comments, usage examples, README |
+| `gen-docs/` | `/gen-docs` | Write new project documentation from scratch and scaffold the standard docs/ folder tree |
+| `update-docs/` | `/update-docs` | Detect documentation that's drifted from the code and refresh it in place |
 | `explain/` | `/explain` | Explain code to a specific audience: junior, new-hire, or non-technical |
 | `adr/` | `/adr` | Write an Architecture Decision Record saved to `docs/adr/` |
 | `postmortem/` | `/postmortem` | Generate a structured blameless postmortem document |
-| `gen-claude-md/` | `/gen-claude-md` | Crawl a project and generate a directive CLAUDE.md with architecture map and conventions |
+| `gen-indexer/` | `/gen-indexer` | Crawl a project and generate a directive CLAUDE.md with architecture map and conventions, from scratch |
+| `update-indexer/` | `/update-indexer` | Refresh an existing CLAUDE.md whose sections have drifted from the current codebase |
+
+---
+
+### Toolkit Meta
+
+| Directory | Slash Command | Description |
+|-----------|---------------|-------------|
+| `refine/` | `/refine` | Lifecycle orchestrator — idea → requirements → estimation → groomed ticket |
+| `deliver/` | `/deliver` | Lifecycle orchestrator — groomed ticket → implement → test → review → release |
+| `improve/` | `/improve` | Lifecycle orchestrator — health check → cleanup → debt triage → retrospective |
+| `coverage-map/` | `/coverage-map` | Generate a live SDLC phase-coverage report for the devexp toolkit itself — shows which phases are strong, thin, or missing |
+| `swarm-status/` | `/swarm-status` | Given the current project state, recommend which devexp specialists to activate today |

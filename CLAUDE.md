@@ -2,7 +2,9 @@
 
 A curated collection of Claude Code agents, skills, hooks, and MCP servers that brings a consistent, expert-level development experience to any project. Install once, distribute to your team.
 
-**Components**: `agents/` (31 agents) · `skills/` (33 skills) · `hooks/` (6 safety guards) · `mcps/` (MCP registry)
+**Components**: `agents/` (31 agents) · `skills/` (36 skills) · `hooks/` (6 safety guards) · `mcps/` (MCP registry)
+
+> New to a repo? Run `/devxp` first — it orients on the codebase, ensures `CLAUDE.md` and `docs/` exist or are current, and routes you to the right skill next.
 
 ---
 

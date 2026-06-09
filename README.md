@@ -60,7 +60,9 @@ Skills are invoked as slash commands (`/skill-name`) in Claude Code or opencode.
 | `/bugfix` | Root cause analysis and bug fixing with built-in verification. |
 | `/feature` | Turn an idea into a feature: graphify discovery, an actionable plan, mandatory context7 verification for any external library, then implementation. |
 | `/refactor` | Code refactoring for improved structure and maintainability. |
-| `/docs` | Documentation generation: API docs, code comments, usage examples, README. |
+| `/devxp` | Entry point — orients on any repo, ensures CLAUDE.md and docs/ exist or are current, optionally enriches with graphify. |
+| `/gen-docs` | Write new project documentation from scratch: API docs, guides, README, code comments. |
+| `/update-docs` | Detect documentation that's drifted from the code and refresh it in place. |
 | `/test-gen` | Generate tests for the current file or function. |
 | `/regression` | Verify that fixes and changes don't introduce regressions. |
 | `/logic-review` | Review code logic for bugs, edge cases, null dereferences, and race conditions. |
@@ -78,7 +80,8 @@ Skills are invoked as slash commands (`/skill-name`) in Claude Code or opencode.
 | `/ticket` | Create a well-structured ticket for a bug, feature, or tech-debt item — detects GitHub Issues, GitLab Issues, Linear, and Jira. |
 | `/scope` | Break a large feature or epic into atomic tickets with dependencies. |
 | `/health` | Generate a codebase health scorecard with RAG status per dimension. |
-| `/gen-claude-md` | Crawl a project's docs and codebase to generate a directive CLAUDE.md with architecture map, conventions, and implementation playbooks. |
+| `/gen-indexer` | Crawl a project's docs and codebase to generate a directive CLAUDE.md from scratch — architecture map, conventions, and implementation playbooks. |
+| `/update-indexer` | Refresh an existing CLAUDE.md whose sections have drifted from the current codebase. |
 | `/postmortem` | Generate a structured blameless postmortem document. |
 | `/groom` | Pre-code grooming — fetches a ticket, validates its claims against the codebase, challenges wrong assumptions, produces and persists a verified execution plan. |
 | `/rfc` | Draft a Request for Comments document for a proposed change — motivation, design, alternatives, and open questions — before any code is written. |
@@ -443,10 +446,12 @@ devexp/
 │   └── opencode/               # opencode-exclusive agents (installed as-is)
 │       └── orchestrator.md
 ├── skills/                     # Skill subdirectories, each with SKILL.md
+│   ├── devxp/SKILL.md
 │   ├── bugfix/SKILL.md
 │   ├── feature/SKILL.md
 │   ├── refactor/SKILL.md
-│   ├── docs/SKILL.md
+│   ├── gen-docs/SKILL.md
+│   ├── update-docs/SKILL.md
 │   ├── test-gen/SKILL.md
 │   ├── regression/SKILL.md
 │   ├── logic-review/SKILL.md
@@ -464,7 +469,8 @@ devexp/
 │   ├── ticket/SKILL.md
 │   ├── scope/SKILL.md
 │   ├── health/SKILL.md
-│   ├── gen-claude-md/SKILL.md
+│   ├── gen-indexer/SKILL.md
+│   ├── update-indexer/SKILL.md
 │   ├── postmortem/SKILL.md
 │   ├── groom/SKILL.md
 │   ├── rfc/SKILL.md
