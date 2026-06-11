@@ -34,50 +34,13 @@ Then use four commands to cover the full development cycle:
 
 ### Agents
 
-Agents are specialized sub-agents that Claude Code or opencode can spawn to handle domain-specific tasks autonomously.
+Agents are specialized sub-agents that Claude Code or opencode can spawn to handle domain-specific tasks autonomously — code review, root cause analysis, security audits, migrations, ticket grooming, and more. 34 agents cover the full SDLC, plus an opencode-exclusive swarm orchestrator.
 
-| Agent | Description |
-|-------|-------------|
-| **dev-agent** | Autonomous implementation: bug fixes, feature development, legacy rehabilitation, and complex multi-step refactors. Orients itself, plans, executes, and verifies — minimal back-and-forth required. |
-| **backend-senior-dev** | Senior backend engineer with 15+ years experience. Structured code reviews covering correctness, security, scalability, and algorithm efficiency. Works in Python, Go, Java, TypeScript, Rust, C#, and more. |
-| **frontend-senior-dev** | Senior frontend developer covering React, Vue, Angular, Svelte, TypeScript, and CSS. Reviews for correctness, performance, accessibility, and framework idioms. |
-| **codebase-navigator** | Builds and maintains a persistent "codebase atlas" — stack, architecture, layer map, conventions, canonical example — so every other agent knows how things are done in your project. |
-| **feature-path-tracer** | Traces a single execution path through code (happy path, failure path, or specific branch) and produces a clear linear summary from entry point to outcome. |
-| **arch-review** | Deep architectural health assessment: coupling, cohesion, layering, and structural anti-patterns. Produces scored findings with remediation guidance. |
-| **root-cause** | Deep root cause analysis for complex, recurring, or production bugs using 5-Whys methodology and hypothesis testing. |
-| **security** | Full security audit: OWASP Top 10, authentication flaws, injection vulnerabilities, data exposure, and cryptographic issues. |
-| **performance** | Performance bottleneck identification across the full stack: algorithmic complexity, N+1 queries, blocking I/O, and frontend rendering issues. |
-| **pr-review** | Thorough PR review covering bugs, security implications, test coverage, and pattern consistency — before you merge. |
-| **test-gen** | Generates comprehensive test suites for untested code: unit tests, integration tests, edge cases, and error paths. |
-| **test-runner** | Test execution, coverage analysis, and flaky test detection across unit, integration, and full suites. |
-| **dep-map** | Maps module and package dependencies, detects circular dependencies, and identifies unused packages. |
-| **migration** | Plans and executes library, framework, or runtime version migrations with step-by-step guidance. |
-| **scaffold** | Pattern-matched code generation for new modules, services, and components — matching existing project conventions exactly. |
-| **project-manager** | Ticket creation, epic decomposition, and backlog triage — detects GitHub Issues, GitLab Issues, Linear, and Jira automatically. |
-| **changelog** | Generates changelogs and release notes from git history using conventional commits. |
-| **ci-cd** | CI/CD pipeline debugging, creation, and optimization across GitHub Actions, GitLab CI, and others. |
-| **postmortem** | Produces structured blameless incident postmortem documents. |
-| **tech-lead** | Architecture Decision Records, design review, and engineering standards documentation. |
-| **docs-sync** | Syncs documentation surfaces (CLAUDE.md, README, authoring guides) with actual repo state after changes to agents, skills, hooks, or MCPs. |
-| **pr-feedback** | Implements reviewer comments from an existing PR or MR (GitHub and GitLab). |
-| **dep-audit** | Dependency vulnerability (CVE) and staleness audit. |
-| **runbook** | Generates operational runbooks from actual project config. |
-| **grooming-agent** | Autonomous pre-code ticket grooming — fetches a ticket from any platform (Linear, Jira, GitHub Issues, Notion), validates every claim against the codebase, produces a Ticket Health Report, then writes and persists a verified execution plan. |
-| **impact-analysis** | Maps the blast radius of any change — direct callers, transitive dependents, dynamic references, shared state, and a prioritized test checklist. Prevents "it worked locally" regressions. |
-| **data-flow** | Maps how data moves through the system end-to-end — entry points, transformations, storage, egress, and PII tracking. |
-| **synthesis** | Consolidates findings from multiple specialist agents into one prioritized action plan — deduplicates, resolves conflicts, produces a verdict. The final step of any multi-agent workflow. |
-| **tech-debt** | Produces a business-prioritized tech debt register — what debt exists, what it costs to carry, what it costs to fix, and what to address first. |
-| **onboarding** | Generates structured onboarding guides for new contributors to a specific module or service — purpose, setup, key patterns, gotchas, and historical context. |
-
-**opencode-exclusive agents** (in `agents/opencode/`):
-
-| Agent | Description |
-|-------|-------------|
-| **orchestrator** | Swarm orchestrator — spawns specialist agents in parallel via the Task tool. 13 workflow presets covering full code review, feature implementation, incident response, and more. |
+→ Browse the catalog: [`agents/`](agents/) · Full reference: [`docs/reference/agents.md`](docs/reference/agents.md)
 
 ### Skills
 
-Five slash commands cover the full development lifecycle. Everything else runs automatically inside them.
+Five slash commands cover the full development lifecycle. Everything else — ~30 specialist capabilities — runs automatically inside them as agents.
 
 | Command | When to use |
 |---------|-------------|
@@ -89,102 +52,66 @@ Five slash commands cover the full development lifecycle. Everything else runs a
 
 The orchestrators handle everything internally — implementation, testing, code review, instrumentation, release, health checks, and more. You never need to learn sub-commands.
 
-→ Full specialist catalog: [`docs/reference/`](docs/reference/)
+→ Browse the catalog: [`skills/`](skills/) · Full reference: [`docs/reference/skills.md`](docs/reference/skills.md)
 
 ### Hooks
 
-Hooks are safety and quality guards that run automatically on every tool call — no configuration needed. They work identically in Claude Code (shell scripts) and opencode (JS plugin modules).
+Hooks are safety and quality guards that run automatically on every tool call — no configuration needed. They work identically in Claude Code (shell scripts) and opencode (JS plugin modules). 10 hooks cover secret protection, destructive command blocking, large-file confirmation, and lint/format/test-on-save.
 
-| Hook | Trigger | What it does |
-|------|---------|--------------|
-| **secret-guard** | Any `Read` or `Bash` call | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
-| **secret-in-write-guard** | Any `Write` or `Edit` call | Hard-blocks writing content containing secret patterns (API keys, GitHub tokens, private key blocks, etc.) |
-| **dangerous-cmd-guard** | Any `Bash` call | Hard-blocks `rm -rf /`, fork bombs, `DROP DATABASE`, `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
-| **large-file-guard** | Any `Write` call | Asks for confirmation before overwriting a file with >500 lines |
-| **lint-on-save** | After `Write` or `Edit` | Runs the project linter on edited source files (JS/TS, Python, Go, Ruby) |
-| **format-on-save** | After `Write` or `Edit` | Runs the project formatter in-place on edited source files (JS/TS, Python, Go, Ruby) |
-| **test-on-save** | After `Write` or `Edit` | Runs the associated test file after editing a source file — skips silently if no test file found (JS/TS, Go, Python, Ruby) |
-
-Hook configuration lives in `hooks/registry.json`. Each hook is a separate file in `hooks/claude-code/` (shell scripts) and `hooks/opencode/` (JS modules).
+→ Browse the catalog: [`hooks/`](hooks/) · Full reference: [`docs/reference/hooks.md`](docs/reference/hooks.md)
 
 ### MCP Servers
 
 MCP (Model Context Protocol) servers extend Claude with additional tool capabilities. devexp manages a registry of curated MCP servers and installs them alongside agents, skills, and hooks.
 
-| MCP | Transport | Description |
-|-----|-----------|-------------|
-| **context7** | stdio | Up-to-date library documentation and code examples for any package — fetched at query time, not from training data. |
-| **ui-inspector** | stdio | UI/UX inspection via headless Chromium — screenshot, interact (click/type/scroll), ARIA accessibility tree, computed CSS, axe-core a11y audit, page metrics. No external daemon required. |
-
-MCP configuration lives in `mcps/registry.json`. API keys and secrets go in `mcps/.env` (gitignored). MCPs with a `docker_compose` field are started automatically by the installer via `docker compose up -d`.
+→ Browse the catalog: [`mcps/`](mcps/) · Full reference: [`docs/reference/mcps.md`](docs/reference/mcps.md)
 
 ---
 
 ## Installation
 
+The Quick Start above is the fastest path for end users — no clone, no Go toolchain. The steps below are for contributors working on devexp itself.
+
 ```bash
-git clone https://github.com/your-username/devexp.git
-cd devexp
+git clone https://github.com/alexandrocuma/devexp-toolkit.git
+cd devexp-toolkit
 ./install.sh
 ```
 
-The installer detects which AI coding CLI(s) you have installed and asks which to target. It supports **Claude Code** and **opencode**. If both are present, you can install for either or both.
+`install.sh` builds the `devexp` Go CLI from `cli/` and execs `devexp install`. Because `devexp` reads agents, skills, hooks, and MCPs live from disk when run inside a clone, local edits take effect immediately — no rebuild needed.
 
-```
-devexp Framework Installer
-────────────────────────────────────────
+The installer detects which AI coding CLI(s) you have installed and asks which to target — **Claude Code**, **opencode**, or both.
 
-[devexp] Detected: Claude Code and opencode
-
-  [1] Claude Code only
-  [2] opencode only
-  [3] Both
-
-Install for which CLI? [1/2/3]:
-```
-
-After installation, restart your CLI to activate the new agents and skills.
-
-### Preview before installing
+### Common flags
 
 ```bash
-./install.sh --dry-run
+./install.sh --dry-run               # preview what would be installed, no changes made
+./install.sh --model sonnet          # skip the model prompt
+./install.sh --reinstall-mcps        # remove registry MCPs then re-add them (forces a config refresh)
+./install.sh --agents-only           # only install agents
+./install.sh --skills-only           # only install skills
+./install.sh --mcps-only             # only register MCP servers
 ```
-
-Prints what would be installed without making any changes.
-
-### Force a clean MCP config refresh
-
-```bash
-./install.sh --reinstall-mcps   # remove registry MCPs then re-add them
-```
-
-During a normal install, MCPs already registered with Claude Code or opencode are skipped. Use this flag to force every registry MCP to be removed and re-added — useful after editing `mcps/registry.json` or when an MCP's config looks stale.
 
 ### What gets installed where
 
 | Component | Claude Code | opencode |
 |-----------|-------------|----------|
 | Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (frontmatter transformed) |
-| Skills | `~/.claude/skills/` | `~/.claude/skills/` (same path — opencode reads it natively) |
+| Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) |
 | Hooks | `~/.claude/settings.json` (shell scripts, per-tool matchers) | `~/.config/opencode/plugins/devexp-plugin.js` (JS modules) |
 | MCPs | via `claude mcp add` | `~/.config/opencode/config.json` |
 
-Existing files are backed up automatically before any overwrite.
+Existing files are backed up automatically before any overwrite. `install.sh` is idempotent.
 
-### Restart Services (without data loss)
+### Restart services
 
-After a machine restart or session, MCP services may have stopped. Use `start-services.sh` to bring them back:
+After a machine restart or session, MCP services may have stopped:
 
 ```bash
 ./start-services.sh            # start anything that isn't running
 ./start-services.sh --status   # check service health without starting
 ```
-
-What it does:
-- **ui-inspector** manages its own headless Chromium process — no daemons to start
-
-After running `start-services.sh`, reconnect your MCP in Claude Code (via `/mcp`) or opencode.
 
 ### Uninstall
 
@@ -194,6 +121,8 @@ After running `start-services.sh`, reconnect your MCP in Claude Code (via `/mcp`
 ```
 
 Removes only devexp's agents, skills, hooks, and MCPs. Your own custom agents and skills are untouched.
+
+→ Full installation guide: [docs/guides/install.md](docs/guides/install.md)
 
 ---
 
@@ -277,238 +206,56 @@ names no longer cause payment failures.
 
 ---
 
-## Adding a New Agent
-
-1. Copy the template:
-   ```bash
-   cp templates/agent-template.md agents/my-agent.md
-   ```
-
-2. Fill in the frontmatter: `name`, `description` (with `<example>` blocks), `tools`, `color`.
-
-3. Write the system prompt body — follow the style of existing agents.
-
-4. Install and test:
-   ```bash
-   ./install.sh
-   ```
-
-5. Restart your CLI to activate.
-
-See `docs/development/agent-authoring-guide.md` for a comprehensive guide.
-
----
-
-## Adding a New Skill
-
-1. Create the skill directory and file:
-   ```bash
-   mkdir -p skills/my-skill
-   cp templates/skill-template.md skills/my-skill/SKILL.md
-   ```
-
-2. Fill in the frontmatter and write the skill body.
-
-3. Install and test:
-   ```bash
-   ./install.sh
-   ```
-
-See `docs/development/skill-authoring-guide.md` for a comprehensive guide.
-
----
-
-## Adding a New Hook
-
-1. Create `hooks/claude-code/<hook-name>.sh` — the shell script Claude Code will run:
-   ```bash
-   #!/usr/bin/env bash
-   # devexp hook: <hook-name>
-   # Event: PreToolUse | Matcher: <ToolName>
-   set -euo pipefail
-   input=$(cat)
-   # ... guard logic ...
-   exit 0
-   ```
-
-2. Create `hooks/opencode/<hook-name>.js` — the opencode JS module:
-   ```js
-   import { ... } from './utils.js';
-   export async function myHook(_ctx) {
-     return {
-       'tool.execute.before': async (input, output) => { /* ... */ },
-     };
-   }
-   ```
-
-3. Register the module in `hooks/opencode/devexp-plugin.js`:
-   ```js
-   import { myHook } from './my-hook.js';
-   // add to Promise.all([...]) and merge its handlers
-   ```
-
-4. Add an entry to `hooks/registry.json`:
-   ```json
-   {
-     "name": "my-hook",
-     "description": "What this hook does",
-     "claude_code": { "event": "PreToolUse", "matcher": "Bash", "script": "hooks/claude-code/my-hook.sh" },
-     "opencode":    { "event": "tool.execute.before", "plugin": "hooks/opencode/devexp-plugin.js" },
-     "enabled": true
-   }
-   ```
-
-5. Run `./install.sh` — the hook is registered automatically.
-
-See `docs/development/hook-authoring-guide.md` for a full guide.
-
----
-
-## Adding a New MCP
-
-1. Add an entry to `mcps/registry.json`. For a stdio MCP:
-   ```json
-   {
-     "name": "my-mcp",
-     "description": "What this MCP does",
-     "command": "npx",
-     "args": ["-y", "my-mcp-package"],
-     "scope": "user",
-     "env": {},
-     "required_env": []
-   }
-   ```
-   For an HTTP/SSE MCP (locally-hosted server):
-   ```json
-   {
-     "name": "my-mcp",
-     "description": "What this MCP does",
-     "transport": "http",
-     "url": "http://localhost:PORT/mcp",
-     "docker_compose": "mcps/my-mcp/docker-compose.yml",
-     "scope": "user",
-     "env": {},
-     "required_env": ["MY_MCP_API_KEY"],
-     "setup_instructions": "Set MY_MCP_API_KEY in mcps/.env and re-run ./install.sh"
-   }
-   ```
-
-2. If the MCP requires an API key, add the key name to `required_env`, add `setup_instructions`, and document the key in `mcps/.env.example`.
-
-3. If the MCP runs as a Docker service, add a `docker_compose` field and create `mcps/<name>/docker-compose.yml`. The installer will run `docker compose up -d` automatically.
-
-4. Run `./install.sh` — the MCP is registered with the CLI automatically.
-
-See `docs/development/mcp-guide.md` for a full guide to the registry format and secrets handling.
-
----
-
 ## Repo Structure
 
 ```
-devexp/
-├── install.sh                  # Installs agents, skills, and MCPs
+devexp-toolkit/
+├── install.sh                  # Thin wrapper — builds the devexp Go CLI and execs `devexp install`
 ├── uninstall.sh                # Removes devexp components
-├── start-services.sh           # Starts the Obscura CDP server
+├── start-services.sh           # Starts/checks MCP services (ui-inspector)
 ├── CLAUDE.md                   # Instructions for Claude when working in this repo
-├── agents/                     # Agent markdown files (Claude Code format)
-│   ├── dev-agent.md
-│   ├── backend-senior-dev.md
-│   ├── frontend-senior-dev.md
-│   ├── codebase-navigator.md
-│   ├── feature-path-tracer.md
-│   ├── arch-review.md
-│   ├── root-cause.md
-│   ├── security.md
-│   ├── performance.md
-│   ├── pr-review.md
-│   ├── test-gen.md
-│   ├── test-runner.md
-│   ├── dep-map.md
-│   ├── migration.md
-│   ├── scaffold.md
-│   ├── project-manager.md
-│   ├── changelog.md
-│   ├── ci-cd.md
-│   ├── postmortem.md
-│   ├── tech-lead.md
-│   ├── docs-sync.md
-│   ├── pr-feedback.md
-│   ├── dep-audit.md
-│   ├── runbook.md
-│   ├── impact-analysis.md
-│   ├── data-flow.md
-│   ├── synthesis.md
-│   ├── tech-debt.md
-│   ├── onboarding.md
-│   └── opencode/               # opencode-exclusive agents (installed as-is)
+├── devexp.config.json          # Team distribution config (model, disabled agents/hooks, custom MCPs)
+├── devexp.config.schema.json   # JSON schema for devexp.config.json
+├── .goreleaser.yaml             # Release build config (darwin/linux × amd64/arm64)
+├── cli/                          # devexp Go CLI source (cobra + promptui)
+│   ├── main.go
+│   ├── cmd/                      # CLI commands (install, root)
+│   └── internal/
+│       ├── agents/               # Agent install + opencode frontmatter transform
+│       ├── config/               # devexp.config.json loading
+│       ├── hooks/                 # Hook registry + install logic
+│       ├── mcp/                   # MCP registry + install logic
+│       ├── repo/                  # Asset resolution — embedded vs. live filesystem
+│       ├── skills/                # Skill install logic
+│       └── ui/                    # Interactive prompts
+├── agents/                       # 34 agent markdown files (Claude Code format)
+│   └── opencode/                 # opencode-exclusive agents (installed as-is)
 │       └── orchestrator.md
-├── skills/                     # Skill subdirectories, each with SKILL.md
-│   ├── devxp/SKILL.md
-│   ├── bugfix/SKILL.md
-│   ├── feature/SKILL.md
-│   ├── refactor/SKILL.md
-│   ├── gen-docs/SKILL.md
-│   ├── update-docs/SKILL.md
-│   ├── test-gen/SKILL.md
-│   ├── regression/SKILL.md
-│   ├── logic-review/SKILL.md
-│   ├── quality/SKILL.md
-│   ├── api-design/SKILL.md
-│   ├── db-design/SKILL.md
-│   ├── migrate/SKILL.md
-│   ├── explain/SKILL.md
-│   ├── adr/SKILL.md
-│   ├── commit/SKILL.md
-│   ├── pr/SKILL.md
-│   ├── changelog/SKILL.md
-│   ├── release/SKILL.md
-│   ├── standup/SKILL.md
-│   ├── ticket/SKILL.md
-│   ├── scope/SKILL.md
-│   ├── health/SKILL.md
-│   ├── gen-indexer/SKILL.md
-│   ├── update-indexer/SKILL.md
-│   ├── postmortem/SKILL.md
-│   ├── groom/SKILL.md
-│   ├── rfc/SKILL.md
-│   ├── convention-audit/SKILL.md
-│   ├── dead-code/SKILL.md
-│   ├── estimation/SKILL.md
-│   ├── retrospective/SKILL.md
-│   ├── git-archaeology/SKILL.md
-│   └── stale-work/SKILL.md
-├── hooks/                      # Safety and quality hooks (one file per hook)
-│   ├── registry.json           # Hook registry — source of truth for all hooks
-│   ├── claude-code/            # Shell scripts registered in ~/.claude/settings.json
-│   │   ├── secret-guard.sh             # Blocks reads of .env and key files (matcher: Read|Bash)
-│   │   ├── secret-in-write-guard.sh    # Blocks writing secret patterns in content (matcher: Write|Edit)
-│   │   ├── dangerous-cmd-guard.sh      # Hard-blocks destructive shell commands (matcher: Bash)
-│   │   ├── large-file-guard.sh         # Confirms large file overwrites (matcher: Write)
-│   │   ├── lint-on-save.sh             # Runs project linter after edits (PostToolUse)
-│   │   └── format-on-save.sh           # Runs project formatter after edits (PostToolUse)
-│   └── opencode/               # JS modules composed into a single plugin
-│       ├── devexp-plugin.js        # Entry point — imports and composes all hook modules
-│       ├── utils.js                # Shared helpers: findRoot, which, runLinter, countLines
-│       ├── secret-guard.js
-│       ├── secret-in-write-guard.js
-│       ├── dangerous-cmd-guard.js
-│       ├── large-file-guard.js
-│       ├── lint-on-save.js
-│       └── format-on-save.js
-├── mcps/                       # MCP server registry and secrets
-│   ├── registry.json           # Curated MCP server list (context7, ui-inspector)
-│   ├── .env.example            # Template for API keys (copy to .env)
-│   └── ui-inspector/           # ui-inspector MCP server (headless Chromium via Playwright)
-├── templates/                  # Starting points for new agents and skills
+├── skills/                       # 5 user-facing slash commands, each with SKILL.md
+│   ├── devxp/
+│   ├── refine/
+│   ├── deliver/
+│   ├── improve/
+│   └── graphify/
+├── hooks/                         # Safety and quality hooks
+│   ├── registry.json              # Source of truth for all hooks
+│   ├── claude-code/                # Shell scripts registered in ~/.claude/settings.json
+│   └── opencode/                   # JS modules composed into a single plugin
+├── mcps/                          # MCP server registry and secrets
+│   ├── registry.json              # Curated MCP server list (context7, ui-inspector)
+│   ├── .env.example                # Template for API keys (copy to .env)
+│   └── ui-inspector/                # ui-inspector MCP server (headless Chromium via Playwright)
+├── scripts/                        # Install, build, and packaging helper scripts
+│   ├── remote-install.sh           # curl | bash entry point — downloads a release binary
+│   └── stage-assets.sh             # Copies agents/skills/hooks/mcps into cli/internal/assets for go:embed
+├── templates/                      # Starting points for new agents and skills
 │   ├── agent-template.md
 │   └── skill-template.md
-└── docs/                       # Project documentation
-    ├── README.md               # Navigation index
-    └── development/            # Authoring guides for contributors
-        ├── agent-authoring-guide.md
-        ├── skill-authoring-guide.md
-        └── mcp-guide.md
+└── docs/                            # Project documentation — start at docs/README.md
+    ├── architecture/
+    ├── development/                 # Authoring guides for contributors
+    ├── guides/                       # Install, quickstart, team distribution
+    └── reference/                    # Full agent, skill, hook, and MCP catalogs
 ```
 
 ---
@@ -535,17 +282,23 @@ Fork this repo and edit `devexp.config.json` to customise what gets installed fo
 
 The config is read automatically by `./install.sh` — no extra flags needed. Secrets go in `mcps/.env` (gitignored).
 
-→ Full guide: `docs/team-distribution.md`
+→ Full guide: [`docs/guides/team-distribution.md`](docs/guides/team-distribution.md)
 
 ---
 
 ## Contributing
 
-Contributions are welcome. To add an agent or skill:
+Contributions are welcome. Each component type has its own "Adding a New X" guide in its directory's README:
 
-1. Follow the authoring guides in `docs/`.
-2. Use the templates in `templates/` as your starting point.
-3. Test thoroughly before submitting a PR.
-4. Keep descriptions precise — the `description` field is what Claude reads to decide when to use a skill or agent.
+- Agents: [`agents/README.md`](agents/README.md)
+- Skills: [`skills/README.md`](skills/README.md)
+- Hooks: [`hooks/README.md`](hooks/README.md)
+- MCPs: [`mcps/README.md`](mcps/README.md)
+
+General guidance:
+
+1. Use the templates in `templates/` as your starting point.
+2. Test thoroughly before submitting a PR.
+3. Keep descriptions precise — the `description` field is what Claude reads to decide when to use a skill or agent.
 
 The bar for inclusion: does this provide genuine, reusable value across different projects? Highly project-specific agents and skills are better kept in a project's own `.claude/` directory.
