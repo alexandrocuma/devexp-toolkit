@@ -42,6 +42,12 @@ Before any technical assessment or document:
 **Trade-off Analysis**: User is evaluating multiple approaches and needs structured analysis
 → See Phase 2d
 
+**API Design**: User wants to design or review a REST/GraphQL/SDK interface contract
+→ See Phase 2e
+
+**Database Schema Design**: User wants to design or review a data model
+→ See Phase 2f
+
 ### Phase 1b: External Research with context7
 
 When your task involves evaluating technologies, standards, or patterns — use **context7** to pull current documentation before forming opinions:
@@ -299,6 +305,152 @@ When multiple approaches are viable, structure the analysis:
 [If the recommendation is accepted: write an ADR for Option X]
 ```
 
+### Phase 2e: API Design
+
+When the user wants to design a new API — a REST resource, a GraphQL schema, a service contract, or an SDK interface:
+
+1. Read the atlas (already done in Phase 0) to understand the existing API layer conventions: how are resources named, how are errors structured, what authentication pattern is used
+2. Identify the resource being exposed and the operations needed
+3. Produce a contract document using the project's existing conventions
+
+**API contract document format:**
+
+```markdown
+# <Resource Name> API
+
+**Status**: Draft | Accepted
+**Date**: YYYY-MM-DD
+
+## Resource
+
+Brief description of what this resource represents and what consumers do with it.
+
+## Endpoints
+
+| Method | Path | Description | Auth required |
+|--------|------|-------------|---------------|
+| GET | `/v1/<resource>` | List all | Yes |
+| POST | `/v1/<resource>` | Create | Yes |
+| GET | `/v1/<resource>/:id` | Get by ID | Yes |
+| PATCH | `/v1/<resource>/:id` | Update | Yes |
+| DELETE | `/v1/<resource>/:id` | Delete | Yes |
+
+## Request/Response Schemas
+
+### POST /v1/<resource>
+
+**Request body:**
+```json
+{
+  "field": "type — description",
+  "required_field": "string — max 255 chars"
+}
+```
+
+**Response `201`:**
+```json
+{
+  "id": "uuid",
+  "field": "value",
+  "created_at": "ISO 8601"
+}
+```
+
+**Error responses:**
+| Status | Code | When |
+|--------|------|------|
+| 400 | `VALIDATION_ERROR` | Required fields missing or invalid |
+| 401 | `UNAUTHORIZED` | No valid auth token |
+| 409 | `CONFLICT` | Resource already exists |
+
+## Validation Rules
+
+- `field_name`: [constraints — e.g., "required, string, 1-255 chars"]
+
+## Authentication
+
+[Auth mechanism matching the project's existing pattern]
+
+## Versioning
+
+[Versioning strategy matching the project's existing strategy]
+```
+
+Save to `docs/api/<resource>.md`.
+
+**Rules:**
+- Every endpoint must have documented error responses
+- Schema fields must include type, whether required, and constraints
+- Never design an API that requires the consumer to know internal IDs or implementation details
+
+---
+
+### Phase 2f: Database Schema Design
+
+When the user wants to design or review a database schema:
+
+1. Read the atlas to understand the existing data model: ORM or query library used, naming conventions, how migrations work
+2. Identify the entities and their relationships
+3. Produce a schema document that could be used to write the migration
+
+**Database schema document format:**
+
+```markdown
+# <Feature/Domain> — Database Schema
+
+**Status**: Draft | Accepted
+**Date**: YYYY-MM-DD
+**Database**: PostgreSQL | MySQL | SQLite | MongoDB
+
+## Tables / Collections
+
+### `<table_name>`
+
+Purpose: [one sentence — what data does this table hold and why]
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID / BIGINT | PRIMARY KEY | [auto-generated or externally provided] |
+| `<field>` | VARCHAR(255) | NOT NULL | [what it stores] |
+| `created_at` | TIMESTAMP WITH TIME ZONE | NOT NULL DEFAULT NOW() | [audit timestamp] |
+
+**Indexes:**
+| Name | Columns | Type | Purpose |
+|------|---------|------|---------|
+| `idx_<table>_<field>` | `<field>` | BTREE | [what queries this supports] |
+
+**Foreign keys:**
+| Column | References | On delete |
+|--------|------------|-----------|
+| `<field>_id` | `<other_table>.id` | CASCADE / SET NULL / RESTRICT |
+
+## Relationships
+
+- `<table_a>` → `<table_b>`: [one-to-many / many-to-many via `<join_table>`]
+
+## Index Strategy
+
+[Explain which queries are expected and how the indexes support them. Flag any query requiring a sequential scan.]
+
+## Migration Notes
+
+[Non-trivial migration steps: backfill required, lock contention risk on large tables, dependency ordering]
+
+## Open Questions
+
+- [ ] [Any design decision still unresolved]
+```
+
+Save to `docs/architecture/<domain>-schema.md` or alongside the migration file.
+
+**Rules:**
+- Every column must have a description
+- Indexes must justify their existence with the query they serve
+- Foreign key ON DELETE behavior must be explicit — never leave it to database defaults
+- Large table migrations (> 1M rows) must note the lock contention risk and safe migration pattern
+
+---
+
 ## Rules
 
 - Never recommend a technology you haven't verified fits the existing stack — read the atlas first
@@ -311,7 +463,8 @@ When multiple approaches are viable, structure the analysis:
 ## Chaining
 
 After producing technical artifacts:
-- **ADR written for a new database** → suggest invoking `/db-design` skill to design the schema
+- **ADR written for a new database** → continue with Phase 2f (schema design) in this same session
+- **ADR written for a new API** → continue with Phase 2e (API contract design) in this same session
 - **ADR written for a new service** → suggest invoking `scaffold` agent to generate the skeleton
 - **Design review finds security concerns** → suggest invoking `security` agent for a focused audit
-- **Engineering standard established** → suggest invoking `/quality` skill to assess how well the current codebase adheres to it
+- **Engineering standard established** → recommend running `/improve` to get a health score on current adherence

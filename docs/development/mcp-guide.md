@@ -263,7 +263,7 @@ The server process can be started in two ways:
 1. Create `mcps/<name>/docker-compose.yml` with the service definition.
 2. Set `"docker_compose": "mcps/<name>/docker-compose.yml"` in the registry entry.
 
-**Process-based (native binary/daemon)** — manage the process yourself and document its lifecycle in `setup_instructions`; the daemon is started separately via `start-services.sh`. Reference implementation: `obscura` + `ui-inspector` — `obscura` is a standalone binary the user installs once (`cargo install obscura`), `ui-inspector` is a Node MCP that talks to a running `obscura serve` instance. Neither requires installer-managed venvs or Docker — `start-services.sh` just launches `obscura serve` before a session.
+**Self-contained process** — the MCP launches and manages its own backend process on demand. Reference implementation: `ui-inspector` — a Node MCP that spins up a headless Chromium browser when first called and shuts it down on SIGTERM. No installer-managed venvs, Docker, or separate daemon. Run `./setup.sh` once to install npm deps and download the Playwright Chromium binary.
 
 ### Step 4: Test the install
 

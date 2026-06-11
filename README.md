@@ -2,7 +2,31 @@
 
 A curated collection of Claude Code agents, skills, and MCP servers that bring a consistent, expert-level development experience to any project.
 
-Install once. Get autonomous bug fixes, expert code review, codebase navigation, execution tracing, security audits, and 22 specialized development skills — available inside Claude Code and opencode.
+Install once. Get autonomous bug fixes, expert code review, codebase navigation, execution tracing, and security audits — all driven by four commands that cover the full development lifecycle.
+
+---
+
+## Quick Start
+
+```bash
+# Install (no clone required)
+curl -fsSL https://raw.githubusercontent.com/alexandrocuma/devexp-toolkit/main/scripts/remote-install.sh | bash
+```
+
+Then use four commands to cover the full development cycle:
+
+| Command | When |
+|---------|------|
+| `/devxp` | First time on a repo — orient, create CLAUDE.md and docs/ |
+| `/refine` | Turn an idea into a groomed, ready-to-build ticket |
+| `/deliver <ticket>` | Implement, test, review, and release a ticket |
+| `/improve` | Sprint end — health scorecard, cleanup, debt triage, retro |
+
+```
+/devxp  →  /refine  →  /deliver  →  /improve  →  next sprint
+```
+
+→ Full walkthrough: [docs/guides/quickstart.md](docs/guides/quickstart.md)
 
 ---
 
@@ -53,44 +77,19 @@ Agents are specialized sub-agents that Claude Code or opencode can spawn to hand
 
 ### Skills
 
-Skills are invoked as slash commands (`/skill-name`) in Claude Code or opencode. They inject structured guidance into the current conversation — shaping how Claude approaches a task without spawning a separate agent.
+Five slash commands cover the full development lifecycle. Everything else runs automatically inside them.
 
-| Skill | Description |
-|-------|-------------|
-| `/bugfix` | Root cause analysis and bug fixing with built-in verification. |
-| `/feature` | Turn an idea into a feature: graphify discovery, an actionable plan, mandatory context7 verification for any external library, then implementation. |
-| `/refactor` | Code refactoring for improved structure and maintainability. |
-| `/devxp` | Entry point — orients on any repo, ensures CLAUDE.md and docs/ exist or are current, optionally enriches with graphify. |
-| `/gen-docs` | Write new project documentation from scratch: API docs, guides, README, code comments. |
-| `/update-docs` | Detect documentation that's drifted from the code and refresh it in place. |
-| `/test-gen` | Generate tests for the current file or function. |
-| `/regression` | Verify that fixes and changes don't introduce regressions. |
-| `/logic-review` | Review code logic for bugs, edge cases, null dereferences, and race conditions. |
-| `/quality` | Code quality review: style, complexity, and SOLID principle adherence. |
-| `/api-design` | Design API contracts, endpoints, request/response schemas, and error handling. |
-| `/db-design` | Design database schemas, migrations, indexes, and query patterns. |
-| `/migrate` | Step-by-step migration guide for a library or framework upgrade. |
-| `/explain` | Explain code to a specific audience: junior, new-hire, or non-technical. |
-| `/adr` | Write an Architecture Decision Record saved to `docs/adr/`. |
-| `/commit` | Craft a conventional commit message and create the commit. |
-| `/pr` | Generate a PR/MR description and optionally open it via the detected platform CLI (gh or glab). |
-| `/changelog` | Generate a changelog entry from git history. |
-| `/release` | Full release workflow: version bump, changelog, tag, and platform release (GitHub, GitLab, or manual). |
-| `/standup` | Generate a daily standup update from recent git activity. |
-| `/ticket` | Create a well-structured ticket for a bug, feature, or tech-debt item — detects GitHub Issues, GitLab Issues, Linear, and Jira. |
-| `/scope` | Break a large feature or epic into atomic tickets with dependencies. |
-| `/health` | Generate a codebase health scorecard with RAG status per dimension. |
-| `/gen-indexer` | Crawl a project's docs and codebase to generate a directive CLAUDE.md from scratch — architecture map, conventions, and implementation playbooks. |
-| `/update-indexer` | Refresh an existing CLAUDE.md whose sections have drifted from the current codebase. |
-| `/postmortem` | Generate a structured blameless postmortem document. |
-| `/groom` | Pre-code grooming — fetches a ticket, validates its claims against the codebase, challenges wrong assumptions, produces and persists a verified execution plan. |
-| `/rfc` | Draft a Request for Comments document for a proposed change — motivation, design, alternatives, and open questions — before any code is written. |
-| `/convention-audit` | Audit the codebase for pattern divergence — finds all the ways the same problem is solved, identifies which pattern won, produces a standardization recommendation. |
-| `/dead-code` | Find unused exports, unreachable branches, zombie feature flags, and orphaned files — produces a verified cleanup list safe to delete. |
-| `/estimation` | Evidence-based story point estimation — maps files to change, test coverage, risk factors, and comparable past work to justify the estimate. |
-| `/retrospective` | Facilitate a blameless sprint retrospective — synthesizes git activity, incidents, and team input into Start/Stop/Continue findings with actionable commitments. |
-| `/git-archaeology` | Reconstruct intent, ownership, and decision history from git history — answers "why does this code exist?" and "who understands this?". |
-| `/stale-work` | Find orphaned branches, stale PRs, half-finished features, zombie flags, and TODO comments referencing closed tickets — produces a cleanup checklist. |
+| Command | When to use |
+|---------|-------------|
+| `/devxp` | First time on a repo — orient, ensure CLAUDE.md and docs/ exist, get routing recommendations |
+| `/refine` | Turn a raw idea into a groomed, ready-to-build ticket |
+| `/deliver <ticket>` | Implement, test, review, and release a ticket end-to-end |
+| `/improve` | Sprint end — health scorecard, cleanup, debt triage, retro |
+| `/graphify` | Build a persistent knowledge graph from this codebase |
+
+The orchestrators handle everything internally — implementation, testing, code review, instrumentation, release, health checks, and more. You never need to learn sub-commands.
+
+→ Full specialist catalog: [`docs/reference/`](docs/reference/)
 
 ### Hooks
 
@@ -115,8 +114,7 @@ MCP (Model Context Protocol) servers extend Claude with additional tool capabili
 | MCP | Transport | Description |
 |-----|-----------|-------------|
 | **context7** | stdio | Up-to-date library documentation and code examples for any package — fetched at query time, not from training data. |
-| **obscura** | stdio | Built-in Obscura browser MCP — navigate, click, fill, type, eval JS, inspect network and console. Zero setup beyond installing the `obscura` binary. |
-| **ui-inspector** | stdio | Visual UI/UX layer on top of Obscura — screenshots, ARIA accessibility tree, computed CSS, axe-core a11y audit. Requires `obscura serve` running (started by `start-services.sh`). |
+| **ui-inspector** | stdio | UI/UX inspection via headless Chromium — screenshot, interact (click/type/scroll), ARIA accessibility tree, computed CSS, axe-core a11y audit, page metrics. No external daemon required. |
 
 MCP configuration lives in `mcps/registry.json`. API keys and secrets go in `mcps/.env` (gitignored). MCPs with a `docker_compose` field are started automatically by the installer via `docker compose up -d`.
 
@@ -184,7 +182,7 @@ After a machine restart or session, MCP services may have stopped. Use `start-se
 ```
 
 What it does:
-- **Obscura** (native binary): starts `obscura serve` on port 9222 if it isn't already running — backs the `obscura` and `ui-inspector` MCPs
+- **ui-inspector** manages its own headless Chromium process — no daemons to start
 
 After running `start-services.sh`, reconnect your MCP in Claude Code (via `/mcp`) or opencode.
 
@@ -499,9 +497,9 @@ devexp/
 │       ├── lint-on-save.js
 │       └── format-on-save.js
 ├── mcps/                       # MCP server registry and secrets
-│   ├── registry.json           # Curated MCP server list (context7, obscura, ui-inspector)
+│   ├── registry.json           # Curated MCP server list (context7, ui-inspector)
 │   ├── .env.example            # Template for API keys (copy to .env)
-│   └── ui-inspector/           # ui-inspector MCP server (Node, talks to `obscura serve`)
+│   └── ui-inspector/           # ui-inspector MCP server (headless Chromium via Playwright)
 ├── templates/                  # Starting points for new agents and skills
 │   ├── agent-template.md
 │   └── skill-template.md

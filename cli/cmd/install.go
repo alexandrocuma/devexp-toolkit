@@ -428,6 +428,8 @@ func doInstallOpencode(opts *installOpts) error {
 	skillsTarget := filepath.Join(home, ".config", "opencode", "commands")
 	configPath := filepath.Join(home, ".config", "opencode", "config.json")
 
+	ui.Warn("opencode installs a feature subset — multi-agent orchestration (Agent/Skill/Task tools), persistent memory, and terminal colors are unavailable. Orchestrator skills like /deliver and /improve run in degraded mode. Claude Code is recommended for full functionality.")
+	fmt.Println()
 	ui.Info("Installing for opencode...")
 	fmt.Println()
 

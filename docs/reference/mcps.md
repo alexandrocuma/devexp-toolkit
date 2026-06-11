@@ -55,8 +55,7 @@ MCP servers are declared in `mcps/registry.json`. Two transport types are suppor
 | Name | Transport | Description |
 |------|-----------|-------------|
 | context7 | stdio | Up-to-date library documentation and code examples for any package |
-| obscura | stdio | Built-in Obscura browser MCP — navigate, click, fill, type, eval JS, inspect network and console |
-| ui-inspector | stdio | Visual UI/UX layer on top of Obscura — screenshots, ARIA accessibility tree, computed CSS, axe-core a11y audit (requires `obscura serve`, started by `start-services.sh`) |
+| ui-inspector | stdio | UI/UX inspection via headless Chromium — screenshot, interact (click/type/scroll), ARIA accessibility tree, computed CSS, axe-core a11y audit, page metrics. No external daemon required. |
 
 ---
 

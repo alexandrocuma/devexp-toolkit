@@ -71,6 +71,10 @@ memory: user
 | `scaffold.md` | scaffold | Pattern-matched code generation for new modules, services, and components | "Scaffold a new payments service" |
 | `changelog.md` | changelog | Changelog and release notes generation from git history | "Generate the changelog since the last release" |
 | `docs-sync.md` | docs-sync | Syncs documentation surfaces (CLAUDE.md, README, authoring guides) with actual repo state after changes | "Sync the docs after these agent changes" |
+| `gen-indexer.md` | gen-indexer | Crawls a project's docs and codebase to generate a directive CLAUDE.md from scratch | Invoked by `devxp` when CLAUDE.md is missing |
+| `update-indexer.md` | update-indexer | Refreshes an existing CLAUDE.md whose sections have drifted from the codebase | Invoked by `devxp` when CLAUDE.md is stale |
+| `gen-docs.md` | gen-docs | Writes new project documentation from scratch and scaffolds the docs/ tree | Invoked by `devxp` when docs/ is missing |
+| `update-docs.md` | update-docs | Detects documentation that's drifted from the code and refreshes it in place | Invoked by `devxp` when docs/ is stale |
 | `ci-cd.md` | ci-cd | CI/CD pipeline debugging, creation, and optimization | "Our GitHub Actions pipeline is failing, debug it" |
 | `postmortem.md` | postmortem | Structured blameless incident postmortem documents | "Write a postmortem for last night's database outage" |
 | `tech-lead.md` | tech-lead | Architecture Decision Records, design review, engineering standards | "Write an ADR for switching to PostgreSQL" |

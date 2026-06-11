@@ -9,6 +9,7 @@ import { registerConsoleLogs } from './tools/console-logs.js';
 import { registerInspectElement } from './tools/inspect-element.js';
 import { registerAccessibilityAudit } from './tools/accessibility-audit.js';
 import { registerPageMetrics } from './tools/page-metrics.js';
+import { registerInteract } from './tools/interact.js';
 
 const server = new McpServer({
   name: 'ui-inspector',
@@ -23,6 +24,7 @@ registerConsoleLogs(server);
 registerInspectElement(server);
 registerAccessibilityAudit(server);
 registerPageMetrics(server);
+registerInteract(server);
 
 async function shutdown() {
   await closeBrowser();

@@ -31,6 +31,11 @@ When receiving a task, immediately classify it:
 
 **Refactor/Cleanup**: Specific code needs restructuring without changing external behavior. Plan incremental changes, execute safely, verify behavior preserved.
 
+**Feature Flag Lifecycle**: Managing a flag from creation to retirement.
+- *Create*: define the flag constant, add the conditional branch gating the new behavior, register the flag in the project's flag SDK/config (match existing flag registration pattern exactly — read 1-2 existing flag definitions first)
+- *Retire* (flag at 100% rollout or killed): remove the flag constant, collapse the conditional (keep the enabled branch, delete the disabled branch), update tests, search for any remaining references to the flag name and remove them
+- Never introduce a flag management library that isn't already in the project
+
 **Complex Multi-Step**: Combination of the above, or a task requiring coordination across many files. Break into phases, execute sequentially, report at phase boundaries.
 
 ## Autonomous Workflow
@@ -193,39 +198,6 @@ Grep with pattern="<search term>" path="~/.claude/agent-memory/codebase-navigato
 ## MEMORY.md
 
 Your MEMORY.md is currently empty. After your first task, record the project and key findings here.
-
-## Available Skills
-
-- `/bugfix` — focused bug investigation and fixing
-- `/feature` — spec-driven feature implementation
-- `/gen-docs` — write new documentation that doesn't exist yet
-- `/update-docs` — refresh existing documentation that's drifted from the code
-- `/refactor` — targeted refactoring work
-- `/regression` — verify no regressions after fixes
-- `/quality` — code quality assessment
-- `/api-design` — design new API contracts
-- `/db-design` — design or modify database schemas
-- `/commit` — craft a conventional commit message and create the commit
-- `/pr` — generate a PR description and optionally open the PR
-- `/test-gen` — generate tests for the current file or function
-- `/migrate` — step-by-step migration guide for library/framework upgrades
-- `/explain` — explain code to a specific audience
-- `/adr` — write an Architecture Decision Record
-- `/changelog` — generate changelog from git history
-- `/release` — full release workflow: version bump, tag, platform release
-- `/postmortem` — generate a structured blameless postmortem
-- `/ticket` — create a well-structured ticket in the detected issue tracker
-- `/scope` — break an epic into atomic tickets with dependencies
-- `/health` — generate a codebase health scorecard
-- `/logic-review` — review code logic for bugs, edge cases, and dysfunction
-- `/standup` — generate a daily standup update from recent git activity
-- `/rfc` — draft a Request for Comments before a significant change
-- `/convention-audit` — audit for pattern divergence across the codebase
-- `/dead-code` — find unused exports, flags, and orphaned files
-- `/estimation` — evidence-based story point estimation
-- `/retrospective` — facilitate a blameless sprint retrospective
-- `/git-archaeology` — reconstruct intent and ownership from git history
-- `/stale-work` — find orphaned branches, stale PRs, half-finished features
 
 ## Available Agents
 

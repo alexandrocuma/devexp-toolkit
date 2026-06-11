@@ -8,6 +8,7 @@ How-to guides for using and configuring the framework.
 
 | Doc | Description |
 |-----|-------------|
+| [Quick Start](guides/quickstart.md) | Zero to shipped — install, then use the 5 commands end-to-end |
 | [Docs Architecture](guides/docs-architecture.md) | CLAUDE.md-as-indexer pattern + standard docs/ folder tree — apply this in every project |
 | [Install & Services](guides/install.md) | install.sh flags, start-services.sh, uninstall.sh, and CLI installation paths |
 | [Team Distribution](guides/team-distribution.md) | Fork and customise devexp for your organisation via devexp.config.json |
@@ -20,8 +21,8 @@ Component catalogs and configuration schemas.
 
 | Doc | Description |
 |-----|-------------|
-| [Agents](reference/agents.md) | How agents work, full agent catalog (31 agents), adding a new agent |
-| [Skills](reference/skills.md) | How skills work, full skill catalog (36 skills), adding a new skill |
+| [Agents](reference/agents.md) | How agents work, full agent catalog (34 agents), adding a new agent |
+| [Skills](reference/skills.md) | The 5 user-facing commands, what each orchestrator does, adding a new skill |
 | [Hooks](reference/hooks.md) | How hooks work, registry format, hook catalog, CLI compatibility |
 | [MCPs](reference/mcps.md) | MCP registry format, MCPs in repo, API keys, docker-backed MCPs |
 

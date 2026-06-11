@@ -84,6 +84,16 @@ Wait for confirmation. The user can stop at any step.
 
 ### Phase 2 — Implement
 
+**Scan for infrastructure changes first:**
+
+```bash
+# Detect IaC definition files in the working tree and ticket scope
+git diff --name-only HEAD 2>/dev/null | grep -iE "\.(tf|hcl|yaml|yml|json|toml)$" | head -10
+find . -maxdepth 3 \( -name "*.tf" -o -name "*.hcl" -o -name "Dockerfile" -o -name "docker-compose*" -o -name "k8s" -o -name "helm" \) 2>/dev/null | grep -v ".git" | grep -v node_modules | head -5
+```
+
+If the ticket or changed files include infrastructure definitions, apply the same discipline as application code: read 2–3 existing infrastructure files first, match the project's existing style exactly, and handle them within this implementation step. Never introduce a new IaC tool or pattern without user confirmation.
+
 **For new features and bug fixes** — invoke the `dev-agent`:
 
 > "Implement ticket <ID>. The verified execution plan is: <paste groom plan key steps and file list>. Follow the plan exactly. Write tests alongside the implementation. Match existing code conventions."
@@ -133,6 +143,10 @@ git diff --name-only HEAD 2>/dev/null | xargs grep -n "func.*Handler\|router\.\|
 
 If no logging library is detected in the project, note it and skip — do not add a logging dependency unilaterally.
 
+**3d. Surface SLO candidates:**
+
+For each new or modified critical path identified above (API handler, background job, external call, DB write), note the natural SLI attachment point — what would a team measure here (latency, error rate, throughput, queue depth)? List these as candidates in the Phase 7 report. Do not create dashboards, alert configs, or metric code — just surface what exists as observable points so the team can wire them up.
+
 ---
 
 ### Phase 4 — Fill Test Gaps
@@ -157,9 +171,68 @@ If uncovered files exist — invoke the `test-gen` agent:
 
 > "Generate tests for these files: <list>. Match the project's existing test framework and conventions. Focus on the acceptance criteria from ticket <ID>: <list criteria>."
 
+**E2E coverage check:**
+
+After unit/integration test gaps are filled, check for E2E coverage:
+
+```bash
+# Detect whether the project has an E2E test suite
+find . -maxdepth 4 -type d \( -name "e2e" -o -name "integration" -o -name "cypress" -o -name "playwright" -o -name "tests" \) 2>/dev/null | grep -v node_modules | grep -v ".git" | head -5
+find . -maxdepth 4 -name "*.spec.*" -o -name "*.e2e.*" -o -name "*_test.*" 2>/dev/null | grep -v node_modules | grep -v ".git" | grep -iE "e2e|integration|spec" | head -5
+```
+
+- If an E2E suite exists: check whether the user flows touched by this ticket have corresponding E2E scenarios. If gaps exist, read 2–3 existing E2E test files to learn the project's conventions, then generate scenarios that cover the changed flows.
+- If no E2E suite exists: note the gap in the Phase 7 report. Do not scaffold an E2E framework unilaterally.
+
+**Regression check:**
+
+After tests are filled, verify no existing tests newly fail due to the changes:
+
+```bash
+git diff --name-only HEAD 2>/dev/null | head -10
+```
+
+Run the test suite for all packages containing changed files. If any pre-existing tests now fail, fix the regression before proceeding — do not move to code review with a failing test suite.
+
+**Performance-sensitive path — load test offer:**
+
+Scan the changed files for new or modified API endpoints:
+
+```bash
+git diff --name-only HEAD 2>/dev/null | xargs grep -l "Handler\|router\.\|app\.get\|app\.post\|@app\.\|@router\." 2>/dev/null | head -5
+```
+
+If new or modified endpoints are detected, check whether the project has a load testing framework:
+
+```bash
+find . -maxdepth 4 \( -name "*.k6.js" -o -name "locustfile*" -o -name "artillery*" -o -name "*.gatling.*" \) 2>/dev/null | grep -v node_modules | head -3
+```
+
+If a framework exists: offer to generate load test scenarios (smoke / load / stress) for the new endpoints. If the user confirms, read 1-2 existing test files to learn the format, then generate scenarios. If no framework exists: note the gap in the Phase 7 report.
+
 ---
 
 ### Phase 5 — Code Review
+
+**Pre-review correctness and quality pass:**
+
+Before invoking the automated PR review, run a targeted correctness check on the changed code. Read each changed file and scan for:
+
+- **Unhandled error paths** — `err` returned from a function call and not checked or propagated
+- **Null/nil dereferences** — variables used without nil/null guards after potentially-nil operations
+- **Off-by-one errors** — loop bounds, slice operations, pagination math
+- **Resource leaks** — files, DB connections, HTTP responses opened but not closed in all paths
+- **Race conditions** — shared mutable state accessed from goroutines or async paths without synchronization
+
+Fix any issues found before proceeding — these are correctness bugs, not style choices.
+
+**Quality pass** — scan changed files for:
+- Functions longer than 50 lines that could be cleanly extracted
+- Logic duplicated elsewhere in the project that could be reused
+- Magic numbers or strings that should be named constants
+- Missing input validation at public function boundaries
+
+Document any quality findings in the PR description for the reviewer. Fix only what's clearly wrong; note the rest as follow-up debt.
 
 Create a PR if one doesn't exist:
 
@@ -252,8 +325,11 @@ glab release create "v<version>" --name "v<version>" --notes "<changelog entry>"
 ## Delivered: <ticket-id> — "<title>"
 
   Implementation:  complete — <N files changed>
+  Infrastructure:  <N IaC files changed / no infrastructure changes detected>
   Observability:   <N log calls added / skipped — no new entry points>
-  Tests:           <N tests added / already covered>
+  SLO candidates:  <list of critical paths with suggested SLI measurement points, or "none identified">
+  Tests:           <N unit/integration tests added / already covered>
+  E2E coverage:    <N scenarios added / no E2E suite detected / already covered>
   Review:          <findings addressed / approved>
   Release:         v<version> published / pending manual release
 

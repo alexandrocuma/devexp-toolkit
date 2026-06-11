@@ -9,23 +9,13 @@
     "required_env": []
   },
   {
-    "name": "obscura",
-    "description": "Built-in Obscura browser MCP — navigate, click, fill, type, eval JS, inspect network and console. Zero setup beyond installing Obscura.",
-    "command": "obscura",
-    "args": ["mcp"],
-    "scope": "user",
-    "env": {},
-    "required_env": [],
-    "setup_instructions": "Install Obscura (Rust):\n  cargo install obscura\n\nOr download a pre-built binary from:\n  https://github.com/h4ckf0r0day/obscura/releases"
-  },
-  {
     "name": "ui-inspector",
-    "description": "Visual UI/UX layer on top of Obscura — screenshots, ARIA accessibility tree, computed CSS, axe-core a11y audit. Requires 'obscura serve' running (started by start-services.sh).",
+    "description": "UI/UX inspection via headless Chromium — screenshot, interact (click/type/scroll), ARIA accessibility tree, computed CSS, axe-core a11y audit, and page metrics. No external daemon required.",
     "command": "node",
     "args": ["${DEVEXP_DIR}/mcps/ui-inspector/dist/index.js"],
     "scope": "user",
     "env": {},
     "required_env": [],
-    "setup_instructions": "Run setup once:\n  cd ${DEVEXP_DIR}/mcps/ui-inspector && ./setup.sh\n\nThen start Obscura CDP server before each session:\n  ./start-services.sh"
+    "setup_instructions": "Run setup once:\n  cd ${DEVEXP_DIR}/mcps/ui-inspector && ./setup.sh"
   }
 ]

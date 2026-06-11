@@ -6,6 +6,7 @@ How-to guides for using, configuring, and understanding the devexp framework.
 
 | File | Description | Status |
 |------|-------------|--------|
+| [quickstart.md](quickstart.md) | Zero to shipped — install, then use the 4 orchestrators to orient, refine, deliver, and improve | ready |
 | [docs-architecture.md](docs-architecture.md) | CLAUDE.md-as-indexer pattern + standard docs/ folder tree — apply this in every project | ready |
 | [install.md](install.md) | install.sh, start-services.sh, uninstall.sh — flags, behavior, CLI paths | ready |
 | [team-distribution.md](team-distribution.md) | Forking and customizing devexp for your organisation via devexp.config.json | ready |

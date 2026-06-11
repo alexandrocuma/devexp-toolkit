@@ -59,7 +59,7 @@ Use this after a machine restart or when MCP services have stopped. Never wipes 
 ```
 
 **Behavior:**
-- **Obscura** (native binary): starts `obscura serve` on port 9222 if it isn't already running — backs the `obscura` and `ui-inspector` MCPs
+- **ui-inspector** manages its own headless Chromium process — no daemons to start
 - Safe to run at any time — skips services that are already running
 
 After running, reconnect your MCP in Claude Code (`/mcp`) or opencode.
@@ -90,3 +90,9 @@ After running, reconnect your MCP in Claude Code (`/mcp`) or opencode.
 | `CLAUDE.md` / `AGENTS.md` | `~/.claude/CLAUDE.md` | `~/.config/opencode/AGENTS.md` (or project root) |
 | Agent tools | All Claude tools | `read/write/edit/bash/glob/grep/webfetch/websearch` only |
 | `Agent`, `Skill`, `Task*` tools | Supported | No opencode equivalent — dropped at transform |
+
+> **opencode users — feature subset:**
+> The following features are unavailable under opencode and are silently dropped at install time:
+> multi-agent orchestration tools (`Agent`, `Skill`, `Task*`), persistent agent memory, and terminal colors.
+> Skills that rely on agent spawning — including the `/deliver` and `/improve` orchestrators — will run in degraded mode.
+> **Claude Code is recommended for the full experience.**

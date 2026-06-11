@@ -107,6 +107,49 @@ git log $(git describe --tags --abbrev=0 2>/dev/null)..HEAD --oneline 2>/dev/nul
 ```
 Thresholds: 🟢 CI passing, release < 30 days · 🟡 CI flaky or > 30 days · 🔴 CI failing or > 90 days
 
+**Infrastructure Health:**
+```bash
+# Detect infrastructure definition files
+find . -maxdepth 4 \( -name "*.tf" -o -name "*.hcl" -o -name "docker-compose*" -o -name "Dockerfile" \) 2>/dev/null | grep -v ".git" | grep -v node_modules | head -10
+
+# Check for hardcoded values where references should be used (secrets, IPs, ARNs)
+grep -rn "password\s*=\s*\"\|secret\s*=\s*\"\|token\s*=\s*\"" . 2>/dev/null | grep -iE "\.(tf|hcl|yaml|yml)$" | grep -v ".example" | head -5
+
+# Check for variable/parameter documentation
+find . -maxdepth 4 -name "*.tf" -o -name "*.hcl" 2>/dev/null | xargs grep -l "variable\|parameter" 2>/dev/null | head -3
+```
+
+If no infrastructure definitions are found: mark as N/A.  
+Thresholds: 🟢 variables documented, no inline secrets, versioning/locking present · 🟡 partial (some undocumented vars or missing lock) · 🔴 inline secrets found or no documentation at all
+
+**Observability Maturity:**
+```bash
+# Check for SLO/SLI documentation
+find . -maxdepth 4 \( -name "slo.md" -o -name "slos.md" -o -name "sli.md" -o -name "runbook*" \) 2>/dev/null | grep -v ".git" | head -5
+
+# Check for alert configuration files
+find . -maxdepth 5 -name "*.yaml" -o -name "*.yml" -o -name "*.json" 2>/dev/null | xargs grep -l "alert\|alarm\|monitor" 2>/dev/null | grep -v node_modules | grep -v ".git" | head -5
+
+# Check if runbooks are linked from alerts or docs
+grep -rn "runbook" . 2>/dev/null | grep -v node_modules | grep -v ".git" | head -5
+```
+
+If no observability setup is detected: mark as N/A.  
+Thresholds: 🟢 SLOs documented, alerts exist, runbooks linked · 🟡 partial (alerts exist but no runbooks, or SLIs undocumented) · 🔴 no alerts, no SLO documentation
+
+**Environment Variable Health:**
+```bash
+# Find all env var reads in code
+grep -rn "process\.env\.\|os\.Getenv\|os\.environ\|ENV\[" . 2>/dev/null | grep -v node_modules | grep -v test | grep -v ".git" | head -20
+
+# Check for .env files committed to repo
+git ls-files 2>/dev/null | grep -E "^\.env$|^\.env\." | grep -v "\.env\.example"
+
+# Check for documented env vars
+ls .env.example 2>/dev/null && echo ".env.example: EXISTS" || echo ".env.example: MISSING"
+```
+Thresholds: 🟢 all vars read in code are documented in `.env.example`, no `.env` files committed · 🟡 some undocumented vars or `.env.local` committed · 🔴 `.env` with secrets committed or critical vars completely undocumented
+
 **Load previous baseline for trend comparison:**
 ```bash
 cat .devexp/health-baseline.json 2>/dev/null
@@ -117,13 +160,16 @@ cat .devexp/health-baseline.json 2>/dev/null
 ```
 # Health Scorecard — <project> — <date>
 
-| Dimension       | Status | Trend | Summary |
-|-----------------|--------|-------|---------|
-| Test Coverage   | 🟢/🟡/🔴 | ↑/→/↓/— | <one-line> |
-| Security        | 🟢/🟡/🔴 | ↑/→/↓/— | <one-line> |
-| Dependencies    | 🟢/🟡/🔴 | ↑/→/↓/— | <one-line> |
-| Code Quality    | 🟢/🟡/🔴 | ↑/→/↓/— | <one-line> |
-| CI/CD           | 🟢/🟡/🔴 | ↑/→/↓/— | <one-line> |
+| Dimension              | Status   | Trend   | Summary |
+|------------------------|----------|---------|---------|
+| Test Coverage          | 🟢/🟡/🔴 | ↑/→/↓/— | <one-line> |
+| Security               | 🟢/🟡/🔴 | ↑/→/↓/— | <one-line> |
+| Dependencies           | 🟢/🟡/🔴 | ↑/→/↓/— | <one-line> |
+| Code Quality           | 🟢/🟡/🔴 | ↑/→/↓/— | <one-line> |
+| CI/CD                  | 🟢/🟡/🔴 | ↑/→/↓/— | <one-line> |
+| Infrastructure Health  | 🟢/🟡/🔴/N/A | ↑/→/↓/— | <one-line> |
+| Observability Maturity | 🟢/🟡/🔴/N/A | ↑/→/↓/— | <one-line> |
+| Env Var Health         | 🟢/🟡/🔴 | ↑/→/↓/— | <one-line> |
 
 Trend: ↑ improving · → stable · ↓ degrading · — no baseline
 ```
@@ -170,14 +216,38 @@ done 2>/dev/null | head -10
 rm -f /tmp/.recently_changed.txt
 ```
 
+**Convention audit:**
+
+Scan for multiple competing patterns solving the same problem — divergence that accumulates silently until it becomes a refactor project:
+
+```bash
+# Multiple HTTP client patterns
+grep -rn "fetch(\|axios\|got(\|request(\|superagent\|node-fetch" . 2>/dev/null | grep -v node_modules | grep -v test | head -10
+
+# Multiple date handling approaches
+grep -rn "moment(\|dayjs(\|date-fns\|new Date(" . 2>/dev/null | grep -v node_modules | grep -v test | head -10
+
+# Inconsistent naming conventions (e.g. mixed service naming style)
+find . \( -name "*.service.ts" -o -name "*Service.ts" -o -name "*_service.ts" \) 2>/dev/null | grep -v node_modules | head -10
+
+# Multiple error handling styles
+grep -rn "try {" . 2>/dev/null | grep -v node_modules | grep -v test | wc -l
+grep -rn "\.catch(" . 2>/dev/null | grep -v node_modules | grep -v test | wc -l
+```
+
+For each divergence found: flag which pattern appears more frequently as the canonical one and list the files using the non-canonical approach as candidates for standardization.
+
 Present findings as a cleanup checklist:
 ```
 Stale work found:
   Merged branches:     N (suggest: git branch -d <name>)
   Old open PRs:        N (suggest: close or merge)
-  Zombie flags:        N (suggest: /feature-flag retire or run /deliver to remove)
+  Zombie flags:        N (suggest: remove flag constant + conditional branch via /deliver)
   Orphaned exports:    N (suggest: remove if confirmed unused)
   Silent files:        N (suggest: verify still needed, archive if not)
+
+Convention divergence found:
+  <pattern type>: N files use canonical, M files use non-canonical — list non-canonical files
 ```
 
 Do not delete anything automatically — surface findings only.

@@ -1,6 +1,4 @@
-import { chromium, Browser, BrowserContext, Page } from 'playwright-core';
-
-const OBSCURA_CDP_URL = process.env.OBSCURA_CDP_URL ?? 'ws://127.0.0.1:9222';
+import { chromium, Browser, BrowserContext, Page } from 'playwright';
 
 let browser: Browser | null = null;
 let context: BrowserContext | null = null;
@@ -16,7 +14,7 @@ const consoleLogs: ConsoleEntry[] = [];
 
 export async function getPage(): Promise<Page> {
   if (!browser) {
-    browser = await chromium.connectOverCDP(OBSCURA_CDP_URL);
+    browser = await chromium.launch({ headless: true });
   }
   if (!context) {
     context = await browser.newContext();
@@ -43,9 +41,9 @@ export function peekConsoleLogs(types?: string[]): ConsoleEntry[] {
 }
 
 export async function closeBrowser(): Promise<void> {
-  // Don't close Obscura — it's an external process. Just clean up our context.
   if (page && !page.isClosed()) await page.close().catch(() => {});
   if (context) await context.close().catch(() => {});
+  if (browser) await browser.close().catch(() => {});
   browser = null;
   context = null;
   page = null;
