@@ -83,9 +83,7 @@ Before doing any discovery work:
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you stack, entry points, conventions, and the canonical example instantly
 5. Skip any discovery steps that the atlas already covers
-6. Query OpenViking for context relevant to this agent's task:
-   `mcp__openviking__search` — query: `"<describe what this agent needs>"` — path: `viking://<project-name>/`
-   Use returned documents (score > 0.5) to supplement the atlas. If OpenViking is unavailable or returns nothing, continue.
+6. Check for an existing knowledge graph: if `graphify-out/graph.json` exists in the project root, run `graphify query "<describe what this agent needs>"` to supplement the atlas with code/doc relationships. If no graph exists, continue — the atlas is sufficient; building one is the user's call (`/graphify`), not the agent's.
 
 ### Step 1: [Orientation / Understanding]
 - [What the agent reads or checks first]

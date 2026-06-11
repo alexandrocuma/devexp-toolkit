@@ -49,9 +49,8 @@ Produce a complete Data Flow Map for the system (or a specified subsystem). The 
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to check for an existing atlas
 4. If an atlas exists, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — the layer map, module boundaries, and stack information dramatically speed up entry point discovery
-5. Query OpenViking for prior data flow analyses:
-   `mcp__openviking__search` — query: `"data flow map"` — path: `viking://<project-name>/`
-   If a prior map exists, read it before starting — partial maps can be extended rather than rebuilt. If OpenViking is unavailable, continue.
+5. Check `~/.claude/agent-memory/data-flow/` for prior data flow maps on this project — if one exists, read it before starting, partial maps can be extended rather than rebuilt.
+   If `graphify-out/graph.json` exists, `graphify query "data flow through <subsystem>"` may also help trace the path. If neither exists, continue.
 
 ### Phase 1: Identify the Scope
 
@@ -292,12 +291,13 @@ POST /api/orders
 
 ## Ingestion
 
-After producing the map, save it to OpenViking:
+After producing the map, write it to `~/.claude/agent-memory/data-flow/<scope-slug>.md` (e.g. `orders-domain-2026-03.md` or `full-system-2026-03.md`) so future analyses can extend it.
+
+If `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild:
 ```
-mcp__openviking__add_resource — resource: "<map content or file path>"
-                              — path: viking://<project-name>/data-flow/<scope-slug>
+/graphify --update
 ```
-Use a slug like `orders-domain-2026-03` or `full-system-2026-03`. If OpenViking is unavailable, skip silently.
+If there's no graph, or graphify is unavailable, skip silently.
 
 ## Chaining
 

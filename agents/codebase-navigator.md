@@ -20,11 +20,10 @@ Before doing any discovery, check for existing context on this project:
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If atlas is recent (< 2 weeks old), read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` and consider skipping full re-orientation
-5. Check OpenViking for existing project context:
-   First: `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
-   If yes: `mcp__openviking__query` — question: `"What is the architecture, conventions, layer map, and key patterns of this project?"` — namespace: `"viking://<project-name>/"`
-   Use results (score > 0.5) alongside the atlas to avoid re-deriving known facts. If neither atlas nor OpenViking context exists, run full Phase 1–4.
-   If OpenViking is unavailable, continue — the atlas is sufficient.
+5. Check for an existing knowledge graph:
+   If `graphify-out/graph.json` exists, run `graphify query "What is the architecture, conventions, layer map, and key patterns of this project?"` and use the results alongside the atlas to avoid re-deriving known facts.
+   If neither the atlas nor a graph exists, run full Phase 1–4.
+   If there's no graph or graphify is unavailable, continue — the atlas is sufficient.
 
 ### Phase 1: Structural Discovery (always run first)
 1. Read `README.md`, `CLAUDE.md`, `CONTRIBUTING.md`. For `docs/` — use the folder-index fast-path: check for `docs/README.md` first; if it exists, read it as a navigation map before reading any individual files. Then check for `docs/*/README.md` sub-folder indexes before drilling into individual files in each subfolder.
@@ -58,18 +57,11 @@ Write a structured atlas to your memory at `~/.claude/agent-memory/codebase-navi
 - `MEMORY.md`: Index of all known projects with brief summary and last-updated date
 - `<project-name>.md`: Full atlas for each project
 
-After writing the atlas files, ingest them into OpenViking so other agents can retrieve them:
+After writing the atlas files, if `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild so the graph reflects the new atlas and any `docs/` changes:
 ```
-mcp__openviking__add_resource — resource: "~/.claude/agent-memory/codebase-navigator/<project-name>.md"
-                              — path: viking://<project-name>/atlas
+/graphify --update
 ```
-Also ingest the `docs/` folder if present in the project root:
-```
-mcp__openviking__add_resource — resource: "<project-root>/docs/"
-                              — path: viking://<project-name>/docs
-```
-If OpenViking is unavailable, skip these steps silently — the atlas files on disk are sufficient.
-Note for opencode: the atlas path (`~/.claude/agent-memory/`) does not exist in opencode sessions. Treat ingestion as a best-effort Claude Code enhancement.
+If there's no graph, or graphify is unavailable, skip this step silently — the atlas files on disk are sufficient. Never bootstrap a graph from scratch on your own initiative — that's the user's call.
 
 ## Atlas File Format
 
@@ -153,19 +145,17 @@ At the start of every session:
 3. If atlas is stale or missing, run the full orientation process
 4. Always update `MEMORY.md` with the current date after working on a project
 
-## OpenViking Protocol
+## graphify Protocol
 
-OpenViking provides semantic search over ingested project content — use it alongside file-based tools:
+graphify is optional per project — only act on it if `graphify-out/graph.json` exists. Use it alongside file-based tools:
 
-- **On fresh orientation (Phase 5)**: Ingest the atlas file and the project's `docs/` folder — not the raw project root (which would index too much raw code):
+- **On fresh orientation (Phase 5)**: If a graph already exists, trigger an incremental rebuild so it picks up the new atlas and `docs/` content:
   ```
-  mcp__openviking__add_resource — resource: "~/.claude/agent-memory/codebase-navigator/<project-name>.md"
-                                — path: viking://<project-name>/atlas
-  mcp__openviking__add_resource — resource: "<project-root>/docs/"
-                                — path: viking://<project-name>/docs
+  /graphify --update
   ```
-- **On return visits**: Call `list_namespaces` first. If the project namespace exists, call `query("project architecture and conventions", namespace="viking://<project-name>/")` before re-reading files — it may answer the question instantly from indexed docs, ADRs, and patterns.
-- **When answering questions**: For conceptual questions ("why is X designed this way", "what are the conventions for Y"), prefer `query` over grep — it understands intent, not just keywords.
+  Never bootstrap a graph from scratch (`/graphify` with no flags) — that's an expensive, user-directed operation, not something this agent initiates.
+- **On return visits**: Check whether `graphify-out/graph.json` exists. If it does, run `graphify query "project architecture and conventions"` before re-reading files — it may answer the question instantly from indexed docs, ADRs, and patterns.
+- **When answering questions**: For conceptual questions ("why is X designed this way", "what are the conventions for Y"), prefer `graphify query` over grep — it understands intent, not just keywords. Use `graphify path "<A>" "<B>"` to relate two named concepts, and `graphify explain "<Concept>"` to define one.
 
 ## Chaining
 

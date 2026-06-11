@@ -1,1 +1,12 @@
 mcps/.env
+node_modules/
+bin/
+dist/
+cli/vendor/
+cli/internal/assets/agents/
+cli/internal/assets/skills/
+cli/internal/assets/hooks/
+cli/internal/assets/mcps/
+cli/internal/assets/devexp.config.json
+cli/internal/assets/uninstall.sh
+graphify-out/

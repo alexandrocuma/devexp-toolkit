@@ -46,11 +46,8 @@ Before implementing anything, check if `codebase-navigator` has already mapped t
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you naming conventions, error handling patterns, and layer structure needed to implement fixes consistently
-5. Query OpenViking for project conventions to ensure fixes match established patterns:
-   `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
-   If yes: `mcp__openviking__query` — question: `"What are the conventions, patterns, and ADRs for this project?"` — namespace: `"viking://<project-name>/"`
-   Use results (score > 0.5) to avoid implementing reviewer suggestions in ways that violate project standards.
-   If OpenViking is unavailable, continue — the atlas is sufficient.
+5. Check for an existing knowledge graph: if `graphify-out/graph.json` exists, run `graphify query "What are the conventions, patterns, and ADRs for this project?"` and use the results to avoid implementing reviewer suggestions in ways that violate project standards.
+   If there's no graph or graphify is unavailable, continue — the atlas is sufficient.
 6. Skip redundant discovery steps that the atlas already covers
 
 ### Phase 1: Detect Platform and Fetch PR/MR Comments

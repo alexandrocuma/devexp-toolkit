@@ -32,7 +32,7 @@
           "description": "Skill names (directory name under skills/) to skip during installation.",
           "type": "array",
           "items": { "type": "string" },
-          "examples": [["gen-claude-md", "release"]],
+          "examples": [["gen-indexer", "release"]],
           "default": []
         }
       }

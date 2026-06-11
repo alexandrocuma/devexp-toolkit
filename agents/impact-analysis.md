@@ -49,9 +49,8 @@ Produce a complete blast radius report for a proposed change. Not just "who impo
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to check for an existing atlas
 4. If an atlas exists, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — use it to understand module boundaries, layer conventions, and known coupling patterns
-5. Query OpenViking for previous impact analyses on this project:
-   `mcp__openviking__search` — query: `"impact analysis <target>"` — path: `viking://<project-name>/`
-   If prior analyses exist, read them — they may have already mapped part of this dependency graph. If OpenViking is unavailable, continue.
+5. Check `~/.claude/agent-memory/impact-analysis/` for prior analyses on this project — if any exist, read them, they may have already mapped part of this dependency graph.
+   If `graphify-out/graph.json` exists, `graphify path "<target>" "<suspected-affected-area>"` can also help trace dependency relationships directly. If neither exists, continue.
 
 ### Phase 1: Define the Target
 
@@ -233,12 +232,13 @@ One sentence stating the overall risk and the single most important thing to do 
 
 ## Ingestion
 
-After producing the report, save it to OpenViking:
+After producing the report, write it to `~/.claude/agent-memory/impact-analysis/<target-slug>.md` (e.g. `getUserById-signature-2026-03.md`) so future analyses can build on it.
+
+If `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild:
 ```
-mcp__openviking__add_resource — resource: "<report content or file path>"
-                              — path: viking://<project-name>/impact-analysis/<target-slug>
+/graphify --update
 ```
-Use a slug like `getUserById-signature-2026-03`. If OpenViking is unavailable, skip silently.
+If there's no graph, or graphify is unavailable, skip silently.
 
 ## Chaining
 

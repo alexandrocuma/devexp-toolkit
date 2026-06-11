@@ -48,7 +48,7 @@ Before reviewing, check if `codebase-navigator` has already mapped this project:
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md`
-5. Check OpenViking: `mcp__openviking__list_namespaces` — if `<project-name>` namespace exists, call `mcp__openviking__query` — question: `"What are the contribution guidelines, review standards, ADRs, and conventions for this project?"` — namespace: `"viking://<project-name>/"` — to surface any documented standards, patterns, or decisions relevant to the PR being reviewed
+5. Check for an existing knowledge graph: if `graphify-out/graph.json` exists, run `graphify query "What are the contribution guidelines, review standards, ADRs, and conventions for this project?"` to surface any documented standards, patterns, or decisions relevant to the PR being reviewed
 6. Skip redundant discovery steps that the atlas already covers
 
 ### Step 1: Detect Platform and Get the Diff

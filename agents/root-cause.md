@@ -27,10 +27,8 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you stack, architecture, layer map, entry points, and conventions instantly, saving investigation time
-5. Query OpenViking for prior incidents or known failure patterns for this project:
-   `mcp__openviking__search` — query: `"<symptom> root cause failure"` — path: `viking://<project-name>/`
-   If prior root cause reports exist, read them before Phase 1 — they may narrow hypotheses immediately.
-   If OpenViking is unavailable, continue with the atlas and source files.
+5. Check `~/.claude/agent-memory/root-cause/` for prior incident reports on this project — read any that exist before Phase 1, they may narrow hypotheses immediately.
+   If `graphify-out/graph.json` exists, `graphify query "<symptom> root cause failure"` may also surface related context. If neither exists, continue with the atlas and source files.
 
 ### Phase 1: Symptom Documentation
 Before investigating, document the symptom precisely:
@@ -120,12 +118,13 @@ Symptom → Why 1 → Why 2 → Why 3 → Why 4 → **Root Cause**
 
 ## Ingestion
 
-After producing the Phase 7 report, ingest it into OpenViking so future analyses can benefit from it:
+After producing the Phase 7 report, write it to `~/.claude/agent-memory/root-cause/<incident-slug>.md` (e.g. `payment-unicode-crash-2026-03.md`) so future analyses can benefit from it.
+
+If `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild:
 ```
-mcp__openviking__add_resource — resource: "<report content or file path>"
-                              — path: viking://<project-name>/root-cause/<incident-slug>
+/graphify --update
 ```
-Use a slug derived from the incident: e.g., `payment-unicode-crash-2026-03`. If OpenViking is unavailable, skip silently.
+If there's no graph, or graphify is unavailable, skip silently.
 
 ## Chaining
 

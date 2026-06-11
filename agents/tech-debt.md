@@ -60,9 +60,8 @@ Produce a complete, prioritized Tech Debt Register for the codebase. Each item h
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to check for the codebase atlas
 4. If an atlas exists, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — use it to understand which modules are critical path vs peripheral
-5. Query OpenViking for any prior debt analyses or incident reports:
-   `mcp__openviking__search` — query: `"tech debt architecture issues"` — path: `viking://<project-name>/`
-   Prior root cause reports and arch-review findings are particularly valuable inputs. If OpenViking is unavailable, continue.
+5. Check `~/.claude/agent-memory/tech-debt/` for prior debt registers on this project, and `~/.claude/agent-memory/{root-cause,arch-review}/` for related findings — read any that exist before Phase 1; they're particularly valuable inputs.
+   If `graphify-out/graph.json` exists, `graphify query "tech debt architecture issues"` may also surface related context.
 
 ### Phase 1: Code Debt Discovery
 
@@ -306,12 +305,13 @@ Given the above, the highest-ROI order to tackle this debt is:
 
 ## Ingestion
 
-After producing the register, save it to OpenViking:
+After producing the register, write it to `~/.claude/agent-memory/tech-debt/<date-slug>.md` (e.g. `debt-register-2026-03.md`) so future runs can build on it.
+
+If `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild:
 ```
-mcp__openviking__add_resource — resource: "<register content or file path>"
-                              — path: viking://<project-name>/tech-debt/<date-slug>
+/graphify --update
 ```
-Use a slug like `debt-register-2026-03`. If OpenViking is unavailable, skip silently.
+If there's no graph, or graphify is unavailable, skip silently.
 
 ## Chaining
 

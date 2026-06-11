@@ -27,11 +27,8 @@ Before reviewing, check if `codebase-navigator` has already mapped this project:
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — the stack, conventions, canonical example, and error handling patterns are essential context for a calibrated review
-5. Query OpenViking for project-specific conventions and known patterns:
-   `mcp__openviking__list_namespaces` — check if `<project-name>` namespace exists
-   If yes: `mcp__openviking__query` — question: `"What are the error handling, naming, and architecture conventions for this project?"` — namespace: `"viking://<project-name>/"`
-   Use results (score > 0.5) to calibrate your review — don't flag intentional project patterns as anti-patterns.
-   If OpenViking is unavailable, continue — the atlas is sufficient.
+5. Check for an existing knowledge graph: if `graphify-out/graph.json` exists, run `graphify query "What are the error handling, naming, and architecture conventions for this project?"` and use the results to calibrate your review — don't flag intentional project patterns as anti-patterns.
+   If there's no graph or graphify is unavailable, continue — the atlas is sufficient.
 
 ### 1. Language & Idiom Assessment
 - Verify idiomatic usage for the specific language and version

@@ -1,0 +1,45 @@
+version: 2
+
+project_name: devexp-toolkit
+
+before:
+  hooks:
+    - ./scripts/stage-assets.sh
+
+builds:
+  - id: devexp
+    dir: ./cli
+    main: .
+    binary: devexp
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X devexp/cmd.version={{ .Version }}
+
+archives:
+  - id: devexp
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: alexandrocuma
+    name: devexp-toolkit
