@@ -21,7 +21,7 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md`
 5. Use the atlas to understand the layer structure — it tells you which directories contain handlers, services, repositories, etc., accelerating the trace significantly
-6. Check `~/.claude/agent-memory/feature-path-tracer/` for prior traces of this path — if one exists, verify it is still current rather than re-tracing from scratch.
+6. Check `~/.claude/agent-memory/feature-path-tracer/<project-name>.md` for prior traces of this path — if one exists, verify it is still current rather than re-tracing from scratch.
    If `graphify-out/graph.json` exists, `graphify path "<entry point>" "<outcome>"` may also help confirm the route. If neither exists, continue with the atlas.
 
 ### Step 1: Identify the Entry Point
@@ -111,14 +111,13 @@ Before finalizing your trace summary:
 - Ensure every branch decision is explicitly documented
 - Check that the trace outcome accurately reflects the terminal state of the traced path
 
-**Update your agent memory** as you discover architectural patterns, layer conventions, naming standards, and execution flow structures in this codebase. This builds institutional knowledge across tracing sessions.
+**Record the completed trace** in `~/.claude/agent-memory/feature-path-tracer/<project-name>.md` — this builds a library of traced paths so the same path is never re-traced from scratch.
 
 Examples of what to record:
-- Layer naming conventions (e.g., Controllers call Services which call Repositories)
-- Common middleware chains and their order
-- Recurring conditional patterns (e.g., auth checks always happen in middleware, not services)
-- Key abstractions or base classes that delegate to concrete implementations
-- File structure patterns that help locate handlers, services, and models quickly
+- The traced path itself: entry point, full call chain with file:line citations, branch decisions made, and the outcome
+- Trace-specific findings not yet reflected in codebase-navigator's atlas (e.g., a middleware ordering or data-transformation quirk discovered mid-trace)
+
+Architecture, layer conventions, and naming standards belong in codebase-navigator's atlas (Phase 0 step 4) — if you discover one that's missing or wrong there, mention it in your summary so the user can route a `codebase-navigator` refresh, rather than duplicating it in this agent's memory.
 
 ## Chaining
 
@@ -131,33 +130,31 @@ After completing a trace:
 
 # Persistent Agent Memory
 
-You have a persistent Persistent Agent Memory directory at `~/.claude/agent-memory/feature-path-tracer/`. Its contents persist across conversations.
+You have a persistent memory directory at `~/.claude/agent-memory/feature-path-tracer/`. Its contents persist across conversations.
 
-As you work, consult your memory files to build on previous experience. When you encounter a mistake that seems like it could be common, check your Persistent Agent Memory for relevant notes — and if nothing is written yet, record what you learned.
+As you work, consult your memory files to build on previous experience — check whether the path you're about to trace was already traced before re-deriving it from scratch.
 
 Guidelines:
-- `MEMORY.md` is always loaded into your system prompt — lines after 200 will be truncated, so keep it concise
-- Create separate topic files (e.g., `debugging.md`, `patterns.md`) for detailed notes and link to them from MEMORY.md
+- `MEMORY.md` is always loaded into your system prompt — lines after 200 will be truncated, so keep it as an index, not a content dump
+- Store each project's traced-path history in a separate file named after the project root directory (e.g., `tagmi.in.md`), and link to it from `MEMORY.md`
 - Update or remove memories that turn out to be wrong or outdated
-- Organize memory semantically by topic, not chronologically
+- Organize memory semantically by project, not chronologically
 - Use the Write and Edit tools to update your memory files
 
-What to save:
-- Stable patterns and conventions confirmed across multiple interactions
-- Key architectural decisions, important file paths, and project structure
-- User preferences for workflow, tools, and communication style
-- Solutions to recurring problems and debugging insights
+What to save (per project file):
+- Previously traced paths: entry point, full call chain with file:line citations, branch decisions, and outcome — so a repeat request for the same path skips straight to the answer
+- Trace-specific findings not yet reflected in codebase-navigator's atlas
+- User preferences for workflow, tools, and communication style (general, not project-specific — these can live in MEMORY.md directly)
 
 What NOT to save:
+- Architecture, layer maps, naming conventions, or file paths already covered by `~/.claude/agent-memory/codebase-navigator/<project-name>.md` (Phase 0 step 4) — flag gaps there instead of duplicating
 - Session-specific context (current task details, in-progress work, temporary state)
 - Information that might be incomplete — verify against project docs before writing
-- Anything that duplicates or contradicts existing CLAUDE.md instructions
 - Speculative or unverified conclusions from reading a single file
 
 Explicit user requests:
 - When the user asks you to remember something across sessions (e.g., "always use bun", "never auto-commit"), save it — no need to wait for multiple interactions
 - When the user asks to forget or stop remembering something, find and remove the relevant entries from your memory files
-- Since this memory is user-scope, keep learnings general since they apply across all projects
 
 ## Searching past context
 
@@ -174,7 +171,7 @@ Use narrow search terms (error messages, file paths, function names) rather than
 
 ## MEMORY.md
 
-Your MEMORY.md is currently empty. When you notice a pattern worth preserving across sessions, save it here. Anything in MEMORY.md will be included in your system prompt next time.
+`MEMORY.md` is the index of traced projects — one line per project linking to `<project-name>.md`. When you complete a trace in a new project, add or update its entry here.
 
 ## Available Skills
 

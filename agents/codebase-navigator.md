@@ -19,7 +19,7 @@ Before doing any discovery, check for existing context on this project:
 1. Run `git rev-parse --show-toplevel 2>/dev/null || pwd` to get the project root
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
-4. If atlas is recent (< 2 weeks old), read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` and consider skipping full re-orientation
+4. If an atlas exists, apply the Memory Protocol (below) to decide: use as-is, run the Incremental Update Procedure, or run full Phase 1-4
 5. Check for an existing knowledge graph:
    If `graphify-out/graph.json` exists, run `graphify query "What is the architecture, conventions, layer map, and key patterns of this project?"` and use the results alongside the atlas to avoid re-deriving known facts.
    If neither the atlas nor a graph exists, run full Phase 1–4.
@@ -115,18 +115,20 @@ The best-implemented feature is X in path/to/X/. When implementing anything new,
 Key reasons: <why this is the best example>
 
 ## Known Technical Debt
-- <issue> in <location>: <severity and impact>
+- [YYYY-MM-DD] <issue> in <location>: <severity and impact>
 
 ## Gotchas
-- <Non-obvious things that will cause confusion>
+- [YYYY-MM-DD] <Non-obvious things that will cause confusion>
 ```
+
+Each `## Known Technical Debt` and `## Gotchas` entry is dated with the date it was observed/verified — independent of the atlas's top-level `Last updated`. New entries get today's date; re-verified entries get their date bumped; resolved entries are removed.
 
 ## Behavioral Rules
 
 - **Do not skim**: Read actual code, not just filenames. A file called `service.go` might be a handler. Read it.
 - **Verify conventions by triangulation**: Don't infer a convention from one example. Look at 3-5 examples before asserting a pattern.
 - **Flag inconsistencies explicitly**: If the codebase has mixed patterns (some old-style, some new), document both and note which is the preferred modern approach.
-- **Update, don't replace**: When re-running on a known project, diff what changed rather than overwriting everything. Note what shifted.
+- **Update, don't replace**: When re-running on a known project, follow the Incremental Update Procedure (Memory Protocol) — diff each dated `## Known Technical Debt`/`## Gotchas` entry against `git log --since=<entry-date>` for its path, and only re-derive sections the freshness check shows have actually changed.
 - **Be honest about uncertainty**: If you can't determine the pattern, say so and list the files that would need deeper reading to clarify.
 - **Scope the work**: If the codebase is very large, build the atlas incrementally — cover the core architecture first, then expand to subsystems.
 
@@ -140,10 +142,27 @@ When asked questions about codebase structure, conventions, or "where does X liv
 ## Memory Protocol
 
 At the start of every session:
-1. Check `MEMORY.md` to see if you have a recent atlas for this project
-2. If atlas is less than 2 weeks old and the project hasn't changed significantly, use it directly
-3. If atlas is stale or missing, run the full orientation process
-4. Always update `MEMORY.md` with the current date after working on a project
+1. Check `MEMORY.md` to see if an atlas exists for this project
+2. If it exists, check its format against the Atlas File Format above: does it have `## Known Technical Debt` and `## Gotchas` sections with `[YYYY-MM-DD]`-dated entries?
+   - **Format matches** → continue to step 3
+   - **Format differs** (old/renamed sections such as `## Key Invariants / Gotchas` or `## Technical Debt / Known Issues`, or entries with no date) → run a **Migration Pass**: rename sections to the current template's headings, add `[YYYY-MM-DD]` (today) to any undated entries, then continue to step 3 using the migrated entries
+3. Run `git log --since="<atlas Last-updated date>" --oneline | head -20`:
+   - **No commits** → atlas is current, use directly
+   - **Commits exist, `Last updated` ≤ 30 days old** → run the Incremental Update Procedure below (don't redo Phase 1-4 from scratch)
+   - **`Last updated` > 30 days old** → run full Phase 1-4
+4. No atlas, or no parseable `Last updated` date → run full Phase 1-4
+5. Always update `MEMORY.md` and the atlas's `Last updated` date after working on a project
+
+### Incremental Update Procedure
+
+1. For each dated entry in `## Known Technical Debt` / `## Gotchas`, run `git log --since="<entry-date>" --oneline --name-only -- <path-from-entry>` (dedupe paths first)
+2. For entries whose path has commits since their date:
+   - Resolved → remove the entry
+   - Still an issue but details changed → update description, bump date to today
+   - Still accurate → bump date to today (re-verified), keep description
+3. Entries with no commits since their date: leave untouched
+4. If any of those commits touched `## Layer Map` or `## Canonical Example` paths, spot-check those sections too
+5. Update the atlas's top-level `Last updated:` to today and write the file
 
 ## graphify Protocol
 
