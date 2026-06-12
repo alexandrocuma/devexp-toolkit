@@ -50,7 +50,7 @@ ls ~/.claude/agent-memory/codebase-navigator/MEMORY.md 2>/dev/null && echo "atla
 ```
 
 Then judge **staleness**, not just existence:
-- Derive the project name from the repo root directory name; check `~/.claude/agent-memory/codebase-navigator/<project-name>.md` for an atlas and note its last-updated date
+- Derive the project name from the repo root directory name; check `~/.claude/agent-memory/codebase-navigator/<project-name>.md` for an atlas. Run `git log --since="<atlas Last-updated date>" --oneline | head -5` against the project root — if this returns commits and the atlas is >30 days old, route the atlas row as "stale" → `codebase-navigator` (rebuild); otherwise "found, current" → skip.
 - Compare `CLAUDE.md` / `docs/README.md` last-commit dates against recent code activity (`git log -5 --format="%ai" -- <a likely-active source dir>`) — if substantial code has changed since the doc's last touch, treat it as **stale**, not current
 - A missing `[NOT FOUND]` marker that's now answerable, or a canonical example that's moved, are also staleness signals — but you don't need to do that deep a check here; `gen-indexer`/`update-indexer` and `gen-docs`/`update-docs` do their own thorough drift detection. Your job is just to route correctly, not to pre-diagnose.
 

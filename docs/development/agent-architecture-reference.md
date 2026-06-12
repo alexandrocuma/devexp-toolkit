@@ -17,6 +17,7 @@ Every agent that operates on a codebase must begin with **Phase 0: Orient** befo
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — use stack, layer map, canonical example, and conventions; skip re-deriving what's already there
+4a. **If your task consults `## Known Technical Debt` or `## Gotchas`**: extract the date(s) and file path(s) from the entries you're relying on, then run `git log --since="<entry-date>" --oneline -- <path-from-entry> 2>/dev/null`. If this returns commits, treat that specific entry as unverified — read the current file instead of restating the claim. **If an entry has no `[YYYY-MM-DD]` date at all (pre-migration format), treat it as unverified by default regardless of commit history** — read the current file. If the atlas's top-level `Last updated` date is >30 days old, also note that a `codebase-navigator` refresh may be worthwhile.
 5. Check for an existing knowledge graph:
    Check whether `graphify-out/graph.json` exists in the project root.
    If yes: run `graphify query "<domain-specific question for this agent>"` and use the results to surface conventions, ADRs, and known issues relevant to the agent's task.
@@ -194,6 +195,9 @@ Agents with `memory: user` in frontmatter have a persistent memory directory at 
 - Save stable, cross-session facts — not session-specific context
 - Always update when the user explicitly asks you to remember or forget something
 - graphify is a complement to memory, not a replacement — memory is agent-private, the knowledge graph (when one exists) is shared and per-project
+- **Dated atlas entries are advisory, not absolute**: `## Known Technical Debt` and `## Gotchas` entries carry a `[YYYY-MM-DD]` observation date. Before repeating one of these claims in your own output, do the Phase 0 step 4a freshness check — don't propagate a claim that may already be resolved.
+- **Don't duplicate the atlas**: if Phase 0 already reads `~/.claude/agent-memory/codebase-navigator/<project>.md`, your memory should hold only what that atlas doesn't — your agent's own domain-specific findings (e.g., prior trace results, prior audit findings, prior groomed tickets), not architecture, layer maps, conventions, or file paths the atlas already covers.
+- **Self-heal format drift**: if your memory files (atlas, `MEMORY.md`, or topic files) use section names or structures from a previous version of this convention, migrate them to the current structure as part of your normal write-back for that session — don't perpetuate an outdated format indefinitely. codebase-navigator's Memory Protocol Migration Pass is the concrete implementation of this for atlases.
 
 ---
 
@@ -207,5 +211,6 @@ Before submitting a new agent file, verify:
 - [ ] context7 usage documented where the agent writes code or reviews library usage
 - [ ] `## Chaining` section present at end of body
 - [ ] `/graphify --update` write-back included if the agent produces knowledge artifacts
+- [ ] If Phase 0 reads `## Known Technical Debt`/`## Gotchas` from the atlas, step 4a's freshness check is applied before repeating any claim
 - [ ] All tools in `tools:` frontmatter are actually used in the body
 - [ ] Installed via `./install.sh` after changes

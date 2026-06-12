@@ -82,6 +82,7 @@ Before doing any discovery work:
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you stack, entry points, conventions, and the canonical example instantly
+4a. **If your task consults `## Known Technical Debt` or `## Gotchas`**: extract the date(s) and file path(s) from the entries you're relying on, then run `git log --since="<entry-date>" --oneline -- <path-from-entry> 2>/dev/null`. If this returns commits, treat that specific entry as unverified — read the current file instead of restating the claim. **If an entry has no `[YYYY-MM-DD]` date at all (pre-migration format), treat it as unverified by default regardless of commit history** — read the current file. If the atlas's top-level `Last updated` date is >30 days old, also note that a `codebase-navigator` refresh may be worthwhile.
 5. Skip any discovery steps that the atlas already covers
 6. Check for an existing knowledge graph: if `graphify-out/graph.json` exists in the project root, run `graphify query "<describe what this agent needs>"` to supplement the atlas with code/doc relationships. If no graph exists, continue — the atlas is sufficient; building one is the user's call (`/graphify`), not the agent's.
 
@@ -125,6 +126,27 @@ Structure your output as follows:
 
 ### [Section 3 Name]
 [What goes here]
+
+## Persistent Agent Memory
+
+<!-- Only include this section if `memory: user` is set in frontmatter. Delete this section otherwise. -->
+
+You have a persistent memory directory at `~/.claude/agent-memory/<name>/`. Its contents persist across conversations.
+
+Guidelines:
+- `MEMORY.md` is always loaded into your system prompt — keep it under 200 lines; it's an index, not a content dump
+- Store per-project detail in `<project-name>.md`, named after the project root directory, and link to it from `MEMORY.md`
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`, read in Phase 0) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- Organize memory semantically by project, not chronologically
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+- Update or remove memories that turn out to be wrong or outdated
+
+What to save:
+- [Domain-specific findings that took investigation to discover and would be expensive to re-derive — e.g., prior trace results, prior findings]
+
+What NOT to save:
+- Session-specific context (current task details, in-progress work)
+- Anything `~/.claude/agent-memory/codebase-navigator/<project-name>.md` already covers
 
 ---
 
