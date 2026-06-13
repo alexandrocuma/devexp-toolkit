@@ -14,6 +14,7 @@ import (
 	"devexp/internal/agents"
 	"devexp/internal/config"
 	"devexp/internal/hooks"
+	"devexp/internal/manifest"
 	"devexp/internal/mcp"
 	"devexp/internal/repo"
 	"devexp/internal/skills"
@@ -364,11 +365,15 @@ func doInstallClaude(opts *installOpts) error {
 		}
 	}
 
+	manifestPath := filepath.Join(home, ".claude", ".devexp-manifest.json")
+	old, _ := manifest.Load(manifestPath)
+	newManifest := &manifest.Manifest{Agents: old.Agents, Skills: old.Skills}
+
 	if !opts.skillsOnly {
 		backupExisting(agentsTarget, "*.md", backupDir, opts.dryRun)
 		ui.Info("Installing agents...")
 		disabled := resolveAgentDisabled(opts.repoDir, opts.selectedAgents, opts.cfg.DisabledAgents)
-		count, err := agents.InstallClaude(
+		installedAgents, err := agents.InstallClaude(
 			filepath.Join(opts.repoDir, "agents"),
 			agentsTarget,
 			opts.cfg.Model,
@@ -378,13 +383,17 @@ func doInstallClaude(opts *installOpts) error {
 		if err != nil {
 			return err
 		}
-		ui.Success(fmt.Sprintf("Installed %d agent(s).", count))
+		ui.Success(fmt.Sprintf("Installed %d agent(s).", len(installedAgents)))
 		fmt.Println()
+
+		newManifest.Agents = installedAgents
+		removeStale(agentsTarget, manifest.Stale(old.Agents, installedAgents), os.Remove, opts.dryRun)
 	}
 
 	if !opts.agentsOnly {
+		backupExistingDirs(skillsTarget, backupDir, opts.dryRun)
 		ui.Info("Installing skills...")
-		count, err := skills.InstallClaude(
+		installedSkills, err := skills.InstallClaude(
 			filepath.Join(opts.repoDir, "skills"),
 			skillsTarget,
 			opts.cfg.DisabledSkills,
@@ -393,8 +402,11 @@ func doInstallClaude(opts *installOpts) error {
 		if err != nil {
 			return err
 		}
-		ui.Success(fmt.Sprintf("Installed %d skill(s).", count))
+		ui.Success(fmt.Sprintf("Installed %d skill(s).", len(installedSkills)))
 		fmt.Println()
+
+		newManifest.Skills = installedSkills
+		removeStale(skillsTarget, manifest.Stale(old.Skills, installedSkills), os.RemoveAll, opts.dryRun)
 	}
 
 	if !opts.agentsOnly && !opts.skillsOnly {
@@ -408,6 +420,12 @@ func doInstallClaude(opts *installOpts) error {
 				return err
 			}
 			fmt.Println()
+		}
+	}
+
+	if !opts.dryRun {
+		if err := manifest.Save(manifestPath, newManifest); err != nil {
+			ui.Warn(fmt.Sprintf("save manifest: %v", err))
 		}
 	}
 
@@ -445,10 +463,14 @@ func doInstallOpencode(opts *installOpts) error {
 		}
 	}
 
+	manifestPath := filepath.Join(home, ".config", "opencode", ".devexp-manifest.json")
+	old, _ := manifest.Load(manifestPath)
+	newManifest := &manifest.Manifest{Agents: old.Agents, Skills: old.Skills}
+
 	if !opts.skillsOnly {
 		ui.Info("Installing agents (transformed for opencode)...")
 		disabled := resolveAgentDisabled(opts.repoDir, opts.selectedAgents, opts.cfg.DisabledAgents)
-		count, err := agents.InstallOpencode(
+		installedAgents, err := agents.InstallOpencode(
 			filepath.Join(opts.repoDir, "agents"),
 			agentsTarget,
 			opts.cfg.Model,
@@ -458,7 +480,7 @@ func doInstallOpencode(opts *installOpts) error {
 		if err != nil {
 			return err
 		}
-		excl, err := agents.InstallOpencodeExclusive(
+		installedExclusive, err := agents.InstallOpencodeExclusive(
 			filepath.Join(opts.repoDir, "agents", "opencode"),
 			agentsTarget,
 			opts.cfg.Model,
@@ -467,13 +489,17 @@ func doInstallOpencode(opts *installOpts) error {
 		if err != nil {
 			return err
 		}
-		ui.Success(fmt.Sprintf("Installed %d agent(s).", count+excl))
+		allInstalledAgents := append(installedAgents, installedExclusive...)
+		ui.Success(fmt.Sprintf("Installed %d agent(s).", len(allInstalledAgents)))
 		fmt.Println()
+
+		newManifest.Agents = allInstalledAgents
+		removeStale(agentsTarget, manifest.Stale(old.Agents, allInstalledAgents), os.Remove, opts.dryRun)
 	}
 
 	if !opts.agentsOnly {
 		ui.Info("Installing skills (to ~/.config/opencode/commands)...")
-		count, err := skills.InstallOpencode(
+		installedSkills, err := skills.InstallOpencode(
 			filepath.Join(opts.repoDir, "skills"),
 			skillsTarget,
 			opts.cfg.DisabledSkills,
@@ -482,8 +508,22 @@ func doInstallOpencode(opts *installOpts) error {
 		if err != nil {
 			return err
 		}
-		ui.Success(fmt.Sprintf("Installed %d skill(s).", count))
+		ui.Success(fmt.Sprintf("Installed %d skill(s).", len(installedSkills)))
 		fmt.Println()
+
+		newManifest.Skills = installedSkills
+		staleSkills := manifest.Stale(old.Skills, installedSkills)
+		staleSkillFiles := make([]string, len(staleSkills))
+		for i, s := range staleSkills {
+			staleSkillFiles[i] = s + ".md"
+		}
+		removeStale(skillsTarget, staleSkillFiles, os.Remove, opts.dryRun)
+	}
+
+	if !opts.dryRun {
+		if err := manifest.Save(manifestPath, newManifest); err != nil {
+			ui.Warn(fmt.Sprintf("save manifest: %v", err))
+		}
 	}
 
 	ui.Success("opencode installation complete.")
@@ -674,5 +714,49 @@ func backupExisting(dir, pattern, backupDir string, dryRun bool) {
 			continue
 		}
 		os.WriteFile(filepath.Join(backupDir, filepath.Base(src)), data, 0644) //nolint:errcheck
+	}
+}
+
+// backupExistingDirs copies pre-existing skill directories (immediate
+// subdirectories of dir containing a SKILL.md) into backupDir/<name>/.
+func backupExistingDirs(dir, backupDir string, dryRun bool) {
+	if dryRun {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		srcDir := filepath.Join(dir, name)
+		if _, err := os.Stat(filepath.Join(srcDir, "SKILL.md")); err != nil {
+			continue
+		}
+		if err := os.MkdirAll(backupDir, 0755); err != nil {
+			return
+		}
+		skills.CopyDir(srcDir, filepath.Join(backupDir, name)) //nolint:errcheck
+	}
+}
+
+// removeStale removes each entry in stale from dir via removeFn (file or
+// dir), reporting via ui. In dry-run mode it only reports what would be
+// removed.
+func removeStale(dir string, stale []string, removeFn func(path string) error, dryRun bool) {
+	for _, name := range stale {
+		path := filepath.Join(dir, name)
+		if dryRun {
+			ui.DryRun(fmt.Sprintf("remove %s (no longer in this release)", path))
+			continue
+		}
+		if err := removeFn(path); err != nil && !os.IsNotExist(err) {
+			ui.Warn(fmt.Sprintf("remove %s: %v", path, err))
+			continue
+		}
+		ui.Removed(name)
 	}
 }

@@ -378,6 +378,131 @@ func TestBackupExisting(t *testing.T) {
 	})
 }
 
+func TestBackupExistingDirs(t *testing.T) {
+	t.Run("copies skill dirs containing SKILL.md to backupDir", func(t *testing.T) {
+		dir := t.TempDir()
+		backupDir := filepath.Join(t.TempDir(), "backup")
+
+		alpha := filepath.Join(dir, "alpha")
+		if err := os.MkdirAll(filepath.Join(alpha, "references"), 0755); err != nil {
+			t.Fatalf("MkdirAll() error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(alpha, "SKILL.md"), []byte("alpha skill"), 0644); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(alpha, "references", "notes.md"), []byte("notes"), 0644); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		notASkill := filepath.Join(dir, "not-a-skill")
+		if err := os.MkdirAll(notASkill, 0755); err != nil {
+			t.Fatalf("MkdirAll() error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(notASkill, "notes.txt"), []byte("no SKILL.md here"), 0644); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		backupExistingDirs(dir, backupDir, false)
+
+		got, err := os.ReadFile(filepath.Join(backupDir, "alpha", "SKILL.md"))
+		if err != nil {
+			t.Fatalf("ReadFile(backup alpha/SKILL.md) error = %v", err)
+		}
+		if string(got) != "alpha skill" {
+			t.Errorf("backed up SKILL.md content = %q, want %q", got, "alpha skill")
+		}
+		if _, err := os.Stat(filepath.Join(backupDir, "alpha", "references", "notes.md")); err != nil {
+			t.Errorf("nested reference file not backed up: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(backupDir, "not-a-skill")); !os.IsNotExist(err) {
+			t.Errorf("not-a-skill should not have been backed up, stat err = %v", err)
+		}
+	})
+
+	t.Run("dry run does not create backupDir", func(t *testing.T) {
+		dir := t.TempDir()
+		backupDir := filepath.Join(t.TempDir(), "backup")
+
+		alpha := filepath.Join(dir, "alpha")
+		if err := os.MkdirAll(alpha, 0755); err != nil {
+			t.Fatalf("MkdirAll() error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(alpha, "SKILL.md"), []byte("alpha skill"), 0644); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		backupExistingDirs(dir, backupDir, true)
+
+		if _, err := os.Stat(backupDir); !os.IsNotExist(err) {
+			t.Errorf("backupDir should not exist in dry run, stat err = %v", err)
+		}
+	})
+
+	t.Run("no skill dirs does not create backupDir", func(t *testing.T) {
+		dir := t.TempDir()
+		backupDir := filepath.Join(t.TempDir(), "backup")
+
+		backupExistingDirs(dir, backupDir, false)
+
+		if _, err := os.Stat(backupDir); !os.IsNotExist(err) {
+			t.Errorf("backupDir should not exist when no skill dirs found, stat err = %v", err)
+		}
+	})
+}
+
+func TestRemoveStale(t *testing.T) {
+	t.Run("dry run reports without removing", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "stale.md")
+		if err := os.WriteFile(path, []byte("content"), 0644); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		removeStale(dir, []string{"stale.md"}, os.Remove, true)
+
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("dry run should not remove %s, stat err = %v", path, err)
+		}
+	})
+
+	t.Run("removes entries via removeFn", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "stale.md")
+		if err := os.WriteFile(path, []byte("content"), 0644); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		removeStale(dir, []string{"stale.md"}, os.Remove, false)
+
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("expected %s to be removed, stat err = %v", path, err)
+		}
+	})
+
+	t.Run("removes directories via os.RemoveAll", func(t *testing.T) {
+		dir := t.TempDir()
+		skillDir := filepath.Join(dir, "old-skill")
+		if err := os.MkdirAll(filepath.Join(skillDir, "references"), 0755); err != nil {
+			t.Fatalf("MkdirAll() error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("old"), 0644); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		removeStale(dir, []string{"old-skill"}, os.RemoveAll, false)
+
+		if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
+			t.Errorf("expected %s to be removed, stat err = %v", skillDir, err)
+		}
+	})
+
+	t.Run("tolerates already-missing entries", func(t *testing.T) {
+		dir := t.TempDir()
+
+		removeStale(dir, []string{"already-gone.md"}, os.Remove, false)
+	})
+}
+
 func TestRunRemove(t *testing.T) {
 	t.Run("missing uninstall.sh returns error", func(t *testing.T) {
 		repoDir := t.TempDir()

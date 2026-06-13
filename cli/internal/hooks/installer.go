@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"devexp/internal/ui"
 )
@@ -54,6 +55,8 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 	if hooksRaw, ok := raw["hooks"]; ok {
 		json.Unmarshal(hooksRaw, &hooksMap) //nolint:errcheck
 	}
+
+	pruned := pruneStaleHooks(hooksMap, repoDir, dryRun)
 
 	isDisabled := func(name string) bool {
 		for _, d := range disabled {
@@ -107,7 +110,10 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 		fmt.Printf("  \033[0;32m+\033[0m %s: %s\n", cc.Event, filepath.Base(cc.Script))
 	}
 
-	if !changed || dryRun {
+	if dryRun {
+		return nil
+	}
+	if !changed && !pruned {
 		return nil
 	}
 
@@ -129,4 +135,52 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 	}
 	fmt.Printf("  Saved: %s\n", settingsPath)
 	return nil
+}
+
+// pruneStaleHooks removes registered hook commands that live under repoDir
+// (devexp-managed) but whose backing script no longer exists on disk — i.e.
+// the hook was removed from this version's registry. User-authored hooks
+// pointing elsewhere are left untouched. Returns whether anything was pruned.
+func pruneStaleHooks(hooksMap map[string][]hookEntry, repoDir string, dryRun bool) bool {
+	pruned := false
+	for event, entries := range hooksMap {
+		var kept []hookEntry
+		for _, e := range entries {
+			var keptCmds []hookCmd
+			for _, h := range e.Hooks {
+				if isStaleDevexpHook(h.Command, repoDir) {
+					if dryRun {
+						ui.DryRun(fmt.Sprintf("remove %s hook: %s (script no longer exists)", event, filepath.Base(h.Command)))
+					} else {
+						ui.Removed(fmt.Sprintf("%s: %s (script no longer exists)", event, filepath.Base(h.Command)))
+					}
+					pruned = true
+					continue
+				}
+				keptCmds = append(keptCmds, h)
+			}
+			if len(keptCmds) == 0 {
+				continue
+			}
+			e.Hooks = keptCmds
+			kept = append(kept, e)
+		}
+		if len(kept) == 0 {
+			delete(hooksMap, event)
+		} else {
+			hooksMap[event] = kept
+		}
+	}
+	return pruned
+}
+
+// isStaleDevexpHook reports whether cmd is a devexp-managed command (lives
+// under repoDir) whose script no longer exists on disk.
+func isStaleDevexpHook(cmd, repoDir string) bool {
+	rel, err := filepath.Rel(repoDir, cmd)
+	if err != nil || strings.HasPrefix(rel, "..") || rel == "." {
+		return false
+	}
+	_, statErr := os.Stat(cmd)
+	return os.IsNotExist(statErr)
 }

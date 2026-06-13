@@ -10,13 +10,15 @@ import (
 )
 
 // InstallClaude copies each skill directory (SKILL.md plus any supplementary
-// files, e.g. references/) into ~/.claude/skills/<name>/
-func InstallClaude(srcDir, targetDir string, disabled []string, dryRun bool) (int, error) {
+// files, e.g. references/) into ~/.claude/skills/<name>/. Returns the
+// installed skill dirnames (including in dryRun mode), so callers can diff
+// against a manifest to detect stale skills from prior runs.
+func InstallClaude(srcDir, targetDir string, disabled []string, dryRun bool) ([]string, error) {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	count := 0
+	var installed []string
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -33,20 +35,20 @@ func InstallClaude(srcDir, targetDir string, disabled []string, dryRun bool) (in
 		destDir := filepath.Join(targetDir, name)
 		if dryRun {
 			ui.DryRun(fmt.Sprintf("write %s/", destDir))
-			count++
+			installed = append(installed, name)
 			continue
 		}
-		if err := copyDir(skillDir, destDir); err != nil {
-			return count, err
+		if err := CopyDir(skillDir, destDir); err != nil {
+			return installed, err
 		}
 		ui.Added(fmt.Sprintf("%s/SKILL.md", name))
-		count++
+		installed = append(installed, name)
 	}
-	return count, nil
+	return installed, nil
 }
 
-// copyDir recursively copies all files and subdirectories from src to dst.
-func copyDir(src, dst string) error {
+// CopyDir recursively copies all files and subdirectories from src to dst.
+func CopyDir(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -68,13 +70,16 @@ func copyDir(src, dst string) error {
 }
 
 // InstallOpencode copies skills as <name>.md into ~/.config/opencode/commands/
-// (strips the `name:` frontmatter line, which opencode derives from the filename)
-func InstallOpencode(srcDir, targetDir string, disabled []string, dryRun bool) (int, error) {
+// (strips the `name:` frontmatter line, which opencode derives from the
+// filename). Returns the installed skill dirnames, bare (no .md suffix), for
+// consistency with InstallClaude's manifest entries — callers append .md when
+// removing stale opencode skill files. Includes dryRun mode.
+func InstallOpencode(srcDir, targetDir string, disabled []string, dryRun bool) ([]string, error) {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	count := 0
+	var installed []string
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -91,12 +96,12 @@ func InstallOpencode(srcDir, targetDir string, disabled []string, dryRun bool) (
 		dest := filepath.Join(targetDir, name+".md")
 		if dryRun {
 			ui.DryRun(fmt.Sprintf("write %s", dest))
-			count++
+			installed = append(installed, name)
 			continue
 		}
 		content, err := os.ReadFile(skillFile)
 		if err != nil {
-			return count, err
+			return installed, err
 		}
 		// Strip `name:` line — opencode derives name from filename
 		var lines []string
@@ -106,15 +111,15 @@ func InstallOpencode(srcDir, targetDir string, disabled []string, dryRun bool) (
 			}
 		}
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
-			return count, err
+			return installed, err
 		}
 		if err := os.WriteFile(dest, []byte(strings.Join(lines, "\n")), 0644); err != nil {
-			return count, err
+			return installed, err
 		}
 		ui.Added(fmt.Sprintf("%s.md", name))
-		count++
+		installed = append(installed, name)
 	}
-	return count, nil
+	return installed, nil
 }
 
 func isDisabled(name string, disabled []string) bool {
