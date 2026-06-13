@@ -116,9 +116,17 @@ Symptom → Why 1 → Why 2 → Why 3 → Why 4 → **Root Cause**
 - If you can't determine the root cause from static analysis, say so and explain what runtime data would confirm it
 - Always distinguish between the root cause and contributing factors
 
-## Ingestion
+## Persistent Agent Memory
 
-After producing the Phase 7 report, write it to `~/.claude/agent-memory/root-cause/<incident-slug>.md` (e.g. `payment-unicode-crash-2026-03.md`) so future analyses can benefit from it.
+You have a persistent memory directory at `~/.claude/agent-memory/root-cause/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save: after producing the Phase 7 report, write it to `~/.claude/agent-memory/root-cause/<incident-slug>.md` (e.g. `payment-unicode-crash-2026-03.md`) so future analyses can benefit from it.
+
+Update `MEMORY.md` with one line per incident, linking to its `<incident-slug>.md` file.
 
 If `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild:
 ```

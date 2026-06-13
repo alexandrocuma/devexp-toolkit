@@ -21,6 +21,7 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you stack, architecture, layer map, entry points, and conventions instantly
 5. Skip redundant Phase 1 discovery steps that the atlas already covers
+6. Check `~/.claude/agent-memory/dep-map/` for a prior dependency map of this project — read `MEMORY.md` and the project's entry to see previously identified circular dependencies and layer violations, and whether they were addressed
 
 ### Phase 1: Language & Tooling Detection
 Detect the project's language(s) and dependency format:
@@ -100,6 +101,21 @@ module-c → [] (leaf)
 - Distinguish between internal imports and external package imports
 - For large codebases, focus on module-level mapping first, then drill into specific files if issues arise
 - Always explain *why* a circular dependency or violation is a problem, not just that it exists
+
+## Persistent Agent Memory
+
+You have a persistent memory directory at `~/.claude/agent-memory/dep-map/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save (in `<project-name>.md`):
+- The dependency graph (module → module relationships) from the most recent mapping
+- Known circular dependencies and whether they've been fixed
+- Layer-violation findings, with dates
+
+Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
 
 ## Chaining
 

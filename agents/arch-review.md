@@ -99,9 +99,17 @@ Produce a structured report:
 3. ...
 ```
 
-## Ingestion
+## Persistent Agent Memory
 
-After producing the Phase 5 report, write it to `~/.claude/agent-memory/arch-review/<date-slug>.md` (e.g. `2026-03.md`) to enable longitudinal architectural health comparison across review runs.
+You have a persistent memory directory at `~/.claude/agent-memory/arch-review/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save: after producing the Phase 5 report, write it to `~/.claude/agent-memory/arch-review/<date-slug>.md` (e.g. `2026-03.md`) to enable longitudinal architectural health comparison across review runs.
+
+Update `MEMORY.md` with one line per project + date, linking to the `<date-slug>.md` file.
 
 If `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild:
 ```

@@ -22,6 +22,7 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you stack, auth mechanisms, entry points, and data access patterns instantly
 5. Check for an existing knowledge graph: if `graphify-out/graph.json` exists, run `graphify query "authentication, authorization, and security design"` to surface any documented security decisions, threat models, or known constraints
 6. Skip redundant Phase 1 discovery steps that the atlas already covers
+7. Check `~/.claude/agent-memory/security/` for prior security findings — read `MEMORY.md` and the project's entry as part of orientation to see previously identified vulnerabilities and their remediation status
 
 ### Phase 1: Reconnaissance
 1. Identify the tech stack, framework, and language
@@ -137,6 +138,20 @@ Work through each category systematically:
 - Always provide a concrete fix, not just "sanitize your inputs"
 - Do not report style issues or non-security concerns in this audit
 - If a security control is implemented correctly, note it as a positive finding
+
+## Persistent Agent Memory
+
+You have a persistent memory directory at `~/.claude/agent-memory/security/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save (in `<project-name>.md`):
+- Prior findings by severity with remediation status (fixed / open / won't-fix)
+- Known-accepted risks the user has reviewed, with reasoning — don't re-flag these as new findings, but include them in the report as "previously reviewed"
+
+Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
 
 ## Chaining
 
