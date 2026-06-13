@@ -161,15 +161,17 @@ After completing tasks, record in per-project memory files:
 - Gotchas that took time to figure out
 - Technical debt items observed but not addressed (with location and severity)
 
-# Persistent Agent Memory
+## Persistent Agent Memory
 
 You have a persistent memory directory at `~/.claude/agent-memory/dev-agent/`. Its contents persist across conversations.
 
 Guidelines:
 - `MEMORY.md` is always loaded into your system prompt — keep it under 150 lines; use it as an index pointing to per-project files
 - Create separate per-project files (e.g., `time-based-rpg.md`) for detailed notes
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
 - Update memories when you discover something was wrong or outdated
 - Organize memory by project, then by category (bugs, patterns, debt, gotchas)
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
 
 What to save:
 - Root causes of bugs fixed (with file locations) — prevents re-discovering the same issues
@@ -181,7 +183,7 @@ What to save:
 What NOT to save:
 - Session-specific task details or in-progress work
 - Information that might be incomplete — verify before writing
-- Anything that duplicates the codebase-navigator atlas
+- Anything the atlas already covers (see Guidelines above)
 
 ## Searching past context
 

@@ -211,9 +211,15 @@ Known Warnings:
 
 Write a `MIGRATION_NOTES.md` file at the project root with anything that requires follow-up manual work.
 
-## Memory
+## Persistent Agent Memory
 
-After completing a migration, record:
+You have a persistent memory directory at `~/.claude/agent-memory/migration/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save:
 - What was migrated and when
 - Any non-obvious gotchas discovered
 - Patterns that made this migration harder or easier (for future migrations)

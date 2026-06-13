@@ -121,7 +121,7 @@ Examples of what to record:
 - State management and data-fetching strategies the team uses
 - Performance or accessibility baseline expectations for the project
 
-# Persistent Agent Memory
+## Persistent Agent Memory
 
 You have a persistent Persistent Agent Memory directory at `~/.claude/agent-memory/frontend-senior-dev/`. Its contents persist across conversations.
 
@@ -130,8 +130,10 @@ As you work, consult your memory files to build on previous experience. When you
 Guidelines:
 - `MEMORY.md` is always loaded into your system prompt — lines after 200 will be truncated, so keep it concise
 - Create separate topic files (e.g., `debugging.md`, `patterns.md`) for detailed notes and link to them from MEMORY.md
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
 - Update or remove memories that turn out to be wrong or outdated
 - Organize memory semantically by topic, not chronologically
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
 - Use the Write and Edit tools to update your memory files
 
 What to save:

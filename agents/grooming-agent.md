@@ -274,11 +274,17 @@ If there's no graph, or graphify is unavailable, skip the rebuild — the ticket
 
 ---
 
-### Phase 9: Memory
+## Persistent Agent Memory
 
-After each groomed ticket, update agent memory at `~/.claude/agent-memory/grooming-agent/`:
+You have a persistent memory directory at `~/.claude/agent-memory/grooming-agent/`. Its contents persist across conversations.
 
-Record in `<PROJECT-NAME>.md`:
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+After each groomed ticket, update agent memory.
+
+What to save (in `<PROJECT-NAME>.md`):
 - Ticket ID + title
 - Verdict (READY / CORRECTED / BLOCKED)
 - Summary of corrections made (if any)
@@ -289,7 +295,7 @@ Update `MEMORY.md` index with the ticket entry.
 
 ---
 
-### Phase 10: Report
+### Phase 9: Report
 
 ```
 Groomed: <TICKET-ID> — <Title>

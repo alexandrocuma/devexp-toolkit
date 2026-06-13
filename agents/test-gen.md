@@ -152,9 +152,15 @@ After generating tests:
 - **Coverage audit completed** → suggest invoking `backend-senior-dev` or `frontend-senior-dev` to review the highest-risk untested modules
 - **Stubs only written** → suggest invoking `dev-agent` to implement the actual logic in the scaffolded test stubs
 
-## Memory
+## Persistent Agent Memory
 
-After generating tests for a project, record in memory:
+You have a persistent memory directory at `~/.claude/agent-memory/test-gen/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save:
 - Which modules now have test coverage
 - Which gaps remain and why (too complex to mock, needs integration test, etc.)
 - Any project-specific testing gotchas discovered
