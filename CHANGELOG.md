@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-06-13
+
+### Added
+
+- `devexp install` now performs manifest-based stale-file cleanup: each run records the agent/skill files it installs in `~/.claude/.devexp-manifest.json` (and `~/.config/opencode/.devexp-manifest.json` for opencode), and removes any from a prior run that are no longer shipped in the current version.
+- Skill directories are now backed up to the timestamped backup folder before being overwritten, matching the existing behavior for agents.
+- Stale hook pruning: hook entries whose backing script no longer exists on disk (because the hook was removed from `hooks/registry.json`) are automatically dropped from `settings.json`; user-authored hooks are left untouched.
+- "Updating" section added to `docs/guides/install.md` documenting the update path, what's overwritten vs. preserved, stale-file/hook cleanup, and the one-time pre-manifest baseline caveat.
+
+### Changed
+
+- Disabling an agent or skill in `devexp.config.json` now removes it from disk on the next install (previously it only skipped updates, leaving the old copy in place).
+
+### Fixed
+
+- CI: bumped `actions/checkout` to v6 and `actions/setup-go` to v6 (with `cache-dependency-path: cli/go.sum`) in both workflows, and `goreleaser/goreleaser-action` to v7 — resolves the Node 20 deprecation warning and go.sum cache-restore failure seen on the v0.2.0 release run.
+
 ## [0.2.0] - 2026-06-13
 
 ### Added
