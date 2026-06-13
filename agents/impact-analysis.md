@@ -230,9 +230,17 @@ One sentence stating the overall risk and the single most important thing to do 
 - **Give a concrete checklist** — "What to Test" must be specific file names and commands, not "run the test suite"
 - **Confirm before assuming dead** — if a symbol appears unused, check dynamic references and config before declaring it safe to delete
 
-## Ingestion
+## Persistent Agent Memory
 
-After producing the report, write it to `~/.claude/agent-memory/impact-analysis/<target-slug>.md` (e.g. `getUserById-signature-2026-03.md`) so future analyses can build on it.
+You have a persistent memory directory at `~/.claude/agent-memory/impact-analysis/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save: after producing the report, write it to `~/.claude/agent-memory/impact-analysis/<target-slug>.md` (e.g. `getUserById-signature-2026-03.md`) so future analyses can build on it.
+
+Update `MEMORY.md` with one line per analyzed target/symbol, linking to its `<target-slug>.md` file.
 
 If `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild:
 ```

@@ -230,9 +230,19 @@ Findings that need more investigation before they can be ranked:
 - **Effort estimates are required** — teams need to know if this is a day of work or a quarter of work before they can plan
 - **Flag coverage gaps** — if no agent covered a critical area (e.g., no performance analysis was run), say so explicitly
 
-## Persistence
+## Persistent Agent Memory
 
-After producing the unified report, write it to `~/.claude/agent-memory/synthesis/<date-slug>.md` (e.g. `pre-release-synthesis-2026-03.md`) so future runs of this agent can find it.
+You have a persistent memory directory at `~/.claude/agent-memory/synthesis/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save: after producing the unified report, write it to `~/.claude/agent-memory/synthesis/<date-slug>.md` (e.g. `pre-release-synthesis-2026-03.md`) so future runs of this agent can find it.
+
+What NOT to save: the individual agent reports already written to `~/.claude/agent-memory/{security,arch-review,performance,...}/` — synthesis's memory is the *unified* output only, not a copy of its inputs.
+
+Update `MEMORY.md` with one line per synthesis run/date, linking to the `<date-slug>.md` file.
 
 If `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild so the new report is reflected in the graph:
 ```

@@ -289,9 +289,17 @@ POST /api/orders
 - **Orphaned writes are suspicious** — data written to storage and never read is either dead code or a missing consumer; flag it
 - **ASCII flow diagrams are the primary artifact** — they must be readable without context
 
-## Ingestion
+## Persistent Agent Memory
 
-After producing the map, write it to `~/.claude/agent-memory/data-flow/<scope-slug>.md` (e.g. `orders-domain-2026-03.md` or `full-system-2026-03.md`) so future analyses can extend it.
+You have a persistent memory directory at `~/.claude/agent-memory/data-flow/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save: after producing the map, write it to `~/.claude/agent-memory/data-flow/<scope-slug>.md` (e.g. `orders-domain-2026-03.md` or `full-system-2026-03.md`) so future analyses can extend it.
+
+Update `MEMORY.md` with one line per domain/scope mapped, linking to its `<scope-slug>.md` file.
 
 If `graphify-out/graph.json` exists in the project root, trigger an incremental rebuild:
 ```

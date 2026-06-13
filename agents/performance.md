@@ -23,6 +23,7 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 5. Check for an existing knowledge graph: if `graphify-out/graph.json` exists, run `graphify query "What are known performance bottlenecks, caching strategies, and data access patterns in this project?"` and use the results to focus on areas already flagged and avoid re-investigating solved problems.
    If there's no graph or graphify is unavailable, continue — the atlas is sufficient.
 6. Skip redundant Phase 1 discovery steps that the atlas already covers
+7. Check `~/.claude/agent-memory/performance/` for prior performance analyses of this project — read `MEMORY.md` and the project's entry to see previously identified bottlenecks and whether the recommended fixes were applied
 
 ### Phase 1: Scope Definition
 1. What is slow? (specific endpoint, operation, or whole system?)
@@ -117,6 +118,21 @@ If profiling output, slow query logs, or APM data is available:
 - Distinguish between algorithmic problems (fix the code) and infrastructure problems (add caching/scaling)
 - Don't recommend premature optimization — focus on measured or clearly O(n²)+ issues
 - If profiling data is available, always use it; static analysis alone can miss the real bottleneck
+
+## Persistent Agent Memory
+
+You have a persistent memory directory at `~/.claude/agent-memory/performance/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save (in `<project-name>.md`):
+- Prior findings by severity (Critical/High/Medium) with file:line
+- Whether the "Estimated gain" fix for each finding was applied
+- Hot-path traces already identified, so future runs don't re-trace them
+
+Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
 
 ## Chaining
 
