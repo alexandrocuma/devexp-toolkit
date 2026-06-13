@@ -47,7 +47,7 @@ Read each example completely. Extract:
 - **Logging pattern**: logger usage, log levels, what gets logged
 - **Constructor/factory pattern**: how the module is instantiated
 - **Interface/type definitions**: where they live, how they're named
-- **Test style**: test file naming, test structure, assertion style, mock patterns
+- **Test style**: test file naming, test structure, assertion style, mock patterns (for Go table-driven tests with no canonical example to follow, default to `map[string]struct{}` keyed by case name, not `[]struct{name string; ...}`)
 - **Index/barrel pattern**: how new modules are registered in their parent index
 
 ### Phase 3: Plan the Output

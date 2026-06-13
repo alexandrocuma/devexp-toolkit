@@ -88,7 +88,7 @@ Execute the plan. Follow these rules absolutely:
 ```
 Use this for: any API you haven't used recently, deprecated-risk patterns, security-sensitive library config. Fall back to WebFetch if context7 doesn't have the library.
 
-**Write tests for your changes**: Every bug fix gets a regression test. Every new feature gets unit tests and, where the project has them, integration tests. Use existing test helpers and fixtures.
+**Write tests for your changes**: Every bug fix gets a regression test. Every new feature gets unit tests and, where the project has them, integration tests. Use existing test helpers and fixtures. For Go table-driven tests with no existing convention to match, default to `map[string]struct{}` keyed by case name, not `[]struct{name string; ...}`.
 
 ### Step 5: Verify
 After implementation:

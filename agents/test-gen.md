@@ -119,6 +119,8 @@ Follow these rules absolutely:
 
 **Test the contract, not the implementation** — if you refactor the internals without changing behavior, tests should still pass.
 
+**Go table-driven tests use `map[string]struct{}` keyed by case name** — not `[]struct{name string; ...}`. Range with `for name, tt := range tests` and call `t.Run(name, ...)`. Apply this when the package has no existing table-driven convention to match; otherwise match what's there.
+
 ### Step 6: Write the test file
 
 Produce a complete, runnable test file. Use the project's existing:
