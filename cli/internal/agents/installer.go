@@ -46,13 +46,15 @@ func resolveModel(alias string) string {
 	return alias
 }
 
-// InstallClaude copies agent .md files into targetDir with an optional model override.
-func InstallClaude(srcDir, targetDir, model string, disabled []string, dryRun bool) (int, error) {
+// InstallClaude copies agent .md files into targetDir with an optional model
+// override. Returns the filenames installed (including in dryRun mode), so
+// callers can diff against a manifest to detect stale files from prior runs.
+func InstallClaude(srcDir, targetDir, model string, disabled []string, dryRun bool) ([]string, error) {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	count := 0
+	var installed []string
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			continue
@@ -69,36 +71,38 @@ func InstallClaude(srcDir, targetDir, model string, disabled []string, dryRun bo
 		dest := filepath.Join(targetDir, name)
 		if dryRun {
 			ui.DryRun(fmt.Sprintf("write %s", dest))
-			count++
+			installed = append(installed, name)
 			continue
 		}
 		content, err := os.ReadFile(filepath.Join(srcDir, name))
 		if err != nil {
-			return count, err
+			return installed, err
 		}
 		if model != "" {
 			resolved := resolveModel(model)
 			content = modelRe.ReplaceAll(content, []byte("model: "+resolved))
 		}
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
-			return count, err
+			return installed, err
 		}
 		if err := os.WriteFile(dest, content, 0644); err != nil {
-			return count, err
+			return installed, err
 		}
 		ui.Added(name)
-		count++
+		installed = append(installed, name)
 	}
-	return count, nil
+	return installed, nil
 }
 
-// InstallOpencode transforms agent files for opencode and writes them to targetDir.
-func InstallOpencode(srcDir, targetDir, model string, disabled []string, dryRun bool) (int, error) {
+// InstallOpencode transforms agent files for opencode and writes them to
+// targetDir. Returns the filenames installed (including in dryRun mode), so
+// callers can diff against a manifest to detect stale files from prior runs.
+func InstallOpencode(srcDir, targetDir, model string, disabled []string, dryRun bool) ([]string, error) {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	count := 0
+	var installed []string
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			continue
@@ -114,7 +118,7 @@ func InstallOpencode(srcDir, targetDir, model string, disabled []string, dryRun 
 		}
 		content, err := os.ReadFile(filepath.Join(srcDir, name))
 		if err != nil {
-			return count, err
+			return installed, err
 		}
 		transformed, err := transformForOpencode(string(content), model, false)
 		if err != nil {
@@ -124,31 +128,34 @@ func InstallOpencode(srcDir, targetDir, model string, disabled []string, dryRun 
 		dest := filepath.Join(targetDir, name)
 		if dryRun {
 			ui.DryRun(fmt.Sprintf("transform + write %s", dest))
-			count++
+			installed = append(installed, name)
 			continue
 		}
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
-			return count, err
+			return installed, err
 		}
 		if err := os.WriteFile(dest, []byte(transformed), 0644); err != nil {
-			return count, err
+			return installed, err
 		}
 		ui.Added(name)
-		count++
+		installed = append(installed, name)
 	}
-	return count, nil
+	return installed, nil
 }
 
-// InstallOpencodeExclusive copies opencode-exclusive agents (agents/opencode/) with model-only substitution.
-func InstallOpencodeExclusive(srcDir, targetDir, model string, dryRun bool) (int, error) {
+// InstallOpencodeExclusive copies opencode-exclusive agents
+// (agents/opencode/) with model-only substitution. Returns the filenames
+// installed (including in dryRun mode), so callers can diff against a
+// manifest to detect stale files from prior runs.
+func InstallOpencodeExclusive(srcDir, targetDir, model string, dryRun bool) ([]string, error) {
 	entries, err := os.ReadDir(srcDir)
 	if os.IsNotExist(err) {
-		return 0, nil
+		return nil, nil
 	}
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	count := 0
+	var installed []string
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			continue
@@ -156,7 +163,7 @@ func InstallOpencodeExclusive(srcDir, targetDir, model string, dryRun bool) (int
 		name := entry.Name()
 		content, err := os.ReadFile(filepath.Join(srcDir, name))
 		if err != nil {
-			return count, err
+			return installed, err
 		}
 		transformed, err := transformForOpencode(string(content), model, true)
 		if err != nil {
@@ -166,19 +173,19 @@ func InstallOpencodeExclusive(srcDir, targetDir, model string, dryRun bool) (int
 		dest := filepath.Join(targetDir, name)
 		if dryRun {
 			ui.DryRun(fmt.Sprintf("write %s (opencode-exclusive)", dest))
-			count++
+			installed = append(installed, name)
 			continue
 		}
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
-			return count, err
+			return installed, err
 		}
 		if err := os.WriteFile(dest, []byte(transformed), 0644); err != nil {
-			return count, err
+			return installed, err
 		}
 		ui.Added(fmt.Sprintf("%s (opencode-exclusive)", name))
-		count++
+		installed = append(installed, name)
 	}
-	return count, nil
+	return installed, nil
 }
 
 // transformForOpencode ports transform_agent.py to Go.

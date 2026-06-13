@@ -49,6 +49,45 @@ The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed a
 
 ---
 
+## Updating
+
+Re-running the installer is how you update devexp — there's no separate "upgrade" command.
+
+- **Binary install**: re-run the `remote-install.sh` one-liner from [Quick install](#quick-install-no-clone). It downloads the latest release binary, overwrites `~/.local/bin/devexp`, and runs `devexp install` again.
+- **Clone install**: `git pull && ./install.sh` rebuilds the CLI from the updated source and re-runs `devexp install`.
+
+### What gets overwritten vs. preserved
+
+- **Agents and skills** are overwritten in place with the versions shipped in the new release. Before overwriting, devexp backs up your existing `~/.claude/agents/*.md` and `~/.claude/skills/<name>/` directories (and the opencode equivalents) into a timestamped `~/.claude/.devexp-backup-<timestamp>/` folder.
+- **MCP server registrations** are *not* refreshed automatically — pass `--reinstall-mcps` if an MCP's config (command, args, env) changed in the new release.
+- **Hooks**: new hooks in `hooks/registry.json` are added to `settings.json`; hooks already registered are left as-is.
+
+### Stale-file cleanup
+
+`devexp install` removes files that a previous run installed but that are no longer part of the current version:
+
+- **Agents and skills**: devexp tracks what it installed in `~/.claude/.devexp-manifest.json` (and `~/.config/opencode/.devexp-manifest.json` for opencode). On each run, anything from the previous manifest that isn't part of this run's install set is removed from disk and dropped from the manifest.
+  - **One-time caveat**: if you're upgrading from a devexp version that predates manifests, the first run after upgrading has no prior manifest to diff against — it just records a baseline. Stale-file cleanup takes effect starting with the *second* run after upgrading.
+- **Hooks**: devexp checks every registered hook command that points into the devexp repo/cache directory. If the backing script no longer exists (because the hook was removed from `hooks/registry.json`), the dangling entry is removed from `settings.json`. User-authored hooks pointing elsewhere are never touched.
+
+### Behavior change: disabling now removes
+
+Previously, disabling an agent or skill in `devexp.config.json` only skipped *updating* it — the old copy stayed on disk. Now a disabled agent/skill is excluded from the install set entirely, so it's treated as stale and **removed** on the next run. If you need a copy, recover it from the backup directory described above.
+
+### Previewing an update
+
+```bash
+./install.sh --dry-run   # or: devexp install --dry-run
+```
+
+Shows every add, update, and removal devexp would make — including stale-file and stale-hook cleanup — without touching any files.
+
+### Scoping an update
+
+`--agents-only`, `--skills-only`, and `--mcps-only` limit *both* the install and the stale-file cleanup to that category — e.g. `--agents-only` won't touch your skills manifest or remove stale skills.
+
+---
+
 ## start-services.sh
 
 Use this after a machine restart or when MCP services have stopped. Never wipes data or venvs.
@@ -90,6 +129,8 @@ After running, reconnect your MCP in Claude Code (`/mcp`) or opencode.
 | `CLAUDE.md` / `AGENTS.md` | `~/.claude/CLAUDE.md` | `~/.config/opencode/AGENTS.md` (or project root) |
 | Agent tools | All Claude tools | `read/write/edit/bash/glob/grep/webfetch/websearch` only |
 | `Agent`, `Skill`, `Task*` tools | Supported | No opencode equivalent — dropped at transform |
+
+> **`.devexp-manifest.json`**: devexp writes `~/.claude/.devexp-manifest.json` and `~/.config/opencode/.devexp-manifest.json` to track which agent/skill files it installed, so future updates can detect and remove files no longer shipped by the toolkit (see [Updating](#updating)). These are managed automatically — don't hand-edit them.
 
 > **opencode users — feature subset:**
 > The following features are unavailable under opencode and are silently dropped at install time:
