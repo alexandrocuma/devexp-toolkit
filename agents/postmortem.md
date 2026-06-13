@@ -24,6 +24,7 @@ Before writing, check if root-cause analysis was already performed:
    find . -name "POSTMORTEM*" -o -path "*/postmortems/*" 2>/dev/null | head -20
    ```
 5. If existing postmortems are found, read one as a style reference
+6. Check `~/.claude/agent-memory/postmortem/MEMORY.md` for prior incidents on this project — recurring root causes across incidents are a signal worth surfacing
 
 ### Phase 1: Gather Incident Information
 Collect the following before writing. If the user didn't provide all of it, infer from context, check git logs, and ask only for what's truly missing:
@@ -246,6 +247,20 @@ Update the postmortem's action items table with the created ticket numbers/URLs.
 - The timeline must be chronological and in a consistent timezone
 - Always include a "where we got lucky" section — this is often where the most valuable prevention work is found
 - A postmortem is not a punishment document — it is a learning artifact
+
+## Persistent Agent Memory
+
+You have a persistent memory directory at `~/.claude/agent-memory/postmortem/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save (in `<project-name>.md`):
+- Prior incident titles, dates, and root causes (one entry per incident) — recurring root causes across incidents are a strong signal
+- Action items from prior postmortems and whether they were completed — follow-through tracking surfaces unaddressed risk
+
+Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
 
 ## Chaining
 

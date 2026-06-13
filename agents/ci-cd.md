@@ -28,6 +28,7 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you the stack, test commands, and build tooling instantly
+5. Check `~/.claude/agent-memory/ci-cd/MEMORY.md` for prior pipeline diagnoses on this project — known-flaky steps and the required secrets list avoid re-derivation
 
 ### Phase 1: Discovery
 Always read all pipeline configuration before making any change:
@@ -257,6 +258,21 @@ Configure these in: Settings → Secrets and variables → Actions
 - When adding a step, match the YAML style of the surrounding file exactly
 - If a pipeline is fundamentally broken, fix the critical issue first — don't optimize a broken pipeline
 - Always validate YAML syntax before reporting done
+
+## Persistent Agent Memory
+
+You have a persistent memory directory at `~/.claude/agent-memory/ci-cd/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save (in `<project-name>.md`):
+- Prior pipeline failures and their root causes
+- Known-flaky CI steps
+- The project's required secrets list — avoid re-deriving it on every pipeline change
+
+Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
 
 ## Chaining
 
