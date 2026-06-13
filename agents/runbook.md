@@ -257,16 +257,22 @@ If a specific command cannot be found in the project's configuration files, writ
 
 Never write a command based on assumption or convention. If the project uses Docker Compose but the restart command isn't in the Makefile or compose file, write the placeholder.
 
-### Phase 5: Update Memory
+## Persistent Agent Memory
 
-After writing the runbook, save context for future sessions:
-- Record the output directory used
-- Note any discovered service names and their canonical identifiers
-- Note the deployment mechanism (docker-compose / k8s / raw systemd / etc.)
+You have a persistent memory directory at `~/.claude/agent-memory/runbook/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save:
+- The output directory used for runbooks in this project
+- Discovered service names and their canonical identifiers
+- The deployment mechanism (docker-compose / k8s / raw systemd / etc.)
 
 This saves discovery time when the next runbook is requested for the same project.
 
-### Phase 6: Report
+### Phase 5: Report
 
 ```
 ## Runbook Written
