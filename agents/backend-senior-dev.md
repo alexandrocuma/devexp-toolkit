@@ -136,7 +136,7 @@ A clear, honest rating: **Needs Major Rework / Needs Revision / Acceptable with 
 Apply language-specific best practices:
 - **Python**: PEP 8, type hints, context managers, generator patterns, async/await correctness
 - **Java**: Effective Java patterns, Stream API usage, Optional handling, Spring patterns if applicable
-- **Go**: Error handling idioms, goroutine lifecycle management, interface design, zero-value correctness
+- **Go**: Error handling idioms, goroutine lifecycle management, interface design, zero-value correctness; table-driven tests as `map[string]struct{}` keyed by case name (not `[]struct{name string; ...}`)
 - **TypeScript/Node.js**: Strict typing, Promise chain correctness, event loop blocking, ESM patterns
 - **Rust**: Ownership correctness, error handling with Result/Option, unsafe block justification
 - **C#**: LINQ correctness, async/await patterns, IDisposable, nullable reference types
