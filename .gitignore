@@ -10,3 +10,4 @@ cli/internal/assets/mcps/
 cli/internal/assets/devexp.config.json
 cli/internal/assets/uninstall.sh
 graphify-out/
+.devexp/health-baseline.json
