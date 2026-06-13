@@ -46,29 +46,25 @@ memory: project
 # Custom Agent
 `
 
-	tests := []struct {
-		name          string
+	tests := map[string]struct {
 		input         string
 		selectedModel string
 		modelOnly     bool
 		want          string
 	}{
-		{
-			name:          "modelOnly with override replaces model line",
+		"modelOnly with override replaces model line": {
 			input:         orchestratorFixture,
 			selectedModel: "opus",
 			modelOnly:     true,
 			want:          strings.Replace(orchestratorFixture, "model: sonnet", "model: anthropic/claude-opus-4-6", 1),
 		},
-		{
-			name:          "modelOnly without override leaves content unchanged",
+		"modelOnly without override leaves content unchanged": {
 			input:         orchestratorFixture,
 			selectedModel: "",
 			modelOnly:     true,
 			want:          orchestratorFixture,
 		},
-		{
-			name:          "full transform strips name/color/memory, remaps model, adds disabled tools and mode",
+		"full transform strips name/color/memory, remaps model, adds disabled tools and mode": {
 			input:         basicAgent,
 			selectedModel: "",
 			modelOnly:     false,
@@ -90,8 +86,7 @@ This is a short body used to verify that the body content is preserved
 unchanged after the frontmatter transform.
 `,
 		},
-		{
-			name:          "model override remaps model regardless of original alias",
+		"model override remaps model regardless of original alias": {
 			input:         basicAgent,
 			selectedModel: "haiku",
 			modelOnly:     false,
@@ -113,8 +108,7 @@ This is a short body used to verify that the body content is preserved
 unchanged after the frontmatter transform.
 `,
 		},
-		{
-			name:          "all opencode tools enabled emits no tools block",
+		"all opencode tools enabled emits no tools block": {
 			input:         allToolsAgent,
 			selectedModel: "",
 			modelOnly:     false,
@@ -130,15 +124,13 @@ This agent has every opencode-supported capability enabled, so the
 transform should not emit a disabled-tools section in the frontmatter.
 `,
 		},
-		{
-			name:          "content with fewer than 3 frontmatter delimiters is returned unchanged",
+		"content with fewer than 3 frontmatter delimiters is returned unchanged": {
 			input:         noFrontmatter,
 			selectedModel: "",
 			modelOnly:     false,
 			want:          noFrontmatter,
 		},
-		{
-			name:          "unresolved model alias passes through resolveModel fallthrough",
+		"unresolved model alias passes through resolveModel fallthrough": {
 			input:         customModelAgent,
 			selectedModel: "",
 			modelOnly:     false,
@@ -161,8 +153,8 @@ mode: subagent
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			got, err := transformForOpencode(tt.input, tt.selectedModel, tt.modelOnly)
 			if err != nil {
 				t.Fatalf("transformForOpencode() error = %v", err)

@@ -8,40 +8,34 @@ import (
 )
 
 func TestLoadDotenv(t *testing.T) {
-	tests := []struct {
-		name    string
+	tests := map[string]struct {
 		content string
 		want    map[string]string
 	}{
-		{
-			name:    "basic key=value pairs",
+		"basic key=value pairs": {
 			content: "FOO=bar\nBAZ=qux",
 			want:    map[string]string{"FOO": "bar", "BAZ": "qux"},
 		},
-		{
-			name:    "comments and blank lines skipped",
+		"comments and blank lines skipped": {
 			content: "# c\n\nFOO=bar\n  \n# c2",
 			want:    map[string]string{"FOO": "bar"},
 		},
-		{
-			name:    "whitespace trimmed from key and value",
+		"whitespace trimmed from key and value": {
 			content: "  FOO = bar  ",
 			want:    map[string]string{"FOO": "bar"},
 		},
-		{
-			name:    "line with no equals sign is skipped",
+		"line with no equals sign is skipped": {
 			content: "FOO=bar\nNOEQUALS\nBAZ=qux",
 			want:    map[string]string{"FOO": "bar", "BAZ": "qux"},
 		},
-		{
-			name:    "value containing equals sign",
+		"value containing equals sign": {
 			content: "URL=https://x.com?a=b",
 			want:    map[string]string{"URL": "https://x.com?a=b"},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, ".env")
 			if err := os.WriteFile(path, []byte(tt.content), 0644); err != nil {

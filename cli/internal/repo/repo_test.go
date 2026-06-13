@@ -19,30 +19,26 @@ func TestFindRepoDir_DevexpDirEnv(t *testing.T) {
 }
 
 func TestIsRepoDir(t *testing.T) {
-	tests := []struct {
-		name string
+	tests := map[string]struct {
 		dirs []string
 		want bool
 	}{
-		{
-			name: "true when agents, skills, mcps all present",
+		"true when agents, skills, mcps all present": {
 			dirs: []string{"agents", "skills", "mcps"},
 			want: true,
 		},
-		{
-			name: "false when a subdir is missing",
+		"false when a subdir is missing": {
 			dirs: []string{"agents", "skills"},
 			want: false,
 		},
-		{
-			name: "false for empty directory",
+		"false for empty directory": {
 			dirs: nil,
 			want: false,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			for _, sub := range tt.dirs {
 				if err := os.Mkdir(filepath.Join(dir, sub), 0755); err != nil {
