@@ -237,6 +237,16 @@ grep -rn "\.catch(" . 2>/dev/null | grep -v node_modules | grep -v test | wc -l
 
 For each divergence found: flag which pattern appears more frequently as the canonical one and list the files using the non-canonical approach as candidates for standardization.
 
+**Agent-memory duplication check:**
+
+```bash
+ls ~/.claude/agent-memory/graphify-out/graph.json 2>/dev/null && echo "graph: EXISTS" || echo "graph: not built yet"
+```
+
+If the graph exists: run `/graphify ~/.claude/agent-memory --update` to refresh it, then read the `## Surprising Connections` section of `~/.claude/agent-memory/graphify-out/GRAPH_REPORT.md`. Each cross-agent reference there is a candidate for consolidation into a shared atlas (`codebase-navigator/<project>.md`) instead of duplication per-agent.
+
+If the graph doesn't exist: note it as a one-time optional setup step — see [Cross-Agent Duplication Mapping](../../docs/development/agent-architecture-reference.md#cross-agent-duplication-mapping). Don't build it on `/improve`'s own initiative; the first run is user-directed.
+
 Present findings as a cleanup checklist:
 ```
 Stale work found:
@@ -248,6 +258,9 @@ Stale work found:
 
 Convention divergence found:
   <pattern type>: N files use canonical, M files use non-canonical — list non-canonical files
+
+Agent-memory duplication found:
+  <N cross-agent references> (suggest: consolidate into shared atlas — list source → target pairs)
 ```
 
 Do not delete anything automatically — surface findings only.

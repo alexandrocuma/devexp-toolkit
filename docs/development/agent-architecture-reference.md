@@ -199,6 +199,21 @@ Agents with `memory: user` in frontmatter have a persistent memory directory at 
 - **Don't duplicate the atlas**: if Phase 0 already reads `~/.claude/agent-memory/codebase-navigator/<project>.md`, your memory should hold only what that atlas doesn't — your agent's own domain-specific findings (e.g., prior trace results, prior audit findings, prior groomed tickets), not architecture, layer maps, conventions, or file paths the atlas already covers.
 - **Self-heal format drift**: if your memory files (atlas, `MEMORY.md`, or topic files) use section names or structures from a previous version of this convention, migrate them to the current structure as part of your normal write-back for that session — don't perpetuate an outdated format indefinitely. codebase-navigator's Memory Protocol Migration Pass is the concrete implementation of this for atlases.
 
+### Cross-Agent Duplication Mapping
+
+`~/.claude/agent-memory/graphify-out/` holds an optional knowledge graph built over the **entire agent-memory corpus** (across all agents and projects) — distinct from a per-project `graphify-out/`. Its purpose is to surface cross-agent duplication: cases where multiple agents' memory files reference the same project artifact (e.g. two agents both pointing at `codebase-navigator/<project>.md`'s atlas), which is a signal that context could be consolidated into the shared atlas instead of repeated per-agent.
+
+**When to run:** manually, via `/improve` — not hooked to memory writes. At current write volumes (a handful of agents writing memory across a couple of projects), the signal-to-cost ratio favors periodic manual runs over an automated hook.
+
+**How to run:**
+```bash
+/graphify ~/.claude/agent-memory
+```
+
+**Backend:** prefer the Gemini backend (set `GEMINI_API_KEY` or `GOOGLE_API_KEY`) — a 23-file/~24K-word run completed in ~57s at ~50K tokens via Gemini, versus ~288s at ~74K tokens via the Claude-subagent fallback for a smaller 7-file sample. Both produce the same signal; Gemini is materially cheaper and faster for this corpus size.
+
+**Reading the output:** the `## Surprising Connections` section of `graphify-out/GRAPH_REPORT.md` is the primary signal — cross-agent references there indicate memory that could be consolidated into a shared atlas rather than duplicated per-agent.
+
 ---
 
 ## Agent File Checklist
