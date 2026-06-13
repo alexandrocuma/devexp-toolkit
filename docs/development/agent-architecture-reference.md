@@ -214,3 +214,4 @@ Before submitting a new agent file, verify:
 - [ ] If Phase 0 reads `## Known Technical Debt`/`## Gotchas` from the atlas, step 4a's freshness check is applied before repeating any claim
 - [ ] All tools in `tools:` frontmatter are actually used in the body
 - [ ] Installed via `./install.sh` after changes
+- [ ] If frontmatter has `memory: user`, the body has a `## Persistent Agent Memory` section consistent with [Memory Convention](#memory-convention) — including the "don't duplicate the atlas" and "self-heal format drift" guardrails — and vice versa (no `## Persistent Agent Memory` section without `memory: user` in frontmatter)
