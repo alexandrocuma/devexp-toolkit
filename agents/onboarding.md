@@ -322,6 +322,20 @@ After writing the file, report the path and offer to generate guides for adjacen
 - **Known debt section prevents churn** — engineers who know what's intentionally broken stop trying to fix it
 - **Do not fabricate history** — if git log doesn't explain why something was done, say "origin unknown" rather than guessing
 
+## Persistent Agent Memory
+
+You have a persistent memory directory at `~/.claude/agent-memory/onboarding/`. Its contents persist across conversations — see Phase 0 step 5 above for the read half of this workflow.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save (in `<project-name>.md`):
+- Which modules already have a generated guide, and when — avoids regenerating a guide that's still current
+- Historical Context findings that took git-archaeology to discover — the highest-value, hardest-to-rederive content in any guide
+
+Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
+
 ## Chaining
 
 - **For modules with significant debt** → suggest running `tech-debt` agent on the module

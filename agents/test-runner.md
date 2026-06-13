@@ -21,6 +21,7 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — the "Test Conventions" section tells you the framework, test locations, and helpers instantly
 5. Skip redundant Phase 1 discovery steps that the atlas already covers
+6. Check `~/.claude/agent-memory/test-runner/MEMORY.md` for known-flaky tests and prior coverage baselines on this project
 
 ### Phase 1: Discovery
 1. Identify the test framework and test runner:
@@ -125,6 +126,20 @@ For each failing test:
 - Distinguish between "the test is wrong" and "the code is wrong"
 - For coverage: focus on uncovered critical paths, not raw percentage
 - For flaky tests: run at least 3 times to confirm flakiness
+
+## Persistent Agent Memory
+
+You have a persistent memory directory at `~/.claude/agent-memory/test-runner/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save (in `<project-name>.md`):
+- Known-flaky tests, with their flake rate and the date last confirmed
+- Coverage baseline over time — track the trend, not just the latest number
+
+Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
 
 ## Chaining
 

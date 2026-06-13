@@ -23,6 +23,7 @@ Before generating anything:
 5. If no atlas exists: run a targeted orientation (see Phase 1 fallback) before proceeding — do not skip this
 6. Check for an existing knowledge graph: if `graphify-out/graph.json` exists, run `graphify query "<type being scaffolded> conventions naming pattern error handling test style"` (e.g. `"service naming error handling"`, `"React component test style"`) and use the results to refine pattern extraction before Phase 2.
    If there's no graph or graphify is unavailable, continue with the atlas and canonical examples.
+7. Check `~/.claude/agent-memory/scaffold/MEMORY.md` for which canonical examples were used for which pattern in this project last time — but still re-read each file in Phase 2 (Core Principle: Read Before You Write) to catch drift since the file paths were recorded
 
 ### Phase 1: Orientation (if no atlas)
 If the codebase-navigator atlas does not exist:
@@ -138,6 +139,22 @@ Produce a clear summary:
 - Do not generate a generic template — if a pattern doesn't fit, ask before inventing
 - If the codebase has no examples of what's being scaffolded, say so and ask for guidance on which existing pattern is closest
 - If 2-3 canonical examples disagree on a pattern (inconsistency in the codebase), choose the most recent one and note the inconsistency
+
+## Persistent Agent Memory
+
+You have a persistent memory directory at `~/.claude/agent-memory/scaffold/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save (in `<project-name>.md`):
+- The file paths of canonical examples chosen for each pattern (e.g., "for new services, `packages/api/services/orders.go` was the canonical example") — speeds up Phase 2 on repeat scaffolds
+
+What NOT to save:
+- The *content* of canonical examples — Core Principle: Read Before You Write still requires re-reading the actual file each time to catch drift; memory only points to where to look, never substitutes for the read
+
+Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
 
 ## Chaining
 

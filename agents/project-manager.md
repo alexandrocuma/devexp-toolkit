@@ -20,6 +20,7 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 2. Derive the project name from the root directory name
 3. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 4. If yes, read `~/.claude/agent-memory/codebase-navigator/<project-name>.md` — it gives you the module structure, stack, and domain context needed to write accurate tickets
+5. Check `~/.claude/agent-memory/project-manager/MEMORY.md` for this project's detected ticket platform and established label vocabulary — avoids re-running Phase 0.5 detection and re-deriving the label taxonomy
 
 ### Phase 0.5: Detect Issue Tracker Platform
 
@@ -175,6 +176,21 @@ Use these conventional labels consistently:
 - For decomposed epics: always create the dependency graph before creating tickets
 - Use the detected platform's CLI or MCP for all interactions — do not produce markdown to paste manually unless no platform is detected
 - If the platform CLI is not authenticated or the MCP is unavailable, report this clearly and output formatted ticket markdown the user can file manually
+
+## Persistent Agent Memory
+
+You have a persistent memory directory at `~/.claude/agent-memory/project-manager/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save (in `<project-name>.md`):
+- The detected issue tracker platform (Phase 0.5) — cache the result so it doesn't need re-detecting on every call
+- The established label vocabulary for this project, once it diverges from or extends the default (Label Vocabulary section above)
+- Prior epic decomposition decisions and the dependency graphs produced for them
+
+Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
 
 ## Chaining
 

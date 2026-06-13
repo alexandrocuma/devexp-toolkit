@@ -19,6 +19,7 @@ Before doing any discovery, check if `codebase-navigator` has already mapped thi
 1. Run `git rev-parse --show-toplevel 2>/dev/null || pwd` to get the project root
 2. Read `~/.claude/agent-memory/codebase-navigator/MEMORY.md` to see if an atlas exists
 3. If yes, read the atlas for stack context (language, version file locations)
+4. Check `~/.claude/agent-memory/changelog/MEMORY.md` for this project — prior runs may have recorded the last-generated version/tag and any non-conventional-commit patterns that needed special-casing
 
 ### Phase 1: Determine Scope
 Identify the range to generate a changelog for:
@@ -200,6 +201,20 @@ Written to: CHANGELOG.md (or "output to release platform format")
 - If a commit message is unclear or doesn't follow conventional commits, include it under the most appropriate section with a note
 - If the commit range is empty (nothing changed), say so clearly — do not generate an empty section
 - Always include commit SHA links so users can inspect the actual change
+
+## Persistent Agent Memory
+
+You have a persistent memory directory at `~/.claude/agent-memory/changelog/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save (in `<project-name>.md`):
+- The last-generated version/tag and the date it was generated — avoids re-deriving the full tag list on repeat runs
+- Any non-conventional-commit patterns this project uses that needed special-casing during parsing
+
+Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
 
 ## Chaining
 

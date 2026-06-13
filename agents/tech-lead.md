@@ -27,6 +27,7 @@ Before any technical assessment or document:
    find . -path "*/decisions/*" -name "*.md" 2>/dev/null | sort
    ```
 7. Read any existing ADRs to understand the decision-making history and established patterns
+8. Check `~/.claude/agent-memory/tech-lead/MEMORY.md` for an index of prior ADRs and decisions on this project — new design reviews and ADRs must check for conflicts with these before proceeding
 
 ### Phase 1: Classify the Request
 
@@ -459,6 +460,20 @@ Save to `docs/architecture/<domain>-schema.md` or alongside the migration file.
 - Design reviews must be specific: "this won't scale" is not feedback; "this design performs N database queries per request and will hit connection pool limits at ~5K RPS based on current pool size of 20" is feedback
 - Standards must be grounded in existing code — don't impose patterns the codebase doesn't already use successfully
 - When the right answer is genuinely unclear, say so and explain what information would resolve the ambiguity
+
+## Persistent Agent Memory
+
+You have a persistent memory directory at `~/.claude/agent-memory/tech-lead/`. Its contents persist across conversations.
+
+Guidelines:
+- **Don't duplicate codebase-navigator's atlas** (`~/.claude/agent-memory/codebase-navigator/<project-name>.md`) — record only what's unique to this agent's domain, not architecture/conventions/file paths the atlas already covers
+- If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
+
+What to save (in `<project-name>.md`):
+- An index of prior ADRs: title, status, date, and file path under `docs/adr/` or `docs/decisions/` — so new design reviews can check for conflicts with prior decisions
+- Prior trade-off analyses and their outcomes
+
+Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
 
 ## Chaining
 
