@@ -1,8 +1,8 @@
 # Skills Reference
 
-## The Five Commands
+## The Six Commands
 
-The entire development lifecycle runs through five slash commands. Type `/` in Claude Code and you'll see exactly these:
+The development lifecycle runs through six slash commands — five lifecycle orchestrators plus the `/graphify` utility. Type `/` in Claude Code and you'll see exactly these:
 
 | Command | When to use |
 |---------|-------------|
@@ -10,13 +10,18 @@ The entire development lifecycle runs through five slash commands. Type `/` in C
 | `/refine` | Turn an idea or request into a groomed, ready-to-build ticket |
 | `/deliver <ticket>` | Implement, test, review, and release a ticket end-to-end |
 | `/improve` | Sprint end or maintenance window — health, cleanup, debt, retro |
+| `/monitor [<surface>]` | Operate phase — review the deployed system's health (telemetry/config), scored, anytime |
 | `/graphify` | Build a persistent knowledge graph from this codebase |
 
 ```
 /devxp  →  /refine  →  /deliver  →  /improve
-  ↑                                      |
-  └──────────── next sprint ─────────────┘
+  ↑                          │           │
+  └──────── next sprint ─────┴───────────┘
+                             │
+                        /monitor   (operate: review the deployed system, anytime)
 ```
+
+The first four orchestrators *build* software; `/monitor` *operates* what's shipped — a change-independent health read that does not diff commits.
 
 ---
 
@@ -48,6 +53,14 @@ The entire development lifecycle runs through five slash commands. Type `/` in C
 - **Phase 3:** Stale work (orphaned branches, old PRs, zombie flags), dead code (unused exports, orphaned files), convention audit (competing patterns)
 - **Phase 4:** Tech debt triage via `tech-debt` agent — business-prioritized with ROI
 - **Phase 5:** Sprint retrospective — evidence-grounded Start/Stop/Continue findings
+
+### `/monitor [<surface>]`
+- **Operate phase** — assesses the *deployed* system, not the codebase; change-independent (never diffs commits), runnable anytime
+- **Phase 1:** Detects deployed-system surfaces by category — cloud/infra, dashboards, logging, alerting, tracing/metrics — from repo signals and already-authenticated connectors; vendor-agnostic
+- **Phase 2:** Reviews each surface live (read-only connector query) or via config-as-code fallback; labels findings `[live]`/`[config]`; cross-references observability coverage against critical paths (covered/partial/blind)
+- **Phase 3:** Per-surface 🟢/🟡/🔴/N/A + an equal-weighted composite score, plus a ranked, actionable anomaly list with evidence
+- **Phase 5:** Persists the scored report to `.devexp/system-health-review.md`. `/improve`'s Observability Maturity dimension defers to this artifact when present — one home for "is the system healthy?"
+- `/monitor <surface>` scopes the review to a single detected surface
 
 ### `/graphify`
 - Builds a persistent knowledge graph from the codebase
