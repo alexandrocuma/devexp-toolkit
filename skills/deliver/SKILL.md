@@ -69,16 +69,40 @@ Groom plan loaded:
   Risk:             low / medium / high
 
 Delivery sequence:
-  1. Implement          → dev-agent (or migration agent)
-  2. Instrument         → add observability to new code
-  3. Test gaps          → test-gen agent
-  4. Code review        → pr-review agent
-  5. Release            → changelog + version tag + platform release  [gated]
+  1. Worktree           → isolate this ticket in its own git worktree
+  2. Implement          → dev-agent (or migration agent)
+  3. Instrument         → add observability to new code
+  4. Test gaps          → test-gen agent
+  5. Code review        → pr-review agent
+  6. Release            → merge worktree + changelog + version tag + platform release  [gated]
 
 Proceed? (yes / stop after implementation / skip release)
 ```
 
 Wait for confirmation. The user can stop at any step.
+
+---
+
+### Phase 1.5 — Isolate the Ticket in a Worktree
+
+Before implementing, isolate this ticket's work in its own git worktree. This follows the **worktree-per-ticket convention** documented in `docs/guides/worktree-per-ticket.md` (devexp-toolkit) — that doc is the single source of truth for the trigger, naming scheme, lifecycle, and merge discipline summarized here. Phases 2–5 (implement, instrument, test, review) all run **inside** this worktree; the main checkout is never mutated during delivery.
+
+**Create the worktree** on a fresh branch derived from the ticket id — branch `<type>/<ticket-id>`, directory a sibling of the main checkout so it is never scanned or committed into the primary tree:
+
+```bash
+# Run from the main checkout. Branch and directory are both derived from the ticket id.
+ticket="<ticket-id>"; type="feat"   # feat | fix | docs | chore — match the ticket
+repo="$(basename "$(git rev-parse --show-toplevel)")"
+wt="../${repo}-worktrees/${ticket}"
+git worktree add -b "${type}/${ticket}" "$wt" 2>/dev/null || git worktree add "$wt" "${type}/${ticket}"
+cd "$wt"
+```
+
+All subsequent phases operate from this worktree directory.
+
+**Epic sub-tickets:** each independent sub-ticket gets its own worktree on its own branch. Because the worktrees don't share files, sub-tickets with no dependency between them can be delivered in parallel — that parallelism is a free byproduct, not something to request explicitly.
+
+**Single-stream fallback:** if the environment can't support worktrees (no git, or a shallow/non-worktree-capable checkout) or the user explicitly wants the change applied to the current tree, skip worktree creation and deliver in place on the current branch. The merge step in Phase 6 then becomes a no-op; the same merge discipline still applies to whatever integration happens.
 
 ---
 
@@ -257,16 +281,38 @@ Before running anything, confirm:
 PR is approved and tests pass.
 
 Ready to release?
-  Step 1: Generate changelog entry from commits
-  Step 2: Bump version and create git tag
-  Step 3: Publish release on GitHub/GitLab
+  Step 1: Merge the ticket worktree into the base branch
+  Step 2: Generate changelog entry from commits
+  Step 3: Bump version and create git tag
+  Step 4: Publish release on the detected platform
+  On success: remove the worktree (kept automatically if any step fails)
 
 Confirm release? (yes / no — I'll release manually)
 ```
 
 Wait for explicit **yes**. If the user says no or wants to release manually, stop here.
 
-**6a. Generate changelog:**
+**6a. Merge the ticket worktree:**
+
+First **return to the main checkout.** Phases 2–5 ran inside the worktree, but `git worktree remove` refuses to delete a worktree you are currently inside, and the changelog/version/tag steps below operate on the base branch in the main checkout:
+
+```bash
+cd "$(git worktree list --porcelain | head -1 | cut -d' ' -f2)"   # main checkout is always the first worktree listed
+```
+
+Integrate the ticket's branch into the base branch through the project's normal path — merge the open PR, or a direct merge if no PR workflow is used. Merges are **serialized**: if other worktrees are also ready, merge them one at a time so each sees a consistent base. If the merge reports a **conflict, stop and surface it to the user — never auto-resolve.**
+
+On a **successful** merge and release, remove the worktree and its branch — the toolkit cleans up after itself. `git worktree list` prints each worktree's absolute path; remove the ticket's by that path:
+
+```bash
+git worktree list                                          # find the ticket's worktree path
+git worktree remove "/abs/path/to/<repo>-worktrees/<ticket-id>"
+git branch -d "<type>/<ticket-id>"
+```
+
+On **failure** at any release step, **keep the worktree** for inspection — never remove it. (Skip this whole step entirely if delivery ran in the single-stream fallback with no worktree.)
+
+**6b. Generate changelog:**
 
 ```bash
 # Get commits since last tag
@@ -290,7 +336,7 @@ Group commits by type (feat, fix, perf, refactor, docs, chore). Write a changelo
 
 Prepend this entry to `CHANGELOG.md` (create it if it doesn't exist).
 
-**6b. Bump version:**
+**6c. Bump version:**
 
 Detect the versioning file:
 ```bash
@@ -299,7 +345,7 @@ ls package.json go.mod pyproject.toml Cargo.toml version.go VERSION 2>/dev/null 
 
 Apply the appropriate bump (patch for fixes, minor for features, major for breaking changes — infer from commit types). Update the version file.
 
-**6c. Tag and publish:**
+**6d. Tag and publish:**
 
 ```bash
 git add CHANGELOG.md <version-file>
@@ -324,6 +370,7 @@ glab release create "v<version>" --name "v<version>" --notes "<changelog entry>"
 ```
 ## Delivered: <ticket-id> — "<title>"
 
+  Worktree:        <branch + dir created — merged and removed on release / kept on failure / none (single-stream)>
   Implementation:  complete — <N files changed>
   Infrastructure:  <N IaC files changed / no infrastructure changes detected>
   Observability:   <N log calls added / skipped — no new entry points>
@@ -346,3 +393,4 @@ Next:
 - **Release is the only hard gate** — every other step can be skipped; release requires explicit confirmation because it's irreversible and affects shared systems
 - **Architecture check is a suggestion, not a gate** — surface it for high-complexity tickets; never block on it
 - **Test coverage, not test count** — if the implementation agent wrote tests, verify they cover the acceptance criteria, not just that they exist
+- **Worktree isolation is the default, merge is deferred** — each ticket is delivered in its own worktree (`docs/guides/worktree-per-ticket.md`); the branch merges only at the release gate, and conflicts always surface to the user — never auto-resolve them
