@@ -1,6 +1,6 @@
 # Quick Start
 
-Everything you need to go from zero to shipping — using only four commands.
+Everything you need to go from zero to shipping — plus `/monitor` to review what's deployed.
 
 ---
 
@@ -102,11 +102,13 @@ All diagnostic steps run inline — nothing is deleted automatically. You get fi
 
 ```
 /devxp  ──→  /refine  ──→  /deliver  ──→  /improve
-  ↑                                            │
-  └──────────────── next sprint ───────────────┘
+  ↑                              │             │
+  └─────────── next sprint ──────┴─────────────┘
+                                 │
+                            /monitor   (operate: review the deployed system, anytime)
 ```
 
-This is the full development cycle. Most work fits entirely within these four commands.
+This is the full development cycle. The four build commands carry most work; `/monitor` is the operate phase — run it anytime to review the health of what's deployed, independent of any code change.
 
 ---
 

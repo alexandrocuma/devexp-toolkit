@@ -2,7 +2,7 @@
 
 A curated collection of Claude Code agents, skills, and MCP servers that bring a consistent, expert-level development experience to any project.
 
-Install once. Get autonomous bug fixes, expert code review, codebase navigation, execution tracing, and security audits — all driven by four commands that cover the full development lifecycle.
+Install once. Get autonomous bug fixes, expert code review, codebase navigation, execution tracing, and security audits — all driven by five commands that cover the full development lifecycle.
 
 ---
 
@@ -13,7 +13,7 @@ Install once. Get autonomous bug fixes, expert code review, codebase navigation,
 curl -fsSL https://raw.githubusercontent.com/alexandrocuma/devexp-toolkit/main/scripts/remote-install.sh | bash
 ```
 
-Then use four commands to cover the full development cycle:
+Then use these commands to cover the full development cycle:
 
 | Command | When |
 |---------|------|
@@ -21,9 +21,11 @@ Then use four commands to cover the full development cycle:
 | `/refine` | Turn an idea into a groomed, ready-to-build ticket |
 | `/deliver <ticket>` | Implement, test, review, and release a ticket |
 | `/improve` | Sprint end — health scorecard, cleanup, debt triage, retro |
+| `/monitor [<surface>]` | Operate — review the deployed system's health, scored, anytime |
 
 ```
 /devxp  →  /refine  →  /deliver  →  /improve  →  next sprint
+                                  /monitor  →  review the deployed system, anytime
 ```
 
 → Full walkthrough: [docs/guides/quickstart.md](docs/guides/quickstart.md)
