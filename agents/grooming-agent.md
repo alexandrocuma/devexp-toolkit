@@ -32,10 +32,10 @@ cat ~/.claude/agent-memory/codebase-navigator/MEMORY.md 2>/dev/null
 
 If an atlas exists for this project, **run the freshness gate before trusting it** — apply codebase-navigator's canonical **Drift Classification** (defined in its Memory Protocol; reference that rule, never duplicate it) against the atlas's `Last updated` date:
 - **CURRENT** (no commits since `Last updated`) → read the atlas as-is, no added latency.
-- **SMALL** (only peripheral paths changed) → re-validate just the changed sections that overlap the **ticket's scope** (the files/layers the ticket claims to touch); otherwise read as-is.
+- **SMALL** (only peripheral paths changed) → re-validate just the changed sections, and only if they overlap the **ticket's scope** (the files/layers the ticket claims to touch); otherwise read as-is.
 - **BIG** (structural sections changed) → spawn `codebase-navigator` for a full rebuild before grooming, then use the refreshed atlas.
 
-It gives you the layer map, module structure, and conventions. If no atlas exists, spawn `codebase-navigator` first:
+The atlas gives you the layer map, module structure, and conventions. If no atlas exists, spawn `codebase-navigator` first:
 
 > "Map the codebase structure, identify all layers, modules, entry points, and conventions. I need this before grooming a ticket."
 
