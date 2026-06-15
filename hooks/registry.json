@@ -15,7 +15,7 @@
   },
   {
     "name": "dangerous-cmd-guard",
-    "description": "Hard-block destructive shell commands (rm -rf /, force push, reset --hard, DROP DATABASE, etc.)",
+    "description": "Hard-block destructive shell commands (rm -rf /, unanchored cleanup wildcards like /tmp/*, force push, reset --hard, DROP DATABASE, etc.)",
     "claude_code": {
       "event": "PreToolUse",
       "matcher": "Bash",
