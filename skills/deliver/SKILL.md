@@ -45,6 +45,28 @@ If the groom plan is missing: invoke the `grooming-agent`:
 
 Wait for the grooming-agent to complete before proceeding.
 
+**Re-anchor the plan to current HEAD.** A persisted plan was validated against a specific commit (the **Validated against** anchor `grooming-agent` stamps into the plan header). Code may have moved since, so before trusting the plan, classify the drift between that anchor and HEAD using codebase-navigator's canonical **Drift Classification** (the same structural-section rule from A1 — reference it, don't reimplement), sourcing the changed paths from the commit range rather than a date:
+
+```bash
+anchor="<sha-from-plan-anchor>"
+# The commit range is precise only if the anchor is an ancestor of HEAD.
+# If the SHA is missing (history rewritten) or not an ancestor (diverged branch),
+# fall back to the date-based classification so drift is never understated.
+if git merge-base --is-ancestor "$anchor" HEAD 2>/dev/null; then
+  git log "${anchor}..HEAD" --name-only --pretty=format: | sort -u | sed '/^$/d'   # paths changed since the plan was validated
+else
+  echo "anchor not an ancestor of HEAD — use the date fallback below"
+fi
+```
+
+| Drift since anchor | Action |
+|--------------------|--------|
+| **CURRENT** — HEAD == anchor, no commits | Use the plan as-is |
+| **SMALL** — only peripheral paths changed | Proceed, but note the scoped deltas to the user and re-verify any plan step that touches a changed path |
+| **BIG** — a structural section's paths changed | The plan may be built on a stale map — **re-groom before building** (invoke `grooming-agent` as above), then reload the refreshed plan |
+
+If the plan has no anchor (groomed before A3), or the anchor is not an ancestor of HEAD (per the guard above), treat it as drift-unknown: run the classification against the plan's `Groomed` date instead (`git log --since="<Groomed date> 00:00:00" --name-only`), and prefer re-grooming if that date is not same-day.
+
 ---
 
 ### Phase 1 — Assess and Present the Delivery Plan
