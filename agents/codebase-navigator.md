@@ -146,12 +146,35 @@ At the start of every session:
 2. If it exists, check its format against the Atlas File Format above: does it have `## Known Technical Debt` and `## Gotchas` sections with `[YYYY-MM-DD]`-dated entries?
    - **Format matches** → continue to step 3
    - **Format differs** (old/renamed sections such as `## Key Invariants / Gotchas` or `## Technical Debt / Known Issues`, or entries with no date) → run a **Migration Pass**: rename sections to the current template's headings, add `[YYYY-MM-DD]` (today) to any undated entries, then continue to step 3 using the migrated entries
-3. Run `git log --since="<atlas Last-updated date>" --oneline | head -20`:
-   - **No commits** → atlas is current, use directly
-   - **Commits exist, `Last updated` ≤ 30 days old** → run the Incremental Update Procedure below (don't redo Phase 1-4 from scratch)
-   - **`Last updated` > 30 days old** → run full Phase 1-4
+3. Run the **Drift Classification** (below) on the atlas's `Last updated` date. It returns one of three verdicts:
+   - **CURRENT** (no commits since `Last updated`) → atlas is current, use directly — zero added latency
+   - **SMALL** (commits touch only peripheral paths) → run the Incremental Update Procedure below, scoped to the changed paths (don't redo Phase 1-4 from scratch)
+   - **BIG** (commits touch structural sections) → run full Phase 1-4
 4. No atlas, or no parseable `Last updated` date → run full Phase 1-4
 5. Always update `MEMORY.md` and the atlas's `Last updated` date after working on a project
+
+> The age of the atlas no longer triggers a rebuild on its own — *what changed* does, not *how long ago*. A months-old atlas whose structural paths are untouched stays CURRENT; an hour-old atlas whose Layer Map paths just changed is BIG.
+
+### Drift Classification
+
+The canonical drift rule. **A2** (the freshness gate on atlas consumers) and **A3** (plan re-anchoring on big drift) reuse this exact definition — change the rule here only, never fork a second copy.
+
+1. Read the atlas's `Last updated:` date.
+2. List the paths changed since then:
+   ```
+   git log --since="<Last updated>" --name-only --pretty=format: | sort -u | sed '/^$/d'
+   ```
+3. Classify by what those paths touch:
+   - **No paths** (no commits since `Last updated`) → **CURRENT** — use the atlas as-is. No git scan beyond this, no rebuild.
+   - **Any changed path is structural** → **BIG** — the atlas backbone may be wrong; run full Phase 1-4.
+   - **Otherwise** (commits exist, but none are structural) → **SMALL** — run the Incremental Update Procedure, scoped to the changed paths.
+
+**Structural sections** — a change to any path they cite means the atlas's backbone may be stale:
+- `## Layer Map` — the paths that define each architectural layer
+- `## Canonical Example` — the exemplar file(s) other code is matched against
+- **Convention anchors** — the files the atlas cites for conventions, dependency injection / wiring, and error-handling paths
+
+A changed path is **structural** if it is *named in*, or *lives under a directory named in*, one of those sections. Every other changed path — peripheral modules, docs, tests, config not cited structurally — is **SMALL**. When in doubt between SMALL and BIG, prefer BIG: a needless full rebuild is cheaper than serving a wrong atlas.
 
 ### Incremental Update Procedure
 
