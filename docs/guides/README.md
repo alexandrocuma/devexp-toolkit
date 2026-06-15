@@ -10,6 +10,7 @@ How-to guides for using, configuring, and understanding the devexp framework.
 | [docs-architecture.md](docs-architecture.md) | CLAUDE.md-as-indexer pattern + standard docs/ folder tree — apply this in every project | ready |
 | [install.md](install.md) | install.sh, start-services.sh, uninstall.sh — flags, behavior, CLI paths | ready |
 | [team-distribution.md](team-distribution.md) | Forking and customizing devexp for your organisation via devexp.config.json | ready |
+| [worktree-per-ticket.md](worktree-per-ticket.md) | Worktree-per-ticket delivery convention — trigger, naming scheme, lifecycle, failure handling, merge discipline | ready |
 
 ## Notes
 

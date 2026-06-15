@@ -57,6 +57,7 @@ Start at [`docs/README.md`](docs/README.md) for the full index.
 | MCP registry format + adding MCPs | [`docs/reference/mcps.md`](docs/reference/mcps.md) |
 | Install / uninstall / start-services | [`docs/guides/install.md`](docs/guides/install.md) |
 | Team distribution + devexp.config.json | [`docs/guides/team-distribution.md`](docs/guides/team-distribution.md) |
+| Worktree-per-ticket delivery convention | [`docs/guides/worktree-per-ticket.md`](docs/guides/worktree-per-ticket.md) |
 | CLAUDE.md-as-indexer pattern | [`docs/guides/docs-architecture.md`](docs/guides/docs-architecture.md) |
 | How to write a new agent | [`docs/development/agent-authoring-guide.md`](docs/development/agent-authoring-guide.md) |
 | How to write a new skill | [`docs/development/skill-authoring-guide.md`](docs/development/skill-authoring-guide.md) |

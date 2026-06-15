@@ -12,6 +12,7 @@ How-to guides for using and configuring the framework.
 | [Docs Architecture](guides/docs-architecture.md) | CLAUDE.md-as-indexer pattern + standard docs/ folder tree — apply this in every project |
 | [Install & Services](guides/install.md) | install.sh flags, start-services.sh, uninstall.sh, and CLI installation paths |
 | [Team Distribution](guides/team-distribution.md) | Fork and customise devexp for your organisation via devexp.config.json |
+| [Worktree-per-Ticket](guides/worktree-per-ticket.md) | How delivery isolates each ticket in its own git worktree — trigger, naming, lifecycle, merge discipline |
 
 → Full index: [docs/guides/README.md](guides/README.md)
 
