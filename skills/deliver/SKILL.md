@@ -391,18 +391,33 @@ glab release create "v<version>" --name "v<version>" --notes "<changelog entry>"
 
 Once the release succeeds, retire the artifacts **this** delivery created so they don't linger and drift from reality. **Gate strictly on success** — if delivery failed or was aborted at any earlier step, **skip this phase entirely and preserve everything** (worktree, plan, scratch) for inspection. Scope every action to this ticket; the repo-wide sweep of orphaned artifacts belongs to `/improve` (C2), not here.
 
+**Safety gate — bind and verify the ticket id before any deletion.** Every `rm` below is keyed to `$ticket`. An empty id would turn an id-scoped glob into a blanket wipe (`/tmp/*$ticket*` → `/tmp/*`), so **abort cleanup entirely if the id is empty** — never run a delete with an unset id. Use the same `ticket` variable bound in Phase 1.5, and re-assert it here:
+
+```bash
+ticket="<ticket-id>"
+case "$ticket" in
+  ""|*[!A-Za-z0-9_-]*) echo "ticket id missing or unsafe — skipping all artifact cleanup"; return 2>/dev/null || exit 0 ;;
+esac
+```
+
+With `$ticket` verified non-empty and safe, retire each artifact:
+
 1. **Worktree** — already removed in Phase 6a on a successful release; confirm it's gone:
    ```bash
    git worktree list   # this ticket's tree should no longer appear (nothing to do if the run was single-stream)
    ```
-2. **Persisted plan (per A3)** — the plan described pre-merge intent; once delivered it only invites drift. Remove the local copy; remove the ticket-platform copy too (ask first, since it's shared):
+2. **Persisted plan (per A3)** — the plan described pre-merge intent; once delivered it only invites drift. Remove the local copy:
    ```bash
-   rm -f ~/.claude/agent-memory/grooming-agent/plans/<TICKET-ID>.md
+   rm -f ~/.claude/agent-memory/grooming-agent/plans/"$ticket".md
    ```
-3. **Groom-session artifacts** — remove transient grooming session/scratch files keyed to `<TICKET-ID>` under `~/.claude/agent-memory/grooming-agent/`. Never delete the project's shared `<PROJECT-NAME>.md` memory — that's not ticket-scoped.
-4. **/tmp scratch** — remove only the scratch files **this run** wrote under `/tmp` (heredoc bodies, plan scratch, temp diffs). Match by ticket id or this session — never a blanket `/tmp` wipe:
+   The ticket-platform copy is a tracker action, not a filesystem delete — **ask the user first** (it's shared), then remove it via the platform's API/CLI.
+3. **Groom-session artifacts** — remove transient grooming session/scratch files keyed to `$ticket`. Scope the glob to the id so it can never match the project's shared `<PROJECT-NAME>.md` memory (which is not ticket-scoped and must survive):
    ```bash
-   rm -f /tmp/*<TICKET-ID>* /tmp/.deliver-<TICKET-ID>-* 2>/dev/null
+   rm -f ~/.claude/agent-memory/grooming-agent/sessions/*"$ticket"* ~/.claude/agent-memory/grooming-agent/*"$ticket"*.scratch 2>/dev/null
+   ```
+4. **/tmp scratch** — remove only the scratch files **this run** wrote under `/tmp` (heredoc bodies, plan scratch, temp diffs), matched by the verified id — never a blanket `/tmp` wipe:
+   ```bash
+   rm -f /tmp/*"$ticket"* /tmp/".deliver-$ticket-"* 2>/dev/null
    ```
 5. **Agent-memory entries** — prune or refresh agent-memory entries tied **to this ticket only**, and **only when drift/staleness warrants it** (the delivered work changed something an entry described): re-date re-verified entries, remove resolved ones, leave the rest. Entries unrelated to this ticket are out of scope — that's C2.
 
