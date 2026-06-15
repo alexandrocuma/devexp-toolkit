@@ -25,7 +25,7 @@ fi
 # This is the blanket-wipe an empty variable produces — `rm -f /tmp/*"$id"*` with empty $id
 # collapses to `/tmp/*`, and the template itself contains `/tmp/*`. Prefix-anchored globs like
 # `/tmp/.deliver-PAY-123-*` are allowed (no '*' right after the '/').
-if echo "$command" | grep -qE 'rm\b[^|]*(\s/tmp/\*|\s/tmp/?(\s|$)|\.claude\S*/\*|(\$HOME|~)/\.claude/?(\s|$))'; then
+if echo "$command" | grep -qE 'rm\b[^|]*(\s["'\'']?/tmp["'\'']?(/\*|/?(\s|$))|["'\'']?(\$HOME|~)["'\'']?/\.claude(\S*/\*|["'\'']?/?(\s|$))|\.claude\S*/\*)'; then
     echo "[devexp dangerous-cmd-guard] Blocked: unanchored wildcard delete in a sensitive directory (e.g. '/tmp/*' or '~/.claude/.../*'). Anchor the glob with a literal prefix (e.g. '/tmp/.deliver-<id>-*') so an empty variable cannot collapse it into a blanket wipe." >&2
     exit 2
 fi

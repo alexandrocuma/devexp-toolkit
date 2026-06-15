@@ -35,6 +35,10 @@ expect block 'rm -rf /'                                      # pre-existing rule
 expect block 'git push --force'
 expect block 'git push origin main -f'
 expect block 'git push --force-with-lease'
+expect block "rm -rf '/tmp'/*"                              # quoted dir must not evade
+expect block 'rm -rf "/tmp"/*'
+expect block 'rm -rf "$HOME"/.claude'
+expect block 'git commit -m x && git push --force'          # force push after separator still blocked
 
 # ── must ALLOW ──────────────────────────────────────────────────────────────
 expect allow 'rm -f /tmp/.deliver-PAY-123-*'                 # prefix-anchored toolkit scratch
@@ -44,6 +48,8 @@ expect allow 'rm -f ~/.claude/agent-memory/grooming-agent/sessions/PAY-123-*'
 expect allow 'git push origin main'
 expect allow 'git commit -m "fix rm -f false positive" ; git push'   # the bug this PR fixes
 expect allow 'git push && rm -f /tmp/.deliver-X-1'
+expect allow 'rm -rf node_modules'                          # common dev cleanup, not sensitive
+expect allow 'rm -rf ./dist'
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

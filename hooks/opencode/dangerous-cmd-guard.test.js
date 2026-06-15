@@ -19,6 +19,10 @@ const BLOCK = [
   'git push --force',
   'git push origin main -f',
   'git push --force-with-lease',
+  "rm -rf '/tmp'/*",
+  'rm -rf "/tmp"/*',
+  'rm -rf "$HOME"/.claude',
+  'git commit -m x && git push --force',
 ];
 
 const ALLOW = [
@@ -29,6 +33,8 @@ const ALLOW = [
   'git push origin main',
   'git commit -m "fix -f false positive" ; git push',
   'git push && rm -f /tmp/.deliver-X-1',
+  'rm -rf node_modules',
+  'rm -rf ./dist',
 ];
 
 let fail = 0;
