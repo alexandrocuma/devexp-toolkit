@@ -26,7 +26,7 @@ Do **not** use it to assess code quality, test coverage, or repo hygiene — tha
 
 ## Process
 
-> **Scaffold status.** This is the foundation skill (epic #54, ticket #55). Phase 0 (orientation), the trigger/scope handling, and the report shape are live. The three review phases below are **stubs** — they describe the contract each will fulfill and point to the ticket that implements them. Until those land, `/monitor` reports the detected surface inventory and an explicit "review not yet implemented" notice rather than a fabricated score.
+> **Status.** The full review pipeline is live: scope handling (Phase 0), surface detection (Phase 1), per-surface review (Phase 2), and scoring (Phase 3) all produce real output. Remaining epic #54 work is non-blocking: persisting the report to `.devexp/system-health-review.md` and reconciling with `/improve`'s Observability dimension (#59), and documenting `/monitor` as a first-class orchestrator (#60).
 
 ### Phase 0 — Establish Scope
 
@@ -81,7 +81,7 @@ A live connector marks its category present **even if no repo signal exists** (a
 
 **Honor `scope` from Phase 0.** If `scope != "all"`, restrict detection to the named category (or to the connector matching the hint). If the hint resolves to no detected surface, say so and list what *was* detected — do not silently widen to all.
 
-**Emit the surface inventory** before any review (this is the only output Phase 1 produces on its own while Phases 2–3 remain stubs):
+**Emit the surface inventory** before any review, so the reader sees what's in scope before findings:
 
 ```
 Detected surfaces (scope: <all / "<surface>">):
@@ -92,7 +92,7 @@ Detected surfaces (scope: <all / "<surface>">):
   Tracing / Metrics   : N/A      — no signals
 ```
 
-While Phases 2–3 are not yet implemented, stop after the inventory and report that the review/scoring steps are pending (#57, #58) rather than fabricating per-surface findings or a score.
+With the inventory emitted, proceed to review each in-scope detected surface (Phase 2).
 
 ### Phase 2 — Review Each Surface
 
@@ -129,11 +129,42 @@ Find these paths in the code (handler signatures, job/worker registrations, outb
 - **partial** — some signal exists but a key measurement is missing (e.g. logged but no error-rate alert)
 - **blind** — no observability attaches to this path (the actionable gaps)
 
-Output the per-surface findings and the coverage table for Phase 3 to score. While Phase 3 (scoring) is still a stub, present the findings and coverage, then note that the composite score is pending (#58) rather than inventing one.
+Output the per-surface findings and the coverage table, then proceed to score them (Phase 3).
 
-### Phase 3 — Score & Flag  *(implemented in #58)*
+### Phase 3 — Score & Flag
 
-> **Stub.** Assign each surface 🟢/🟡/🔴/N/A, compute an overall composite score from the non-N/A surfaces, and list concrete anomalies / blind spots as actionable items with evidence — not just colors. The assessment reflects current deployed/config state and does not diff commits. Until #58 lands, report: "scoring not yet implemented (#58)".
+Turn the Phase 2 findings into a per-surface status, one composite score, and a ranked list of what's actually wrong.
+
+**This assessment is change-independent.** It scores the deployed/configured system *as it stands right now* — it never diffs commits, never references recent changes, and is equally valid on a repo with no activity in months. Do not let git history influence the score in either direction.
+
+**Per-surface status** — from that surface's Phase 2 findings:
+
+| Status | Meaning |
+|--------|---------|
+| 🟢 | Live signal nominal (or, in config mode, definitions complete and internally consistent); no critical-path gap attributable to this surface |
+| 🟡 | Partial — some signal exists but a key piece is missing or unverifiable (e.g. dashboards defined but rendering empty, alerts without recipients, config present but no connector to confirm it's live) |
+| 🔴 | Failing — live signal shows a real problem (firing critical alerts, broken pipeline, unhealthy resources) **or** a critical path is blind with no compensating signal |
+| N/A | Not detected in Phase 1 — excluded from the composite, never scored as a failure |
+
+**Composite score** — map each non-N/A surface to points (🟢 = 100, 🟡 = 50, 🔴 = 0), take the **equal-weighted mean** across non-N/A surfaces, and band the result:
+
+```
+overall = mean(points for each non-N/A surface)
+  ≥ 80  → 🟢 healthy
+  40–79 → 🟡 needs attention
+  < 40  → 🔴 unhealthy
+```
+
+Equal weighting is the documented default — every detected surface counts the same — and is intentionally simple so the number is explainable. It is overrideable later (a future per-surface weight map) without changing this contract. State the formula and the non-N/A surface count alongside the number so the score is never a black box. If *every* surface is N/A, there is nothing to score: report "no surfaces detected" rather than a misleading 0 or 100.
+
+**Anomalies / blind spots** — the score says *how much*; this list says *what to do*. Compile every 🟡/🔴 surface finding and every `partial`/`blind` critical path from the Phase 2 coverage table into concrete, actionable items — never just colors. Each item carries:
+
+- **what's off** — one line, specific ("checkout DB writes have no error-rate signal", not "logging could be better")
+- **where** — the surface and/or critical path, with **evidence**: a `file:line`, a live alert/dashboard name, or the explicit absence
+- **provenance** — `[live]` or `[config]`, carried through from Phase 2
+- **suggested action** — the smallest next step that would clear it
+
+Rank the list 🔴 before 🟡, and within each, live-confirmed failures before config-only gaps. This ranked list is the heart of the report — a 🟡 score with three clear actions is more useful than a bare color.
 
 ### Phase 4 — Report
 
@@ -173,5 +204,4 @@ Persisting this report to `.devexp/system-health-review.md` and reconciling with
 A System Health Review (the Phase 4 table) with:
 - A per-surface status for each detected, in-scope surface
 - An overall composite score across non-N/A surfaces
-- An evidence-backed list of anomalies / blind spots
-- An explicit note of which phases are not yet implemented while this skill is in scaffold state
+- An evidence-backed, ranked list of anomalies / blind spots with suggested actions
