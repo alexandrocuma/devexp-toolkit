@@ -191,7 +191,7 @@ If no logging library is detected in the project, note it and skip — do not ad
 
 **3d. Surface SLO candidates:**
 
-For each new or modified critical path identified above (API handler, background job, external call, DB write), note the natural SLI attachment point — what would a team measure here (latency, error rate, throughput, queue depth)? List these as candidates in the Phase 7 report. Do not create dashboards, alert configs, or metric code — just surface what exists as observable points so the team can wire them up.
+For each new or modified critical path identified above (API handler, background job, external call, DB write), note the natural SLI attachment point — what would a team measure here (latency, error rate, throughput, queue depth)? List these as candidates in the Phase 8 report. Do not create dashboards, alert configs, or metric code — just surface what exists as observable points so the team can wire them up.
 
 ---
 
@@ -228,7 +228,7 @@ find . -maxdepth 4 -name "*.spec.*" -o -name "*.e2e.*" -o -name "*_test.*" 2>/de
 ```
 
 - If an E2E suite exists: check whether the user flows touched by this ticket have corresponding E2E scenarios. If gaps exist, read 2–3 existing E2E test files to learn the project's conventions, then generate scenarios that cover the changed flows.
-- If no E2E suite exists: note the gap in the Phase 7 report. Do not scaffold an E2E framework unilaterally.
+- If no E2E suite exists: note the gap in the Phase 8 report. Do not scaffold an E2E framework unilaterally.
 
 **Regression check:**
 
@@ -254,7 +254,7 @@ If new or modified endpoints are detected, check whether the project has a load 
 find . -maxdepth 4 \( -name "*.k6.js" -o -name "locustfile*" -o -name "artillery*" -o -name "*.gatling.*" \) 2>/dev/null | grep -v node_modules | head -3
 ```
 
-If a framework exists: offer to generate load test scenarios (smoke / load / stress) for the new endpoints. If the user confirms, read 1-2 existing test files to learn the format, then generate scenarios. If no framework exists: note the gap in the Phase 7 report.
+If a framework exists: offer to generate load test scenarios (smoke / load / stress) for the new endpoints. If the user confirms, read 1-2 existing test files to learn the format, then generate scenarios. If no framework exists: note the gap in the Phase 8 report.
 
 ---
 
@@ -387,7 +387,30 @@ glab release create "v<version>" --name "v<version>" --notes "<changelog entry>"
 
 ---
 
-### Phase 7 — Report & Hand Off
+### Phase 7 — Retire Delivery Artifacts  *(on successful completion only)*
+
+Once the release succeeds, retire the artifacts **this** delivery created so they don't linger and drift from reality. **Gate strictly on success** — if delivery failed or was aborted at any earlier step, **skip this phase entirely and preserve everything** (worktree, plan, scratch) for inspection. Scope every action to this ticket; the repo-wide sweep of orphaned artifacts belongs to `/improve` (C2), not here.
+
+1. **Worktree** — already removed in Phase 6a on a successful release; confirm it's gone:
+   ```bash
+   git worktree list   # this ticket's tree should no longer appear (nothing to do if the run was single-stream)
+   ```
+2. **Persisted plan (per A3)** — the plan described pre-merge intent; once delivered it only invites drift. Remove the local copy; remove the ticket-platform copy too (ask first, since it's shared):
+   ```bash
+   rm -f ~/.claude/agent-memory/grooming-agent/plans/<TICKET-ID>.md
+   ```
+3. **Groom-session artifacts** — remove transient grooming session/scratch files keyed to `<TICKET-ID>` under `~/.claude/agent-memory/grooming-agent/`. Never delete the project's shared `<PROJECT-NAME>.md` memory — that's not ticket-scoped.
+4. **/tmp scratch** — remove only the scratch files **this run** wrote under `/tmp` (heredoc bodies, plan scratch, temp diffs). Match by ticket id or this session — never a blanket `/tmp` wipe:
+   ```bash
+   rm -f /tmp/*<TICKET-ID>* /tmp/.deliver-<TICKET-ID>-* 2>/dev/null
+   ```
+5. **Agent-memory entries** — prune or refresh agent-memory entries tied **to this ticket only**, and **only when drift/staleness warrants it** (the delivered work changed something an entry described): re-date re-verified entries, remove resolved ones, leave the rest. Entries unrelated to this ticket are out of scope — that's C2.
+
+Record what was retired in the Phase 8 report.
+
+---
+
+### Phase 8 — Report & Hand Off
 
 ```
 ## Delivered: <ticket-id> — "<title>"
@@ -401,6 +424,7 @@ glab release create "v<version>" --name "v<version>" --notes "<changelog entry>"
   E2E coverage:    <N scenarios added / no E2E suite detected / already covered>
   Review:          <findings addressed / approved>
   Release:         v<version> published / pending manual release
+  Cleanup:         <worktree + plan + groom session + /tmp retired / preserved — delivery failed>
 
 Next:
   /improve   — run a health check now that new code is live
