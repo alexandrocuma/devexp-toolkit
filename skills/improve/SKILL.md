@@ -50,9 +50,9 @@ Context:
 Steps:
   1. Health scorecard    [always runs]
   2. Stale work + dead code scan   [optional — yes/skip]
-  2b. Toolkit hygiene sweep        [optional — yes/skip — removes orphaned artifacts, confirmed]
-  3. Tech debt triage              [optional — yes/skip]
-  4. Retrospective                 [optional — yes/skip]
+  3. Toolkit hygiene sweep         [optional — yes/skip — removes orphaned artifacts, confirmed]
+  4. Tech debt triage              [optional — yes/skip]
+  5. Retrospective                 [optional — yes/skip]
 
 Proceed with all steps? (yes / health only / choose)
 ```
@@ -313,13 +313,18 @@ Hygiene sweep — candidates found:
 Remove these N artifacts? (yes / choose / skip)
 ```
 
-**On confirmation**, remove with the cleanup-safety guards — each pattern anchored to a verified, charset-clean identifier, never a bare glob:
+**On confirmation**, remove with the cleanup-safety guards. Every id is validated before it reaches a delete — the same guard `deliver` Phase 7 uses (cleanup-safety rule 3): skip any id that is empty or contains anything outside `[A-Za-z0-9_-]`, so a glob can never collapse to a bare wildcard:
 
 ```bash
-git worktree remove "<verified-abs-path>"            # only for confirmed-orphan trees
-git worktree prune                                   # drop stale admin entries (dirs already gone)
-rm -f ~/.claude/agent-memory/grooming-agent/plans/"<closed-ticket-id>".md
-rm -f /tmp/.deliver-"<finished-id>"-* 2>/dev/null
+# Validate an identifier before using it in any delete pattern.
+safe_id() { case "$1" in ""|*[!A-Za-z0-9_-]*) return 1 ;; *) return 0 ;; esac; }
+
+git worktree remove "<verified-abs-path>"   # confirmed-orphan trees only (refuses a dirty tree without --force)
+git worktree prune                          # drop stale admin entries for dirs already gone
+
+id="<closed-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/grooming-agent/plans/"$id".md
+id="<closed-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/grooming-agent/sessions/*"$id"* 2>/dev/null
+id="<finished-id>";      safe_id "$id" && rm -f /tmp/.deliver-"$id"-* /tmp/.improve-"$id"-* /tmp/.groom-"$id"-* 2>/dev/null
 ```
 
 Log every removal line-by-line. Anything uncertain or live is **kept and reported**, never removed.
