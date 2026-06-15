@@ -11,7 +11,7 @@ You are running the **continuous improvement cycle** — the closing ceremony of
 
 - `/improve` — full cycle
 - `/improve --health` — health scorecard only
-- `/improve --cleanup` — stale work + dead code only
+- `/improve --cleanup` — stale work + dead code + toolkit hygiene sweep only
 - `/improve --retro` — retrospective only
 
 ## When to Use
@@ -50,6 +50,7 @@ Context:
 Steps:
   1. Health scorecard    [always runs]
   2. Stale work + dead code scan   [optional — yes/skip]
+  2b. Toolkit hygiene sweep        [optional — yes/skip — removes orphaned artifacts, confirmed]
   3. Tech debt triage              [optional — yes/skip]
   4. Retrospective                 [optional — yes/skip]
 
@@ -266,6 +267,62 @@ Agent-memory duplication found:
 Do not delete anything automatically — surface findings only.
 
 **Applying accepted cleanup — worktree isolation.** `/improve` surfaces findings; it never edits on its own. When the user accepts findings and asks to apply them, and the work splits into **independent streams that mutate files in parallel** (e.g. dead-code removal, doc refresh, and debt fixes running concurrently), isolate each stream in its own git worktree per the **worktree-per-ticket convention** (`docs/guides/worktree-per-ticket.md`) — one worktree per stream, each branched off the cleanup base. Streams **merge serially** back to the base; any conflict **surfaces to the user and is never auto-resolved**. A findings-only run, a single stream, or a trivial one-file fix runs in place — **no worktree overhead**.
+
+---
+
+### Phase 3.5 — Toolkit Hygiene Sweep  *(optional)*
+
+Failed and abandoned deliveries leave **repo-wide** orphans that nothing retires: worktrees from failed deliveries, stale persisted plans, old groom sessions, drift-stale agent-memory, and stray `/tmp` scratch from toolkit runs. This sweep finds and retires them. (Per-delivery cleanup of a single ticket's artifacts is `/deliver` Phase 7, not here.)
+
+**This sweep deletes — so it follows these cleanup-safety rules** (the rules here are self-contained and authoritative; canonical rationale lives in the devexp-toolkit repo's `docs/guides/cleanup-safety.md`, a maintainer reference that is **not** installed alongside this skill — do not look for it in the current repo): dry-run and list first, confirm or log every removal, scoped patterns only (every glob anchored to a verified non-empty `[A-Za-z0-9_-]` identifier), never touch shared/unscoped state, and never prune memory without a staleness reason. Honor the skill's standing **"Never auto-delete"** stance — present the candidate list and act only on the user's confirmation (or a clear log when run under an explicit `--cleanup` confirmation).
+
+**Find candidates (read-only — list, don't delete):**
+
+```bash
+# Orphaned worktrees: registered trees whose dir is gone, or branches from failed deliveries
+git worktree list --porcelain 2>/dev/null
+git worktree prune --dry-run 2>/dev/null            # what `prune` would remove (stale admin entries)
+
+# Stale persisted plans whose ticket is already closed/delivered
+ls ~/.claude/agent-memory/grooming-agent/plans/ 2>/dev/null
+
+# Old groom sessions
+ls ~/.claude/agent-memory/grooming-agent/sessions/ 2>/dev/null
+
+# Stray /tmp scratch left by toolkit runs (list only)
+ls -1 /tmp/.deliver-* /tmp/.improve-* /tmp/.groom-* 2>/dev/null
+```
+
+For each candidate, classify before proposing removal:
+- **Orphaned worktree** → safe to remove only if its branch is merged or its delivery is abandoned (no open PR, no uncommitted work). A worktree with uncommitted work or an open ticket is **live — preserve it.**
+- **Persisted plan** → removable once its ticket is closed/delivered; keep plans for open tickets.
+- **Groom session** → removable when its ticket is closed.
+- **Agent-memory entry** → prune/refresh **only** when the canonical A1 Drift Classification flags it stale (codebase-navigator's Memory Protocol) — never on age alone.
+- **/tmp scratch** → removable if it matches a toolkit prefix and the owning run is finished.
+
+**Present the sweep report and confirm:**
+
+```
+Hygiene sweep — candidates found:
+  Orphaned worktrees:   N (branch merged/abandoned)   [live, preserved: M]
+  Stale plans:          N (ticket closed)
+  Old groom sessions:   N
+  Drift-stale memory:   N (A1 flagged)                 [kept, still current: M]
+  /tmp scratch:         N (toolkit prefix)
+
+Remove these N artifacts? (yes / choose / skip)
+```
+
+**On confirmation**, remove with the cleanup-safety guards — each pattern anchored to a verified, charset-clean identifier, never a bare glob:
+
+```bash
+git worktree remove "<verified-abs-path>"            # only for confirmed-orphan trees
+git worktree prune                                   # drop stale admin entries (dirs already gone)
+rm -f ~/.claude/agent-memory/grooming-agent/plans/"<closed-ticket-id>".md
+rm -f /tmp/.deliver-"<finished-id>"-* 2>/dev/null
+```
+
+Log every removal line-by-line. Anything uncertain or live is **kept and reported**, never removed.
 
 ---
 
