@@ -107,7 +107,7 @@ Wait for confirmation. The user can stop at any step.
 
 ### Phase 1.5 — Isolate the Ticket in a Worktree
 
-Before implementing, isolate this ticket's work in its own git worktree. This follows the **worktree-per-ticket convention** documented in `docs/guides/worktree-per-ticket.md` (devexp-toolkit) — that doc is the single source of truth for the trigger, naming scheme, lifecycle, and merge discipline summarized here. Phases 2–5 (implement, instrument, test, review) all run **inside** this worktree; the main checkout is never mutated during delivery.
+Before implementing, isolate this ticket's work in its own git worktree. The trigger, naming scheme, lifecycle, and merge discipline are all summarized inline below — this skill is self-contained. (The canonical rationale lives in `docs/guides/worktree-per-ticket.md`, a maintainer reference in the devexp-toolkit repo that is **not** installed alongside this skill — don't look for it in the current repo.) Phases 2–5 (implement, instrument, test, review) all run **inside** this worktree; the main checkout is never mutated during delivery.
 
 **Create the worktree** on a fresh branch derived from the ticket id — branch `<type>/<ticket-id>`, directory a sibling of the main checkout so it is never scanned or committed into the primary tree:
 
@@ -454,4 +454,4 @@ Next:
 - **Release is the only hard gate** — every other step can be skipped; release requires explicit confirmation because it's irreversible and affects shared systems
 - **Architecture check is a suggestion, not a gate** — surface it for high-complexity tickets; never block on it
 - **Test coverage, not test count** — if the implementation agent wrote tests, verify they cover the acceptance criteria, not just that they exist
-- **Worktree isolation is the default, merge is deferred** — each ticket is delivered in its own worktree (`docs/guides/worktree-per-ticket.md`); the branch merges only at the release gate, and conflicts always surface to the user — never auto-resolve them
+- **Worktree isolation is the default, merge is deferred** — each ticket is delivered in its own worktree (rationale: `docs/guides/worktree-per-ticket.md`, maintainer-only in the devexp-toolkit repo, not installed); the branch merges only at the release gate, and conflicts always surface to the user — never auto-resolve them
