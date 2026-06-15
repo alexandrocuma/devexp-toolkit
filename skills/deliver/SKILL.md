@@ -49,8 +49,14 @@ Wait for the grooming-agent to complete before proceeding.
 
 ```bash
 anchor="<sha-from-plan-anchor>"
-git rev-parse HEAD                                          # current HEAD
-git log "${anchor}..HEAD" --name-only --pretty=format: | sort -u | sed '/^$/d'   # paths changed since the plan was validated
+# The commit range is precise only if the anchor is an ancestor of HEAD.
+# If the SHA is missing (history rewritten) or not an ancestor (diverged branch),
+# fall back to the date-based classification so drift is never understated.
+if git merge-base --is-ancestor "$anchor" HEAD 2>/dev/null; then
+  git log "${anchor}..HEAD" --name-only --pretty=format: | sort -u | sed '/^$/d'   # paths changed since the plan was validated
+else
+  echo "anchor not an ancestor of HEAD — use the date fallback below"
+fi
 ```
 
 | Drift since anchor | Action |
@@ -59,7 +65,7 @@ git log "${anchor}..HEAD" --name-only --pretty=format: | sort -u | sed '/^$/d'  
 | **SMALL** — only peripheral paths changed | Proceed, but note the scoped deltas to the user and re-verify any plan step that touches a changed path |
 | **BIG** — a structural section's paths changed | The plan may be built on a stale map — **re-groom before building** (invoke `grooming-agent` as above), then reload the refreshed plan |
 
-If the plan has no anchor (groomed before A3), treat it as drift-unknown: run the classification against the plan's `Groomed:`/`Last updated` date instead, and prefer re-grooming if the date is not same-day.
+If the plan has no anchor (groomed before A3), or the anchor is not an ancestor of HEAD (per the guard above), treat it as drift-unknown: run the classification against the plan's `Groomed` date instead (`git log --since="<Groomed date> 00:00:00" --name-only`), and prefer re-grooming if that date is not same-day.
 
 ---
 

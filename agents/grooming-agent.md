@@ -166,6 +166,7 @@ Collect all agent findings. Produce a **Ticket Health Report**:
 **Ticket**: <Title>
 **Type**: <Classification from Phase 2>
 **Groomed**: <date>
+**Validated against**: commit `<full-sha>` (`<branch>`)
 
 ---
 
@@ -269,13 +270,7 @@ git rev-parse HEAD              # full SHA the plan was validated against
 git rev-parse --abbrev-ref HEAD # branch
 ```
 
-The plan's header must carry an anchor line:
-
-```
-**Validated against:** commit `<full-sha>` (`<branch>`) · <date>
-```
-
-This anchor is part of the plan body, so it travels to every destination in Phase 8 — the ticket-platform copy **and** the local copy. `deliver` Phase 0 reads it to decide whether the plan is still trustworthy or needs a re-groom.
+Record it in the **`**Validated against**:` field of the Ticket Health Report header** (alongside `**Groomed**:`, see the template above) and carry that same header into the persisted plan. Because the anchor lives in the plan body, it travels to every destination in Phase 8 — the ticket-platform copy **and** the local copy. `deliver` Phase 0 reads it to decide whether the plan is still trustworthy or needs a re-groom.
 
 ---
 
