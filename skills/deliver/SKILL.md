@@ -294,17 +294,20 @@ Wait for explicit **yes**. If the user says no or wants to release manually, sto
 
 **6a. Merge the ticket worktree:**
 
-Integrate the ticket's branch into the base branch through the project's normal path — merge the open PR, or a direct merge if no PR workflow is used. Merges are **serialized**: if other worktrees are also ready, merge them one at a time so each sees a consistent base. If the merge reports a **conflict, stop and surface it to the user — never auto-resolve.**
+First **return to the main checkout.** Phases 2–5 ran inside the worktree, but `git worktree remove` refuses to delete a worktree you are currently inside, and the changelog/version/tag steps below operate on the base branch in the main checkout:
 
 ```bash
-git worktree list   # confirm which worktree/branch belongs to this ticket
+cd "$(git worktree list --porcelain | head -1 | cut -d' ' -f2)"   # main checkout is always the first worktree listed
 ```
 
-On a **successful** merge and release, remove the worktree and its branch — the toolkit cleans up after itself:
+Integrate the ticket's branch into the base branch through the project's normal path — merge the open PR, or a direct merge if no PR workflow is used. Merges are **serialized**: if other worktrees are also ready, merge them one at a time so each sees a consistent base. If the merge reports a **conflict, stop and surface it to the user — never auto-resolve.**
+
+On a **successful** merge and release, remove the worktree and its branch — the toolkit cleans up after itself. `git worktree list` prints each worktree's absolute path; remove the ticket's by that path:
 
 ```bash
-git worktree remove "../$(basename "$(git rev-parse --show-toplevel)")-worktrees/<ticket-id>"
-git branch -d "<type>/<ticket-id>" 2>/dev/null
+git worktree list                                          # find the ticket's worktree path
+git worktree remove "/abs/path/to/<repo>-worktrees/<ticket-id>"
+git branch -d "<type>/<ticket-id>"
 ```
 
 On **failure** at any release step, **keep the worktree** for inspection — never remove it. (Skip this whole step entirely if delivery ran in the single-stream fallback with no worktree.)
@@ -367,7 +370,7 @@ glab release create "v<version>" --name "v<version>" --notes "<changelog entry>"
 ```
 ## Delivered: <ticket-id> — "<title>"
 
-  Worktree:        <branch/dir created; merged + removed on release / kept on failure / single-stream, none>
+  Worktree:        <branch + dir created — merged and removed on release / kept on failure / none (single-stream)>
   Implementation:  complete — <N files changed>
   Infrastructure:  <N IaC files changed / no infrastructure changes detected>
   Observability:   <N log calls added / skipped — no new entry points>
