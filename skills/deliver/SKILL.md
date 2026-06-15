@@ -411,13 +411,13 @@ With `$ticket` verified non-empty and safe, retire each artifact:
    rm -f ~/.claude/agent-memory/grooming-agent/plans/"$ticket".md
    ```
    The ticket-platform copy is a tracker action, not a filesystem delete — **ask the user first** (it's shared), then remove it via the platform's API/CLI.
-3. **Groom-session artifacts** — remove transient grooming session/scratch files keyed to `$ticket`. Scope the glob to the id so it can never match the project's shared `<PROJECT-NAME>.md` memory (which is not ticket-scoped and must survive):
+3. **Groom-session artifacts** — remove transient grooming session/scratch files keyed to `$ticket`. **Prefix-anchor** the glob with the id (`"$ticket"-*`, never `*"$ticket"*`) so it can never match the project's shared `<PROJECT-NAME>.md` memory and an empty id can't widen it:
    ```bash
-   rm -f ~/.claude/agent-memory/grooming-agent/sessions/*"$ticket"* ~/.claude/agent-memory/grooming-agent/*"$ticket"*.scratch 2>/dev/null
+   rm -f ~/.claude/agent-memory/grooming-agent/sessions/"$ticket"-* ~/.claude/agent-memory/grooming-agent/"$ticket".scratch 2>/dev/null
    ```
-4. **/tmp scratch** — remove only the scratch files **this run** wrote under `/tmp` (heredoc bodies, plan scratch, temp diffs), matched by the verified id — never a blanket `/tmp` wipe:
+4. **/tmp scratch** — remove only the scratch files **this run** wrote under `/tmp` (heredoc bodies, plan scratch, temp diffs). Match by the toolkit's id-prefixed scratch names — never a leading-wildcard `/tmp/*` glob:
    ```bash
-   rm -f /tmp/*"$ticket"* /tmp/".deliver-$ticket-"* 2>/dev/null
+   rm -f /tmp/.deliver-"$ticket"-* /tmp/.groom-"$ticket"-* 2>/dev/null
    ```
 5. **Agent-memory entries** — prune or refresh agent-memory entries tied **to this ticket only**, and **only when drift/staleness warrants it** (the delivered work changed something an entry described): re-date re-verified entries, remove resolved ones, leave the rest. Entries unrelated to this ticket are out of scope — that's C2.
 

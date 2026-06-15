@@ -323,7 +323,7 @@ git worktree remove "<verified-abs-path>"   # confirmed-orphan trees only (refus
 git worktree prune                          # drop stale admin entries for dirs already gone
 
 id="<closed-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/grooming-agent/plans/"$id".md
-id="<closed-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/grooming-agent/sessions/*"$id"* 2>/dev/null
+id="<closed-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/grooming-agent/sessions/"$id"-* 2>/dev/null
 id="<finished-id>";      safe_id "$id" && rm -f /tmp/.deliver-"$id"-* /tmp/.improve-"$id"-* /tmp/.groom-"$id"-* 2>/dev/null
 ```
 

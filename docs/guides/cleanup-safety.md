@@ -8,14 +8,18 @@ The single reference for how the toolkit deletes artifacts safely. Both cleanup 
 
 2. **Confirm or log every destructive action.** Removal requires explicit user confirmation, or — when running in an already-confirmed/flagged mode — a clear line-by-line log of exactly what was removed. Silent deletion is forbidden.
 
-3. **Scoped patterns only — guard the identifier.** Every `rm`/remove must be anchored to a verified identifier (ticket id, worktree path, plan filename). Before using an id in a glob, assert it is **non-empty and matches `[A-Za-z0-9_-]`** — abort the whole step otherwise. An empty id collapses `…/*$id*` into `…/*` (a blanket wipe); a path-traversal or glob character escapes the intended directory. Never run a delete with an unset or unvalidated token.
+3. **Scoped patterns only — guard the identifier, and prefix-anchor the glob.** Every `rm`/remove must be anchored to a verified identifier (ticket id, worktree path, plan filename). Two requirements:
+   - **Validate the id first** — assert it is **non-empty and matches `[A-Za-z0-9_-]`**, aborting the whole step otherwise (a path-traversal or glob character would escape the intended directory).
+   - **Put a literal prefix before any wildcard** — write `…/.deliver-"$id"-*` or `…/"$id"-*`, never `…/*"$id"*`. A leading `*` right after the directory boundary collapses to a blanket wipe the instant `$id` is empty (`/tmp/*"$id"*` → `/tmp/*`), and it reads identically to a deliberate `/tmp/*` to any safety check.
 
    ```bash
    case "$id" in
      ""|*[!A-Za-z0-9_-]*) echo "id missing or unsafe — skipping deletion"; return 2>/dev/null || exit 0 ;;
    esac
-   rm -f /path/*"$id"* 2>/dev/null   # safe: $id verified non-empty and charset-clean
+   rm -f /tmp/.deliver-"$id"-* 2>/dev/null   # safe: id validated AND the glob is prefix-anchored
    ```
+
+   The `dangerous-cmd-guard` hook enforces this at execution time — it blocks an unanchored wildcard delete in a sensitive dir (`/tmp/*`, `~/.claude/.../*`) even if a skill's inline guard is wrong, so a prefix-anchored glob is also the only form that will actually run.
 
 4. **Never touch shared or unscoped state.** Project-shared agent memory (`<PROJECT-NAME>.md`), the main checkout, the default branch, and anything not provably an orphan or a this-ticket artifact are off-limits. Scope globs so they cannot match shared files even on an empty match set.
 
