@@ -47,9 +47,52 @@ Surface categories (the agnostic taxonomy every later phase works in):
 
 A surface is only in play if it is **detected** (Phase 1). Categories with no signal are reported `N/A`, never scored red.
 
-### Phase 1 — Detect Surfaces  *(implemented in #56)*
+### Phase 1 — Detect Surfaces
 
-> **Stub.** Detect which surface categories are present, by repo signals (IaC, dashboards-as-code, alert rules, instrumentation SDK imports) and by the presence of authenticated CLIs/MCPs — resolving vendor identity at runtime, never hardcoding it here. Honor `scope` from Phase 0. Emit a surface inventory before any review. Until #56 lands, report: "surface detection not yet implemented (#56)".
+Determine which surface categories are actually present. A category is **detected** if it has at least one signal from either class below. Detection is the gate for everything downstream: a category with **zero** signals is reported `N/A` (Phase 4) and never reviewed or scored — it is genuinely absent, not unhealthy.
+
+Two signal classes per category. Gather both; either one is sufficient to mark the category present.
+
+**Signal class A — repo signals (configuration-as-code).** Search the working tree for the generic shapes below. These patterns describe *kinds* of files and content, not products — resolve any concrete vendor identity from what you actually find, never assume one.
+
+| Category | Repo signals (generic shapes — match the kind, not a brand) |
+|----------|-------------------------------------------------------------|
+| `cloud` / `infra` | infrastructure-as-code declarations (HCL/Terraform-style `*.tf`/`*.hcl`, `*.bicep`, CloudFormation/ARM-style resource templates in `*.yaml`/`*.json`), container/orchestration manifests (`Dockerfile`, `docker-compose*`, Kubernetes manifests, Helm charts) |
+| `dashboards` | dashboard-as-code definitions — JSON/YAML files whose schema describes panels/rows/visualizations, anything under a `dashboards/` directory |
+| `logging` | structured-logging SDK imports in source, log-shipper/collector config files, saved log-query definitions |
+| `alerting` | alert/alarm rule files — YAML/JSON whose schema describes rules/conditions/thresholds — and notification/routing policy configs |
+| `tracing` / `metrics` | distributed-tracing or metrics instrumentation SDK imports in source, metric/exporter/collector configuration, metric definition files |
+
+Run a broad search per in-scope category (adapt globs to the repo's languages), e.g.:
+
+```bash
+# Example shape — cloud/infra repo signals (extend per category, exclude vendored dirs)
+find . -maxdepth 4 \( -name "*.tf" -o -name "*.hcl" -o -name "*.bicep" -o -name "Dockerfile" -o -name "docker-compose*" \) \
+  2>/dev/null | grep -vE "node_modules|\.git|vendor" | head
+grep -rlnE "kind:\s*(Deployment|Service|Ingress)" . 2>/dev/null | grep -vE "node_modules|\.git" | head   # k8s manifests
+```
+
+**Signal class B — connectors (live, already authenticated).** Probe the environment for tooling the user has *already* authenticated — never trigger an auth flow, never request credentials. Resolve the provider identity from whatever responds.
+
+- **CLIs on `PATH`:** enumerate available command-line tools that expose an account/login *status* subcommand, and probe each read-only (e.g. a `… account show` / `… auth status` / `whoami`-style call). A tool that reports an authenticated session is a live connector for its category. Do not hardcode a list of tool names here — discover what is installed and infer the category from the tool's own output.
+- **Connected MCP servers:** inspect the available MCP tool namespaces for ones that map to a cloud or observability provider (a namespace exposing resource/dashboard/log/metric operations). A connected server is a live connector for its category.
+
+A live connector marks its category present **even if no repo signal exists** (and vice-versa) — the two classes are complementary: config-as-code without a connector is reviewable statically; a connector without config-as-code means the surface is managed outside this repo.
+
+**Honor `scope` from Phase 0.** If `scope != "all"`, restrict detection to the named category (or to the connector matching the hint). If the hint resolves to no detected surface, say so and list what *was* detected — do not silently widen to all.
+
+**Emit the surface inventory** before any review (this is the only output Phase 1 produces on its own while Phases 2–3 remain stubs):
+
+```
+Detected surfaces (scope: <all / "<surface>">):
+  Cloud / Infra       : present  — <repo: N IaC files | connector: <resolved provider> authed | both>
+  Dashboards          : present  — <repo: N dashboard defs | connector: …>
+  Logging             : N/A      — no signals
+  Alerting            : present  — <…>
+  Tracing / Metrics   : N/A      — no signals
+```
+
+While Phases 2–3 are not yet implemented, stop after the inventory and report that the review/scoring steps are pending (#57, #58) rather than fabricating per-surface findings or a score.
 
 ### Phase 2 — Review Each Surface  *(implemented in #57)*
 
