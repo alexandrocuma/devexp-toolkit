@@ -14,7 +14,7 @@ This is a **point-in-time review**, not a runtime daemon: it inspects what exist
 - `/monitor` — review every deployed-system surface detected in this repo/environment
 - `/monitor <surface>` — scope the review to a single detected surface (e.g. the cloud surface, the dashboards surface, the logging surface)
 
-Invoked directly by the user. `/monitor` is self-contained — it does not call other skills, and other skills do not call it. (`/improve`'s Observability Maturity dimension defers to this skill for the deep review — see #59 — but that is a documentation pointer, not a runtime dependency.)
+Invoked directly by the user. `/monitor` is self-contained — it does not call other skills, and other skills do not call it. (`/improve`'s Observability Maturity dimension *defers* to this skill for the deep review by reading the persisted `.devexp/system-health-review.md` if present — a one-way artifact handoff, not a runtime dependency.)
 
 ## When to Use
 
@@ -26,7 +26,7 @@ Do **not** use it to assess code quality, test coverage, or repo hygiene — tha
 
 ## Process
 
-> **Status.** The full review pipeline is live: scope handling (Phase 0), surface detection (Phase 1), per-surface review (Phase 2), and scoring (Phase 3) all produce real output. Remaining epic #54 work is non-blocking: persisting the report to `.devexp/system-health-review.md` and reconciling with `/improve`'s Observability dimension (#59), and documenting `/monitor` as a first-class orchestrator (#60).
+> **Status.** The full pipeline is live: scope handling (Phase 0), surface detection (Phase 1), per-surface review (Phase 2), scoring (Phase 3), report (Phase 4), and persistence (Phase 5) all produce real output. Remaining epic #54 work is non-blocking: documenting `/monitor` as a first-class orchestrator (#60).
 
 ### Phase 0 — Establish Scope
 
@@ -187,7 +187,23 @@ Anomalies / blind spots:
   - <actionable item with evidence>
 ```
 
-Persisting this report to `.devexp/system-health-review.md` and reconciling with `/improve`'s Observability dimension is handled in #59.
+### Phase 5 — Persist
+
+Write the rendered report (the Phase 4 block) to `.devexp/system-health-review.md`, overwriting any previous run — it is a current-state snapshot, not an append log. This is the artifact `/improve` reads to avoid re-deriving system health.
+
+```bash
+mkdir -p .devexp
+# write the report to .devexp/system-health-review.md (overwrite)
+```
+
+Ensure the artifact is git-ignored — it is a local snapshot, not source. The existing ignore entry targets the baseline *file* (`.devexp/health-baseline.json`), not the `.devexp/` directory, so the review needs its **own** line:
+
+```bash
+grep -qxF '.devexp/system-health-review.md' .gitignore 2>/dev/null \
+  || printf '%s\n' '.devexp/system-health-review.md' >> .gitignore
+```
+
+**Trend continuity (optional).** If `.devexp/health-baseline.json` exists, update its existing `observability` key with this run's overall band so `/improve` can show a trend — honor the current schema, do not migrate it or add new top-level keys. If the baseline is absent, do not create one; `/monitor` does not own that file.
 
 ---
 

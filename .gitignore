@@ -11,3 +11,4 @@ cli/internal/assets/devexp.config.json
 cli/internal/assets/uninstall.sh
 graphify-out/
 .devexp/health-baseline.json
+.devexp/system-health-review.md

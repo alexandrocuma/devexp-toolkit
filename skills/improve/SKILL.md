@@ -124,6 +124,16 @@ If no infrastructure definitions are found: mark as N/A.
 Thresholds: 🟢 variables documented, no inline secrets, versioning/locking present · 🟡 partial (some undocumented vars or missing lock) · 🔴 inline secrets found or no documentation at all
 
 **Observability Maturity:**
+
+There is one home for the deep "is the deployed system healthy?" review — `/monitor`. If it has run, reuse its result instead of re-deriving:
+
+```bash
+# Prefer /monitor's persisted review if present — it's the authoritative deep assessment
+cat .devexp/system-health-review.md 2>/dev/null | head -40
+```
+
+If `.devexp/system-health-review.md` exists, take this dimension's status from its overall band and cite the review (note its date), pointing the reader to `/monitor` for the full breakdown — do not recompute. If it is absent, fall back to the lightweight repo-signal check below, and suggest running `/monitor` for the deep assessment (don't attempt a deep review here — that's `/monitor`'s job):
+
 ```bash
 # Check for SLO/SLI documentation
 find . -maxdepth 4 \( -name "slo.md" -o -name "slos.md" -o -name "sli.md" -o -name "runbook*" \) 2>/dev/null | grep -v ".git" | head -5
