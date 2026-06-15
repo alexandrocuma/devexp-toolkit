@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-15
+
+Epic #32 — fresh memory, worktree-per-ticket delivery, and completion cleanup.
+
+### Added
+
+- **Worktree-per-ticket delivery.** `/deliver` isolates each ticket in its own git worktree (create → work → merge-at-release-gate → remove), with a single-stream fallback; each epic sub-ticket gets its own worktree so independent work runs in parallel. `/improve` isolates parallel cleanup streams the same way. New `docs/guides/worktree-per-ticket.md` convention. (#36, #37, #38)
+- **Memory freshness.** `codebase-navigator`'s coarse 30-day rebuild window is replaced by a canonical Drift Classification (CURRENT/SMALL/BIG keyed on *what changed*, not *how long ago*); `dev-agent` and `grooming-agent` run a cheap freshness gate before trusting the atlas; persisted plans are stamped with the commit they were validated against, and `/deliver` re-grooms on big drift. (#33, #34, #35)
+- **Completion cleanup.** `/deliver` gains a final phase that retires the ticket's artifacts (worktree, persisted plan, groom session, `/tmp` scratch) on successful completion; `/improve` gains a repo-wide hygiene sweep for orphaned artifacts. Both follow the new `docs/guides/cleanup-safety.md` deletion-safety rules (dry-run, validated id guards, prefix-anchored globs). (#39, #40)
+- Allow/deny test suites for the `dangerous-cmd-guard` hook (claude-code and opencode). (#50)
+
+### Changed
+
+- `dangerous-cmd-guard` now blocks unanchored wildcard deletes in sensitive directories (`/tmp/*`, `~/.claude/.../*`, and quoted variants) as an execution-time backstop for the cleanup phases. (#50)
+- Toolkit-internal `docs/` references in the orchestrator skills are labeled as maintainer-only, since `docs/` is not installed into a user's environment. (#51)
+
+### Fixed
+
+- `dangerous-cmd-guard` no longer false-positives on a force flag that appears elsewhere in a command (e.g. a short flag inside a commit message); the force-push rule now matches only an argument of the same push command. (#50)
+
 ## [0.3.0] - 2026-06-13
 
 ### Added
