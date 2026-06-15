@@ -262,6 +262,21 @@ Pass all Phase 3–6 findings as context. The plan must:
 - Have ordered steps — each step unblocked by the previous
 - Have a specific verification section (not "run tests" — specific commands and what to check)
 
+**Stamp the plan with a validation anchor.** Every line/path in the plan was verified against a specific commit; record which one so consumers can detect drift later. Capture it:
+
+```bash
+git rev-parse HEAD              # full SHA the plan was validated against
+git rev-parse --abbrev-ref HEAD # branch
+```
+
+The plan's header must carry an anchor line:
+
+```
+**Validated against:** commit `<full-sha>` (`<branch>`) · <date>
+```
+
+This anchor is part of the plan body, so it travels to every destination in Phase 8 — the ticket-platform copy **and** the local copy. `deliver` Phase 0 reads it to decide whether the plan is still trustworthy or needs a re-groom.
+
 ---
 
 ### Phase 8: Persist
@@ -276,6 +291,8 @@ Write the plan to `~/.claude/agent-memory/grooming-agent/plans/<TICKET-ID>.md`. 
 /graphify --update
 ```
 If there's no graph, or graphify is unavailable, skip the rebuild — the ticket platform and the local copy are sufficient.
+
+Both copies must retain the **Validated against** anchor from Phase 7 verbatim — never strip it from either destination. It is what lets `deliver` re-anchor the plan to current HEAD.
 
 ---
 

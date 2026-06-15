@@ -45,6 +45,22 @@ If the groom plan is missing: invoke the `grooming-agent`:
 
 Wait for the grooming-agent to complete before proceeding.
 
+**Re-anchor the plan to current HEAD.** A persisted plan was validated against a specific commit (the **Validated against** anchor `grooming-agent` stamps into the plan header). Code may have moved since, so before trusting the plan, classify the drift between that anchor and HEAD using codebase-navigator's canonical **Drift Classification** (the same structural-section rule from A1 — reference it, don't reimplement), sourcing the changed paths from the commit range rather than a date:
+
+```bash
+anchor="<sha-from-plan-anchor>"
+git rev-parse HEAD                                          # current HEAD
+git log "${anchor}..HEAD" --name-only --pretty=format: | sort -u | sed '/^$/d'   # paths changed since the plan was validated
+```
+
+| Drift since anchor | Action |
+|--------------------|--------|
+| **CURRENT** — HEAD == anchor, no commits | Use the plan as-is |
+| **SMALL** — only peripheral paths changed | Proceed, but note the scoped deltas to the user and re-verify any plan step that touches a changed path |
+| **BIG** — a structural section's paths changed | The plan may be built on a stale map — **re-groom before building** (invoke `grooming-agent` as above), then reload the refreshed plan |
+
+If the plan has no anchor (groomed before A3), treat it as drift-unknown: run the classification against the plan's `Groomed:`/`Last updated` date instead, and prefer re-grooming if the date is not same-day.
+
 ---
 
 ### Phase 1 — Assess and Present the Delivery Plan
