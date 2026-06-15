@@ -246,7 +246,7 @@ ls ~/.claude/agent-memory/graphify-out/graph.json 2>/dev/null && echo "graph: EX
 
 If the graph exists: run `/graphify ~/.claude/agent-memory --update` to refresh it, then read the `## Surprising Connections` section of `~/.claude/agent-memory/graphify-out/GRAPH_REPORT.md`. Each cross-agent reference there is a candidate for consolidation into a shared atlas (`codebase-navigator/<project>.md`) instead of duplication per-agent.
 
-If the graph doesn't exist: note it as a one-time optional setup step — see [Cross-Agent Duplication Mapping](../../docs/development/agent-architecture-reference.md#cross-agent-duplication-mapping). Don't build it on `/improve`'s own initiative; the first run is user-directed.
+If the graph doesn't exist: note it as a one-time optional setup step (the "Cross-Agent Duplication Mapping" section of `docs/development/agent-architecture-reference.md` — a maintainer-only doc in the devexp-toolkit repo, not installed alongside this skill). Don't build it on `/improve`'s own initiative; the first run is user-directed.
 
 Present findings as a cleanup checklist:
 ```
@@ -266,7 +266,7 @@ Agent-memory duplication found:
 
 Do not delete anything automatically — surface findings only.
 
-**Applying accepted cleanup — worktree isolation.** `/improve` surfaces findings; it never edits on its own. When the user accepts findings and asks to apply them, and the work splits into **independent streams that mutate files in parallel** (e.g. dead-code removal, doc refresh, and debt fixes running concurrently), isolate each stream in its own git worktree per the **worktree-per-ticket convention** (`docs/guides/worktree-per-ticket.md`) — one worktree per stream, each branched off the cleanup base. Streams **merge serially** back to the base; any conflict **surfaces to the user and is never auto-resolved**. A findings-only run, a single stream, or a trivial one-file fix runs in place — **no worktree overhead**.
+**Applying accepted cleanup — worktree isolation.** `/improve` surfaces findings; it never edits on its own. When the user accepts findings and asks to apply them, and the work splits into **independent streams that mutate files in parallel** (e.g. dead-code removal, doc refresh, and debt fixes running concurrently), isolate each stream in its own git worktree per the **worktree-per-ticket convention** (rationale: `docs/guides/worktree-per-ticket.md`, a maintainer-only doc in the devexp-toolkit repo, not installed alongside this skill) — one worktree per stream, each branched off the cleanup base. Streams **merge serially** back to the base; any conflict **surfaces to the user and is never auto-resolved**. A findings-only run, a single stream, or a trivial one-file fix runs in place — **no worktree overhead**.
 
 ---
 
@@ -410,7 +410,7 @@ Next cycle:
 
 - **Health always runs** — it's the minimum viable maintenance action; everything else is optional
 - **Never auto-delete** — stale work and dead code scans produce findings for human review, not automated removal
-- **Isolate parallel cleanup in worktrees** — when applying accepted findings across independent streams concurrently, each stream gets its own worktree ([`docs/guides/worktree-per-ticket.md`](../../docs/guides/worktree-per-ticket.md)), merged serially with conflicts surfaced to the user; findings-only and single-stream runs stay in place with no overhead
+- **Isolate parallel cleanup in worktrees** — when applying accepted findings across independent streams concurrently, each stream gets its own worktree (rationale: `docs/guides/worktree-per-ticket.md`, maintainer-only in the devexp-toolkit repo, not installed), merged serially with conflicts surfaced to the user; findings-only and single-stream runs stay in place with no overhead
 - **CI failure pre-empts everything** — a failing pipeline invalidates the health scorecard's CI dimension; address it first
 - **Retrospective items need evidence** — if you can't point to a git commit, health metric, or incident, the item is a feeling, not a finding
 - **Trend direction matters more than absolute score** — a project with 65% coverage improving (↑) is in better shape than one at 80% degrading (↓)
