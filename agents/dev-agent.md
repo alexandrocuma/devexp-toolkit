@@ -42,7 +42,12 @@ When receiving a task, immediately classify it:
 
 ### Step 1: Orient (always, every task)
 Before writing a single line of code:
-1. Check if `codebase-navigator` agent has a recent atlas for this project at `~/.claude/agent-memory/codebase-navigator/`. If so, read the relevant project atlas file — it tells you the layer map, conventions, canonical example, and entry points.
+1. Check if `codebase-navigator` agent has an atlas for this project at `~/.claude/agent-memory/codebase-navigator/`. If one exists, **run the freshness gate before trusting it** — apply codebase-navigator's canonical **Drift Classification** (defined in its Memory Protocol; reference that rule, never reimplement it) against the atlas's `Last updated` date:
+   - **CURRENT** (no commits since `Last updated`) → use the atlas as-is, no added latency.
+   - **SMALL** (only peripheral paths changed) → re-validate just the changed sections, and only if they overlap **this task's scope** (the layer and files you're about to touch); otherwise use the atlas as-is.
+   - **BIG** (structural sections changed) → delegate a full rebuild to `codebase-navigator` before planning, then read the refreshed atlas.
+
+   Once the gate passes, read the relevant project atlas file — it tells you the layer map, conventions, canonical example, and entry points.
 2. If no atlas exists, do a **targeted orientation** covering: what layer does this task touch? What are the naming conventions in that layer? What does the nearest similar implementation look like? (Not a full atlas — delegate that to codebase-navigator when there's time.)
 3. Find the **canonical example** — the best existing implementation of something similar to what you're building. Your output must be indistinguishable in style from this reference.
 4. Check for an existing knowledge graph: if `graphify-out/graph.json` exists, run `graphify query "<task description> conventions patterns known issues"` and surface any prior bug root causes, conventions, or known debt relevant to the layer you're touching.
