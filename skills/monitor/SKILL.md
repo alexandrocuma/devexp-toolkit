@@ -94,9 +94,42 @@ Detected surfaces (scope: <all / "<surface>">):
 
 While Phases 2–3 are not yet implemented, stop after the inventory and report that the review/scoring steps are pending (#57, #58) rather than fabricating per-surface findings or a score.
 
-### Phase 2 — Review Each Surface  *(implemented in #57)*
+### Phase 2 — Review Each Surface
 
-> **Stub.** For each in-scope detected surface: query live signal when a connector exists (resource health, dashboard list, recent alert/log state), else review configuration-as-code — labeling which mode produced each finding. Never request or store credentials. Cross-reference coverage against the system's critical paths (API handlers, background jobs, external calls, DB writes), marking each covered / partial / blind with evidence. Until #57 lands, report: "per-surface review not yet implemented (#57)".
+For each **in-scope detected** surface from Phase 1, produce findings. Each surface is reviewed in one of two modes, chosen automatically by what Phase 1 found — never by asking the user.
+
+**Mode selection (per surface):**
+
+- **Live mode** — a connector (authenticated CLI or connected MCP, per Phase 1 class B) exists for this surface. Query it **read-only** for current state. Never trigger an auth flow, never request, prompt for, or store a credential; if a probe would require new auth, treat the connector as absent and fall back. What to read, by category:
+
+  | Category | Read-only live signal to gather |
+  |----------|----------------------------------|
+  | `cloud` / `infra` | resource/service health and status, recent deploy/provision state, obvious misconfigurations surfaced by the tool |
+  | `dashboards` | the list of defined dashboards and whether key panels resolve to data (vs. empty/broken) |
+  | `logging` | recent log-pipeline health, error-rate spikes in the recent window, dropped/ingest-failure signal |
+  | `alerting` | current alert/alarm state (firing / silenced / ok), rules with no recipients |
+  | `tracing` / `metrics` | whether traces/metrics are arriving, exporters healthy, obvious gaps in expected series |
+
+- **Config-as-code mode (fallback)** — no connector for this surface. Review the repo signals Phase 1 found (the configuration-as-code itself): are the definitions present, internally consistent, and pointing somewhere real? This is a valid review, not a degraded one — **label it explicitly** as config-derived so the reader knows it reflects intent, not live state. Surface-managed-outside-repo (connector present, no config-as-code) is the mirror case: note that the surface exists but isn't version-controlled here.
+
+**Label every finding's provenance.** Tag each finding `[live]` or `[config]` so live state and declared intent are never conflated. A surface may produce both (e.g. a dashboard defined in-repo `[config]` that a connector shows is rendering empty `[live]`).
+
+**Coverage cross-reference (observability vs. the system's critical paths).** Independently of the surfaces, walk the codebase's critical paths and check whether each is actually observable. The critical-path categories and the natural measurement at each (paraphrased inline so this skill stays self-contained — do not reference other skills):
+
+| Critical path | Natural thing to measure there |
+|---------------|--------------------------------|
+| API / request handlers | latency, error rate, throughput |
+| Background jobs / workers | success/failure rate, processing lag, queue depth |
+| External calls (APIs, third parties) | error rate, timeout/retry rate, latency |
+| Data writes (DB, persistent stores) | write error rate, contention/lock waits |
+
+Find these paths in the code (handler signatures, job/worker registrations, outbound clients, write calls), then for each one mark coverage with evidence:
+
+- **covered** — a dashboard/alert/metric/log line demonstrably observes this path (cite the file/line or the live dashboard/alert)
+- **partial** — some signal exists but a key measurement is missing (e.g. logged but no error-rate alert)
+- **blind** — no observability attaches to this path (the actionable gaps)
+
+Output the per-surface findings and the coverage table for Phase 3 to score. While Phase 3 (scoring) is still a stub, present the findings and coverage, then note that the composite score is pending (#58) rather than inventing one.
 
 ### Phase 3 — Score & Flag  *(implemented in #58)*
 
