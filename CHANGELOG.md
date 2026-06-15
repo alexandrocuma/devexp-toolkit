@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-06-15
+
+Epic #54 — `/monitor`, a new operate-phase orchestrator for reviewing the health of deployed systems.
+
+### Added
+
+- **`/monitor` — deployed-system health review (5th orchestrator).** A new operate-phase command that assesses the *running* system rather than the codebase. It detects stack surfaces by category (cloud/infra, dashboards, logging, alerting, tracing/metrics) from repo signals and already-authenticated connectors, reviews each surface live (read-only connector query) or via a config-as-code fallback, and produces a change-independent, equal-weighted composite health score with a ranked, actionable anomaly list. Vendor-agnostic (names no platform in its prompt) and credential-safe (never triggers auth or stores secrets). `/monitor <surface>` scopes the review to a single detected surface. (#55, #56, #57, #58)
+- **Persisted health review + `/improve` reconciliation.** `/monitor` persists its scored report to `.devexp/system-health-review.md`; `/improve`'s Observability Maturity dimension now defers to that artifact when present — one home for "is the system healthy?" The existing `observability` baseline key is reused for trends with no schema migration. (#59)
+
+### Changed
+
+- Documentation surface reframed from five commands to six (five lifecycle orchestrators — `/devxp`, `/refine`, `/deliver`, `/improve`, `/monitor` — plus the `/graphify` utility) across the skills catalog, READMEs, CLAUDE.md, and quickstart. (#60)
+
 ## [0.4.0] - 2026-06-15
 
 Epic #32 — fresh memory, worktree-per-ticket delivery, and completion cleanup.
