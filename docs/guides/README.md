@@ -11,6 +11,7 @@ How-to guides for using, configuring, and understanding the devexp framework.
 | [install.md](install.md) | install.sh, start-services.sh, uninstall.sh — flags, behavior, CLI paths | ready |
 | [team-distribution.md](team-distribution.md) | Forking and customizing devexp for your organisation via devexp.config.json | ready |
 | [worktree-per-ticket.md](worktree-per-ticket.md) | Worktree-per-ticket delivery convention — trigger, naming scheme, lifecycle, failure handling, merge discipline | ready |
+| [cleanup-safety.md](cleanup-safety.md) | Canonical deletion-safety rules for toolkit cleanup — dry-run, scoped id guards, shared-state protection, staleness-gated memory pruning | ready |
 
 ## Notes
 
