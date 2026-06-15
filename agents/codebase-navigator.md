@@ -162,7 +162,8 @@ The canonical drift rule. **A2** (the freshness gate on atlas consumers) and **A
 1. Read the atlas's `Last updated:` date.
 2. List the paths changed since then:
    ```
-   git log --since="<Last updated>" --name-only --pretty=format: | sort -u | sed '/^$/d'
+   # Pin to start-of-day: a bare date makes git's --since exclude commits made later on the Last-updated day.
+   git log --since="<Last updated> 00:00:00" --name-only --pretty=format: | sort -u | sed '/^$/d'
    ```
 3. Classify by what those paths touch:
    - **No paths** (no commits since `Last updated`) → **CURRENT** — use the atlas as-is. No git scan beyond this, no rebuild.
@@ -178,7 +179,7 @@ A changed path is **structural** if it is *named in*, or *lives under a director
 
 ### Incremental Update Procedure
 
-1. For each dated entry in `## Known Technical Debt` / `## Gotchas`, run `git log --since="<entry-date>" --oneline --name-only -- <path-from-entry>` (dedupe paths first)
+1. For each dated entry in `## Known Technical Debt` / `## Gotchas`, run `git log --since="<entry-date> 00:00:00" --oneline --name-only -- <path-from-entry>` (dedupe paths first; the `00:00:00` keeps same-day commits in range)
 2. For entries whose path has commits since their date:
    - Resolved → remove the entry
    - Still an issue but details changed → update description, bump date to today
