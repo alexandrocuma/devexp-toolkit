@@ -83,27 +83,9 @@ func MultiSelect(label string, items []string) ([]string, error) {
 	}
 
 	for {
-		count := 0
-		for _, s := range selected {
-			if s {
-				count++
-			}
-		}
-
-		display := make([]string, len(items)+2)
-		display[0] = fmt.Sprintf("✔  Done  (%d / %d selected)", count, len(items))
-		display[1] = "◎  Toggle all"
-		for i, item := range items {
-			if selected[i] {
-				display[i+2] = "✓  " + item
-			} else {
-				display[i+2] = "○  " + item
-			}
-		}
-
 		p := promptui.Select{
 			Label: label,
-			Items: display,
+			Items: buildMultiSelectDisplay(items, selected),
 			Size:  14,
 		}
 		idx, _, err := p.Run()
@@ -111,24 +93,70 @@ func MultiSelect(label string, items []string) ([]string, error) {
 			return nil, err
 		}
 
-		switch idx {
-		case 0: // Done
-			var result []string
-			for i, s := range selected {
-				if s {
-					result = append(result, items[i])
-				}
-			}
-			return result, nil
-		case 1: // Toggle all
-			allSelected := count == len(items)
-			for i := range selected {
-				selected[i] = !allSelected
-			}
-		default: // Toggle individual item
-			selected[idx-2] = !selected[idx-2]
+		if applyMultiSelectChoice(selected, idx) {
+			return collectSelected(items, selected), nil
 		}
 	}
+}
+
+// buildMultiSelectDisplay renders the checklist menu rows for the current
+// selection: row 0 is the "Done" line with the live count, row 1 is "Toggle
+// all", and the remaining rows mirror items with a ✓/○ marker per selected flag.
+func buildMultiSelectDisplay(items []string, selected []bool) []string {
+	count := 0
+	for _, s := range selected {
+		if s {
+			count++
+		}
+	}
+
+	display := make([]string, len(items)+2)
+	display[0] = fmt.Sprintf("✔  Done  (%d / %d selected)", count, len(items))
+	display[1] = "◎  Toggle all"
+	for i, item := range items {
+		if selected[i] {
+			display[i+2] = "✓  " + item
+		} else {
+			display[i+2] = "○  " + item
+		}
+	}
+	return display
+}
+
+// applyMultiSelectChoice mutates selected in response to a menu choice and
+// reports whether the user is done. idx 0 = Done, idx 1 = toggle-all
+// (deselect everything if all are currently selected, otherwise select all),
+// idx >= 2 toggles the item at idx-2.
+func applyMultiSelectChoice(selected []bool, idx int) (done bool) {
+	switch idx {
+	case 0: // Done
+		return true
+	case 1: // Toggle all
+		count := 0
+		for _, s := range selected {
+			if s {
+				count++
+			}
+		}
+		allSelected := count == len(selected)
+		for i := range selected {
+			selected[i] = !allSelected
+		}
+	default: // Toggle individual item
+		selected[idx-2] = !selected[idx-2]
+	}
+	return false
+}
+
+// collectSelected returns the items whose selected flag is set, preserving order.
+func collectSelected(items []string, selected []bool) []string {
+	var result []string
+	for i, s := range selected {
+		if s {
+			result = append(result, items[i])
+		}
+	}
+	return result
 }
 
 // ── Confirm ───────────────────────────────────────────────────────────────────
