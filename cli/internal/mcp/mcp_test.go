@@ -175,6 +175,7 @@ func captureStdout(t *testing.T, fn func()) string {
 		t.Fatalf("os.Pipe: %v", err)
 	}
 	os.Stdout = w
+	defer func() { os.Stdout = orig }()
 
 	done := make(chan string)
 	go func() {
@@ -194,7 +195,6 @@ func captureStdout(t *testing.T, fn func()) string {
 
 	fn()
 	_ = w.Close()
-	os.Stdout = orig
 	return <-done
 }
 
@@ -275,13 +275,14 @@ func TestInstallOpencode(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		seed       func(path string) // optional pre-existing config
-		mcps       []MCP             // override; nil uses the default stdio my-server
-		env        map[string]string // override; nil uses empty env
-		dryRun     bool
-		reinstall  bool
-		wantNoFile bool
-		assert     func(t *testing.T, config map[string]interface{})
+		seed          func(path string) // optional pre-existing config
+		mcps          []MCP             // override; nil uses the default stdio my-server
+		env           map[string]string // override; nil uses empty env
+		dryRun        bool
+		reinstall     bool
+		wantNoFile    bool
+		wantUnchanged bool // file must be byte-for-byte identical to the seed
+		assert        func(t *testing.T, config map[string]interface{})
 	}{
 		"fresh write creates config with mcp entry": {
 			assert: func(t *testing.T, config map[string]interface{}) {
@@ -324,6 +325,7 @@ func TestInstallOpencode(t *testing.T) {
 			},
 		},
 		"merge identical entry skips, no rewrite": {
+			wantUnchanged: true,
 			seed: func(path string) {
 				seed := map[string]interface{}{
 					"mcp": map[string]interface{}{
@@ -435,11 +437,9 @@ func TestInstallOpencode(t *testing.T) {
 				t.Fatalf("config not written: %v", readErr)
 			}
 
-			// "identical entry skips" should leave the file byte-for-byte unchanged.
-			if name == "merge identical entry skips, no rewrite" && beforeBytes != nil {
-				if string(data) != string(beforeBytes) {
-					t.Errorf("file was rewritten despite identical entry")
-				}
+			// A skip path must leave the file byte-for-byte unchanged.
+			if tt.wantUnchanged && string(data) != string(beforeBytes) {
+				t.Errorf("file was rewritten despite identical entry")
 			}
 
 			var config map[string]interface{}

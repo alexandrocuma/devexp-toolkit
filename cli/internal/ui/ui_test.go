@@ -140,6 +140,7 @@ func captureOutput(t *testing.T, fn func()) (string, string) {
 		t.Fatalf("os.Pipe: %v", err)
 	}
 	os.Stdout, os.Stderr = wOut, wErr
+	defer func() { os.Stdout, os.Stderr = origOut, origErr }()
 
 	outCh := drain(rOut)
 	errCh := drain(rErr)
@@ -148,7 +149,6 @@ func captureOutput(t *testing.T, fn func()) (string, string) {
 
 	_ = wOut.Close()
 	_ = wErr.Close()
-	os.Stdout, os.Stderr = origOut, origErr
 	return <-outCh, <-errCh
 }
 
