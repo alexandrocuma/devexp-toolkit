@@ -1,8 +1,8 @@
 # DevExp SDLC Coverage Map
 
-Generated: 2026-06-09 (updated: slash commands reduced to 5 orchestrators)
-Agents: 34 · Skills: 5 (user-facing orchestrators) · Total components: 39  
-All specialist capabilities are now inline within orchestrators or invoked as agents — no standalone slash commands.
+Generated: 2026-06-09 (updated: `/monitor` added as operate-phase orchestrator; `/graphify` + `/cleanup` are utility commands alongside the five lifecycle orchestrators)
+Agents: 34 · Skills: 7 (5 lifecycle orchestrators + 2 utilities) · Total components: 41  
+All specialist capabilities are inline within orchestrators, invoked as agents, or exposed as one of the two utility commands (`/graphify`, `/cleanup`).
 
 ---
 
@@ -189,6 +189,7 @@ All specialist capabilities are now inline within orchestrators or invoked as ag
 | `health` | inline in `improve` Phase 2 | Codebase health scorecard with 8 dimensions and trend tracking |
 | `retrospective` | inline in `improve` Phase 5 | Blameless sprint retrospective with Start/Stop/Continue |
 | `stale-work` | inline in `improve` Phase 3 | Orphaned branches, stale PRs, zombie flags, closed-ticket TODOs |
+| `cleanup` | skill (utility) | On-demand retirement of finished/abandoned worktrees, orphaned branches, and stale plans/sessions/scratch — same safety rules as the C2 sweep, minus memory pruning |
 | `dead-code` | inline in `improve` Phase 3 | Unused exports, unreachable code, orphaned files |
 | `standup` | *(removed — covered by `improve` Phase 5 git activity summary)* | |
 | `tech-debt` | agent | Business-prioritized tech debt register with ROI |

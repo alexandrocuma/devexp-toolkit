@@ -8,12 +8,12 @@ How-to guides for using and configuring the framework.
 
 | Doc | Description |
 |-----|-------------|
-| [Quick Start](guides/quickstart.md) | Zero to shipped — install, then use the 6 commands end-to-end |
+| [Quick Start](guides/quickstart.md) | Zero to shipped — install, then use the 7 commands end-to-end |
 | [Docs Architecture](guides/docs-architecture.md) | CLAUDE.md-as-indexer pattern + standard docs/ folder tree — apply this in every project |
 | [Install & Services](guides/install.md) | install.sh flags, start-services.sh, uninstall.sh, and CLI installation paths |
 | [Team Distribution](guides/team-distribution.md) | Fork and customise devexp for your organisation via devexp.config.json |
 | [Worktree-per-Ticket](guides/worktree-per-ticket.md) | How delivery isolates each ticket in its own git worktree — trigger, naming, lifecycle, merge discipline |
-| [Cleanup Safety](guides/cleanup-safety.md) | Rules for safely deleting artifacts — dry-run, id guards, never touch shared state — followed by deliver C1 + improve C2 |
+| [Cleanup Safety](guides/cleanup-safety.md) | Rules for safely deleting artifacts — dry-run, id guards, never touch shared state — followed by deliver C1, improve C2, and the /cleanup command |
 
 → Full index: [docs/guides/README.md](guides/README.md)
 
@@ -24,7 +24,7 @@ Component catalogs and configuration schemas.
 | Doc | Description |
 |-----|-------------|
 | [Agents](reference/agents.md) | How agents work, full agent catalog (34 agents), adding a new agent |
-| [Skills](reference/skills.md) | The 5 user-facing commands, what each orchestrator does, adding a new skill |
+| [Skills](reference/skills.md) | The 7 user-facing commands, what each orchestrator does, adding a new skill |
 | [Hooks](reference/hooks.md) | How hooks work, registry format, hook catalog, CLI compatibility |
 | [MCPs](reference/mcps.md) | MCP registry format, MCPs in repo, API keys, docker-backed MCPs |
 

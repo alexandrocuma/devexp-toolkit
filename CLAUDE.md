@@ -2,7 +2,7 @@
 
 A curated collection of Claude Code agents, skills, hooks, and MCP servers that brings a consistent, expert-level development experience to any project. Install once, distribute to your team.
 
-**Components**: `agents/` (34 agents) · `skills/` (6 user commands) · `hooks/` (10 safety guards) · `mcps/` (MCP registry)
+**Components**: `agents/` (34 agents) · `skills/` (7 user commands) · `hooks/` (10 safety guards) · `mcps/` (MCP registry)
 
 > New to a repo? Run `/devxp` first — it orients on the codebase, ensures `CLAUDE.md` and `docs/` exist or are current, and routes you to the right skill next.
 
@@ -58,6 +58,7 @@ Start at [`docs/README.md`](docs/README.md) for the full index.
 | Install / uninstall / start-services | [`docs/guides/install.md`](docs/guides/install.md) |
 | Team distribution + devexp.config.json | [`docs/guides/team-distribution.md`](docs/guides/team-distribution.md) |
 | Worktree-per-ticket delivery convention | [`docs/guides/worktree-per-ticket.md`](docs/guides/worktree-per-ticket.md) |
+| On-demand cleanup of finished worktrees + delivery artifacts (`/cleanup`) | [`docs/reference/skills.md`](docs/reference/skills.md) |
 | Cleanup safety rules (deletion guards) | [`docs/guides/cleanup-safety.md`](docs/guides/cleanup-safety.md) |
 | CLAUDE.md-as-indexer pattern | [`docs/guides/docs-architecture.md`](docs/guides/docs-architecture.md) |
 | How to write a new agent | [`docs/development/agent-authoring-guide.md`](docs/development/agent-authoring-guide.md) |

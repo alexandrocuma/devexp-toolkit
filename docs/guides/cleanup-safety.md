@@ -1,6 +1,6 @@
 # Cleanup Safety
 
-The single reference for how the toolkit deletes artifacts safely. Both cleanup paths point here: `/deliver`'s per-ticket final phase (C1) and `/improve`'s repo-wide hygiene sweep (C2). Any step that removes files, branches, worktrees, or memory entries follows these rules — they exist because a wrong glob or an unset variable can destroy user data.
+The single reference for how the toolkit deletes artifacts safely. All cleanup paths point here: `/deliver`'s per-ticket final phase (C1), `/improve`'s repo-wide hygiene sweep (C2), and the on-demand `/cleanup` command. Any step that removes files, branches, worktrees, or memory entries follows these rules — they exist because a wrong glob or an unset variable can destroy user data.
 
 ## The rules
 
@@ -31,5 +31,6 @@ The single reference for how the toolkit deletes artifacts safely. Both cleanup 
 
 - **`/deliver` Phase 7 (C1)** — retires *this ticket's* artifacts on successful completion, keyed to the verified ticket id.
 - **`/improve` hygiene sweep (C2)** — finds and retires *repo-wide* orphans (abandoned worktrees, stale plans, old groom sessions, stray `/tmp` scratch, drift-stale memory), dry-run then confirmed.
+- **`/cleanup` (on demand)** — retires finished/abandoned worktrees, orphaned merged branches, and stale plans/sessions/scratch whenever the user asks — same rules, dry-run then confirmed (or a line-by-line log under `--cleanup`). The only path that does *not* prune agent memory: memory entries need codebase-navigator's drift classification, which only C2 performs.
 
-Both carry their own concrete guards inline (each skill runs standalone); this doc is the shared rationale they must not diverge from.
+Each carries its own concrete guards inline (each skill runs standalone); this doc is the shared rationale they must not diverge from.

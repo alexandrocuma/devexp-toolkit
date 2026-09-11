@@ -6,9 +6,9 @@ Install them by running `../install.sh` from the repo root. Installed skills lan
 
 ---
 
-## The Six Commands
+## The Seven Commands
 
-These six commands are the entire user-facing surface — five lifecycle orchestrators plus the `/graphify` utility. Everything else — ~30 specialist capabilities — runs as agents (`agents/<name>.md`) or inline within these orchestrators.
+These seven commands are the entire user-facing surface — five lifecycle orchestrators plus the `/graphify` and `/cleanup` utilities. Everything else — ~30 specialist capabilities — runs as agents (`agents/<name>.md`) or inline within these orchestrators.
 
 | Directory | Slash Command | When to use |
 |-----------|---------------|------------|
@@ -18,6 +18,7 @@ These six commands are the entire user-facing surface — five lifecycle orchest
 | `improve/` | `/improve` | Sprint end or maintenance window — health, cleanup, retrospective |
 | `monitor/` | `/monitor [<surface>]` | Operate phase — review the deployed system's health via telemetry/config, anytime |
 | `graphify/` | `/graphify` | Build a persistent, queryable knowledge graph from this codebase |
+| `cleanup/` | `/cleanup [<ticket>]` | On demand — retire finished/abandoned worktrees, orphaned branches, stale plans, and scratch |
 
 ```
 /devxp  →  /refine  →  /deliver  →  /improve
@@ -25,6 +26,8 @@ These six commands are the entire user-facing surface — five lifecycle orchest
   └──────── next sprint ─────┴───────────┘
                              │
                         /monitor   (operate: review the deployed system, anytime)
+
+  /graphify   (utility: knowledge graph)   /cleanup   (utility: retire finished artifacts)
 ```
 
 ---

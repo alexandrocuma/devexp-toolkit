@@ -1,8 +1,8 @@
 # Skills Reference
 
-## The Six Commands
+## The Seven Commands
 
-The development lifecycle runs through six slash commands — five lifecycle orchestrators plus the `/graphify` utility. Type `/` in Claude Code and you'll see exactly these:
+The development lifecycle runs through seven slash commands — five lifecycle orchestrators plus the `/graphify` and `/cleanup` utilities. Type `/` in Claude Code and you'll see exactly these:
 
 | Command | When to use |
 |---------|-------------|
@@ -12,6 +12,7 @@ The development lifecycle runs through six slash commands — five lifecycle orc
 | `/improve` | Sprint end or maintenance window — health, cleanup, debt, retro |
 | `/monitor [<surface>]` | Operate phase — review the deployed system's health (telemetry/config), scored, anytime |
 | `/graphify` | Build a persistent knowledge graph from this codebase |
+| `/cleanup [<ticket>]` | On demand — retire finished/abandoned worktrees, orphaned branches, stale plans, groom sessions, and /tmp scratch |
 
 ```
 /devxp  →  /refine  →  /deliver  →  /improve
@@ -67,6 +68,12 @@ The first four orchestrators *build* software; `/monitor` *operates* what's ship
 - Queryable across sessions via `graphify query "<question>"`
 - Referenced by other orchestrators (dev-agent, tech-lead) for prior bug root causes, conventions, and known debt
 
+### `/cleanup [<ticket>]`
+- On-demand counterpart to `/improve`'s repo-wide hygiene sweep (C2): retires finished/abandoned git worktrees, orphaned merged branches, stale persisted plans, groom-session leftovers, and stray `/tmp` scratch — no memory pruning (that stays in `/improve`, where codebase-navigator's drift classification lives)
+- Discovery → classification (live vs finished) → dry-run report → explicit confirmation (or `--cleanup` pre-confirmed mode with a line-by-line removal log) → scoped removal
+- Safety rules are load-bearing and inlined: validated `[A-Za-z0-9_-]` ids, prefix-anchored globs, never the main checkout / default branch / shared memory, preserve on failure or doubt
+- Primary sources of accumulated trees: `/deliver` Phase 6 "I'll release manually" releases and failed deliveries
+
 ---
 
 ## How Skills Work (Technical)
@@ -81,7 +88,7 @@ description: One-line description shown in the slash command picker
 ---
 ```
 
-Only the 5 user-facing orchestrators are installed as skills. Everything else — the ~40 specialist capabilities — run as agents (read via `~/.claude/agents/<name>.md`) or inline within orchestrators.
+Only the 5 lifecycle orchestrators and the 2 utilities are installed as skills. Everything else — the ~40 specialist capabilities — run as agents (read via `~/.claude/agents/<name>.md`) or inline within orchestrators.
 
 ---
 

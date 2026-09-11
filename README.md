@@ -2,7 +2,7 @@
 
 A curated collection of Claude Code agents, skills, and MCP servers that bring a consistent, expert-level development experience to any project.
 
-Install once. Get autonomous bug fixes, expert code review, codebase navigation, execution tracing, and security audits — all driven by five commands that cover the full development lifecycle.
+Install once. Get autonomous bug fixes, expert code review, codebase navigation, execution tracing, and security audits — all driven by five lifecycle commands (plus the `/graphify` and `/cleanup` utilities).
 
 ---
 
@@ -22,6 +22,7 @@ Then use these commands to cover the full development cycle:
 | `/deliver <ticket>` | Implement, test, review, and release a ticket |
 | `/improve` | Sprint end — health scorecard, cleanup, debt triage, retro |
 | `/monitor [<surface>]` | Operate — review the deployed system's health, scored, anytime |
+| `/cleanup [<ticket>]` | On-demand — retire finished/abandoned worktrees and orphaned delivery artifacts |
 
 ```
 /devxp  →  /refine  →  /deliver  →  /improve  →  next sprint
@@ -42,7 +43,7 @@ Agents are specialized sub-agents that Claude Code or opencode can spawn to hand
 
 ### Skills
 
-Five slash commands cover the full development lifecycle. Everything else — ~30 specialist capabilities — runs automatically inside them as agents.
+Five lifecycle orchestrators cover the full development cycle; the `/graphify` and `/cleanup` utilities handle knowledge-graph builds and on-demand artifact retirement. Everything else — ~30 specialist capabilities — runs automatically inside them as agents.
 
 | Command | When to use |
 |---------|-------------|
@@ -50,7 +51,9 @@ Five slash commands cover the full development lifecycle. Everything else — ~3
 | `/refine` | Turn a raw idea into a groomed, ready-to-build ticket |
 | `/deliver <ticket>` | Implement, test, review, and release a ticket end-to-end |
 | `/improve` | Sprint end — health scorecard, cleanup, debt triage, retro |
+| `/monitor [<surface>]` | Operate — review the deployed system's health, scored, anytime |
 | `/graphify` | Build a persistent knowledge graph from this codebase |
+| `/cleanup [<ticket>]` | Retire finished/abandoned worktrees and orphaned delivery artifacts on demand |
 
 The orchestrators handle everything internally — implementation, testing, code review, instrumentation, release, health checks, and more. You never need to learn sub-commands.
 
@@ -233,12 +236,14 @@ devexp-toolkit/
 ├── agents/                       # 34 agent markdown files (Claude Code format)
 │   └── opencode/                 # opencode-exclusive agents (installed as-is)
 │       └── orchestrator.md
-├── skills/                       # 5 user-facing slash commands, each with SKILL.md
+├── skills/                       # 7 user-facing slash commands, each with SKILL.md
 │   ├── devxp/
 │   ├── refine/
 │   ├── deliver/
 │   ├── improve/
-│   └── graphify/
+│   ├── monitor/
+│   ├── graphify/
+│   └── cleanup/
 ├── hooks/                         # Safety and quality hooks
 │   ├── registry.json              # Source of truth for all hooks
 │   ├── claude-code/                # Shell scripts registered in ~/.claude/settings.json
