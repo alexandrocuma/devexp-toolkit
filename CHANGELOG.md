@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Epic #73 — on-demand cleanup, worktree access grants, and a closed manual-release gap.
+
+### Added
+
+- **`/cleanup` — on-demand artifact retirement (2nd utility).** A standalone command that retires finished or abandoned delivery artifacts: merged/superseded git worktrees, orphaned branches (never the default branch), stale persisted plans, groom-session leftovers, and stray `/tmp` scratch. Discovery → live/finished classification → always-on dry-run report → explicit confirmation (or `--cleanup` pre-confirmed mode with a line-by-line removal log) → scoped removal. Follows the cleanup-safety rules inline; explicitly out of scope: agent-memory pruning (stays in `/improve` C2, which owns codebase-navigator's drift classification), the main checkout, and release/changelog work. `/cleanup <ticket>` scopes the sweep to one ticket.
+- **Worktree access grants at creation.** `/deliver` Phase 1.5 (and `/improve`'s parallel cleanup streams) now grant the runtime access to each new worktree immediately after `git worktree add` — the tree lives at `../<repo>-worktrees/<ticket>`, outside the project root, so without a grant every write prompts. Claude Code: the worktrees parent directory (absolute path) is merged into the project's `.claude/settings.json` `additionalDirectories` (idempotent, existing content preserved). opencode: no path-scoped grant exists in its tool-scoped permission model, so the user is told to approve the first write with "always allow" for the worktrees directory. The worktree-per-ticket lifecycle is now create → grant → work → merge → remove.
+
+### Fixed
+
+- **`/deliver` no longer orphans worktrees on a declined release gate.** When the user chooses "I'll release manually," Phase 6 now checks whether the ticket branch is already merged to the base: merged → the worktree and branch are removed immediately (same commands as the success path); not merged → the tree is kept and the user is told `/cleanup <ticket>` (or plain `/cleanup`) will retire it once the branch lands. The final report's worktree line reflects the deferred-release state. (#73)
+
+### Changed
+
+- Documentation surface reframed from six commands to seven (five lifecycle orchestrators — `/devxp`, `/refine`, `/deliver`, `/improve`, `/monitor` — plus the `/graphify` and `/cleanup` utilities) across the skills catalog, READMEs, CLAUDE.md, and coverage map. (#73)
+
 ## [0.5.0] - 2026-06-15
 
 Epic #54 — `/monitor`, a new operate-phase orchestrator for reviewing the health of deployed systems.

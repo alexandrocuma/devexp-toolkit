@@ -120,6 +120,27 @@ git worktree add -b "${type}/${ticket}" "$wt" 2>/dev/null || git worktree add "$
 cd "$wt"
 ```
 
+**Grant the runtime access to the worktree.** The worktree lives at `../<repo>-worktrees/<ticket>` — a sibling of the main checkout, **outside the project root**. Without a grant, every write there triggers an out-of-project permission prompt, and Phases 2–5 do a lot of writing. Grant right after creation, before any work starts:
+
+- **Claude Code** — merge the worktrees parent directory (absolute path) into the **main checkout's** `.claude/settings.json` under `additionalDirectories` (not the worktree's — project settings live in the primary tree, and this step may run after `cd`-ing into the worktree). Create the file and keys if absent; preserve all existing JSON content; skip if the path is already present (idempotent):
+  ```bash
+  main="$(git worktree list --porcelain | head -1 | cut -d' ' -f2)"   # main checkout — always the first entry
+  wt_dir="$(cd "$(dirname "$wt")" && pwd)"                            # absolute path of ../<repo>-worktrees
+  settings="$main/.claude/settings.json"
+  mkdir -p "$main/.claude"
+  node -e '
+    const fs = require("fs");
+    const f = process.argv[1], dir = process.argv[2];
+    let s = {};
+    try { s = JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { /* absent or unreadable — start fresh */ }
+    s.additionalDirectories = s.additionalDirectories || [];
+    if (!s.additionalDirectories.includes(dir)) s.additionalDirectories.push(dir);
+    fs.writeFileSync(f, JSON.stringify(s, null, 2) + "\n");
+  ' "$settings" "$wt_dir"
+  ```
+  If the settings file can't be updated (not writable, JSON unparseable even after the fallback), print a one-line note: "Approve access to $wt_dir once when prompted." Do not retry or force it.
+- **opencode** — this repo's opencode idiom is tool-scoped permissions (agent frontmatter `permission:` blocks, e.g. `task: "*": allow`); there is no path-scoped write grant. Fall back to a one-line note: the first write to the worktree will prompt — approve it with "always allow" for the worktrees directory.
+
 All subsequent phases operate from this worktree directory.
 
 **Epic sub-tickets:** each independent sub-ticket gets its own worktree on its own branch. Because the worktrees don't share files, sub-tickets with no dependency between them can be delivered in parallel — that parallelism is a free byproduct, not something to request explicitly.
@@ -312,7 +333,20 @@ Ready to release?
 Confirm release? (yes / no — I'll release manually)
 ```
 
-Wait for explicit **yes**. If the user says no or wants to release manually, stop here.
+Wait for explicit **yes**. If the user declines or wants to release manually ("I'll release manually"), don't just stop — check whether the ticket branch is already merged to the base branch, and handle the worktree accordingly:
+
+```bash
+base="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')"; base="${base:-main}"
+git merge-base --is-ancestor "${type}/${ticket}" "$base" 2>/dev/null && echo "MERGED" || echo "NOT MERGED"
+```
+
+- **Merged** — the remaining release steps are bookkeeping on the base branch; the tree itself is finished. Remove the worktree and branch immediately, with the same commands as the success path (run from the main checkout — `git worktree remove` refuses while you are inside the tree):
+  ```bash
+  git worktree remove "/abs/path/to/<repo>-worktrees/<ticket-id>"
+  git branch -d "<type>/<ticket-id>"
+  ```
+  Then skip Phases 6a–6d and go straight to Phase 8.
+- **Not merged** — keep the worktree and say so explicitly: the branch still needs its PR merged, and the tree stays live until then. Tell the user that once the branch lands, `/cleanup <ticket>` (or a plain `/cleanup` sweep) will retire the worktree and branch. Declining the gate must never silently orphan the tree. Skip Phases 6a–6d and go to Phase 8.
 
 **6a. Merge the ticket worktree:**
 
@@ -430,7 +464,7 @@ Record what was retired in the Phase 8 report.
 ```
 ## Delivered: <ticket-id> — "<title>"
 
-  Worktree:        <branch + dir created — merged and removed on release / kept on failure / none (single-stream)>
+  Worktree:        <branch + dir created — merged and removed on release / removed — branch already merged at declined gate / kept — deferred manual release, retire with /cleanup once merged / kept on failure / none (single-stream)>
   Implementation:  complete — <N files changed>
   Infrastructure:  <N IaC files changed / no infrastructure changes detected>
   Observability:   <N log calls added / skipped — no new entry points>
