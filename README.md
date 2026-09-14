@@ -2,7 +2,7 @@
 
 A curated collection of Claude Code agents, skills, and MCP servers that bring a consistent, expert-level development experience to any project.
 
-Install once. Get autonomous bug fixes, expert code review, codebase navigation, execution tracing, and security audits — all driven by five lifecycle commands (plus the `/graphify` and `/cleanup` utilities).
+Install once. Get autonomous bug fixes, expert code review, codebase navigation, execution tracing, and security audits — all driven by five lifecycle commands (plus the `/graphify` and `/cleanup` utilities and the `/promo-campaign` playbook).
 
 ---
 
@@ -43,7 +43,7 @@ Agents are specialized sub-agents that Claude Code or opencode can spawn to hand
 
 ### Skills
 
-Five lifecycle orchestrators cover the full development cycle; the `/graphify` and `/cleanup` utilities handle knowledge-graph builds and on-demand artifact retirement. Everything else — ~30 specialist capabilities — runs automatically inside them as agents.
+Five lifecycle orchestrators cover the full development cycle; the `/graphify` and `/cleanup` utilities handle knowledge-graph builds and on-demand artifact retirement; the `/promo-campaign` domain playbook plans an app's promo reel and carousel. Everything else — ~30 specialist capabilities — runs automatically inside them as agents.
 
 | Command | When to use |
 |---------|-------------|
@@ -54,6 +54,7 @@ Five lifecycle orchestrators cover the full development cycle; the `/graphify` a
 | `/monitor [<surface>]` | Operate — review the deployed system's health, scored, anytime |
 | `/graphify` | Build a persistent knowledge graph from this codebase |
 | `/cleanup [<ticket>]` | Retire finished/abandoned worktrees and orphaned delivery artifacts on demand |
+| `/promo-campaign [<platform>] [<locale>]` | Plan an app's promo reel and carousel from its listing's real claims — one hook, ≤ 20s at 1.0x |
 
 The orchestrators handle everything internally — implementation, testing, code review, instrumentation, release, health checks, and more. You never need to learn sub-commands.
 
@@ -236,14 +237,15 @@ devexp-toolkit/
 ├── agents/                       # 34 agent markdown files (Claude Code format)
 │   └── opencode/                 # opencode-exclusive agents (installed as-is)
 │       └── orchestrator.md
-├── skills/                       # 7 user-facing slash commands, each with SKILL.md
+├── skills/                       # 8 user-facing slash commands, each with SKILL.md
 │   ├── devxp/
 │   ├── refine/
 │   ├── deliver/
 │   ├── improve/
 │   ├── monitor/
 │   ├── graphify/
-│   └── cleanup/
+│   ├── cleanup/
+│   └── promo-campaign/           # + references/ (EXAMPLE campaign, blank template)
 ├── hooks/                         # Safety and quality hooks
 │   ├── registry.json              # Source of truth for all hooks
 │   ├── claude-code/                # Shell scripts registered in ~/.claude/settings.json
