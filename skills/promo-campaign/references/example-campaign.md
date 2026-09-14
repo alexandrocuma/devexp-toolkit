@@ -109,9 +109,37 @@ end_card:
 outputs:
   dir: "releases/promo"
   formats: ["reel_9x16", "carousel_4x5"]
-seed: {}   # reserved — internals defined by the capture tooling
-capture:   # reserved — internals defined by the capture tooling; the planner declares still ids only
-  stills: [{ id: "hook-total" }, { id: "reranked-table" }, { id: "history-table" }, { id: "rematch-prompt" }]
+seed:
+  backend: "rn-asyncstorage"
+  entries:
+    - { key: "tallybird:game:v1", value: "{\"round\":5,\"players\":[{\"id\":\"p1\",\"label\":\"Ana\",\"total\":38},{\"id\":\"p2\",\"label\":\"Ben\",\"total\":35},{\"id\":\"p3\",\"label\":\"Chloe\",\"total\":31},{\"id\":\"p4\",\"label\":\"Dev\",\"total\":29}]}" }
+    - { key: "tallybird:onboarding-seen:v1", value: "true" }
+capture:
+  ios: { app: "build/sim/Release-iphonesimulator/Tallybird.app", bundle_id: "com.example.tallybird", device: "iPhone 17 Pro", status_bar: { time: "9:41", battery_level: 100 }, appearance: "light" }
+  takes:
+    - id: "scores"
+      steps:
+        - maestro: "docs/marketing/flows/tap-score.yaml"
+        - hold_s: 1.5
+        - maestro: "docs/marketing/flows/rerank.yaml"
+        - hold_s: 1.5
+        - maestro: "docs/marketing/flows/end-round.yaml"
+        - hold_s: 2.0
+    - id: "rematch"
+      steps:
+        - maestro: "docs/marketing/flows/rematch.yaml"
+        - hold_s: 1.5
+  stills:
+    - { id: "hook-total", take: "scores", after_step: 2 }
+    - { id: "reranked-table", take: "scores", after_step: 4 }
+    - { id: "history-table", take: "scores", after_step: 6 }
+    - { id: "rematch-prompt", take: "rematch", after_step: 2 }
+  cut:
+    - { take: "scores", in_s: 5.6, out_s: 10.1, join: "cut" }
+    - { take: "scores", in_s: 11.0, out_s: 14.0, join: "fade", fade_s: 0.4 }
+    - { take: "scores", in_s: 16.2, out_s: 20.1, join: "cut" }
+    - { take: "rematch", in_s: 5.4, out_s: 7.9 }
+  compose: { background: "#F3EDE4", text_color: "#1A1A1A" }
 ---
 
 # EXAMPLE — Tallybird Promo Campaign
@@ -211,4 +239,28 @@ Each caption says less than its quote, never more.
 
 ## Starting state for capture
 
-A game in round 5 with four invented players ("Ana", "Ben", "Chloe", "Dev"). The third player's total is 31, and rounds 1–4 are already in the history. How this state is written belongs to the `seed` block, which the capture tooling defines.
+A game in round 5 with four invented players ("Ana", "Ben", "Chloe", "Dev"). The third player's total is 31, and rounds 1–4 are already in the history. `seed` writes it, with the onboarding flag, into React Native AsyncStorage before the first launch, so neither take films player entry or onboarding.
+
+## Capture and cut
+
+Two takes. Each is a fresh install with the seeded game, recorded while its steps run:
+
+| Take | Steps | Stills |
+|------|-------|--------|
+| `scores` | tap-score flow · hold 1.5 · rerank flow · hold 1.5 · end-round flow · hold 2.0 | `hook-total` after step 2, `reranked-table` after 4, `history-table` after 6 |
+| `rematch` | rematch flow · hold 1.5 | `rematch-prompt` after step 2 |
+
+The in and out points below are take seconds, read from each take's cue sheet:
+
+| Segment | Take | In–out (s) | Length | Join into the next | Covers beats |
+|---------|------|------------|--------|--------------------|--------------|
+| 1 | scores | 5.6–10.1 | 4.5 | cut | setup-table + hook-tap, one continuous shot |
+| 2 | scores | 11.0–14.0 | 3.0 | fade 0.4 | rerank |
+| 3 | scores | 16.2–20.1 | 3.9 | cut | end-round (3.5 after the fade's 0.4) |
+| 4 | rematch | 5.4–7.9 | 2.5 | — (last) | rematch |
+
+```
+segments   4.5 + 3.0 + 3.9 + 2.5 = 13.9s − 0.4s fade = 13.5s  = beats 13.5s   PASS (1.0x)
+render     13.5 + end card 2.5 = 16.0s                          = plan 16.0s
+hook       segment 1 starts at take 5.6s; the total reads 43 at take 8.0s → output 2.4s
+```
