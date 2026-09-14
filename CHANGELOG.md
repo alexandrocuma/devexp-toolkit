@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-14
+
 Epic #77 — promo-campaign: the toolkit's first domain playbook. Its capture and compose tooling (#76) ships separately, and the release waits for it.
 
 ### Added
