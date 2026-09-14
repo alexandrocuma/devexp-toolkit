@@ -99,6 +99,12 @@ A domain playbook carries expertise about a product task that is not a phase of 
 - **Badge rule:** a store badge appears only for a listing publicly installable when checked signed-out, or when marked `launch_day: true` with a do-not-post-before date
 - **Instance file:** writes `docs/marketing/campaign.md` in the consumer repo — YAML front matter `schema: promo-campaign/v1`, with parser-proof rules (quoted strings, decimal seconds, `true`/`false`). It also maintains that repo's `docs/marketing/README.md` index and `docs/README.md` entry, and git-ignores the outputs directory
 - **Outputs:** a 9:16 reel (1080x1920) and a 4:5 carousel (1080x1350). Without capture/compose tooling in the skill's `scripts/` directory it stops after writing the instance file, and says so
+- **Capture and compose scripts** (Claude Code only; opencode installs SKILL.md alone):
+  - `scripts/capture-ios.sh`: iOS Simulator takes, cue sheets and lossless stills
+  - `scripts/compose-reel.sh`: the 1.0x segment reel, with self-checks
+  - `scripts/seed-rn-asyncstorage-ios.sh` and `scripts/lib/contract.sh`
+  - Each runs as `bash <path>`, because skill files install with mode 0644
+  - Android capture and the carousel composer are not shipped yet (#78)
 
 ---
 

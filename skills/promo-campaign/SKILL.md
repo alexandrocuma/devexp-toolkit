@@ -11,7 +11,7 @@ You are the **Promo Director**, turning an app that already works into a short p
 
 This is the toolkit's first **domain playbook** — product expertise rather than a lifecycle phase. It is app-agnostic, runs only when the user types it, stops for the user at three checkpoints, and no orchestrator has a phase it belongs in.
 
-The skill owns the **method** and writes its decisions down as a versioned instance file in the consumer repo, `docs/marketing/campaign.md`. Capturing and composing footage is separate tooling (Phase 7). Without that tooling the skill still produces a complete, reviewable plan, and stops there.
+The skill owns the **method** and writes its decisions down as a versioned instance file in the consumer repo, `docs/marketing/campaign.md`. Capture and compose are bundled scripts (Phase 7). Without them the skill still produces a complete, reviewable plan, and stops there.
 
 ## Triggered by
 
@@ -35,7 +35,13 @@ User-invoked only. `disable-model-invocation: true` keeps the skill out of autom
 - **Capture on web, desktop or a physical device.** The method assumes an emulator or simulator that tooling can seed and drive.
 - **Generated or mocked-up app screens**, of any kind (Safety Rule 4).
 
-Claude Code also installs two supporting files beside this one: [`references/example-campaign.md`](references/example-campaign.md), a complete EXAMPLE for a fictional app that passes every limit with its arithmetic shown, and [`references/campaign-template.md`](references/campaign-template.md), a blank v1 skeleton. Read the example before writing a first campaign. opencode installs this file alone, so everything load-bearing is below.
+Claude Code also installs, beside this file:
+- [`references/example-campaign.md`](references/example-campaign.md): a complete EXAMPLE for a fictional app that passes every limit, with its arithmetic shown. Read it before writing a first campaign.
+- [`references/campaign-template.md`](references/campaign-template.md): a blank v1 skeleton.
+- [`references/capture-and-compose.md`](references/capture-and-compose.md): the full `seed`/`capture` schema, cue sheets, capture traps and the scripts' mutation record.
+- `scripts/`: the capture and compose tooling (Phase 7).
+
+opencode installs this file alone. Everything load-bearing for planning is below, but capture and compose run in Claude Code only.
 
 ---
 
@@ -106,7 +112,7 @@ Promo campaign — scope: <all | platform | platform + locale>
 
 - **A hook is a moment, not a feature** — an action and its visible effect in one continuous shot, which proves the claim even with the caption muted.
 - **`hook.lands_at_s`** is the output time at which the effect is on screen (the proof frame), not when the action starts. It must be **≤ 5.0s**. Everything before it is setup, and setup must be compressible.
-- **If the moment needs more setup than 5.0s allows** (data entry, navigation, a sign-in), fix the setup by starting from seeded state. Never pick a weaker hook to save setup. Record the starting state the hook needs in the instance file's body; the `seed` block's internals belong to the capture tooling.
+- **If the moment needs more setup than 5.0s allows** (data entry, navigation, a sign-in), fix the setup by starting from seeded state. Never pick a weaker hook to save setup. Record the starting state the hook needs in the instance file's body; Phase 7 writes it as `seed.entries`.
 - **Never a hook:** a splash screen, onboarding, a permission prompt, a settings screen, the paywall, or a price.
 
 **Checkpoint 2** — present the hook (feature, moment, `lands_at_s`). Wait for confirmation.
@@ -151,7 +157,7 @@ Never speed footage up, trim a caption below 2.0s, run the end card's transition
 - **`carousel.<locale>[]`** lists the content slides in order, and the end card is appended as the last slide.
 - **Slide 1 is the hook's proof**, carrying the only `emphasis: true`. It is the feed thumbnail, so someone who swipes no further has still seen the whole claim.
 - **Then one slide per remaining caption**, in order: at most 8 content slides, 9 with the end card.
-- **Each slide names a `still`**: a lossless screenshot declared under `capture.stills[]`, never a frame pulled from the compressed reel. While planning, declare each still by `id` alone; the capture tooling owns every other field.
+- **Each slide names a `still`**: a lossless screenshot declared under `capture.stills[]`, never a frame pulled from the compressed reel. While planning, declare each still by `id` alone, a slug of letters, digits, `.`, `_` and `-`; Phase 7 adds when capture takes it.
 
 **Checkpoint 3** — present the storyboard and carousel tables with the arithmetic written out (Output template). Wait for confirmation before anything is written.
 
@@ -199,8 +205,12 @@ parts = File.read(ARGV[0]).split(/^---[ \t]*$/, 3)
 abort "#{ARGV[0]}: no YAML front matter between two --- lines" unless parts.size == 3 && parts[0].strip.empty?
 text = parts[1]; err = []
 lint = lambda do |n, key = false|   # parser-proof rules, checked before anything is loaded
+  err << "line #{n.start_line + 1}: YAML #{n.is_a?(Psych::Nodes::Alias) ? 'alias *' : 'anchor &'}#{n.anchor} is not allowed; write the value out" if n.respond_to?(:anchor) && n.anchor
   case n
-  when Psych::Nodes::Mapping then n.children.each_with_index { |c, i| lint.(c, i.even?) }
+  when Psych::Nodes::Mapping
+    ks = n.children.each_slice(2).map(&:first).grep(Psych::Nodes::Scalar)
+    ks.each_with_index { |k, i| err << "line #{k.start_line + 1}: duplicate key #{k.value.inspect}; a parser would silently keep one" if ks[0...i].any? { |o| o.value == k.value } }
+    n.children.each_with_index { |c, i| lint.(c, i.even?) }
   when Psych::Nodes::Scalar
     next unless n.plain
     if key then err << "line #{n.start_line + 1}: quote the key #{n.value.inspect}, it loads as a boolean or null" if n.value =~ /\A(y|yes|n|no|on|off|true|false|null|~)\z/i
@@ -307,10 +317,15 @@ RB
 
 ### Phase 7 — Capture and Compose Handoff
 
-The capture and compose tooling ships separately, as a `scripts/` directory in the directory this SKILL.md was installed in: `${CLAUDE_SKILL_DIR}`. Claude Code substitutes the real path into this text; for a user-level install it is `~/.claude/skills/promo-campaign/`. It is a text substitution, not an environment variable, so scripts cannot read it: pass every path to them explicitly.
+The tooling is `${CLAUDE_SKILL_DIR}/scripts/`. Claude Code substitutes the directory of this SKILL.md into that text (`~/.claude/skills/promo-campaign/` for a user install). It is not an environment variable, so pass every path to the scripts explicitly and absolutely. Skill files install as 0644, so always run `bash "${CLAUDE_SKILL_DIR}/scripts/<script>"`, never `./<script>`. Each script has `--help`, checks its prerequisites first with install hints, and writes only to `outputs.dir` and `/tmp/.promo-campaign-*`.
 
-- **`scripts/` exists** → list it and read the scripts' own usage headers for the entry point and its arguments; never guess names. Invoke as `bash "${CLAUDE_SKILL_DIR}/scripts/<script>" <args>`. The tooling targets `/bin/bash`, and the installer writes skill files as 0644, so `./<script>` fails. Pass the absolute paths of the instance file and the repo root. Renders go to `outputs.dir`.
-- **`scripts/` is absent** → stop here; the instance file is the deliverable. Report: `capture/compose tooling not installed — docs/marketing/campaign.md is ready for it`. Every opencode install lands here, because opencode receives SKILL.md alone.
+1. **Contract.** With the user, fill in `seed` and `capture` except `cut` (contract below; flows are Maestro files the consumer writes). Then `bash "${CLAUDE_SKILL_DIR}/scripts/lib/contract.sh" validate "<repo>/docs/marketing/campaign.md" capture` must pass: it checks only what capture needs.
+2. **iOS capture** (`ios` planned) → `bash "${CLAUDE_SKILL_DIR}/scripts/capture-ios.sh" --campaign "<repo>/docs/marketing/campaign.md" --repo "<repo>"`. It writes `takes/<take>.mov`, `<take>.cues.json` and `stills/<id>.png` under `outputs.dir`. It refuses an app already installed on that Simulator, because every take deletes the app's data: add `--replace-installed` only once the user agrees. It saves the host clipboard, clears it and restores it (text only). Set `capture.cut[]` from the cue sheet's take seconds, then `validate "<repo>/docs/marketing/campaign.md" all` must pass.
+3. **Reel** (`reel_9x16`) → `bash "${CLAUDE_SKILL_DIR}/scripts/compose-reel.sh" --campaign "<repo>/docs/marketing/campaign.md" --repo "<repo>"`. It writes `reel-<locale>.mp4` and one frame per caption in `checks/`. `--launch-day` writes `reel-<locale>.launch-day.mp4` instead, never to be posted before its badges' `do_not_post_before`. Exit 70 names the self-check that failed; fix the cut or the storyboard, never the numbers alone.
+4. **Degrade per component.** Run `ls "${CLAUDE_SKILL_DIR}/scripts/"` and report each missing piece; never guess a script name.
+   - `scripts/` absent → stop; the instance file is the deliverable. Report `capture/compose tooling not installed — docs/marketing/campaign.md is ready for it`. Every opencode install lands here.
+   - `android` planned, no `capture-android.sh` → report `Android capture not installed`, and still capture iOS.
+   - `carousel_4x5` planned, no `compose-carousel.sh` → report `carousel composer not installed`. Stills are still captured.
 
 ### Phase 8 — Verify Outputs  *(only when Phase 7 rendered something)*
 
@@ -328,7 +343,7 @@ Durations come from the video stream, not the container, so an audio track that 
 - [ ] **End card ≤ 3.0s on the render:** a frame at `card_start − 1/fps` shows the last beat with no transition started, and the video-stream duration minus `card_start` is ≤ 3.0.
 - [ ] Reel 1080x1920; every carousel slide 1080x1350; slide count = `carousel.<locale>` entries + 1
 - [ ] One frame per caption, at its midpoint, shows what that caption says; each slide shows what its text says
-- [ ] Frames at the end-card start and inside it show no caption; its badges match Phase 5
+- [ ] Frames at the end-card start and inside it show no caption; its badges match Phase 5, and a launch-day badge appears only in `reel-<locale>.launch-day.mp4`
 - [ ] Clean status bar: fixed demo clock, full battery, no carrier name, no notification icons
 - [ ] No host leaks: no clipboard chip, host text in keyboard suggestions, notification, real account name or avatar
 - [ ] No ad on screen
@@ -346,6 +361,7 @@ One file per consumer repo: `docs/marketing/campaign.md`. It is reviewed like co
 - **Locale keys are quoted too** (`"en":`), because a bare `no:` loads as `false`. Other keys are plain words.
 - **Every time and duration is decimal seconds** — `5.5`, never `0:05.5`.
 - **Booleans are only `true` / `false`**, and an absent value is `null`, never an empty value or `~`.
+- **No anchors (`&`), aliases (`*`) or duplicate keys.** Parsers resolve them, or silently keep one value, differently.
 
 <!-- `app` stays on one line here: the opencode installer drops every line of SKILL.md whose trimmed text starts with `name:`. -->
 ```yaml
@@ -376,8 +392,15 @@ end_card:
   badges:
     - { store: "<store>", locale: "<locale>", path: "<repo path>", public: false, launch_day: false, do_not_post_before: "<YYYY-MM-DD>" }
 outputs: { dir: "<repo-relative, git-ignored>", formats: ["reel_9x16", "carousel_4x5"] }
-seed: {}                                  # reserved — internals defined by the capture tooling
-capture: { stills: [{ id: "<slug>" }] }   # reserved — internals defined by the capture tooling
+seed:                                     # written before the app's first launch
+  backend: "rn-asyncstorage"
+  entries: [{ key: "<storage key>", value: "<the value exactly as the app stores it>" }]
+capture:
+  ios: { app: "<repo path to a simulator .app>", bundle_id: "<id>", device: "<name or UDID>", status_bar: { time: "9:41", battery_level: 100 }, appearance: "light" }
+  takes: [{ id: "<slug>", steps: [{ maestro: "<repo path to a flow>" }, { hold_s: 1.0 }, { appearance: "dark" }] }]
+  stills: [{ id: "<slug>", take: "<take id>", after_step: 1 }]
+  cut: [{ take: "<take id>", in_s: 0.0, out_s: 0.0, join: "fade", fade_s: 0.3 }]
+  compose: { font: "<.ttf path>", font_bold: "<.ttf path>", background: "#F3EDE4", text_color: "#1A1A1A" }
 ---
 ```
 
@@ -393,8 +416,14 @@ capture: { stills: [{ id: "<slug>" }] }   # reserved — internals defined by th
 | `captions.<locale>` | Output-timeline times, obeying every Phase 4 limit. `claim` is verbatim, and appears in `features[].claim.<locale>` or `app.tagline.<locale>`. |
 | `carousel.<locale>` | Content slides in order (still, text, emphasis, claim); the end card is appended after them. At most 8. Slide 1 is the hook's and carries the only `emphasis: true`. `still` names an id declared under `capture.stills[]`. `claim` follows the same rule as a caption. Required when `outputs.formats` includes `"carousel_4x5"`. |
 | `end_card` | `duration_s` ≤ 3.0 including `transition_s`. `store` is `"app_store"`, `"google_play"`, or another store's snake_case id. Each badge is `public: true`, or `launch_day: true` with `do_not_post_before`. |
-| `outputs` | `formats` is drawn from `"reel_9x16"` (1080x1920) and `"carousel_4x5"` (1080x1350). `dir` is repo-relative, without `..`. |
-| `seed`, `capture` | **Reserved.** Their internals are defined by the capture and compose tooling. This skill reads `capture.stills[].id`, may declare a still by `id` alone while planning, and never rewrites anything else in either block. |
+| `outputs` | `formats` is drawn from `"reel_9x16"` (1080x1920) and `"carousel_4x5"` (1080x1350). `dir` is a repo-relative subdirectory, without `.` or `..` segments. |
+| `seed`, `capture` | Phases 1–6 read `capture.stills[].id`, may declare a still by `id` alone, and never rewrite anything else in either block. Phase 7 fills both in with the user. Full schema: `references/capture-and-compose.md`. |
+| `seed` | Optional. `backend` is `"rn-asyncstorage"`; any other backend fails, naming the supported ones. Each `entries[]` item has a `key` and a `value`, already serialised exactly as the app stores it. |
+| `capture.ios` | `app` (a simulator build), `bundle_id` (letters, digits, `-` and `.`), `device` (one booted Simulator, by name or UDID), `status_bar` (`time`, `battery_level`), and the starting `appearance`. |
+| `capture.takes` | Each `id` is one recording. Its `steps[]` run in order, each exactly one of `maestro` (a flow path), `hold_s`, or `appearance` (`"light"` / `"dark"`). |
+| `capture.stills` | `id`, a slug (letters, digits, `.`, `_`, `-`), plus `take` and a 1-based `after_step`: when capture screenshots it. |
+| `capture.cut` | Segments played in order at 1.0x, timed in take seconds: `take`, and `in_s` < `out_s` ≤ that take's logged length. `join` into the next segment is `"cut"` (the default) or `"fade"`, whose `fade_s` is shorter than both neighbours; the last segment has no join. Σ(out − in) − Σ `fade_s` = Σ `beats[].target_s`. |
+| `capture.compose` | Optional: `font`, `font_bold` (file paths), `background`, `text_color` (`"#RRGGBB"`). |
 
 **What belongs where.**
 - **`beats` stay storyboard intent** — what is on screen and roughly how long it holds.

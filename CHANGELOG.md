@@ -29,6 +29,26 @@ Epic #77 — promo-campaign: the toolkit's first domain playbook. Its capture an
     - A dependency-free Ruby check in SKILL.md lints those rules before loading, type-checks, then enforces every limit, the single hook beat, verbatim claims and the badge rule, reporting every error by key.
     - The skill also maintains the consumer's `docs/marketing/README.md` index and `docs/README.md` entry, and git-ignores `outputs.dir`.
   - **Degrades without #76:** when the skill's `scripts/` directory is absent, it stops after writing the instance file and says so. `references/` ships a fictional, limit-passing EXAMPLE campaign and a blank template.
+- **promo-campaign iOS capture and segment reel composer.** Bash scripts bundled in `skills/promo-campaign/scripts/`. They target `/bin/bash` 3.2, run as `bash <path>` because skill files install 0644, and work in Claude Code only (opencode installs SKILL.md alone). (#76)
+  - **Contract:** defines the `seed` and `capture` blocks: `seed.backend` + `entries[]`; `capture.ios`; `takes[].steps[]` (Maestro flows interleaved with `hold_s` and `appearance`); `stills[]`; `cut[]` segments; `compose` styling. SKILL.md has a compact key table; `references/capture-and-compose.md` has the full schema, cue sheets, traps and the mutation record.
+  - **`lib/contract.sh`:** converts front matter with ruby, then python3 + PyYAML, then yq v4. Each path applies SKILL.md's parser-proof lint first, naming the key path and line. A jq pass then type-checks every key the scripts read.
+  - **`capture-ios.sh`:** one booted Simulator, pinned by UDID for every simctl and Maestro call. Each take: fresh install → `rn-asyncstorage` seed → demo status bar → starting appearance → `recordVideo` (h264), with the steps driven only after `Recording started`. Writes a cue sheet from Maestro's `commands.json`, a lossless still pass with `simctl io screenshot`, and a restore-on-exit trap.
+  - **`seed-rn-asyncstorage-ios.sh`:** writes AsyncStorage's `manifest.json` before the first launch, spilling any value longer than 1024 UTF-16 units to a file named the MD5 of its key.
+  - **`compose-reel.sh`:** a 1.0x reel from `capture.cut[]`: `trim` + `setpts=PTS-STARTPTS`, `concat` or `xfade`. Each take is padded with `tpad` to its logged length, and `settb=AVTB,fps=30` is applied before every join. Adds the phone window derived from the source aspect, PNG32 frame and caption layers with `shortest=1`, and a `-respect-parentheses` end card. Output: 1080x1920 H.264.
+  - **Self-checks that fail the run:** frame alpha, caption band, out-points within the logged take, no re-timing, segments − fades = beats, render = plan within one frame and ≤ `max_duration_s`, size.
+  - **Proven by mutation:** guards for frame alpha, `shortest=1`, take `tpad`, per-join normalisation, Σ segments ≠ Σ beats, PTS scaling, out-of-take out-points and caption band all go red. Single-segment and 1080x2220-source controls stay green.
+  - **SKILL.md Phase 7** names the entry points, passes absolute paths, and reports each missing component separately: Android capture and the carousel composer are #78. Step 1 runs `contract.sh validate … capture`, and `all` runs once the cue sheets exist.
+  - **Review fixes (#82):**
+    - A caption ending after the end-card start, starting below 0, or empty is refused.
+    - `--launch-day` writes `reel-<locale>.launch-day.mp4` and never replaces the postable reel.
+    - Capture:
+      - refuses an already-installed app unless `--replace-installed`
+      - saves, clears and restores the host clipboard (text only; `--keep-clipboard` skips it) and empties the Simulator pasteboard
+      - removes a take's previous files before recording, so a failed recapture cannot leave a stale take
+      - keeps a cue when Maestro gives no timestamp
+      - discards an unfinalised recording with a reason
+    - The parser lint, in all three script paths and SKILL.md's check, refuses anchors, aliases and duplicate keys.
+    - Stricter formats for locales, `outputs.dir`, `bundle_id` and `PROMO_RENDER_TIMEOUT_S`.
 
 ### Changed
 

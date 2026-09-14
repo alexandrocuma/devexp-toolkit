@@ -80,9 +80,26 @@ outputs:
   dir: "<repo-relative dir without .., git-ignored>"
   formats: ["reel_9x16", "carousel_4x5"]      # 1080x1920 · 1080x1350
 
-seed: {}      # reserved — internals defined by the capture tooling
-capture:      # reserved — internals defined by the capture tooling; the planner declares still ids only
-  stills: [{ id: "<still id>" }]
+# Filled in at Phase 7, with the user. While planning, declare still ids only.
+# Key rules: SKILL.md's contract table. Full schema: references/capture-and-compose.md.
+seed:                                         # written before the app's first launch
+  backend: "rn-asyncstorage"                  # the only backend so far
+  entries:
+    - { key: "<storage key>", value: "<the value exactly as the app stores it, already serialised>" }
+capture:
+  ios: { app: "<repo path to a simulator .app>", bundle_id: "<bundle id>", device: "<Simulator name or UDID>", status_bar: { time: "9:41", battery_level: 100 }, appearance: "light" }
+  takes:
+    - id: "<take id>"
+      steps:                                  # in order, inside one recording
+        - maestro: "<repo path to a Maestro flow>"
+        - hold_s: 1.0
+        - appearance: "dark"
+  stills:
+    - { id: "<still id>", take: "<take id>", after_step: 1 }
+  cut:                                        # take seconds, played in order at 1.0x
+    - { take: "<take id>", in_s: 0.0, out_s: 0.0, join: "fade", fade_s: 0.3 }   # join: into the next segment
+    - { take: "<take id>", in_s: 0.0, out_s: 0.0 }                               # the last segment has no join
+  compose: { background: "#F3EDE4", text_color: "#1A1A1A" }   # optional; font and font_bold are file paths
 ---
 
 # <App> Promo Campaign
