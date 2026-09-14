@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.0] - 2026-09-14
 
-Epic #77 — promo-campaign: the toolkit's first domain playbook. Its capture and compose tooling (#76) ships separately, and the release waits for it.
+Epic #77 — promo-campaign: the toolkit's first domain playbook, with its iOS Simulator capture and segment reel composer (#76). Android capture and the carousel composer (#78) follow.
 
 ### Added
 
