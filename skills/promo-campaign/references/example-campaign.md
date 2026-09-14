@@ -7,8 +7,9 @@ app:
   name: "Tallybird"
   icon: "assets/icon-1024.png"
   tagline:
-    en: "Score any game night."
-    es: "Puntúa cualquier noche de juegos."
+    "en": "Score any game night."
+    "es": "Puntúa cualquier noche de juegos."
+platforms: ["ios"]
 locales: ["en", "es"]
 max_duration_s: 20.0
 claim_sources:
@@ -23,40 +24,40 @@ features:
     visual: true
     status: "claimed"
     claim:
-      en: "Tap a score and every total adds itself up."
-      es: "Toca una puntuación y cada total se suma solo."
+      "en": "Tap a score and every total adds itself up."
+      "es": "Toca una puntuación y cada total se suma solo."
   - id: "leader-ranking"
     title: "Leader on top"
     rank: 2
     visual: true
     status: "claimed"
     claim:
-      en: "The leader always rises to the top of the table."
-      es: "El líder siempre sube a lo alto de la tabla."
+      "en": "The leader always rises to the top of the table."
+      "es": "El líder siempre sube a lo alto de la tabla."
   - id: "round-history"
     title: "Round history"
     rank: 3
     visual: true
     status: "claimed"
     claim:
-      en: "Every round is saved to a history you can scroll back through."
-      es: "Cada ronda queda guardada en un historial que puedes repasar."
+      "en": "Every round is saved to a history you can scroll back through."
+      "es": "Cada ronda queda guardada en un historial que puedes repasar."
   - id: "rematch"
     title: "One-tap rematch"
     rank: 4
     visual: true
     status: "claimed"
     claim:
-      en: "Start a rematch with the same players in one tap."
-      es: "Empieza la revancha con los mismos jugadores con un solo toque."
+      "en": "Start a rematch with the same players in one tap."
+      "es": "Empieza la revancha con los mismos jugadores con un solo toque."
   - id: "offline"
     title: "Works offline"
     rank: 5
     visual: false
     status: "claimed"
     claim:
-      en: "Works offline, at any table."
-      es: "Funciona sin conexión, en cualquier mesa."
+      "en": "Works offline, at any table."
+      "es": "Funciona sin conexión, en cualquier mesa."
   - id: "csv-export"
     title: "CSV export"
     rank: null
@@ -76,23 +77,23 @@ beats:
   - { id: "end-round", role: "proof", feature: "round-history", shows: "End round; round 5 joins the history table", target_s: 3.5 }
   - { id: "rematch", role: "proof", feature: "rematch", shows: "Game over; one tap starts a rematch with the same four players", target_s: 2.5 }
 captions:
-  en:
+  "en":
     - { start_s: 1.2, end_s: 4.5, text: "Totals add themselves.", emphasis: true, claim: "Tap a score and every total adds itself up." }
     - { start_s: 4.6, end_s: 7.5, text: "The leader rises to the top.", emphasis: false, claim: "The leader always rises to the top of the table." }
     - { start_s: 7.6, end_s: 11.0, text: "Every round is saved.", emphasis: false, claim: "Every round is saved to a history you can scroll back through." }
     - { start_s: 11.1, end_s: 13.4, text: "Rematch in one tap.", emphasis: false, claim: "Start a rematch with the same players in one tap." }
-  es:
+  "es":
     - { start_s: 1.2, end_s: 4.5, text: "Los totales se suman solos.", emphasis: true, claim: "Toca una puntuación y cada total se suma solo." }
     - { start_s: 4.6, end_s: 7.5, text: "El líder sube arriba.", emphasis: false, claim: "El líder siempre sube a lo alto de la tabla." }
     - { start_s: 7.6, end_s: 11.0, text: "Cada ronda queda guardada.", emphasis: false, claim: "Cada ronda queda guardada en un historial que puedes repasar." }
     - { start_s: 11.1, end_s: 13.4, text: "Revancha con un toque.", emphasis: false, claim: "Empieza la revancha con los mismos jugadores con un solo toque." }
 carousel:
-  en:
+  "en":
     - { still: "hook-total", text: "Totals add themselves.", emphasis: true, claim: "Tap a score and every total adds itself up." }
     - { still: "reranked-table", text: "The leader rises to the top.", emphasis: false, claim: "The leader always rises to the top of the table." }
     - { still: "history-table", text: "Every round is saved.", emphasis: false, claim: "Every round is saved to a history you can scroll back through." }
     - { still: "rematch-prompt", text: "Rematch in one tap.", emphasis: false, claim: "Start a rematch with the same players in one tap." }
-  es:
+  "es":
     - { still: "hook-total", text: "Los totales se suman solos.", emphasis: true, claim: "Toca una puntuación y cada total se suma solo." }
     - { still: "reranked-table", text: "El líder sube arriba.", emphasis: false, claim: "El líder siempre sube a lo alto de la tabla." }
     - { still: "history-table", text: "Cada ronda queda guardada.", emphasis: false, claim: "Cada ronda queda guardada en un historial que puedes repasar." }
@@ -117,7 +118,7 @@ capture:   # reserved — internals defined by the capture tooling; the planner 
 
 > **EXAMPLE — fictional app.** Tallybird does not exist. This file shows a complete `promo-campaign/v1` instance file that passes every storyboard limit, with the arithmetic written out. Nothing in it describes a real app, listing or store.
 
-The front matter above is what capture and compose tooling reads. This body is the rationale a reviewer reads.
+The front matter above is what capture and compose tooling reads. This body is the rationale a reviewer reads. The plan is for iOS (`platforms`), shot on a simulator.
 
 ## Claim authority
 

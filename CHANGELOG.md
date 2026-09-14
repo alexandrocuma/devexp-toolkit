@@ -24,8 +24,9 @@ Epic #77 — promo-campaign: the toolkit's first domain playbook. Its capture an
   - **Cut order:** compress pre-hook setup → drop beats from the end → drop repeated beats.
   - **Outputs:** a 9:16 reel (1080x1920) and a 4:5 carousel (1080x1350).
   - **Instance-file contract, inline in SKILL.md** (opencode installs SKILL.md only): `docs/marketing/campaign.md` in the consumer repo, with YAML front matter `schema: promo-campaign/v1`.
-    - Keys: `app`, `locales`, `max_duration_s`, `claim_sources`, `features`, `hook`, `beats`, `captions.<locale>`, `carousel.<locale>`, `end_card`, `outputs`, and reserved `seed`/`capture` blocks whose internals #76 defines.
-    - Parser-proof rules: quoted strings, decimal-second times, `true`/`false` only.
+    - Keys: `app`, `platforms` (optional), `locales`, `max_duration_s`, `claim_sources`, `features`, `hook`, `beats`, `captions.<locale>`, `carousel.<locale>`, `end_card`, `outputs`, and reserved `seed`/`capture` blocks whose internals #76 defines.
+    - Parser-proof rules: quoted strings and locale keys, decimal-second times, `true`/`false` only.
+    - A dependency-free Ruby check in SKILL.md lints those rules before loading, type-checks, then enforces every limit, the single hook beat, verbatim claims and the badge rule, reporting every error by key.
     - The skill also maintains the consumer's `docs/marketing/README.md` index and `docs/README.md` entry, and git-ignores `outputs.dir`.
   - **Degrades without #76:** when the skill's `scripts/` directory is absent, it stops after writing the instance file and says so. `references/` ships a fictional, limit-passing EXAMPLE campaign and a blank template.
 

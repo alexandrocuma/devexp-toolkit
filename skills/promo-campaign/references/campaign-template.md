@@ -2,11 +2,11 @@
 # promo-campaign/v1 — blank instance file.
 # Copy to docs/marketing/campaign.md in the app repo, then fill it in through
 # /promo-campaign rather than by hand. The rules for every key are in SKILL.md
-# under "Instance-file Contract"; references/example-campaign.md is a filled-in
+# under "Instance-file contract"; references/example-campaign.md is a filled-in
 # EXAMPLE that passes every limit.
 #
-# Parser-proof YAML: quote every string value, write every time as decimal
-# seconds (5.5, never 0:05.5), and use only true / false / null.
+# Parser-proof YAML: quote every string value and every locale key, write every
+# time as decimal seconds (5.5, never 0:05.5), and use only true / false / null.
 schema: "promo-campaign/v1"
 
 app:
@@ -14,6 +14,9 @@ app:
   icon: "<repo path to the app icon>"
   tagline:
     "<locale>": "<verbatim line from that locale's claim authority>"
+
+# Optional: the platforms this plan was made for.
+platforms: ["<platform>"]
 
 locales: ["<locale>"]
 
@@ -34,7 +37,7 @@ claim_sources:
 features:
   - id: "<slug>"
     title: "<short feature title>"
-    rank: 1                                   # null when unclaimed
+    rank: 1                                   # positive whole number; null when unclaimed
     visual: true                              # visible on screen within ~3s, no narration
     status: "claimed"                         # "claimed" | "unclaimed"
     claim:
@@ -42,7 +45,7 @@ features:
     found_in: "<discovery path, for unclaimed features>"
 
 hook:
-  feature: "<id of the rank-1 visual claimed feature>"
+  feature: "<id of the highest-ranked claimed feature with visual: true>"
   beat: "<id of the beat with role hook>"
   moment: "<the action and its visible effect, in one shot>"
   lands_at_s: 0.0                             # proof frame on the output timeline; <= 5.0
@@ -70,11 +73,11 @@ end_card:
   duration_s: 0.0                             # <= 3.0, transition included
   transition_s: 0.0
   badges:
-    # Only when public (installable signed-out, today) or launch_day with a date.
+    # Only when public (the user confirmed the install signed-out, today) or launch_day with a date.
     - { store: "<store id>", locale: "<locale>", path: "<repo path to official badge artwork>", public: false, launch_day: false, do_not_post_before: "<YYYY-MM-DD, required when launch_day>" }
 
 outputs:
-  dir: "<repo-relative dir, git-ignored>"
+  dir: "<repo-relative dir without .., git-ignored>"
   formats: ["reel_9x16", "carousel_4x5"]      # 1080x1920 · 1080x1350
 
 seed: {}      # reserved — internals defined by the capture tooling
@@ -91,7 +94,7 @@ capture:      # reserved — internals defined by the capture tooling; the plann
 <!-- rank · feature · visual/not visual · verbatim claim · source. Then the unclaimed list, each with its decision. -->
 
 ## Hook
-<!-- why this moment proves the rank-1 visual claim, and how setup stays under 5.0s -->
+<!-- why this moment proves the highest-ranked visual claim, and how setup stays under 5.0s -->
 
 ## Storyboard
 <!-- beat table, then the arithmetic block: beats sum, end card, planned total, hook, captions, overlap, carousel -->

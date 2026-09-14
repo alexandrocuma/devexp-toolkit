@@ -8,7 +8,7 @@ How-to guides for using and configuring the framework.
 
 | Doc | Description |
 |-----|-------------|
-| [Quick Start](guides/quickstart.md) | Zero to shipped — install, then use the 8 commands end-to-end |
+| [Quick Start](guides/quickstart.md) | Zero to shipped — install, then use the lifecycle commands end-to-end |
 | [Docs Architecture](guides/docs-architecture.md) | CLAUDE.md-as-indexer pattern + standard docs/ folder tree — apply this in every project |
 | [Install & Services](guides/install.md) | install.sh flags, start-services.sh, uninstall.sh, and CLI installation paths |
 | [Team Distribution](guides/team-distribution.md) | Fork and customise devexp for your organisation via devexp.config.json |
