@@ -1,8 +1,8 @@
 # DevExp SDLC Coverage Map
 
-Generated: 2026-06-09 (updated: `/monitor` added as operate-phase orchestrator; `/graphify` + `/cleanup` are utility commands alongside the five lifecycle orchestrators)
-Agents: 34 · Skills: 7 (5 lifecycle orchestrators + 2 utilities) · Total components: 41  
-All specialist capabilities are inline within orchestrators, invoked as agents, or exposed as one of the two utility commands (`/graphify`, `/cleanup`).
+Generated: 2026-06-09 (updated: `/monitor` added as operate-phase orchestrator; `/graphify` + `/cleanup` are utility commands alongside the five lifecycle orchestrators; `/promo-campaign` is the first domain playbook)
+Agents: 34 · Skills: 8 (5 lifecycle orchestrators + 2 utilities + 1 domain playbook) · Total components: 42  
+All specialist capabilities are inline within orchestrators, invoked as agents, or exposed as one of the two utility commands (`/graphify`, `/cleanup`) or the domain playbook (`/promo-campaign`).
 
 ---
 
@@ -220,6 +220,15 @@ All specialist capabilities are inline within orchestrators, invoked as agents, 
 |-----------|------|-------------|
 | `swarm-status` | inline in `devxp` Phase 3 | Recommends which specialists to activate for the current work context |
 | `synthesis` | agent | Consolidates multi-agent findings into a single action plan |
+
+---
+
+### Domain playbooks
+*Product expertise outside the development lifecycle — app-agnostic, user-invoked, interactive, not absorbable by an orchestrator*
+
+| Component | Type | Description |
+|-----------|------|-------------|
+| `promo-campaign` | skill (domain playbook) | Promo reel (9:16) and carousel (4:5) planned from real footage: listing-backed claims only, one hook ≤ 5.0s, ≤ 20.0s at 1.0x, versioned `docs/marketing/campaign.md` contract |
 
 ---
 

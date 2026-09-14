@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Epic #77 — promo-campaign: the toolkit's first domain playbook. Its capture and compose tooling (#76) ships separately, and the release waits for it.
+
+### Added
+
+- **`/promo-campaign` — app promo playbook (1st domain playbook).** A user-invoked command, with `disable-model-invocation: true` and an `argument-hint` of `[platform] [locale]`, that plans an app's promo reel and carousel from real footage. It is the first skill in a new domain-playbook category, whose entry test is: app-agnostic, user-invoked, interactive, and not absorbable by an orchestrator. (#75)
+  - **Process:** feature extraction → exactly one hook → storyboard → claim and badge check → instance file → capture/compose handoff. The user confirms at three checkpoints.
+  - **Claim rule:** discovery sources (changelog, README, code) find features, but only the claim authority (the current store listing or landing page) may back a caption or slide. Unclaimed features are reported, never captioned.
+  - **Badge rule:** a store badge appears only for a listing publicly installable when checked signed-out, or when marked `launch_day: true` with a do-not-post-before date.
+  - **Storyboard limits, measured on the render:**
+    - ≤ 20.0s (shorter wins), and the render equals the plan within one frame
+    - 1.0x, never sped up
+    - captions: one idea each, ≥ 2.0s each, ≤ 8 per locale
+    - hook lands ≤ 5.0s
+    - end card ≤ 3.0s including its transition, with no caption over it
+  - **Cut order:** compress pre-hook setup → drop beats from the end → drop repeated beats.
+  - **Outputs:** a 9:16 reel (1080x1920) and a 4:5 carousel (1080x1350).
+  - **Instance-file contract, inline in SKILL.md** (opencode installs SKILL.md only): `docs/marketing/campaign.md` in the consumer repo, with YAML front matter `schema: promo-campaign/v1`.
+    - Keys: `app`, `locales`, `max_duration_s`, `claim_sources`, `features`, `hook`, `beats`, `captions.<locale>`, `carousel.<locale>`, `end_card`, `outputs`, and reserved `seed`/`capture` blocks whose internals #76 defines.
+    - Parser-proof rules: quoted strings, decimal-second times, `true`/`false` only.
+    - The skill also maintains the consumer's `docs/marketing/README.md` index and `docs/README.md` entry, and git-ignores `outputs.dir`.
+  - **Degrades without #76:** when the skill's `scripts/` directory is absent, it stops after writing the instance file and says so. `references/` ships a fictional, limit-passing EXAMPLE campaign and a blank template.
+
+### Changed
+
+- **Documentation surface reframed from seven commands to eight** across the skills catalog, READMEs, CLAUDE.md and coverage map: five lifecycle orchestrators, two utilities (`/graphify`, `/cleanup`) and one domain playbook (`/promo-campaign`). The skills reference gains a Domain Playbooks section with the entry test, plus notes on supporting files (Claude Code only, installed 0644) and on `disable-model-invocation`. (#75)
+
 Epic #73 — on-demand cleanup, worktree access grants, and a closed manual-release gap.
 
 ### Added
