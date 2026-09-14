@@ -9,25 +9,32 @@
 # Cuts capture.cut[] segments out of <outputs.dir>/takes/<take>.mov, using each
 # take's <take>.cues.json (capture-ios.sh writes both), and writes
 # <outputs.dir>/reel-<locale>.mp4: 1080x1920 H.264, 30 fps, one per locale.
-# One review frame per caption, at its midpoint, goes to <outputs.dir>/checks/.
-# Badges: public ones always; launch_day ones only with --launch-day, and that
-# render must not be posted before the badge's do_not_post_before.
+# One review frame per caption, at its midpoint, goes to
+# <outputs.dir>/checks/reel-<locale>-caption-<n>.png.
+#
+# Badges: public ones only. With --launch-day, launch_day badges are added and
+# the output is reel-<locale>.launch-day.mp4 (review frames
+# reel-<locale>.launch-day-caption-<n>.png), never the postable reel-<locale>.mp4.
+# A launch-day render must not be posted before its badges' do_not_post_before,
+# which the summary line names.
 #
 # Timeline: segments play back to back at 1.0x (a `fade` join overlaps its two
 # segments by fade_s), then the end card crossfades in at the end of the
 # footage, which is held on its last frame for the transition. So
 #   render = (sum of segments - sum of fades) + end_card.duration_s
 # and sum of segments - sum of fades must equal the sum of beats[].target_s.
+# Captions must lie inside the footage: 0 <= start_s < end_s <= sum of beats
+# (contract.sh refuses the campaign otherwise, exit 65).
 #
-# Self-checks, each failing the run (exit 70): the frame layer is srgba; each
-# caption fits its band; every out_s is within its take's logged length; the
-# filtergraph re-times nothing; segments - fades = beats within one frame; the
-# render's video-stream duration equals the plan within one frame and is <=
-# max_duration_s; the render is 1080x1920.
+# Self-checks, each failing the run (exit 70): the frame layer is srgba with a
+# transparent hole; each caption fits its band; every out_s is within its take's
+# logged length; the filtergraph re-times nothing; segments - fades = beats within
+# one frame; the render's video-stream duration equals the plan within one frame
+# and is <= max_duration_s; the render is 1080x1920.
 #
 # Environment: PROMO_CAMPAIGN_FONT / PROMO_CAMPAIGN_FONT_BOLD override
 # capture.compose.font / font_bold (default: macOS Arial and Arial Bold);
-# PROMO_RENDER_TIMEOUT_S bounds each render (default 600).
+# PROMO_RENDER_TIMEOUT_S bounds each render in whole seconds (default 600).
 #
 # Exit: 0 rendered and checked; 64 usage; 65 campaign data; 66 missing input;
 # 69 missing prerequisite; 70 a self-check failed; 1 ffmpeg failed.
@@ -58,6 +65,14 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$campaign" ] || die 64 "--campaign <absolute path to campaign.md> is required (see --help)"
+# perl's alarm takes whole seconds, and 0 (or a fraction, truncated to 0) would
+# switch the watchdog off.
+RENDER_TIMEOUT_S="${PROMO_RENDER_TIMEOUT_S:-600}"
+case "$RENDER_TIMEOUT_S" in
+  ""|*[!0-9]*|0*) die 64 "PROMO_RENDER_TIMEOUT_S must be a whole number of seconds >= 1, got '$RENDER_TIMEOUT_S'" ;;
+esac
+VARIANT=""
+if [ "$launch_day" = 1 ]; then VARIANT=".launch-day"; fi
 need ffmpeg ffprobe magick jq perl yaml
 encoders="$(ffmpeg -hide_banner -encoders 2>/dev/null || true)"
 case "$encoders" in *libx264*) ;; *) die 69 "this ffmpeg has no libx264 encoder: brew reinstall ffmpeg" ;; esac
@@ -159,22 +174,24 @@ while [ "$j" -lt "$NSEG" ]; do
 done
 
 mkdir -p "$OUT/checks"
+# Locales are format-checked by contract.sh, so they are safe to split and to use in file names.
 LOCALES="$(cj '.locales[]')"
 if [ -n "$only_locale" ]; then
-  printf '%s\n' "$LOCALES" | grep -qx -- "$only_locale" || die 64 "--locale $only_locale is not in locales: $(printf '%s ' $LOCALES)"
+  printf '%s\n' "$LOCALES" | grep -Fqx -- "$only_locale" || die 64 "--locale '$only_locale' is not one of locales: $(printf '%s ' $LOCALES)"
   LOCALES="$only_locale"
 fi
 
 for L in $LOCALES; do
+  NAME="reel-$L$VARIANT"
   # Never leave a previous run's reel or review frames looking current.
-  reel="$OUT/reel-$L.mp4"; rm -f "$reel" "$OUT/checks/reel-$L-caption-"*.png "$OUT/checks/reel-$L.rejected.mp4"
+  reel="$OUT/$NAME.mp4"; rm -f "$reel" "$OUT/checks/$NAME-caption-"*.png "$OUT/checks/$NAME.rejected.mp4"
   # -nostdin: ffmpeg otherwise reads the caller's stdin for its interactive keys.
   argv=(-nostdin -hide_banner -v error -y)
   k=0; while [ "$k" -lt "$NT" ]; do argv+=(-i "$TAKES/${TK_ID[$k]}.mov"); k=$((k + 1)); done
   argv+=(-f lavfi -i "color=c=0x${BG#\#}:s=${CW}x${CH}:r=$FPS" -loop 1 -framerate "$FPS" -i "$T/frame.png")
   # The end-card transition starts at the end of the footage. Its last frame is
-  # held for transition_s here, before any caption is drawn, so no caption rides
-  # into the transition.
+  # held for transition_s here, before any caption is drawn; captions end by the
+  # end-card start (contract.sh), so none rides into the transition.
   if awk -v t="$TR_S" 'BEGIN { exit !(t > 0) }'; then
     G="$SEG_G[$ACC]tpad=stop_mode=clone:stop_duration=$TR_S$JOIN_NORM[main];"
   else
@@ -203,9 +220,9 @@ for L in $LOCALES; do
     BADGES+=("$(repo_path "$repo" "$b")")
   done < <(cj --arg l "$L" --argjson ld "$launch_day" '.end_card.badges // [] | .[] | select(.locale == $l)
              | select(.public == true or ($ld == 1 and .launch_day == true and ((.do_not_post_before // "") | tostring | length) > 0)) | .path')
+  POST_AFTER=""
   if [ "$launch_day" = 1 ]; then
-    cj --arg l "$L" '.end_card.badges // [] | .[] | select(.locale == $l and .public != true and .launch_day == true)
-      | "launch-day badge \(.store) (\(.locale)): do not post reel-\($l).mp4 before \(.do_not_post_before)"' >&2
+    POST_AFTER="$(cj --arg l "$L" '[.end_card.badges // [] | .[] | select(.locale == $l and .public != true and .launch_day == true) | .do_not_post_before | tostring] | unique | join(", ")')"
   fi
   build_end_card "$T/card-$L.png" "$CW" "$CH" "$BG" "$FG" "$FONT" "$BOLD" "$ICON" "$(cj '.app.name')" \
     "$(cj --arg l "$L" '.app.tagline[$l] // ""')" ${BADGES[@]+"${BADGES[@]}"}
@@ -218,7 +235,7 @@ for L in $LOCALES; do
   else
     G="$G[$last]settb=AVTB,fps=$FPS,format=yuv420p,setsar=1[m];[$CARD_IN:v]settb=AVTB,fps=$FPS,format=yuv420p,setsar=1[e];[m][e]concat=n=2:v=1:a=0[out]"
   fi
-  argv+=(-filter_complex "$G" -map "[out]" -an -c:v libx264 -pix_fmt yuv420p -r "$FPS" -crf 19 -preset veryfast -movflags +faststart "$T/reel-$L.mp4")
+  argv+=(-filter_complex "$G" -map "[out]" -an -c:v libx264 -pix_fmt yuv420p -r "$FPS" -crf 19 -preset veryfast -movflags +faststart "$T/$NAME.mp4")
 
   # 1.0x: the only re-timing allowed is setpts=PTS-STARTPTS after a trim.
   bad="$(printf '%s\n' "$G" | grep -oE 'setpts=[^,;[]*' | grep -vx 'setpts=PTS-STARTPTS' || true)"
@@ -226,31 +243,33 @@ for L in $LOCALES; do
   [ -z "$bad" ] || die 70 "self-check: the filtergraph re-times frames ($bad); only setpts=PTS-STARTPTS is allowed at 1.0x"
 
   rc=0
-  with_timeout "${PROMO_RENDER_TIMEOUT_S:-600}" ffmpeg "${argv[@]}" 2> "$T/ffmpeg-$L.log" || rc=$?
+  with_timeout "$RENDER_TIMEOUT_S" ffmpeg "${argv[@]}" 2> "$T/ffmpeg-$L.log" || rc=$?
   if [ "$rc" = 142 ]; then
-    die 70 "self-check: reel-$L did not finish within ${PROMO_RENDER_TIMEOUT_S:-600}s and was killed. An overlay without shortest=1 never ends"
+    die 70 "self-check: $NAME did not finish within ${RENDER_TIMEOUT_S}s and was killed. An overlay without shortest=1 never ends"
   elif [ "$rc" != 0 ]; then
-    tail -20 "$T/ffmpeg-$L.log" >&2; die 1 "ffmpeg failed rendering reel-$L (exit $rc)"
+    tail -20 "$T/ffmpeg-$L.log" >&2; die 1 "ffmpeg failed rendering $NAME (exit $rc)"
   fi
 
-  dur="$(probe_video "$T/reel-$L.mp4" duration)"
-  w="$(probe_video "$T/reel-$L.mp4" width)"; h="$(probe_video "$T/reel-$L.mp4" height)"
+  dur="$(probe_video "$T/$NAME.mp4" duration)"
+  w="$(probe_video "$T/$NAME.mp4" width)"; h="$(probe_video "$T/$NAME.mp4" height)"
   fail=""
   [ "$w" = "$CW" ] && [ "$h" = "$CH" ] || fail="size ${w}x${h} is not ${CW}x${CH}"
   fabs_le "$dur" "$PLANNED_S" "$FRAME_S" || fail="${fail:+$fail; }duration ${dur}s is not the planned ${PLANNED_S}s within one frame (${FRAME_S}s): a short render usually means a take lost its static tail"
   fle "$dur" "$LIMIT_S" 0.000001 || fail="${fail:+$fail; }duration ${dur}s is over the limit ${LIMIT_S}s"
   if [ -n "$fail" ]; then
-    cp "$T/reel-$L.mp4" "$OUT/checks/reel-$L.rejected.mp4"
-    die 70 "self-check: reel-$L: $fail (kept for review as $OUT/checks/reel-$L.rejected.mp4)"
+    cp "$T/$NAME.mp4" "$OUT/checks/$NAME.rejected.mp4"
+    die 70 "self-check: $NAME: $fail (kept for review as $OUT/checks/$NAME.rejected.mp4)"
   fi
-  mv "$T/reel-$L.mp4" "$reel"
+  mv "$T/$NAME.mp4" "$reel"
 
   n=0
   while [ "$n" -lt "$ncap" ]; do
     mid="$(cj --arg l "$L" --argjson n "$n" '(.captions[$l][$n].start_s + .captions[$l][$n].end_s) / 2')"
-    ffmpeg -nostdin -hide_banner -v error -y -ss "$mid" -i "$reel" -frames:v 1 "$OUT/checks/reel-$L-caption-$((n + 1)).png"
+    ffmpeg -nostdin -hide_banner -v error -y -ss "$mid" -i "$reel" -frames:v 1 "$OUT/checks/$NAME-caption-$((n + 1)).png"
     n=$((n + 1))
   done
-  printf 'reel-%s: %s — %ss (plan %ss = beats %ss + end card %ss, limit %ss), %sx%s, window %sx%s+%s+%s, %s caption frames in %s\n' \
-    "$L" "$reel" "$dur" "$PLANNED_S" "$BEATS_S" "$CARD_S" "$LIMIT_S" "$w" "$h" "$WIN_W" "$WIN_H" "$WIN_X" "$WIN_Y" "$ncap" "$OUT/checks"
+  NOTE=""
+  if [ "$launch_day" = 1 ]; then NOTE="; LAUNCH-DAY render: do not post before ${POST_AFTER:-the do_not_post_before of its badges}"; fi
+  printf '%s: %s — %ss (plan %ss = beats %ss + end card %ss, limit %ss), %sx%s, window %sx%s+%s+%s, %s caption frames in %s%s\n' \
+    "$NAME" "$reel" "$dur" "$PLANNED_S" "$BEATS_S" "$CARD_S" "$LIMIT_S" "$w" "$h" "$WIN_W" "$WIN_H" "$WIN_X" "$WIN_Y" "$ncap" "$OUT/checks" "$NOTE"
 done

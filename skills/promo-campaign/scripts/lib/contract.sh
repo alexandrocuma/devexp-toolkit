@@ -2,21 +2,26 @@
 # promo-campaign — read and type-check the campaign's YAML front matter.
 #
 # Usage:
-#   bash contract.sh validate <campaign.md> [capture|compose|all]
-#   bash contract.sh json <campaign.md>        # print the front matter as JSON
-# Sourced by capture-ios.sh and compose-reel.sh for contract_load / contract_validate.
+#   bash contract.sh validate <campaign.md> capture   # before capture: seed, capture.ios, takes, stills
+#   bash contract.sh validate <campaign.md> [all]     # after the cue sheets exist: everything, capture.cut included
+#   bash contract.sh validate <campaign.md> compose   # what compose-reel.sh reads
+#   bash contract.sh json <campaign.md>               # print the front matter as JSON
+# Sourced by capture-ios.sh (capture) and compose-reel.sh (compose).
 #
 # YAML -> JSON with the first parser that works: ruby (YAML.safe_load, ships
 # with macOS) -> python3 with PyYAML -> yq v4. Before loading, every parser path
-# applies the same parser-proof lint as SKILL.md's Phase 6 check: a plain key
-# that loads as a boolean or null, and a plain value that is not a decimal
-# number, true, false or null, are errors naming the key path and line. Parsers
-# disagree on unquoted scalars (Psych reads 0:05.5 as 330.0, PyYAML as 5.5; `no`
-# becomes false), so an unquoted value is refused rather than read.
+# applies the same parser-proof lint as SKILL.md's Phase 6 check, naming the key
+# path and line:
+# - a plain key that loads as a boolean or null;
+# - a plain value that is not a decimal number, true, false or null. Psych reads
+#   0:05.5 as 330.0 and PyYAML as 5.5, and `no` becomes false;
+# - an anchor, an alias, or a duplicate key. Parsers resolve or silently keep
+#   one of those, and do not all agree which.
 #
 # The jq pass type-checks every key the scripts read. For keys SKILL.md's check
 # also reads, the type rules are its rules. Storyboard limits are SKILL.md's
-# (Phase 6), not repeated here; this file owns `seed`, `capture` and outputs.dir.
+# (Phase 6); this file owns seed, capture, outputs.dir and the render limits the
+# composer depends on (caption windows inside the footage).
 
 [ -n "${PROMO_LIB_DIR:-}" ] || . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
@@ -46,11 +51,24 @@ text = File.read(ARGV[0], encoding: "UTF-8"); err = []
 key_re = /\A(y|yes|n|no|on|off|true|false|null|~)\z/i
 val_re = /\A(-?\d+(\.\d+)?|true|false|null)\z/
 walk = lambda do |n, path|
+  where = path.empty? ? "top level" : path
+  if n.is_a?(Psych::Nodes::Alias)
+    err << "#{where} (line #{n.start_line + 1}): YAML alias *#{n.anchor} is not allowed; write the value out"
+    next
+  end
+  err << "#{where} (line #{n.start_line + 1}): YAML anchor &#{n.anchor} is not allowed; write the value out" if n.respond_to?(:anchor) && n.anchor
   case n
   when Psych::Nodes::Mapping
+    seen = {}
     n.children.each_slice(2) do |k, v|
       if k.is_a?(Psych::Nodes::Scalar)
-        err << "#{path.empty? ? 'top level' : path} (line #{k.start_line + 1}): quote the key #{k.value.inspect}, it loads as a boolean or null" if k.plain && k.value =~ key_re
+        err << "#{where} (line #{k.start_line + 1}): quote the key #{k.value.inspect}, it loads as a boolean or null" if k.plain && k.value =~ key_re
+        err << "#{where} (line #{k.start_line + 1}): YAML anchor &#{k.anchor} is not allowed; write the value out" if k.anchor
+        if seen.key?(k.value)
+          err << "#{where} (line #{k.start_line + 1}): duplicate key #{k.value.inspect} (first at line #{seen[k.value]}); a parser would silently keep one"
+        else
+          seen[k.value] = k.start_line + 1
+        end
         name = k.value
       else
         walk.(k, path); name = "?"
@@ -59,13 +77,16 @@ walk = lambda do |n, path|
     end
   when Psych::Nodes::Sequence then n.children.each_with_index { |c, i| walk.(c, "#{path}[#{i}]") }
   when Psych::Nodes::Scalar
-    err << "#{path} (line #{n.start_line + 1}): #{n.value.inspect} must be \"quoted\", a decimal number, true, false or null" if n.plain && n.value !~ val_re
+    err << "#{where} (line #{n.start_line + 1}): #{n.value.inspect} must be \"quoted\", a decimal number, true, false or null" if n.plain && n.value !~ val_re
   else (n.children || []).each { |c| walk.(c, path) }
   end
 end
 begin
   doc = Psych.parse(text); walk.(doc, "") if doc
-  unless err.empty? then warn err.join("\n"); exit 65 end
+  unless err.empty?
+    warn err.each_with_index.sort_by { |e, i| [e[/\(line (\d+)\)/, 1].to_i, i] }.map(&:first).uniq.join("\n")
+    exit 65
+  end
   fm = YAML.safe_load(text)
 rescue Psych::Exception => e
   warn "front matter does not parse: #{e.message}"; exit 65
@@ -80,56 +101,113 @@ import json, re, sys, yaml
 KEY = re.compile(r'(y|yes|n|no|on|off|true|false|null|~)\Z', re.I | re.A)
 VAL = re.compile(r'(-?\d+(\.\d+)?|true|false|null)\Z', re.A)
 text = open(sys.argv[1], encoding='utf-8').read(); err = []
-def walk(n, path):
+
+class StrictLoader(yaml.SafeLoader):
+    """SafeLoader that records every anchor and alias with its key path, and raises on a duplicate key."""
+    def __init__(self, stream):
+        yaml.SafeLoader.__init__(self, stream)
+        self.paths = []
+    def compose_node(self, parent, index):
+        base = self.paths[-1] if self.paths else ''
+        if isinstance(index, yaml.ScalarNode):
+            path = base + '.' + index.value if base else index.value
+        elif isinstance(index, int) and not isinstance(index, bool):
+            path = '%s[%d]' % (base, index)
+        else:
+            path = base
+        ev = self.peek_event()
+        where, line = path or 'top level', ev.start_mark.line + 1
+        if isinstance(ev, yaml.AliasEvent):
+            err.append('%s (line %d): YAML alias *%s is not allowed; write the value out' % (where, line, ev.anchor))
+        elif getattr(ev, 'anchor', None):
+            err.append('%s (line %d): YAML anchor &%s is not allowed; write the value out' % (where, line, ev.anchor))
+        self.paths.append(path)
+        try:
+            return yaml.SafeLoader.compose_node(self, parent, index)
+        finally:
+            self.paths.pop()
+    def construct_mapping(self, node, deep=False):
+        seen = set()
+        for k, _ in node.value:
+            if isinstance(k, yaml.ScalarNode):
+                if k.value in seen:
+                    raise yaml.constructor.ConstructorError(None, None, 'duplicate key %s' % json.dumps(k.value), k.start_mark)
+                seen.add(k.value)
+        return yaml.SafeLoader.construct_mapping(self, node, deep)
+
+def walk(n, path, visited):
+    if id(n) in visited:
+        return
+    visited.add(id(n))
+    where = path or 'top level'
     if isinstance(n, yaml.MappingNode):
+        seen = {}
         for k, v in n.value:
             if isinstance(k, yaml.ScalarNode):
                 if k.style is None and KEY.match(k.value):
-                    err.append('%s (line %d): quote the key %s, it loads as a boolean or null' % (path or 'top level', k.start_mark.line + 1, json.dumps(k.value, ensure_ascii=False)))
+                    err.append('%s (line %d): quote the key %s, it loads as a boolean or null' % (where, k.start_mark.line + 1, json.dumps(k.value, ensure_ascii=False)))
+                if k.value in seen:
+                    err.append('%s (line %d): duplicate key %s (first at line %d); a parser would silently keep one' % (where, k.start_mark.line + 1, json.dumps(k.value, ensure_ascii=False), seen[k.value]))
+                else:
+                    seen[k.value] = k.start_mark.line + 1
                 name = k.value
             else:
-                walk(k, path); name = '?'
-            walk(v, path + '.' + name if path else name)
+                walk(k, path, visited); name = '?'
+            walk(v, path + '.' + name if path else name, visited)
     elif isinstance(n, yaml.SequenceNode):
         for i, c in enumerate(n.value):
-            walk(c, '%s[%d]' % (path, i))
+            walk(c, '%s[%d]' % (path, i), visited)
     elif isinstance(n, yaml.ScalarNode):
         if n.style is None and not VAL.match(n.value):
-            err.append('%s (line %d): %s must be "quoted", a decimal number, true, false or null' % (path, n.start_mark.line + 1, json.dumps(n.value, ensure_ascii=False)))
+            err.append('%s (line %d): %s must be "quoted", a decimal number, true, false or null' % (where, n.start_mark.line + 1, json.dumps(n.value, ensure_ascii=False)))
 try:
-    node = yaml.compose(text)
+    node = yaml.compose(text, Loader=StrictLoader)
     if node is not None:
-        walk(node, '')
+        walk(node, '', set())
     if err:
-        sys.stderr.write('\n'.join(err) + '\n'); sys.exit(65)
-    fm = yaml.safe_load(text)
+        line = lambda e: int(re.search(r'\(line (\d+)\)', e).group(1))
+        out = []
+        for e in sorted(err, key=line):
+            if e not in out:
+                out.append(e)
+        sys.stderr.write('\n'.join(out) + '\n'); sys.exit(65)
+    fm = yaml.load(text, Loader=StrictLoader)
 except yaml.YAMLError as e:
     sys.stderr.write('front matter does not parse: %s\n' % e); sys.exit(65)
 json.dump(fm, sys.stdout, ensure_ascii=False)
 PY
 }
 
-# yq_convert <front matter file>: the same lint with yq v4's node style and line
-# operators, then the conversion. Keys are collected per mapping as parallel
-# arrays: building one object per key with `keys[] | select(style == "")` lost
-# every field for 4 of 115 keys on a fixture (yq v4.53). stdin is closed on
-# every call so yq never reads a caller's pipe.
+# yq_convert <front matter file>: the same lint with yq v4's node style, line,
+# anchor and kind operators, then the conversion. yq resolves aliases and keeps
+# duplicate keys in its JSON, so both are detected explicitly first. Keys are
+# collected per mapping as parallel arrays: building one object per key with
+# `keys[] | select(style == "")` lost every field for 4 of 115 keys on a fixture
+# (yq v4.53). stdin is closed on every call so yq never reads a caller's pipe.
 yq_convert() {
   local errs off
   # yq numbers lines from the first non-blank line; add the blank lines that
   # stand in for the opening `---`, so its lines match the file's.
   off="$(awk 'NF { exit } { n++ } END { print n + 0 }' "$1")"
-  errs="$({ yq -o=json -I=0 '[.. | select(kind == "map") | {"mp": path, "keys": [keys[] | to_string], "styles": [keys[] | style], "lines": [keys[] | line]}]' "$1" < /dev/null
-            yq -o=json -I=0 '[.. | select(kind == "scalar" and style == "") | {"p": path, "l": line, "v": (. | to_string), "k": false}]' "$1" < /dev/null
+  errs="$({ yq -o=json -I=0 '[.. | select(kind == "map") | {"mp": path, "keys": [keys[] | to_string], "styles": [keys[] | style], "lines": [keys[] | line], "anchors": [keys[] | anchor]}]' "$1" < /dev/null
+            yq -o=json -I=0 '[.. | select(kind == "scalar" and style == "") | {"p": path, "l": line, "v": (. | to_string)}]' "$1" < /dev/null
+            yq -o=json -I=0 '[.. | select(kind == "alias" or anchor != "") | {"p": path, "l": line, "an": anchor, "isalias": (kind == "alias"), "al": alias}]' "$1" < /dev/null
           } | jq -rs --argjson off "$off" '
     def fp: reduce .[] as $s (""; if ($s | type) == "number" then . + "[\($s)]" elif . == "" then $s else . + "." + $s end);
-    ((.[0][] | . as $m | range(0; $m.keys | length) | select($m.styles[.] == "") | {p: $m.mp, l: $m.lines[.], v: $m.keys[.], k: true}), .[1][])
-    | .l += $off |
-    if .k then select(.v | test("^(y|yes|n|no|on|off|true|false|null|~)$"; "i"))
-      | "\(.p | fp | if . == "" then "top level" else . end) (line \(.l)): quote the key \(.v | tojson), it loads as a boolean or null"
-    else select(.v | test("^(-?[0-9]+([.][0-9]+)?|true|false|null)$") | not)
-      | "\(.p | fp) (line \(.l)): \(.v | tojson) must be \"quoted\", a decimal number, true, false or null"
-    end')" || { say "front matter does not parse (yq)"; return 65; }
+    def where: fp | if . == "" then "top level" else . end;
+    [ (.[0][] | . as $m | range(0; $m.keys | length) as $i
+        | ( (select($m.styles[$i] == "" and ($m.keys[$i] | test("^(y|yes|n|no|on|off|true|false|null|~)$"; "i")))
+              | {l: $m.lines[$i], e: "\($m.mp | where) (line \($m.lines[$i] + $off)): quote the key \($m.keys[$i] | tojson), it loads as a boolean or null"}),
+            (select($m.anchors[$i] != "")
+              | {l: $m.lines[$i], e: "\($m.mp | where) (line \($m.lines[$i] + $off)): YAML anchor &\($m.anchors[$i]) is not allowed; write the value out"}),
+            (($m.keys[:$i] | index($m.keys[$i])) as $first | select($first != null)
+              | {l: $m.lines[$i], e: "\($m.mp | where) (line \($m.lines[$i] + $off)): duplicate key \($m.keys[$i] | tojson) (first at line \($m.lines[$first] + $off)); a parser would silently keep one"}) )),
+      (.[1][] | select(.v | test("^(-?[0-9]+([.][0-9]+)?|true|false|null)$") | not)
+        | {l: .l, e: "\(.p | where) (line \(.l + $off)): \(.v | tojson) must be \"quoted\", a decimal number, true, false or null"}),
+      (.[2][] | if .isalias then {l: .l, e: "\(.p | where) (line \(.l + $off)): YAML alias *\(.al) is not allowed; write the value out"}
+                else {l: .l, e: "\(.p | where) (line \(.l + $off)): YAML anchor &\(.an) is not allowed; write the value out"} end)
+    ] | sort_by(.l) | map(.e) | reduce .[] as $e ([]; if index([$e]) then . else . + [$e] end) | .[]')" \
+    || { say "front matter does not parse (yq)"; return 65; }
   if [ -n "$errs" ]; then printf '%s\n' "$errs" >&2; return 65; fi
   yq -o=json -I=0 '.' "$1" < /dev/null
 }
@@ -175,15 +253,18 @@ def colour($p): if . == null or (type == "string" and test("^#[0-9A-Fa-f]{6}$"))
 def dups($p): group_by(.) | map(select(length > 1) | .[0])[] | "\($p) \(tojson) is used more than once";
 def seglen: if (.in_s | type) == "number" and (.out_s | type) == "number" then .out_s - .in_s else null end;
 def jn: if .join == null then "cut" else .join end;
+def r3: . * 1000 | round / 1000;
 
 . as $fm
 | ($fm | opt("capture"; {}) | asmp) as $cap
 | ($cap.takes | aslst | map(objects | select(.id | type == "string")
     | {key: .id, value: (.steps | if type == "array" then length else 0 end)}) | from_entries) as $tmap
+| ([$fm.beats | aslst[] | objects | .target_s] | if length > 0 and all(.[]; type == "number") then add else null end) as $beats
 | [
   # outputs.dir and capture: both modes
   ($fm.outputs | asmp | .dir | if type != "string" then "outputs.dir must be a \"quoted\" repo-relative path, got \(show)"
-     elif . == "" or test("^[/~]") or test("(^|/)[.][.](/|$)") then "outputs.dir \(tojson) must be repo-relative, without '..'" else empty end),
+     elif . == "" or test("^[/~]") or test("(^|/)[.]{1,2}(/|$)")
+       then "outputs.dir \(tojson) must be a repo-relative subdirectory, without '.' or '..' segments" else empty end),
   ($fm | opt("capture"; {}) | mp("capture")),
   ($cap.takes | if type != "array" or length == 0 then "capture.takes must be a non-empty list of takes, got \(show)" else
      (to_entries[] | .key as $i | .value | "capture.takes[\($i)]" as $p |
@@ -216,7 +297,10 @@ def jn: if .join == null then "cut" else .join end;
          ([.[] | objects | .key | strings] | dups("seed.entries key"))
        end)),
     ($cap.ios | if type != "object" then "capture.ios must be a mapping (app, bundle_id, device, status_bar, appearance), got \(show)" else
-       (.app | str("capture.ios.app")), (.bundle_id | str("capture.ios.bundle_id")), (.device | ostr("capture.ios.device")),
+       (.app | str("capture.ios.app")),
+       (.bundle_id | if type == "string" and test("^[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*$") then empty
+          else "capture.ios.bundle_id must be a \"quoted\" reverse-DNS id (letters, digits, '-' and '.'), got \(show)" end),
+       (.device | ostr("capture.ios.device")),
        (if .appearance == null then empty else .appearance | enum("capture.ios.appearance"; ["light", "dark"]) end),
        (.status_bar | if . == null then empty elif type != "object" then mp("capture.ios.status_bar") else
           (.time | ostr("capture.ios.status_bar.time")),
@@ -246,7 +330,11 @@ def jn: if .join == null then "cut" else .join end;
     ($fm.end_card | asmp | opt("badges"; []) | items | .key as $i | .value |
       (.path | str("end_card.badges[\($i)].path")), (.locale | str("end_card.badges[\($i)].locale"))),
     (if $fm | has("max_duration_s") then $fm.max_duration_s | num("max_duration_s") else empty end),
-    ($fm.locales | lst("locales")), ($fm.locales | aslst | to_entries[] | .key as $i | .value | str("locales[\($i)]")),
+    ($fm.locales | lst("locales")),
+    ($fm.locales | aslst | to_entries[] | .key as $i | .value |
+      if type != "string" then str("locales[\($i)]")
+      elif test("^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$") | not then "locales[\($i)] \(tojson) must be a locale like \"en\", \"es\" or \"pt-BR\" (it names output files)"
+      else empty end),
     ($fm.outputs | mp("outputs")), ($fm.outputs | asmp | .formats | lst("outputs.formats")),
     ($fm.app | mp("app")),
     ($fm.app | asmp | (.tagline | mp("app.tagline")), (.name | str("app.name")), (.icon | str("app.icon"))),
@@ -254,12 +342,18 @@ def jn: if .join == null then "cut" else .join end;
     ($fm.locales | aslst[] | strings | . as $l |
       ($fm.app | asmp | .tagline | asmp | .[$l] | ostr("app.tagline.\($l)")),
       ($fm.captions | asmp | opt($l; []) | maplist("captions.\($l)")),
-      ($fm.captions | asmp | opt($l; []) | items | .key as $i | .value |
-        (.start_s | num("captions.\($l)[\($i)].start_s")), (.end_s | num("captions.\($l)[\($i)].end_s")),
-        (.text | str("captions.\($l)[\($i)].text")))),
+      ($fm.captions | asmp | opt($l; []) | items | .key as $i | .value | "captions.\($l)[\($i)]" as $p |
+        (.start_s | num("\($p).start_s")), (.end_s | num("\($p).end_s")), (.text | str("\($p).text")),
+        # The composer draws each caption over [start_s, end_s) of the footage; the
+        # end card and its transition start at the sum of the beats.
+        (.start_s as $s | .end_s as $e |
+          (if ($s | type) == "number" and $s < 0 then "\($p).start_s \($s) must be >= 0" else empty end),
+          (if ($s | type) == "number" and ($e | type) == "number" and $s >= $e then "\($p): start_s \($s) must be before end_s \($e)" else empty end),
+          (if $beats != null and ($e | type) == "number" and $e > $beats + (1 / 60)
+           then "\($p).end_s \($e) is past the end-card start at \($beats | r3)s (the sum of beats[].target_s): no caption may run into the end card or its transition" else empty end)))),
     ($cap | opt("stills"; []) | maplist("capture.stills")),
     # capture.cut and capture.compose: this tooling's own keys.
-    ($cap.cut | if type != "array" or length == 0 then "capture.cut must be a non-empty list of segments, got \(show)" else
+    ($cap.cut | if type != "array" or length == 0 then "capture.cut must be a non-empty list of segments, got \(show) (fill it from the cue sheets after capture; before capture, validate with mode capture)" else
        . as $c | length as $n |
        (to_entries[] | .key as $i | .value | "capture.cut[\($i)]" as $p |
          if type != "object" then mp($p) else

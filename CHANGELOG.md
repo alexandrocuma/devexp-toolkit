@@ -37,7 +37,18 @@ Epic #77 — promo-campaign: the toolkit's first domain playbook. Its capture an
   - **`compose-reel.sh`:** a 1.0x reel from `capture.cut[]`: `trim` + `setpts=PTS-STARTPTS`, `concat` or `xfade`. Each take is padded with `tpad` to its logged length, and `settb=AVTB,fps=30` is applied before every join. Adds the phone window derived from the source aspect, PNG32 frame and caption layers with `shortest=1`, and a `-respect-parentheses` end card. Output: 1080x1920 H.264.
   - **Self-checks that fail the run:** frame alpha, caption band, out-points within the logged take, no re-timing, segments − fades = beats, render = plan within one frame and ≤ `max_duration_s`, size.
   - **Proven by mutation:** guards for frame alpha, `shortest=1`, take `tpad`, per-join normalisation, Σ segments ≠ Σ beats, PTS scaling, out-of-take out-points and caption band all go red. Single-segment and 1080x2220-source controls stay green.
-  - **SKILL.md Phase 7** names the entry points, passes absolute paths, and reports each missing component separately: Android capture and the carousel composer are #78.
+  - **SKILL.md Phase 7** names the entry points, passes absolute paths, and reports each missing component separately: Android capture and the carousel composer are #78. Step 1 runs `contract.sh validate … capture`, and `all` runs once the cue sheets exist.
+  - **Review fixes (#82):**
+    - A caption ending after the end-card start, starting below 0, or empty is refused.
+    - `--launch-day` writes `reel-<locale>.launch-day.mp4` and never replaces the postable reel.
+    - Capture:
+      - refuses an already-installed app unless `--replace-installed`
+      - saves, clears and restores the host clipboard (text only; `--keep-clipboard` skips it) and empties the Simulator pasteboard
+      - removes a take's previous files before recording, so a failed recapture cannot leave a stale take
+      - keeps a cue when Maestro gives no timestamp
+      - discards an unfinalised recording with a reason
+    - The parser lint, in all three script paths and SKILL.md's check, refuses anchors, aliases and duplicate keys.
+    - Stricter formats for locales, `outputs.dir`, `bundle_id` and `PROMO_RENDER_TIMEOUT_S`.
 
 ### Changed
 

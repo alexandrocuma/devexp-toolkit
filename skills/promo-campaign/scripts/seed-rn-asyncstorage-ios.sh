@@ -37,6 +37,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$udid" ] && [ -n "$bid" ] && [ -n "$entries" ] || die 64 "--udid, --bundle-id and --entries are all required (see --help)"
+# The bundle id becomes a directory name below: reverse-DNS characters only.
+printf '%s' "$bid" | grep -Eq '^[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*$' \
+  || die 64 "--bundle-id '$bid' must be a reverse-DNS id (letters, digits, '-' and '.')"
 need jq perl xcrun
 ensure_developer_dir
 

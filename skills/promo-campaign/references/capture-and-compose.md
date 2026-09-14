@@ -10,10 +10,10 @@ Skill files install with mode 0644, so every script runs as `bash <path>`. `${CL
 
 | Script | Does | Needs |
 |--------|------|-------|
-| `capture-ios.sh --campaign <file> [--repo <dir>] [--take <id>]... [--no-stills] [--keep-app]` | Records every take on one booted iOS Simulator, writes cue sheets, then takes lossless stills | jq, perl, xcrun (Xcode), maestro, ffprobe, a YAML parser |
+| `capture-ios.sh --campaign <file> [--repo <dir>] [--take <id>]... [--no-stills] [--keep-app] [--replace-installed] [--keep-clipboard]` | Records every take on one booted iOS Simulator, writes cue sheets, then takes lossless stills | jq, perl, xcrun (Xcode), maestro, ffprobe, a YAML parser |
 | `compose-reel.sh --campaign <file> [--repo <dir>] [--locale <l>] [--launch-day]` | Cuts `capture.cut[]` into a 1080x1920 reel per locale and runs every self-check | ffmpeg (with libx264), ffprobe, magick (ImageMagick 7), jq, perl, a YAML parser |
 | `seed-rn-asyncstorage-ios.sh --udid <u> --bundle-id <id> --entries <json>` | The `rn-asyncstorage` seed backend; `capture-ios.sh` calls it | jq, perl, xcrun |
-| `lib/contract.sh validate <file> [capture\|compose\|all]` · `lib/contract.sh json <file>` | Lints, converts and type-checks the front matter | jq, a YAML parser |
+| `lib/contract.sh validate <file> capture\|all\|compose` · `lib/contract.sh json <file>` | Lints, converts and type-checks the front matter. `capture` checks what capture needs (no `cut` yet); `all`, the default, adds `capture.cut` and every composer key, so run it once the cue sheets exist; `compose` is what `compose-reel.sh` runs | jq, a YAML parser |
 
 `--repo` defaults to the git top level of the campaign file's directory. Paths in the contract are relative to it; an absolute path is used as is.
 
@@ -27,12 +27,16 @@ Skill files install with mode 0644, so every script runs as `bash <path>`. `${CL
   takes/<take>.cues.json        the cue sheet
   takes/<take>.failed-step-N.log  only when a Maestro step failed and its take was discarded
   stills/<id>.png               lossless simctl screenshots
-  reel-<locale>.mp4             the reel, written only after every self-check passed
-  checks/reel-<locale>-caption-N.png   one frame per caption, at its midpoint, for review
-  checks/reel-<locale>.rejected.mp4    a render that failed a post-render check
+  stills/<take>.failed-step-N.log only when a Maestro step failed in the still pass
+  reel-<locale>.mp4             the postable reel, written only after every self-check passed
+  reel-<locale>.launch-day.mp4  with --launch-day only: adds launch_day badges; never post before their do_not_post_before
+  checks/reel-<locale>[.launch-day]-caption-N.png   one frame per caption, at its midpoint, for review
+  checks/reel-<locale>[.launch-day].rejected.mp4    a render that failed a post-render check
 ```
 
-**Fonts and colours:** `PROMO_CAMPAIGN_FONT` / `PROMO_CAMPAIGN_FONT_BOLD` in the environment override `capture.compose.font` / `font_bold`. Without either, the default is macOS Arial (`/System/Library/Fonts/Supplemental/Arial.ttf`, `Arial Bold.ttf`), and a missing font fails the run naming both ways to set it. `PROMO_RENDER_TIMEOUT_S` (default 600) bounds each render.
+A take's previous `.mov`, `.cues.json` and failure logs are removed before it records, and a still's PNG before its pass, so a failed run never leaves an older file for the composer to pick up. A cue sheet is written to a temporary name and moved into place last.
+
+**Fonts and colours:** `PROMO_CAMPAIGN_FONT` / `PROMO_CAMPAIGN_FONT_BOLD` in the environment override `capture.compose.font` / `font_bold`. Without either, the default is macOS Arial (`/System/Library/Fonts/Supplemental/Arial.ttf`, `Arial Bold.ttf`), and a missing font fails the run naming both ways to set it. `PROMO_RENDER_TIMEOUT_S` (whole seconds ≥ 1, default 600) bounds each render; anything else exits 64, because perl's `alarm` truncates a fraction and 0 switches the watchdog off.
 
 ## Parsing the front matter
 
@@ -40,8 +44,12 @@ Parsers are tried in order: `ruby` (`YAML.safe_load`, ships with macOS) → `pyt
 - A plain (unquoted) key that loads as a boolean or null (`no`, `yes`, `on`, `off`, `~`, …) fails. That is a bare `no:` locale.
 - A plain value that is not a decimal number, `true`, `false` or `null` fails. That covers `locale: no` (read as false), `time: 9:41` (read as 34860 by Psych, 581 by PyYAML) and `in_s: 0:05.5` (read as 330.0 by Psych, 5.5 by PyYAML). An empty value and `~` fail too.
 - Inside a `{ }` flow mapping, Psych rejects `9:41` as a syntax error (line and column, no path), while PyYAML and yq read a plain scalar and name the path. All three reject it.
+- An anchor (`&name`), an alias (`*name`) or a duplicate key fails. Left alone, Ruby's `safe_load` refuses aliases while PyYAML and yq resolve them, and Psych and PyYAML silently keep the last duplicate while yq keeps both in its JSON. The python3 path uses a SafeLoader subclass that records anchors and aliases with their key path and raises on a duplicate; the yq path queries `anchor`, `kind == "alias"` and the per-mapping key list explicitly.
 
-A jq pass then type-checks every key the scripts read, and reports every error at once. For keys SKILL.md's check also reads, the types and defaults are its rules. The storyboard limits stay in SKILL.md; the scripts check only what rendering needs.
+A jq pass then type-checks every key the scripts read, and reports every error at once. For keys SKILL.md's check also reads, the types and defaults are its rules. The storyboard limits stay in SKILL.md; the scripts check what rendering needs:
+- each `locales[]` entry matches `^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$`, because it names output files;
+- `outputs.dir` is a repo-relative subdirectory, with no `.` or `..` segment;
+- every caption has `0 ≤ start_s < end_s ≤` Σ `beats[].target_s` (the end-card start, with half a frame of tolerance), so no caption rides into the end card or its transition.
 
 ## `seed`
 
@@ -63,7 +71,7 @@ A jq pass then type-checks every key the scripts read, and reports every error a
 | Key | Type | Rule |
 |-----|------|------|
 | `capture.ios.app` | string | Path to a Simulator build (`Release-iphonesimulator/<App>.app`). Its `CFBundleIdentifier` must equal `bundle_id`. |
-| `capture.ios.bundle_id` | string | |
+| `capture.ios.bundle_id` | string | Reverse-DNS characters only (letters, digits, `-`, `.`): it becomes a directory name when seeding. |
 | `capture.ios.device` | string | Optional. A Simulator name or UDID. Exactly one booted Simulator must match; with no value, exactly one must be booted. |
 | `capture.ios.status_bar` | mapping | Optional. `time` (string, default `"9:41"`), `battery_level` (whole number 0–100, default 100). |
 | `capture.ios.appearance` | string | Optional. `"light"` (default) or `"dark"`: the appearance each take starts in. |
@@ -73,7 +81,7 @@ A jq pass then type-checks every key the scripts read, and reports every error a
 | `… steps[].maestro` | string | Path to a Maestro flow file the consumer wrote. `label:` on a command becomes its cue name. |
 | `… steps[].hold_s` | number > 0 | Keep recording, untouched. |
 | `… steps[].appearance` | string | `"light"` or `"dark"`, flipped from the shell so it lands inside the take. |
-| `capture.stills[]` | list | `id` (unique). `take` and `after_step` (1-based, ≤ that take's step count) come together: when to screenshot. A still with only an `id` is reported and skipped. |
+| `capture.stills[]` | list | `id` (unique; letters, digits, `.`, `_`, `-`). `take` and `after_step` (1-based, ≤ that take's step count) come together: when to screenshot. A still with only an `id` is reported and skipped. |
 | `capture.cut[]` | list, ≥ 1 | Segments played in order at 1.0x. |
 | `… cut[].take` | string | A `capture.takes[].id`; every take in the cut must have the same pixel size. |
 | `… cut[].in_s`, `out_s` | numbers | Take seconds. 0 ≤ `in_s` < `out_s` ≤ the take's logged `take_len_s`. |
@@ -87,16 +95,23 @@ The worked example is the front matter of [`example-campaign.md`](example-campai
 
 On the one resolved Simulator (every `simctl` call takes its UDID; every Maestro call gets `--device <UDID>`):
 
-1. `simctl terminate` + `uninstall` + `install`, then the seed backend.
+**Before the first take:**
+- **An installed app is refused.** If `simctl get_app_container <U> <bundle id> data` succeeds, the app is already on that Simulator, and every take would delete its data. The run exits 65 without touching the Simulator, unless `--replace-installed` is given. After a run with `--keep-app`, the next run needs the flag too.
+- **The host clipboard is saved and cleared** (macOS, `pbpaste`/`pbcopy`), and restored on every exit, Ctrl-C and SIGTERM included. The restore is text only. When `osascript -e 'clipboard info'` lists anything besides `utf8`/`ut16`/`string`/`Unicode text` (an image, say), the run says that part will not come back. `--keep-clipboard` leaves the clipboard alone and says so.
+- **Notifications:** `simctl` has no notification switch; `simctl help` lists none, and `simctl privacy` covers no notification service. A fresh install has never been granted notification permission, and the scripts send no `simctl push`. Other apps on the Simulator can still post; turn on a Focus in the Simulator's Settings if they do (manual, unverified from a script).
+
+**Each take:**
+
+1. `simctl terminate` + `uninstall` + `install`, then the seed backend, then `simctl pbcopy <U>` with empty input to clear the Simulator's own pasteboard.
 2. `simctl status_bar <U> clear`, then `override --time … --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --operatorName '' --batteryState discharging --batteryLevel …`.
 3. `simctl ui <U> appearance <starting appearance>`, `simctl launch`, a 1s settle.
 4. `simctl io <U> recordVideo --codec=h264 --force`; no step runs until its log prints `Recording started`.
 5. The steps, in order. A step that exits non-zero stops the recording, deletes the take, keeps a failing Maestro step's log as `takes/<take>.failed-step-N.log`, and fails the run.
-6. The stop time is logged, then the recorder gets SIGINT.
+6. The stop time is logged, then the recorder gets SIGINT. A file that `ffprobe` cannot read (an unfinalised recording) discards the take with recordVideo's exit status and log.
 
-After every take, a separate pass per take with stills reinstalls, reseeds and replays the steps without recording. After each step that a still names, it runs `simctl io <U> screenshot --type=png`.
+After every take, a separate pass per take with stills reinstalls, reseeds and replays the steps without recording. After each step that a still names, it runs `simctl io <U> screenshot --type=png`; a failed or empty screenshot stops the run with simctl's message.
 
-On any exit, a trap clears the status bar, restores the appearance the Simulator had before the run, and uninstalls the app unless `--keep-app`. Maestro's stdin is closed.
+On any exit, a trap undoes what the run changed: status bar cleared and the Simulator's previous appearance restored (once a take has started), the app uninstalled if the run installed it and `--keep-app` is absent, and the host clipboard restored. Maestro's stdin is closed.
 
 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` is exported for the script's own process tree only when `xcode-select -p` points at the Command Line Tools and that Xcode exists. A `DEVELOPER_DIR` already set is respected.
 
@@ -116,7 +131,7 @@ On any exit, a trap clears the status bar, restores the appearance the Simulator
 
 - **`take_len_s`** is the stop time minus the `Recording started` time: the length the take really ran.
 - **`file_dur_s`** is the file's video-stream duration. It is usually shorter (trap 1).
-- **`cues`** come from each Maestro step's `--test-output-dir` `commands.json`: `t_s` = command timestamp − recording start, named by `label:` or else by the command. Maestro's two internal setup commands are dropped.
+- **`cues`** come from each Maestro step's `--test-output-dir` `commands.json`: `t_s` = command timestamp − recording start, named by `label:` or else by the command. Maestro's two internal setup commands are dropped. `status` is kept as Maestro wrote it (`COMPLETED`, `SKIPPED`, `WARNED`, …). Maestro 2.10.0 was measured to stamp a `runFlow` skipped by an unmet `when:` and a failed `optional: true` assert with a timestamp and duration too. A command without them still gets a cue, with `t_s` and `dur_s` null, sorted last.
 - **`events`** are every step: flows, holds and appearance flips.
 - **All times are take seconds.** A cue marks when a command started, which comes before the visible change, so choose `in_s` from the cue and confirm it on a frame.
 
@@ -130,7 +145,8 @@ render    = footage + end_card.duration_s      must equal the plan within one fr
 - **Segments:** `trim` + `setpts=PTS-STARTPTS` each. A `cut` join is `concat`, and a `fade` join is `xfade` overlapping both segments by `fade_s`.
 - **Normalisation:** `settb=AVTB,fps=30` follows every trim and every join, so it sits immediately before every `concat`/`xfade` input.
 - **Takes:** each is padded with `tpad=stop_mode=clone` to its `take_len_s` first.
-- **End card:** its transition starts at the end of the footage, which is the end-card start. The footage's last frame is held for `transition_s` **before** captions are drawn, so no caption rides into the transition. The card, transition included, lasts `duration_s`.
+- **End card:** its transition starts at the end of the footage, which is the end-card start. The footage's last frame is held for `transition_s` **before** captions are drawn, and `lib/contract.sh` refuses any caption ending after the end-card start, so no caption rides into the transition. The card, transition included, lasts `duration_s`.
+- **Launch day:** `--launch-day` adds `launch_day` badges and writes `reel-<locale>.launch-day.mp4`, never `reel-<locale>.mp4`, and its summary line names the `do_not_post_before` dates.
 - **Captions:** each is drawn for `[start_s, end_s)` on the output timeline, to the frame.
 - **Window:** the phone window is the largest one with the source's aspect ratio that fits between the 250px caption band and the 200px footer, within 120px side margins, with even dimensions. A 1206x2622 source gives 676x1470+202+250, and a 1080x2220 source 716x1470+182+250.
 
@@ -184,7 +200,8 @@ Each trap below was measured on macOS with an iOS 26.5 Simulator, Xcode, Maestro
 12. **A take frame is not a clean still.** H.264 tv range turns white 255 into 252 (SSIM 0.9957, PSNR 36.7 dB against the lossless screenshot). Stills come from `simctl io screenshot`.
 13. **ffmpeg 9 rejects `-of csv=s=' '`.** Query ffprobe fields one at a time.
 14. **yq v4 evaluates a piped stdin** alongside its file argument, and `keys[] | select(...)` objects lost every field for 4 of 115 keys. Stdin is closed and keys are collected per mapping.
-15. **Unresolved:** the QuickType predictive bar over the keyboard can show on camera. The Simulator's pasteboard sync with the host may leak host text into the keyboard (unverified). Clear the host clipboard for the take and restore it afterwards (SKILL.md Safety Rule 5).
+15. **Host leaks.** The Simulator syncs the host clipboard into its own pasteboard: after a run restored the host clipboard at exit, `simctl pbpaste` returned that text. So capture saves, clears and restores the host clipboard and empties the Simulator's pasteboard before each take. `pbpaste` returns 0 bytes for an image, so only text can be restored. Still unresolved: the QuickType predictive bar over the keyboard can show on camera, and `simctl` offers no way to silence notifications.
+16. **`run_step … || rc=$?` switches `set -e` off inside the function**, and so does `$(func)`. A failed lookup left a step's kind empty and skipped it with status 0, and a raw string passed to `--argjson` dropped cue sheet events silently. Every command there is checked explicitly.
 
 ## Measured timings
 
