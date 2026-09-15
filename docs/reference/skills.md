@@ -1,28 +1,29 @@
 # Skills Reference
 
-## The Seven Commands
+## The Eight Commands
 
-The toolkit runs through seven slash commands — five lifecycle orchestrators and two utilities (`/graphify`, `/cleanup`). Type `/` in Claude Code and you'll see exactly these:
+The toolkit runs through eight slash commands — six lifecycle orchestrators and two utilities (`/graphify`, `/cleanup`). Type `/` in Claude Code and you'll see exactly these:
 
 | Command | When to use |
 |---------|-------------|
 | `/devxp` | First time on a repo — orient, ensure CLAUDE.md and docs/ exist, get routing |
 | `/refine` | Turn an idea or request into a groomed, ready-to-build ticket |
 | `/deliver <ticket>` | Implement, test, review, and release a ticket end-to-end |
+| `/release [<ticket>]` | Release phase — gated merge, changelog, version bump, tag, platform release; also finishes a deferred release |
 | `/improve` | Sprint end or maintenance window — health, cleanup, debt, retro |
 | `/monitor [<surface>]` | Operate phase — review the deployed system's health (telemetry/config), scored, anytime |
 | `/graphify` | Build a persistent knowledge graph from this codebase |
 | `/cleanup [<ticket>]` | On demand — retire finished/abandoned worktrees, orphaned branches, stale plans, groom sessions, and /tmp scratch |
 
 ```
-/devxp  →  /refine  →  /deliver  →  /improve
-  ↑                          │           │
-  └──────── next sprint ─────┴───────────┘
-                             │
-                        /monitor   (operate: review the deployed system, anytime)
+/devxp  →  /refine  →  /deliver  →  /release  →  /improve
+  ↑                                     │            │
+  └──────────── next sprint ────────────┴────────────┘
+                                        │
+                                    /monitor   (operate: review the deployed system, anytime)
 ```
 
-The first four orchestrators *build* software; `/monitor` *operates* what's shipped — a change-independent health read that does not diff commits.
+The first four orchestrators *build* software and `/release` *ships* it; `/monitor` *operates* what's shipped — a change-independent health read that does not diff commits.
 
 ---
 
@@ -47,7 +48,16 @@ The first four orchestrators *build* software; `/monitor` *operates* what's ship
 - **Phase 3:** Adds observability (structured logs at entry/error points, SLO candidate notes)
 - **Phase 4:** Fills test gaps (unit/integration via `test-gen` agent, E2E if suite exists), runs regression check, offers load test generation for new endpoints
 - **Phase 5:** Correctness pass (null dereferences, error paths, race conditions — fix before review), quality pass (large functions, duplication — document for reviewer), then `pr-review` agent
-- **Phase 6:** Changelog entry, version bump, git tag, platform release — **gated: requires explicit yes**
+- **Phase 6:** Hands off to `/release`, which runs its own gate. Delivery never releases on the "yes" given at Phase 1
+
+### `/release [<ticket>]`
+- **The release phase, as its own command.** Merge → changelog → version bump → tag → platform release → retire this delivery's artifacts
+- **Gated:** asks for its own explicit confirmation. Consent is never inherited from `/deliver`'s Phase 1 "proceed"
+- **Finishes a deferred release.** Previously, declining `/deliver`'s gate left no way to resume without re-running delivery or releasing by hand — the main source of accumulated worktrees. `/release <ticket>` now closes that loop
+- **Preflight is read-only** and reports branch merge state, commits since the last tag, the detected version file and platform, and the *derived* version bump (breaking → major, feat → minor, else patch)
+- **Failure preserves, success retires** — only a completed release removes the worktree, plan, groom session and scratch; every failure path keeps them for inspection
+- **Never auto-resolves a merge conflict**, and never re-pushes a tag without first checking `git ls-remote --tags origin`
+- Invoked by `/deliver` Phase 6 and chained to by the `changelog` agent when a version bump is needed
 
 ### `/improve`
 - **Phase 2:** Health scorecard across 8 dimensions: test coverage, security, dependencies, code quality, CI/CD, infrastructure health, observability maturity, env var health
@@ -72,7 +82,7 @@ The first four orchestrators *build* software; `/monitor` *operates* what's ship
 - On-demand counterpart to `/improve`'s repo-wide hygiene sweep (C2): retires finished/abandoned git worktrees, orphaned merged branches, stale persisted plans, groom-session leftovers, and stray `/tmp` scratch — no memory pruning (that stays in `/improve`, where codebase-navigator's drift classification lives)
 - Discovery → classification (live vs finished) → dry-run report → explicit confirmation (or `--cleanup` pre-confirmed mode with a line-by-line removal log) → scoped removal
 - Safety rules are load-bearing and inlined: validated `[A-Za-z0-9_-]` ids, prefix-anchored globs, never the main checkout / default branch / shared memory, preserve on failure or doubt
-- Primary sources of accumulated trees: `/deliver` Phase 6 "I'll release manually" releases and failed deliveries
+- Primary sources of accumulated trees: failed deliveries, and releases deferred at `/release`'s gate whose branch has since landed
 
 ---
 
@@ -88,7 +98,7 @@ description: One-line description shown in the slash command picker
 ---
 ```
 
-Only the 5 lifecycle orchestrators and the 2 utilities are installed as skills. Everything else — the ~30 specialist capabilities — run as agents (read via `~/.claude/agents/<name>.md`) or inline within orchestrators.
+Only the 6 lifecycle orchestrators and the 2 utilities are installed as skills. Everything else — the ~30 specialist capabilities — run as agents (read via `~/.claude/agents/<name>.md`) or inline within orchestrators.
 
 ---
 

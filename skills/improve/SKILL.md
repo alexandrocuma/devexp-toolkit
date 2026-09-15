@@ -282,7 +282,7 @@ Do not delete anything automatically — surface findings only.
 
 ### Phase 3.5 — Toolkit Hygiene Sweep  *(optional)*
 
-Failed and abandoned deliveries leave **repo-wide** orphans that nothing retires: worktrees from failed deliveries, stale persisted plans, old groom sessions, drift-stale agent-memory, and stray `/tmp` scratch from toolkit runs. This sweep finds and retires them. (Per-delivery cleanup of a single ticket's artifacts is `/deliver` Phase 7, not here.)
+Failed and abandoned deliveries leave **repo-wide** orphans that nothing retires: worktrees from failed deliveries, stale persisted plans, old groom sessions, drift-stale agent-memory, and stray `/tmp` scratch from toolkit runs. This sweep finds and retires them. (Per-delivery cleanup of a single ticket's artifacts is `/release` Phase 7, not here.)
 
 **Relationship to `/cleanup`:** the standalone `/cleanup` command is the on-demand counterpart to this sweep — same safety rules and the same worktree/branch/plan/scratch targets, minus memory pruning (which stays here, since only this sweep performs codebase-navigator's drift classification). Note the `--cleanup` flag on `/improve` means "run only this sweep as part of `/improve`" — it is distinct from the `/cleanup` command.
 
@@ -325,7 +325,7 @@ Hygiene sweep — candidates found:
 Remove these N artifacts? (yes / choose / skip)
 ```
 
-**On confirmation**, remove with the cleanup-safety guards. Every id is validated before it reaches a delete — the same guard `deliver` Phase 7 uses (cleanup-safety rule 3): skip any id that is empty or contains anything outside `[A-Za-z0-9_-]`, so a glob can never collapse to a bare wildcard:
+**On confirmation**, remove with the cleanup-safety guards. Every id is validated before it reaches a delete — the same guard `release` Phase 7 uses (cleanup-safety rule 3): skip any id that is empty or contains anything outside `[A-Za-z0-9_-]`, so a glob can never collapse to a bare wildcard:
 
 ```bash
 # Validate an identifier before using it in any delete pattern.

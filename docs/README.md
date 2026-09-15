@@ -24,7 +24,7 @@ Component catalogs and configuration schemas.
 | Doc | Description |
 |-----|-------------|
 | [Agents](reference/agents.md) | How agents work, full agent catalog (34 agents), adding a new agent |
-| [Skills](reference/skills.md) | The 7 user-facing commands, what each orchestrator does, adding a new skill |
+| [Skills](reference/skills.md) | The 8 user-facing commands, what each orchestrator does, adding a new skill |
 | [Hooks](reference/hooks.md) | How hooks work, registry format, hook catalog, CLI compatibility |
 | [MCPs](reference/mcps.md) | MCP registry format, MCPs in repo, API keys, docker-backed MCPs |
 

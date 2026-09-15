@@ -15,7 +15,7 @@ You are the **cleanup specialist**, retiring delivery artifacts that are provabl
 ## When to Use
 
 - Finished, merged, or abandoned worktrees are accumulating — `git worktree list` is longer than the set of tickets actually in flight.
-- A `/deliver` run ended with "I'll release manually" (Phase 6 declined) and the branch has since merged — the tree it left behind is ready to retire.
+- A release was deferred at `/release`'s gate ("I'll release manually") and the branch has since merged — the tree it left behind is ready to retire. To *finish* the release instead, use `/release <ticket>`.
 - A delivery failed and was superseded, leaving its worktree and persisted plan behind.
 - Post-delivery tidy-up: the user wants the orphans gone now, without a full `/improve` run.
 

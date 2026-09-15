@@ -2,7 +2,7 @@
 
 A curated collection of Claude Code agents, skills, and MCP servers that bring a consistent, expert-level development experience to any project.
 
-Install once. Get autonomous bug fixes, expert code review, codebase navigation, execution tracing, and security audits — all driven by five lifecycle commands (plus the `/graphify` and `/cleanup` utilities).
+Install once. Get autonomous bug fixes, expert code review, codebase navigation, execution tracing, and security audits — all driven by six lifecycle commands (plus the `/graphify` and `/cleanup` utilities).
 
 ---
 
@@ -19,14 +19,15 @@ Then use these commands to cover the full development cycle:
 |---------|------|
 | `/devxp` | First time on a repo — orient, create CLAUDE.md and docs/ |
 | `/refine` | Turn an idea into a groomed, ready-to-build ticket |
-| `/deliver <ticket>` | Implement, test, review, and release a ticket |
+| `/deliver <ticket>` | Implement, test, review, and hand off to release |
+| `/release [<ticket>]` | Release phase — merge, changelog, version, tag, publish. Gated. Also finishes a deferred release |
 | `/improve` | Sprint end — health scorecard, cleanup, debt triage, retro |
 | `/monitor [<surface>]` | Operate — review the deployed system's health, scored, anytime |
 | `/cleanup [<ticket>]` | On-demand — retire finished/abandoned worktrees and orphaned delivery artifacts |
 
 ```
-/devxp  →  /refine  →  /deliver  →  /improve  →  next sprint
-                                  /monitor  →  review the deployed system, anytime
+/devxp  →  /refine  →  /deliver  →  /release  →  /improve  →  next sprint
+                                               /monitor  →  review the deployed system, anytime
 ```
 
 → Full walkthrough: [docs/guides/quickstart.md](docs/guides/quickstart.md)
@@ -43,13 +44,14 @@ Agents are specialized sub-agents that Claude Code or opencode can spawn to hand
 
 ### Skills
 
-Five lifecycle orchestrators cover the full development cycle; the `/graphify` and `/cleanup` utilities handle knowledge-graph builds and on-demand artifact retirement. Everything else — ~30 specialist capabilities — runs automatically inside them as agents.
+Six lifecycle orchestrators cover the full development cycle; the `/graphify` and `/cleanup` utilities handle knowledge-graph builds and on-demand artifact retirement. Everything else — ~30 specialist capabilities — runs automatically inside them as agents.
 
 | Command | When to use |
 |---------|-------------|
 | `/devxp` | First time on a repo — orient, ensure CLAUDE.md and docs/ exist, get routing recommendations |
 | `/refine` | Turn a raw idea into a groomed, ready-to-build ticket |
-| `/deliver <ticket>` | Implement, test, review, and release a ticket end-to-end |
+| `/deliver <ticket>` | Implement, test, review, then hand off to `/release` |
+| `/release [<ticket>]` | Release phase — gated merge, changelog, version bump, tag, platform release |
 | `/improve` | Sprint end — health scorecard, cleanup, debt triage, retro |
 | `/monitor [<surface>]` | Operate — review the deployed system's health, scored, anytime |
 | `/graphify` | Build a persistent knowledge graph from this codebase |
@@ -236,10 +238,11 @@ devexp-toolkit/
 ├── agents/                       # 34 agent markdown files (Claude Code format)
 │   └── opencode/                 # opencode-exclusive agents (installed as-is)
 │       └── orchestrator.md
-├── skills/                       # 7 user-facing slash commands, each with SKILL.md
+├── skills/                       # 8 user-facing slash commands, each with SKILL.md
 │   ├── devxp/
 │   ├── refine/
 │   ├── deliver/
+│   ├── release/
 │   ├── improve/
 │   ├── monitor/
 │   ├── graphify/
