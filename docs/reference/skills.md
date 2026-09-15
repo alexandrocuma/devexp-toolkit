@@ -1,8 +1,8 @@
 # Skills Reference
 
-## The Eight Commands
+## The Seven Commands
 
-The toolkit runs through eight slash commands — five lifecycle orchestrators, two utilities (`/graphify`, `/cleanup`) and one domain playbook (`/promo-campaign`). Type `/` in Claude Code and you'll see exactly these:
+The toolkit runs through seven slash commands — five lifecycle orchestrators and two utilities (`/graphify`, `/cleanup`). Type `/` in Claude Code and you'll see exactly these:
 
 | Command | When to use |
 |---------|-------------|
@@ -13,7 +13,6 @@ The toolkit runs through eight slash commands — five lifecycle orchestrators, 
 | `/monitor [<surface>]` | Operate phase — review the deployed system's health (telemetry/config), scored, anytime |
 | `/graphify` | Build a persistent knowledge graph from this codebase |
 | `/cleanup [<ticket>]` | On demand — retire finished/abandoned worktrees, orphaned branches, stale plans, groom sessions, and /tmp scratch |
-| `/promo-campaign [<platform>] [<locale>]` | Domain playbook — plan an app's promo reel and carousel from the claims its public listing already makes |
 
 ```
 /devxp  →  /refine  →  /deliver  →  /improve
@@ -23,7 +22,7 @@ The toolkit runs through eight slash commands — five lifecycle orchestrators, 
                         /monitor   (operate: review the deployed system, anytime)
 ```
 
-The first four orchestrators *build* software; `/monitor` *operates* what's shipped — a change-independent health read that does not diff commits. `/promo-campaign` sits outside the build/operate loop entirely: it promotes an app that already ships.
+The first four orchestrators *build* software; `/monitor` *operates* what's shipped — a change-independent health read that does not diff commits.
 
 ---
 
@@ -77,37 +76,6 @@ The first four orchestrators *build* software; `/monitor` *operates* what's ship
 
 ---
 
-## Domain Playbooks
-
-A domain playbook carries expertise about a product task that is not a phase of the development lifecycle. The category gives that expertise a home without regrowing the pile of standalone skills the orchestrators replaced, so a candidate must pass **all four** parts of the entry test:
-
-1. **App-agnostic** — it works in any repo of its kind, and names no app, id or copy.
-2. **User-invoked** — the user decides when it runs; it ships with `disable-model-invocation: true`.
-3. **Interactive** — it needs the user's decisions mid-run, so it cannot be an agent working in isolation.
-4. **Not absorbable by an orchestrator** — no lifecycle phase would ever call it. If one would, it belongs inside that orchestrator instead.
-
-### `/promo-campaign [<platform>] [<locale>]`
-- Plans an app's promo from real footage: feature extraction → exactly one hook → storyboard → claim and badge check → instance file → capture/compose handoff, with three user checkpoints
-- **Claim rule:** discovery sources (changelog, README, code) find features, but only the claim authority — the current store listing or landing page — may back a caption or carousel slide. Unclaimed features are reported, never captioned
-- **Storyboard limits**, measured on the render with `ffprobe`:
-  - ≤ 20.0s (shorter wins), and the render equals the plan within one frame
-  - 1.0x, never sped up
-  - captions: one idea each, ≥ 2.0s each, ≤ 8
-  - hook lands ≤ 5.0s
-  - end card ≤ 3.0s including its transition, with no caption over it
-- **Cut order:** compress pre-hook setup → drop beats from the end → drop repeated beats
-- **Badge rule:** a store badge appears only for a listing publicly installable when checked signed-out, or when marked `launch_day: true` with a do-not-post-before date
-- **Instance file:** writes `docs/marketing/campaign.md` in the consumer repo — YAML front matter `schema: promo-campaign/v1`, with parser-proof rules (quoted strings, decimal seconds, `true`/`false`). It also maintains that repo's `docs/marketing/README.md` index and `docs/README.md` entry, and git-ignores the outputs directory
-- **Outputs:** a 9:16 reel (1080x1920) and a 4:5 carousel (1080x1350). Without capture/compose tooling in the skill's `scripts/` directory it stops after writing the instance file, and says so
-- **Capture and compose scripts** (Claude Code only; opencode installs SKILL.md alone):
-  - `scripts/capture-ios.sh`: iOS Simulator takes, cue sheets and lossless stills
-  - `scripts/compose-reel.sh`: the 1.0x segment reel, with self-checks
-  - `scripts/seed-rn-asyncstorage-ios.sh` and `scripts/lib/contract.sh`
-  - Each runs as `bash <path>`, because skill files install with mode 0644
-  - Android capture and the carousel composer are not shipped yet (#78)
-
----
-
 ## How Skills Work (Technical)
 
 Skills live as Markdown files at `~/.claude/skills/<name>/SKILL.md`. Each skill is auto-discovered by Claude Code as a `/<name>` slash command.
@@ -120,7 +88,7 @@ description: One-line description shown in the slash command picker
 ---
 ```
 
-Only the 5 lifecycle orchestrators, the 2 utilities and the domain playbooks are installed as skills. Everything else — the ~40 specialist capabilities — run as agents (read via `~/.claude/agents/<name>.md`) or inline within orchestrators.
+Only the 5 lifecycle orchestrators and the 2 utilities are installed as skills. Everything else — the ~30 specialist capabilities — run as agents (read via `~/.claude/agents/<name>.md`) or inline within orchestrators.
 
 ---
 
@@ -144,7 +112,7 @@ When you need a standalone review outside the delivery cycle:
 
 ## Adding a New Skill
 
-New user-facing commands should be rare — they add to the discovery tax. Before adding a skill, consider whether the capability fits inside an existing orchestrator or as an agent. A capability outside the development lifecycle joins as a domain playbook only if it passes the [entry test](#domain-playbooks).
+New user-facing commands should be rare — they add to the discovery tax. Before adding a skill, consider whether the capability fits inside an existing orchestrator or as an agent. A capability outside the development lifecycle does not belong here at all.
 
 If a new command is genuinely needed:
 1. Create `skills/<skill-name>/` directory
@@ -156,6 +124,6 @@ Three install facts shape how a skill is written:
 - **Supporting files reach Claude Code only.** `references/` and `scripts/` deploy with the whole skill directory to `~/.claude/skills/<name>/`. opencode installs SKILL.md alone, flattened to `~/.config/opencode/commands/<name>.md`, so anything load-bearing belongs in SKILL.md itself.
   - The opencode transform drops **every** line whose trimmed text starts with `name:`, not just the front matter's, so keep such lines out of SKILL.md's body.
 - **Installed files are written 0644**, so a bundled script is invoked as `bash <path>`, never `./script`.
-- **`disable-model-invocation: true`** keeps a user-only skill's description out of every session's context while leaving `/<name>` invocable. Every domain playbook sets it.
+- **`disable-model-invocation: true`** keeps a user-only skill's description out of every session's context while leaving `/<name>` invocable.
 
 Full guide: [`docs/development/skill-authoring-guide.md`](../development/skill-authoring-guide.md)
