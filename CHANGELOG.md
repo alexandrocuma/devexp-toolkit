@@ -7,34 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **`cmd/install.go` split from 762 to 193 lines** (sub-ticket A of #69). One file
-  held the entry point, the interactive wizard, both install paths, registry and
-  target resolution, and backup/stale handling — which is why its install-flow
-  functions sat at 0% coverage: the testable logic was fused into I/O- and
-  TTY-bound monoliths.
-  - Split along cohesive seams: `install_claude.go`, `install_opencode.go`,
-    `wizard.go`, `targets.go`, `registry.go`, `backup.go`, `paths.go`.
-  - **Behaviour held identical by diff, not by assertion.** A
-    `devexp install --dry-run` baseline was captured from merged `main` before any
-    edit and verified deterministic across repeat runs; the output after every
-    step is byte-identical to it.
-  - **Pure logic extracted so it can be tested** (#72's enabler):
-    `selectTargets` maps CLI availability onto the install flags with no PATH
-    lookup, printing or prompting, and `announceTargets` holds the I/O half —
-    the flag path and the wizard previously carried separate copies of the same
-    switch. `claudeTargetPaths`/`opencodeTargetPaths` replace destinations
-    assembled inline from `$HOME`, taking `now` as a parameter so the backup
-    directory's name is assertable.
-  - Exported `cmd` API unchanged (`go doc` diff against `main`); `go test -race`
-    green across 10 packages; `go vet` and `gofmt` clean.
-  - **Gate limitation, recorded honestly:** with `opencode` absent from PATH, the
-    dry-run exercises only the single-CLI arm and never enters
-    `doInstallOpencode`. The Claude path extraction *is* exercised; the both-CLI
-    branch and the opencode path rest on review until #72's unit tests land.
+## [0.7.0] - 2026-09-15
 
 ### Added
+
 
 - **`cmd` coverage: 27.1% → 35.4%** (sub-ticket B of #69), covering every statement
   reachable without testing the wizard TTY flow or the real exec paths.
@@ -96,7 +72,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The `postmortem` agent is reachable again.** It was a complete agent that no command ever invoked — `/improve` Phase 5 ran its own retro instead, and `/monitor` had no incident path at all. Both now hand off to it: `/monitor`'s report suggests it when an anomaly traces to an incident, and `/improve`'s retro suggests it before the timeline fades.
 - **The planification phase is named.** The cycle includes it, but no document did. `/refine`'s verified execution plan *is* that phase; the skills reference now says so — and says why it has no command of its own: a plan with no ticket to attach to is just a document.
 
+### Changed
+
+
+- **`cmd/install.go` split from 762 to 193 lines** (sub-ticket A of #69). One file
+  held the entry point, the interactive wizard, both install paths, registry and
+  target resolution, and backup/stale handling — which is why its install-flow
+  functions sat at 0% coverage: the testable logic was fused into I/O- and
+  TTY-bound monoliths.
+  - Split along cohesive seams: `install_claude.go`, `install_opencode.go`,
+    `wizard.go`, `targets.go`, `registry.go`, `backup.go`, `paths.go`.
+  - **Behaviour held identical by diff, not by assertion.** A
+    `devexp install --dry-run` baseline was captured from merged `main` before any
+    edit and verified deterministic across repeat runs; the output after every
+    step is byte-identical to it.
+  - **Pure logic extracted so it can be tested** (#72's enabler):
+    `selectTargets` maps CLI availability onto the install flags with no PATH
+    lookup, printing or prompting, and `announceTargets` holds the I/O half —
+    the flag path and the wizard previously carried separate copies of the same
+    switch. `claudeTargetPaths`/`opencodeTargetPaths` replace destinations
+    assembled inline from `$HOME`, taking `now` as a parameter so the backup
+    directory's name is assertable.
+  - Exported `cmd` API unchanged (`go doc` diff against `main`); `go test -race`
+    green across 10 packages; `go vet` and `gofmt` clean.
+  - **Gate limitation, recorded honestly:** with `opencode` absent from PATH, the
+    dry-run exercises only the single-CLI arm and never enters
+    `doInstallOpencode`. The Claude path extraction *is* exercised; the both-CLI
+    branch and the opencode path rest on review until #72's unit tests land.
+
+
+- **`/deliver` and `pr-review` no longer defer in-scope defects.** Both told the delivery cycle to ship a known defect with a ticket attached: `deliver` Phase 5 said *"Fix only what's clearly wrong; note the rest as follow-up debt"*, and `pr-review` offered *"Approve with minor comments — merge is fine, but address comments in follow-up."* Neither applied a scope test, and no fold-vs-file policy existed anywhere in the toolkit.
+  - **The rule, stated once:** a defect **inside the change being delivered** is folded into that delivery before the release gate; only work **outside its scope** becomes a ticket. Pre-existing debt elsewhere remains `/improve` Phase 4's job — the gap was that nothing routed findings between the two paths.
+  - **Severity does not decide it, scope does.** A "minor" finding inside the diff is still this delivery's to fix; `pr-review`'s "Approve with minor comments" is now valid only when every comment falls outside the PR's own diff.
+  - Filing a follow-up for something in scope ships a known gap, inflates the backlog with work that should have been finished, and makes "done" mean "done except the parts we wrote down."
+
+- **`ui-inspector` now ships as its own repo** — [mcp-ui-inspector](https://github.com/alexandrocuma/mcp-ui-inspector). It was vendored here as a Node project with its own `setup.sh` and a committed `dist/`, which quietly turned a distribution repo into a monorepo. The registry locates it via `UI_INSPECTOR_DIR`, documented in the MCP env template, reusing the installer's existing `[REQUIRED]` warning and `setup_instructions` path — **no Go changes were needed**, because the CLI never special-cased it (it generically injects `DEVEXP_DIR` and renders `setup_instructions`). The extracted repo gitignores `dist/` instead of committing it; the vendored copy had gone stale, with `src/tools/interact.ts` having no built counterpart.
+
+### Removed
+
+
+- **`start-services.sh`.** It had become a documented no-op, printing "No background services required" — `ui-inspector` was the only service it ever managed, and that launches its own Chromium on demand and shuts it down on SIGTERM. Removed with its references in `README.md`, `CLAUDE.md`, `docs/README.md`, `docs/guides/README.md` and `docs/guides/install.md`.
+- **`/promo-campaign` and the domain-playbook category.** Marketing is not a phase of the development lifecycle. This toolkit covers idea → refinement → grooming → planification → delivery → release → cleanup → improvements/postmortem; promoting an app that already ships sits outside that loop. The skill was also the repo's largest single component (~2,700 lines), the only one requiring ffmpeg, ImageMagick, Maestro and Xcode, and iOS-Simulator-only — so it did not work on the majority of its own author's projects. It moves to **`marketing-toolkit`**, a sibling project, where it gains Android capture, an audio path and a platform-plural contract.
+  - **The category goes with it.** It had exactly one member, and its four-part entry test (app-agnostic, user-invoked, interactive, not absorbable by an orchestrator) admitted a capability that the lifecycle test rejects.
+  - **Documentation surface: eight commands → seven** — five lifecycle orchestrators and two utilities (`/graphify`, `/cleanup`) — across `README.md`, `skills/README.md`, `docs/reference/skills.md`, `docs/coverage.md`, `docs/README.md` and `CLAUDE.md`.
+  - **Corrected a stale count** found while rewriting those lines: the skills reference claimed "~40 specialist capabilities" where every other document says ~30.
+  - **Installed copies retire themselves** — `manifest.Stale()` removes vanished skills on the next `install.sh`.
+
 ### Fixed
+
 
 - **The opencode installer no longer strips `name:` lines from a skill's body.**
   `InstallOpencode` is documented to remove "the `name:` frontmatter line", which
@@ -197,24 +220,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing executed; the workflow ran only `go test`. A `hooks` job now runs every
   `*.test.sh` and `*.test.js` beside the hooks, so a guard regression fails the
   build instead of surfacing as a mysterious block months later.
-
-### Changed
-
-- **`/deliver` and `pr-review` no longer defer in-scope defects.** Both told the delivery cycle to ship a known defect with a ticket attached: `deliver` Phase 5 said *"Fix only what's clearly wrong; note the rest as follow-up debt"*, and `pr-review` offered *"Approve with minor comments — merge is fine, but address comments in follow-up."* Neither applied a scope test, and no fold-vs-file policy existed anywhere in the toolkit.
-  - **The rule, stated once:** a defect **inside the change being delivered** is folded into that delivery before the release gate; only work **outside its scope** becomes a ticket. Pre-existing debt elsewhere remains `/improve` Phase 4's job — the gap was that nothing routed findings between the two paths.
-  - **Severity does not decide it, scope does.** A "minor" finding inside the diff is still this delivery's to fix; `pr-review`'s "Approve with minor comments" is now valid only when every comment falls outside the PR's own diff.
-  - Filing a follow-up for something in scope ships a known gap, inflates the backlog with work that should have been finished, and makes "done" mean "done except the parts we wrote down."
-
-- **`ui-inspector` now ships as its own repo** — [mcp-ui-inspector](https://github.com/alexandrocuma/mcp-ui-inspector). It was vendored here as a Node project with its own `setup.sh` and a committed `dist/`, which quietly turned a distribution repo into a monorepo. The registry locates it via `UI_INSPECTOR_DIR`, documented in the MCP env template, reusing the installer's existing `[REQUIRED]` warning and `setup_instructions` path — **no Go changes were needed**, because the CLI never special-cased it (it generically injects `DEVEXP_DIR` and renders `setup_instructions`). The extracted repo gitignores `dist/` instead of committing it; the vendored copy had gone stale, with `src/tools/interact.ts` having no built counterpart.
-
-### Removed
-
-- **`start-services.sh`.** It had become a documented no-op, printing "No background services required" — `ui-inspector` was the only service it ever managed, and that launches its own Chromium on demand and shuts it down on SIGTERM. Removed with its references in `README.md`, `CLAUDE.md`, `docs/README.md`, `docs/guides/README.md` and `docs/guides/install.md`.
-- **`/promo-campaign` and the domain-playbook category.** Marketing is not a phase of the development lifecycle. This toolkit covers idea → refinement → grooming → planification → delivery → release → cleanup → improvements/postmortem; promoting an app that already ships sits outside that loop. The skill was also the repo's largest single component (~2,700 lines), the only one requiring ffmpeg, ImageMagick, Maestro and Xcode, and iOS-Simulator-only — so it did not work on the majority of its own author's projects. It moves to **`marketing-toolkit`**, a sibling project, where it gains Android capture, an audio path and a platform-plural contract.
-  - **The category goes with it.** It had exactly one member, and its four-part entry test (app-agnostic, user-invoked, interactive, not absorbable by an orchestrator) admitted a capability that the lifecycle test rejects.
-  - **Documentation surface: eight commands → seven** — five lifecycle orchestrators and two utilities (`/graphify`, `/cleanup`) — across `README.md`, `skills/README.md`, `docs/reference/skills.md`, `docs/coverage.md`, `docs/README.md` and `CLAUDE.md`.
-  - **Corrected a stale count** found while rewriting those lines: the skills reference claimed "~40 specialist capabilities" where every other document says ~30.
-  - **Installed copies retire themselves** — `manifest.Stale()` removes vanished skills on the next `install.sh`.
 
 ## [0.6.0] - 2026-09-14
 
