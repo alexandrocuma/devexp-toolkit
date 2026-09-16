@@ -677,6 +677,81 @@ process.stdout.write(JSON.stringify({ plugins: plugins.length, chains: chains.le
 	}
 }
 
+// TestWholePluginRemoval_EditedEntryStaysLoadable is the PR #125 review repro:
+// the manifest is lost and an editor put `// @ts-check` above devexp.js's
+// header. Neither install with every hook disabled nor uninstall may remove
+// devexp/ from under that entry: opencode would then block every tool call
+// ("devexp/hooks.json unreadable"). Both keep everything, say why, and the
+// plugin still loads and lets a harmless read through.
+func TestWholePluginRemoval_EditedEntryStaysLoadable(t *testing.T) {
+	node, nodeErr := exec.LookPath("node")
+	root, _ := filepath.Abs(filepath.Join("..", "..", ".."))
+	registry, err := LoadRegistry(filepath.Join(root, "hooks", "registry.json"))
+	if err != nil {
+		t.Fatalf("LoadRegistry() error = %v", err)
+	}
+	var every []string
+	for _, h := range registry {
+		every = append(every, h.Name)
+	}
+	runs := map[string]func(pluginsDir string) ([]string, error){
+		"install with every hook disabled": func(pluginsDir string) ([]string, error) {
+			return InstallOpencode(registry, root, pluginsDir, every, nil, false)
+		},
+		"uninstall": func(pluginsDir string) ([]string, error) {
+			return UninstallOpencode(registry, pluginsDir, nil, false)
+		},
+	}
+	for name, run := range runs {
+		t.Run(name, func(t *testing.T) {
+			tmp := t.TempDir()
+			pluginsDir := filepath.Join(tmp, "plugins")
+			var installed []string
+			captureOutput(t, func() { installed, err = InstallOpencode(registry, root, pluginsDir, nil, nil, false) })
+			if err != nil {
+				t.Fatalf("InstallOpencode() error = %v", err)
+			}
+			entry := filepath.Join(pluginsDir, "devexp.js")
+			content, _ := os.ReadFile(entry)
+			os.WriteFile(entry, append([]byte("// @ts-check\n"), content...), 0644) //nolint:errcheck
+			before := treeState(t, tmp)
+
+			var kept []string
+			out := stripANSI(captureOutput(t, func() { kept, err = run(pluginsDir) }))
+			if err != nil {
+				t.Fatalf("error = %v", err)
+			}
+			if after := treeState(t, tmp); !reflect.DeepEqual(before, after) {
+				t.Errorf("plugin changed: %v -> %v", stateKeys(before), stateKeys(after))
+			}
+			if !reflect.DeepEqual(kept, installed[1:]) {
+				t.Errorf("kept %v, want every devexp/ file %v", kept, installed[1:])
+			}
+			if !strings.Contains(out, "devexp.js and devexp/ are both kept") || !strings.Contains(out, "not recognised as devexp's") {
+				t.Errorf("no warning explaining why the plugin was kept:\n%s", out)
+			}
+
+			if nodeErr != nil {
+				t.Skip("node not on PATH")
+			}
+			os.WriteFile(filepath.Join(tmp, "package.json"), []byte(`{"type":"module"}`), 0644) //nolint:errcheck
+			probe := filepath.Join(tmp, "probe.mjs")
+			os.WriteFile(probe, []byte(`
+import { pathToFileURL } from 'url';
+console.error = () => {};
+const mod = await import(pathToFileURL(process.argv[2]).href);
+const hooks = await mod.DevExpPlugin({ directory: process.argv[3], worktree: process.argv[3] });
+try { await hooks['tool.execute.before']({ tool: 'read' }, { args: { filePath: '/tmp/notes.txt' } }); console.log('allowed'); }
+catch (e) { console.log('blocked: ' + e.message); }
+`), 0644) //nolint:errcheck
+			res, err := exec.Command(node, probe, entry, tmp).CombinedOutput()
+			if err != nil || strings.TrimSpace(string(res)) != "allowed" {
+				t.Errorf("node probe (err %v) = %q, want the harmless read allowed", err, res)
+			}
+		})
+	}
+}
+
 // ── Stale files and the devexp/ directory ─────────────────────────────────────
 
 const devexpEntryHeader = "/**\n * devexp-plugin.js — entry point for devexp opencode hooks\n */\n"
@@ -1703,13 +1778,28 @@ func uninstallCases() map[string]uninstallCase {
 			},
 			want: []string{"plugins"},
 		},
-		"an unrecorded foreign devexp.js is kept, devexp's own files go": {
+		"an unrecorded foreign devexp.js keeps devexp/ with it": {
 			arrange: func(t *testing.T, root, repoDir, pluginsDir string) []string {
 				installFull(t, repoDir, pluginsDir)
 				writeFiles(t, pluginsDir, map[string]string{"devexp.js": "export const Mine = async () => ({})\n"})
 				return nil
 			},
-			want: []string{"plugins", "plugins/devexp.js"},
+			wantKept: []string{"devexp/utils.js", "devexp/package.json", "devexp/secret-guard.js", "devexp/lint-on-save.js", "devexp/graphify-read-guard.js", "devexp/hooks.json"},
+			wantOut:  "not recognised as devexp's",
+		},
+		"a lost manifest and an edited entry (// @ts-check) keep the whole plugin": {
+			arrange: func(t *testing.T, root, repoDir, pluginsDir string) []string {
+				installFull(t, repoDir, pluginsDir)
+				entry := filepath.Join(pluginsDir, "devexp.js")
+				content, err := os.ReadFile(entry)
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeFiles(t, pluginsDir, map[string]string{"devexp.js": "// @ts-check\n" + string(content)})
+				return nil
+			},
+			wantKept: []string{"devexp/utils.js", "devexp/package.json", "devexp/secret-guard.js", "devexp/lint-on-save.js", "devexp/graphify-read-guard.js", "devexp/hooks.json"},
+			wantOut:  "not recognised as devexp's",
 		},
 		"a symlinked devexp.js keeps the whole plugin": {
 			arrange: func(t *testing.T, root, repoDir, pluginsDir string) []string {
