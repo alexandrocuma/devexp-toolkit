@@ -116,6 +116,11 @@ Shows every add, update, and removal devexp would make — including stale-file 
 - Detects which CLIs have devexp agents installed; asks which to remove from only when both are found
 - Removes agents from the appropriate directory for each CLI
 - Skills (`~/.claude/skills/`) are only removed if uninstalling from all CLIs that use them
+- **opencode hook plugin**: an install with only the plugin (no agents) is detected too. The plugin (`plugins/devexp.js` + `plugins/devexp/`) and a legacy flat install are removed by the hidden `devexp uninstall --target opencode`, with exactly the rules of [Stale-file cleanup](#stale-file-cleanup): only devexp-owned files, nothing through a symlinked `plugins/`, a refusal (nothing removed) for a symlinked `devexp/` or a dangling `plugins/` link, all-or-nothing on `devexp.js` + `devexp/`, and the legacy `config.json` entry spliced out byte for byte. It runs before the MCP servers are removed from `config.json`.
+  - The preview before the confirmation is that command's `--dry-run`.
+  - It needs a `devexp` binary that has the command, looked up in this order: `DEVEXP_BIN` (set when you choose Remove in `devexp install`), `bin/devexp` in the clone, `devexp` on `PATH`. Without one, the plugin is left in place with a warning and the uninstall still completes. In a clone with an older binary, rebuild it: `rm bin/devexp && ./install.sh`.
+  - Afterwards the opencode manifest's `plugins` key lists only the files that had to stay (for example behind a symlinked `plugins/`), so a later run can finish the job. A manifest that is missing or can't be read is left as it is.
+- A malformed or unexpected `config.json` is skipped with a message; the uninstall still exits 0
 
 > `uninstall.sh` predates the Go CLI and doesn't fully match it — e.g. it never removes opencode skills from `~/.config/opencode/commands/` or the `.devexp-manifest.json` files. See [Known gaps](../architecture/overview.md#known-gaps).
 

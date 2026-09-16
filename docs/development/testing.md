@@ -18,7 +18,7 @@ CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `ma
 | E2E | N/A — no automated end-to-end install test. `runInstall`, `doInstallClaude`, `doInstallOpencode` and `runWizard` have 0% coverage. Manual check: `./install.sh --dry-run` | — |
 | Agents / skills (Markdown) | N/A — no automated validation. Edit → `./install.sh` → try it in Claude Code or opencode | `docs/development/README.md` (Notes) |
 
-At this commit: 10 Go packages with tests; `dangerous-cmd-guard.test.sh` 25 cases, `fail-closed.test.sh` 10, `secret-guard.test.sh` 37; `dangerous-cmd-guard.test.js` 25, `devexp-plugin.test.js` 130, `secret-guard.test.js` 38; `uninstall.test.sh` 8.
+At this commit: 10 Go packages with tests; `dangerous-cmd-guard.test.sh` 25 cases, `fail-closed.test.sh` 10, `secret-guard.test.sh` 37; `dangerous-cmd-guard.test.js` 25, `devexp-plugin.test.js` 130, `secret-guard.test.js` 38; `uninstall.test.sh` 59.
 
 Run one test:
 
@@ -53,7 +53,11 @@ node hooks/opencode/secret-guard.test.js
   - JS: header `mirrors hooks/claude-code/<hook>.test.sh`, import the module's exported pure predicate (`isSecretFile`/`secretInCommand` from `secret-guard.js`, `BLOCK_PATTERNS` from `dangerous-cmd-guard.js`), loop over block/allow arrays, print `N passed, M failed`, `process.exit(fail === 0 ? 0 : 1)`.
   - The opencode entry has its own suite, `hooks/opencode/devexp-plugin.test.js` (no shell mirror): it builds the installed layout (`plugins/devexp.js` + `plugins/devexp/hooks.json` and modules) in a `mkdtempSync` dir, writes probe modules that record calls on `globalThis`, and imports the entry with a `?n=` cache-busting query. It covers selection, failure isolation, fail-closed stubs (including the `fail_closed` spelling, security-guard names and malformed entries), the `hooks.json` key contract (parsed from the authoring guide's example), module-name refusal (`node:` builtins, encoded dot segments), `event` → `file.edited` dispatch (polled with `waitFor`, since handlers run after `event` returns), a slow fake local `eslint` proving the event loop stays free, `runCommand` timeouts, the on-save handlers' edit path, and registry consistency (`opencode.module`/`export` for every hook).
   - Failure mode: add every new Claude Code hook to `hooks/claude-code/fail-closed.test.sh` — `check <hook> 2 guard` for security guards (must fail **closed**), `check <hook> 0 advisory` for advisory hooks (may fail open, but must print `internal error`).
-- **Installer script tests:** never run `uninstall.sh` itself — it prompts and deletes real files. `uninstall.test.sh` extracts the embedded python heredoc with `awk` and runs it against fixture `settings.json` content in a `mktemp -d` dir (`uninstall.test.sh:10-12,23-28,46-48`).
+- **Installer script tests:** never run `uninstall.sh` against your real `HOME` — it deletes real files. `uninstall.test.sh` does three things:
+  - extracts the embedded python heredocs with `awk` and runs them against fixture `settings.json` / `config.json` content in a `mktemp -d` dir;
+  - runs `uninstall.sh` itself with `--yes`, stdin closed, `env -i` and a temp `HOME`, with stub `devexp` binaries that log their calls (`make_stub`, `make_old_stub`, `run_uninstall`), to cover detection, binary lookup, step order and the crash regressions;
+  - when `go` is on `PATH` and the assets are staged, builds the real binary and does an install → uninstall round trip (otherwise it prints `SKIP`).
+  The rules for which plugin files may be removed are tested in Go: `TestUninstallOpencode` and `TestUninstallOpencode_MatchesInstall` (every fixture must leave the same tree as an install with every hook disabled) in `cli/internal/hooks/opencode_test.go`, and `cli/cmd/uninstall_test.go` for the command (manifest, legacy config, registry, asset cache).
 
 Gotchas when running tests:
 
@@ -89,4 +93,4 @@ Untested areas worth knowing:
 - **Config (0%):** `config.Load` and `IsAgentDisabled`/`IsSkillDisabled`/`IsHookDisabled` (`cli/internal/config/config.go`); only `dotenv.go` has tests.
 - **Registry and exec paths (0%):** `mcp.InstallClaude`, `isInstalledClaude`, `RemoveClaude`; all promptui prompts in `cli/internal/ui/prompts.go`.
 - **Hooks without behaviour tests:** `secret-in-write-guard`, `large-file-guard`, `format-on-save`, `lint-on-save`, `test-on-save` are covered only by `fail-closed.test.sh` (shell side); the three `graphify-*` hooks have no tests at all; on the opencode side `secret-guard` and `dangerous-cmd-guard` have their own `.test.js` files, and `devexp-plugin.test.js` covers the entry plus the lint/format/test-on-save edit handlers only as far as they run with no linter, formatter or test runner found (no tool output is asserted).
-- **`uninstall.sh`:** only its hook-removal block is tested.
+- **`uninstall.sh`:** the Claude Code hook-removal block, the opencode MCP block and the opencode plugin wiring are tested; the agent, skill and Claude Code MCP removal paths are not.
