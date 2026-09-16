@@ -1,6 +1,6 @@
 # Testing
 
-> Kit doc · Last verified: 2026-09-16 against commit `2b2f3e7c2d90c5481cd6936bddfece64da5ebafc`
+> Kit doc · Last verified: 2026-09-16 against commit `06678076acdad3aad74e12807ad8248fe1ae9249`
 
 Where tests live, how they're written and run, and what must pass before a commit. Commands for everything else (build, install, env vars) are in [`setup.md`](setup.md); code style in [`conventions.md`](conventions.md).
 
