@@ -256,6 +256,69 @@ func TestInstallClaude(t *testing.T) {
 				}
 			},
 		},
+		// Wiring: the cases above exercise pruneForeignDevexpHooks directly.
+		// These go through InstallClaude, so dropping or misordering the call
+		// inside it fails here even though the unit tests still pass.
+		"removes a registration from another install root, keeping this one": {
+			setup: func(t *testing.T, repoDir, settingsPath string) (Registry, []string) {
+				scriptAbs := createScript(t, repoDir, "hooks/claude-code/foo.sh")
+				foreign := filepath.Join(t.TempDir(), "hooks/claude-code/foo.sh")
+				writeSettingsHooks(t, settingsPath, hooksMapT{
+					"PreToolUse": {
+						{Matcher: "Bash", Hooks: []hookCmd{{Type: "command", Command: foreign}}},
+						{Matcher: "Bash", Hooks: []hookCmd{{Type: "command", Command: scriptAbs}}},
+					},
+				})
+				return Registry{{
+					Name: "foo", Enabled: true,
+					ClaudeCode: HookCC{Event: "PreToolUse", Matcher: "Bash", Script: "hooks/claude-code/foo.sh"},
+				}}, nil
+			},
+			check: func(t *testing.T, repoDir, settingsPath string) {
+				got := readHooks(t, settingsPath)
+				want := hooksMapT{
+					"PreToolUse": {
+						{Matcher: "Bash", Hooks: []hookCmd{
+							{Type: "command", Command: filepath.Join(repoDir, "hooks/claude-code/foo.sh")},
+						}},
+					},
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Errorf("hooks = %+v, want %+v", got, want)
+				}
+			},
+		},
+		// The foreign entry is the *only* one, so the hook is also added. If the
+		// prune call were removed, `changed` would still be true and the file
+		// would still be written -- only this assertion catches the leftover.
+		"replaces a foreign-root registration with this root's": {
+			setup: func(t *testing.T, repoDir, settingsPath string) (Registry, []string) {
+				createScript(t, repoDir, "hooks/claude-code/foo.sh")
+				foreign := filepath.Join(t.TempDir(), "hooks/claude-code/foo.sh")
+				writeSettingsHooks(t, settingsPath, hooksMapT{
+					"PreToolUse": {
+						{Matcher: "Bash", Hooks: []hookCmd{{Type: "command", Command: foreign}}},
+					},
+				})
+				return Registry{{
+					Name: "foo", Enabled: true,
+					ClaudeCode: HookCC{Event: "PreToolUse", Matcher: "Bash", Script: "hooks/claude-code/foo.sh"},
+				}}, nil
+			},
+			check: func(t *testing.T, repoDir, settingsPath string) {
+				got := readHooks(t, settingsPath)
+				want := hooksMapT{
+					"PreToolUse": {
+						{Matcher: "Bash", Hooks: []hookCmd{
+							{Type: "command", Command: filepath.Join(repoDir, "hooks/claude-code/foo.sh")},
+						}},
+					},
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Errorf("hooks = %+v, want %+v", got, want)
+				}
+			},
+		},
 		"prune-only run rewrites settings.json to drop a hook whose script no longer exists": {
 			setup: func(t *testing.T, repoDir, settingsPath string) (Registry, []string) {
 				writeSettingsHooks(t, settingsPath, hooksMapT{
