@@ -114,17 +114,72 @@ func TestInstallClaude(t *testing.T) {
 }
 
 func TestInstallOpencode(t *testing.T) {
+	// A skill whose body legitimately contains `name:` lines: a fenced YAML
+	// example and a table row. Both used to vanish from the opencode copy.
+	bodyNameMD := "---\n" +
+		"name: alpha\n" +
+		"description: \"A sample skill\"\n" +
+		"---\n\n" +
+		"# Alpha Skill\n\n" +
+		"```yaml\n" +
+		"agent:\n" +
+		"  name: reviewer\n" +
+		"```\n\n" +
+		"| key | meaning |\n" +
+		"|---|---|\n" +
+		"| name: the agent id | required |\n"
+
+	// An indented `name:` inside the front matter is a nested key belonging to
+	// another value, not the skill's own name.
+	nestedNameMD := "---\n" +
+		"name: alpha\n" +
+		"contract:\n" +
+		"  name: inner\n" +
+		"---\n\n" +
+		"# Alpha Skill\n"
+
+	noFrontMatterMD := "# Alpha Skill\n\nname: not metadata\n"
+
+	unterminatedMD := "---\n" +
+		"name: alpha\n" +
+		"description: never closed\n\n" +
+		"# Alpha Skill\n"
+
 	tests := map[string]struct {
-		skills        map[string]map[string]string
-		disabled      []string
-		dryRun        bool
-		wantInstalled []string
+		skills          map[string]map[string]string
+		disabled        []string
+		dryRun          bool
+		wantInstalled   []string
+		wantContains    []string
+		wantNotContains []string
 	}{
-		"writes <name>.md stripping name: frontmatter line": {
-			skills: map[string]map[string]string{
-				"alpha": {"SKILL.md": sampleSkillMD},
-			},
+		"strips the top-level name: from front matter": {
+			skills:          map[string]map[string]string{"alpha": {"SKILL.md": sampleSkillMD}},
+			wantInstalled:   []string{"alpha"},
+			wantNotContains: []string{"name: alpha"},
+			wantContains:    []string{"description: \"A sample skill\"", "# Alpha Skill"},
+		},
+		"keeps name: lines in the body": {
+			skills:          map[string]map[string]string{"alpha": {"SKILL.md": bodyNameMD}},
+			wantInstalled:   []string{"alpha"},
+			wantNotContains: []string{"name: alpha"},
+			wantContains:    []string{"  name: reviewer", "| name: the agent id | required |"},
+		},
+		"keeps an indented name: nested inside front matter": {
+			skills:          map[string]map[string]string{"alpha": {"SKILL.md": nestedNameMD}},
+			wantInstalled:   []string{"alpha"},
+			wantNotContains: []string{"name: alpha"},
+			wantContains:    []string{"  name: inner"},
+		},
+		"copies a skill without front matter unchanged": {
+			skills:        map[string]map[string]string{"alpha": {"SKILL.md": noFrontMatterMD}},
 			wantInstalled: []string{"alpha"},
+			wantContains:  []string{"name: not metadata"},
+		},
+		"leaves unterminated front matter untouched": {
+			skills:        map[string]map[string]string{"alpha": {"SKILL.md": unterminatedMD}},
+			wantInstalled: []string{"alpha"},
+			wantContains:  []string{"name: alpha"},
 		},
 		"skips disabled skills and excludes from installed list": {
 			skills: map[string]map[string]string{
@@ -135,9 +190,7 @@ func TestInstallOpencode(t *testing.T) {
 			wantInstalled: []string{"alpha"},
 		},
 		"dry run returns would-be list without writing files": {
-			skills: map[string]map[string]string{
-				"alpha": {"SKILL.md": sampleSkillMD},
-			},
+			skills:        map[string]map[string]string{"alpha": {"SKILL.md": sampleSkillMD}},
 			dryRun:        true,
 			wantInstalled: []string{"alpha"},
 		},
@@ -169,13 +222,21 @@ func TestInstallOpencode(t *testing.T) {
 				return
 			}
 
-			if _, ok := tt.skills["alpha"]; ok {
-				data, err := os.ReadFile(filepath.Join(targetDir, "alpha.md"))
-				if err != nil {
-					t.Fatalf("ReadFile(alpha.md) error = %v", err)
+			if len(tt.wantContains) == 0 && len(tt.wantNotContains) == 0 {
+				return
+			}
+			data, err := os.ReadFile(filepath.Join(targetDir, "alpha.md"))
+			if err != nil {
+				t.Fatalf("ReadFile(alpha.md) error = %v", err)
+			}
+			for _, want := range tt.wantContains {
+				if !strings.Contains(string(data), want) {
+					t.Errorf("installed file is missing %q:\n%s", want, data)
 				}
-				if strings.Contains(string(data), "name:") {
-					t.Errorf("installed file should not contain name: line:\n%s", data)
+			}
+			for _, unwanted := range tt.wantNotContains {
+				if strings.Contains(string(data), unwanted) {
+					t.Errorf("installed file should not contain %q:\n%s", unwanted, data)
 				}
 			}
 		})

@@ -23,6 +23,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The opencode installer no longer strips `name:` lines from a skill's body.**
+  `InstallOpencode` is documented to remove "the `name:` frontmatter line", which
+  opencode derives from the filename — but it dropped **every** line of SKILL.md
+  whose trimmed text began with `name:`. A YAML example, a config snippet or a
+  table row was silently deleted from the opencode copy, so the two CLIs received
+  different instructions from the same source file.
+  - Only the **top-level** `name:` key inside the leading front matter block is
+    removed now. An indented `name:` is left alone even within the front matter,
+    because it is a key nested under another value rather than the skill's own
+    name.
+  - Content without a properly delimited front matter block is returned
+    unchanged. An unterminated `---` is malformed, and guessing where the
+    metadata ends would risk deleting body lines — the failure mode being fixed.
+  - The hazard had been shaping how skills were written: `docs/reference/skills.md`
+    told authors to keep `name:` lines out of SKILL.md bodies, and the (since
+    removed) `promo-campaign` skill carried an inline comment forcing a contract
+    key onto one line to survive the transform. That guidance is retired.
+  - `docs/guides/install.md` still says `name:` is stripped for opencode, which
+    remains accurate — the front-matter key is.
+
 - **A clone install can now clean up hook registrations left by a release-binary
   install.** The two installs use different roots: a release binary extracts its
   assets to the user cache and registers commands there, while a clone registers

@@ -132,7 +132,6 @@ If a new command is genuinely needed:
 
 Three install facts shape how a skill is written:
 - **Supporting files reach Claude Code only.** `references/` and `scripts/` deploy with the whole skill directory to `~/.claude/skills/<name>/`. opencode installs SKILL.md alone, flattened to `~/.config/opencode/commands/<name>.md`, so anything load-bearing belongs in SKILL.md itself.
-  - The opencode transform drops **every** line whose trimmed text starts with `name:`, not just the front matter's, so keep such lines out of SKILL.md's body.
 - **Installed files are written 0644**, so a bundled script is invoked as `bash <path>`, never `./script`.
 - **`disable-model-invocation: true`** keeps a user-only skill's description out of every session's context while leaving `/<name>` invocable.
 

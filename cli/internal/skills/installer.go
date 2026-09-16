@@ -103,23 +103,53 @@ func InstallOpencode(srcDir, targetDir string, disabled []string, dryRun bool) (
 		if err != nil {
 			return installed, err
 		}
-		// Strip `name:` line — opencode derives name from filename
-		var lines []string
-		for _, line := range strings.Split(string(content), "\n") {
-			if !strings.HasPrefix(strings.TrimSpace(line), "name:") {
-				lines = append(lines, line)
-			}
-		}
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
 			return installed, err
 		}
-		if err := os.WriteFile(dest, []byte(strings.Join(lines, "\n")), 0644); err != nil {
+		if err := os.WriteFile(dest, []byte(stripFrontMatterName(string(content))), 0644); err != nil {
 			return installed, err
 		}
 		ui.Added(fmt.Sprintf("%s.md", name))
 		installed = append(installed, name)
 	}
 	return installed, nil
+}
+
+// stripFrontMatterName removes the top-level `name:` key from the leading
+// front matter block, which opencode derives from the filename instead.
+//
+// Only that one key is removed. The body is copied verbatim: a `name:` inside
+// a fenced example, a config snippet or a table row is content, not metadata,
+// and dropping it silently corrupted the opencode copy of the skill. An
+// indented `name:` is left alone even inside the front matter, since it is a
+// key nested under something else rather than the skill's own name.
+//
+// Content without a properly delimited front matter block is returned
+// unchanged — an unterminated `---` is malformed, and guessing where the
+// metadata ends would risk deleting body lines.
+func stripFrontMatterName(content string) string {
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return content
+	}
+	closing := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			closing = i
+			break
+		}
+	}
+	if closing == -1 {
+		return content
+	}
+	out := make([]string, 0, len(lines))
+	for i, line := range lines {
+		if i > 0 && i < closing && strings.HasPrefix(line, "name:") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
 }
 
 func isDisabled(name string, disabled []string) bool {
