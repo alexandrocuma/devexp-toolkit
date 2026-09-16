@@ -13,7 +13,7 @@ How-to guides for using, configuring, and understanding the devexp framework.
 | [workflows.md](workflows.md) | Step-by-step recipes with real paths: add an agent/skill/hook/MCP, change the Go CLI, fix a bug, change registry/config schemas, add config or a dependency, ship | ready |
 | [worktree-per-ticket.md](worktree-per-ticket.md) | Worktree-per-ticket delivery convention — trigger, naming scheme, lifecycle, failure handling, merge discipline | ready |
 | [release-targets.md](release-targets.md) | Release targets and the per-repo release guide — cut vs. ship, per-target gates, target states, which lifecycle command reads what | ready |
-| [release.md](release.md) | This repo's release guide: `cli` target (tag → goreleaser → GitHub Releases) and `toolkit-clone` target (`main`), cut, promote, rollback, post-release checks | draft |
+| [release.md](release.md) | This repo's release guide: `cli` target (tag → goreleaser → GitHub Releases) and `toolkit-clone` target (`main`), cut, promote, rollback, post-release checks | ready |
 | [cleanup-safety.md](cleanup-safety.md) | Canonical deletion-safety rules for toolkit cleanup — dry-run, scoped id guards, shared-state protection, staleness-gated memory pruning | ready |
 
 ## Notes
