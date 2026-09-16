@@ -15,9 +15,19 @@ set -euo pipefail
 
 input=$(cat)
 
+# A relative path is resolved against the directory Claude Code works in: the
+# input's cwd, else the hook's own. Tools run from the project root, so they
+# get the absolute path, which no tool reads as an option (#121). An absolute
+# path passes unchanged.
 # The trailing "x" keeps $(...) from trimming newlines that belong to the path.
-file_path=$(echo "$input" | python3 -I -c \
-    "import sys,json; d=json.load(sys.stdin); sys.stdout.write(str(d.get('tool_input',{}).get('file_path','')) + 'x')") || {
+file_path=$(echo "$input" | python3 -I -c '
+import sys, json, os
+d = json.load(sys.stdin)
+p = str(d.get("tool_input", {}).get("file_path", ""))
+c = d.get("cwd")
+if p and not os.path.isabs(p):
+    p = os.path.join(c if isinstance(c, str) and os.path.isabs(c) else os.getcwd(), p)
+sys.stdout.write(p + "x")') || {
     echo "[devexp format-on-save] internal error -- could not read hook input, skipping. The interpreter's error is above." >&2
     exit 0
 }
@@ -49,11 +59,6 @@ def find_root(path):
 
 root = find_root(file_path)
 
-# A relative path that starts with '-' reaches a tool as an option, and ruff
-# reads one that starts with '@' as an argument file, even after '--' (#121).
-# Every tool reads a './' path as a path; an absolute path passes unchanged.
-path_arg = file_path if os.path.isabs(file_path) else './' + file_path
-
 def cmd_exists(cmd):
     return shutil.which(cmd) is not None
 
@@ -76,27 +81,27 @@ if ext in ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'):
                      os.path.exists(os.path.join(root, 'biome.jsonc'))
 
     if biome_cfg and os.path.exists(local_biome):
-        run_formatter([local_biome, 'format', '--write', path_arg])
+        run_formatter([local_biome, 'format', '--write', file_path])
     elif os.path.exists(local_prettier):
-        run_formatter([local_prettier, '--write', path_arg])
+        run_formatter([local_prettier, '--write', file_path])
     elif biome_cfg and cmd_exists('biome'):
-        run_formatter(['biome', 'format', '--write', path_arg])
+        run_formatter(['biome', 'format', '--write', file_path])
     elif cmd_exists('prettier'):
-        run_formatter(['prettier', '--write', path_arg])
+        run_formatter(['prettier', '--write', file_path])
 
 elif ext == '.py':
     if cmd_exists('ruff'):
-        run_formatter(['ruff', 'format', path_arg])
+        run_formatter(['ruff', 'format', file_path])
     elif cmd_exists('black'):
-        run_formatter(['black', '--quiet', path_arg])
+        run_formatter(['black', '--quiet', file_path])
 
 elif ext == '.go':
     if cmd_exists('gofmt'):
-        run_formatter(['gofmt', '-w', path_arg])
+        run_formatter(['gofmt', '-w', file_path])
 
 elif ext == '.rb':
     if cmd_exists('rubocop'):
-        run_formatter(['rubocop', '--autocorrect-all', '--no-color', '--format', 'quiet', path_arg])
+        run_formatter(['rubocop', '--autocorrect-all', '--no-color', '--format', 'quiet', file_path])
 
 PYFORMAT
 

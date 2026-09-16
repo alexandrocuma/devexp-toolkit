@@ -9,22 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **On-save hooks: a path that looks like an option now reaches the tool as a
-  path (#121).** The format- and lint-on-save hooks, for both Claude Code and
-  opencode, passed the edited path to the tool as it was. A relative path that
-  starts with `-` was then read as options, and the tool failed or did the
-  wrong thing: `ruff`, `black`, `flake8`, `prettier`, `eslint`, `gofmt` and
-  `rubocop` all do this. A relative path that starts with `@` was read by `ruff`
-  as an argument file. Such paths are now `./`-prefixed, which every tool reads
-  as a path, even where `--` would not help: ruff expands `@file` after `--`,
-  and vitest drops file filters after `--`. Absolute paths, which both CLIs
-  send, reach the tools byte-for-byte as before. test-on-save now binds jest's
-  pattern with `=` (`--testPathPattern=<path>`), because a test file whose
-  relative path starts with `-` made jest 29 run the wrong tests. vitest,
-  pytest, rspec and `go vet`/`go test` already got an absolute or `./` path and
-  are unchanged. New `hooks/claude-code/on-save-path.test.sh` cases and
-  `hooks/opencode/on-save-path.test.js` pin the exact argv of every tool call,
-  for an absolute path and for a leading-dash relative path.
+- **On-save hooks: every tool now gets the edited file, as a path, and
+  test-on-save works with Jest 30 (#121).**
+  - A relative path that starts with `-` was passed on as given, in both
+    Claude Code and opencode. `ruff`, `black`, `flake8`, `prettier`, `eslint`,
+    `gofmt` and `rubocop` read it as options, and failed or did the wrong thing.
+  - The tools run from the project root, not from the directory a relative
+    path is relative to. With a nested project, or a hook cwd that isn't the
+    session directory, they were pointed at a file that doesn't exist.
+  - The hooks now resolve a relative path first: against the input's `cwd` in
+    Claude Code, or `ctx.directory` in opencode (the directory opencode's own
+    edit tool resolves against), else the process cwd. Every tool gets the
+    absolute path, which is never read as an option or as a ruff `@argfile`.
+    Absolute paths, which both CLIs send, still reach the tools byte for byte.
+  - test-on-save passed jest `--testPathPattern <path>`. On Jest 29 a path
+    starting with `-` ran the wrong tests. Jest 30, which renamed the option to
+    `--testPathPatterns`, rejected it on every run. The pattern now follows
+    `--` (`jest --passWithNoTests --no-coverage -- <path>`), which Jest 29.7
+    and 30.5 both read as the test path pattern, including a leading `-`.
+  - vitest keeps its absolute path with no `--`, because vitest drops file
+    filters after `--`.
+  - `hooks/claude-code/on-save-path.test.sh` and the new
+    `hooks/opencode/on-save-path.test.js` pin every tool call's argv and
+    working directory. The cases cover absolute paths, leading-dash relative
+    paths, nested projects and the input `cwd` / `ctx.directory`.
+- **Hook authoring guide: opencode modules spawn through `runCommand`.** The
+  "tool input as data" section told opencode authors to use
+  `execFileSync`/`spawnSync`, which the same guide forbids further down. It now
+  points to the async `runCommand` helper, which takes an argument array and
+  uses no shell.
 
 ## [0.8.0] - 2026-09-16
 

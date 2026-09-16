@@ -12,20 +12,19 @@
  */
 
 import { existsSync, join, dirname, resolve, extname } from './utils.js';
-import { LINT_EXTS, findRoot, which, runLinter, pathArg } from './utils.js';
+import { LINT_EXTS, findRoot, which, runLinter, editedPath } from './utils.js';
 
-export async function lintOnSave(_ctx) {
+export async function lintOnSave(ctx) {
   return {
     'file.edited': async (event) => {
       // opencode fires file.edited with { file: absolutePath }
-      const filePath = event.file ?? '';
+      const filePath = editedPath(event.file ?? '', ctx?.directory);
       if (!filePath) return;
 
       const ext = extname(filePath).toLowerCase();
       if (!LINT_EXTS.has(ext)) return;
 
       const root = findRoot(filePath);
-      const arg  = pathArg(filePath);
 
       try {
         if (['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'].includes(ext)) {
@@ -35,20 +34,20 @@ export async function lintOnSave(_ctx) {
                               existsSync(join(root, 'biome.jsonc'));
 
           if (biomeCfg && existsSync(localBiome)) {
-            await runLinter(localBiome, ['lint', arg], root);
+            await runLinter(localBiome, ['lint', filePath], root);
           } else if (existsSync(localEslint)) {
-            await runLinter(localEslint, ['--max-warnings=0', '--no-warn-ignored', arg], root);
+            await runLinter(localEslint, ['--max-warnings=0', '--no-warn-ignored', filePath], root);
           } else if (biomeCfg && await which('biome')) {
-            await runLinter('biome', ['lint', arg], root);
+            await runLinter('biome', ['lint', filePath], root);
           } else if (await which('eslint')) {
-            await runLinter('eslint', ['--max-warnings=0', arg], root);
+            await runLinter('eslint', ['--max-warnings=0', filePath], root);
           }
 
         } else if (ext === '.py') {
           const ruff   = await which('ruff');
           const flake8 = ruff ? null : await which('flake8');
-          if (ruff)        await runLinter(ruff,   ['check', arg], root);
-          else if (flake8) await runLinter(flake8, [arg], root);
+          if (ruff)        await runLinter(ruff,   ['check', filePath], root);
+          else if (flake8) await runLinter(flake8, [filePath], root);
 
         } else if (ext === '.go') {
           const go = await which('go');
@@ -60,7 +59,7 @@ export async function lintOnSave(_ctx) {
 
         } else if (ext === '.rb') {
           const rubocop = await which('rubocop');
-          if (rubocop) await runLinter(rubocop, ['--no-color', '--format', 'simple', arg], root);
+          if (rubocop) await runLinter(rubocop, ['--no-color', '--format', 'simple', filePath], root);
         }
       } catch {
         // Advisory — never propagate errors from file.edited

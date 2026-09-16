@@ -15,9 +15,19 @@ set -euo pipefail
 
 input=$(cat)
 
+# A relative path is resolved against the directory Claude Code works in: the
+# input's cwd, else the hook's own. Tools run from the project root, so they
+# get the absolute path, which no tool reads as an option (#121). An absolute
+# path passes unchanged.
 # The trailing "x" keeps $(...) from trimming newlines that belong to the path.
-file_path=$(echo "$input" | python3 -I -c \
-    "import sys,json; d=json.load(sys.stdin); sys.stdout.write(str(d.get('tool_input',{}).get('file_path','')) + 'x')") || {
+file_path=$(echo "$input" | python3 -I -c '
+import sys, json, os
+d = json.load(sys.stdin)
+p = str(d.get("tool_input", {}).get("file_path", ""))
+c = d.get("cwd")
+if p and not os.path.isabs(p):
+    p = os.path.join(c if isinstance(c, str) and os.path.isabs(c) else os.getcwd(), p)
+sys.stdout.write(p + "x")') || {
     echo "[devexp lint-on-save] internal error -- could not read hook input, skipping. The interpreter's error is above." >&2
     exit 0
 }
@@ -49,11 +59,6 @@ def find_root(path):
 
 root = find_root(file_path)
 
-# A relative path that starts with '-' reaches a tool as an option, and ruff
-# reads one that starts with '@' as an argument file, even after '--' (#121).
-# Every tool reads a './' path as a path; an absolute path passes unchanged.
-path_arg = file_path if os.path.isabs(file_path) else './' + file_path
-
 def cmd_exists(cmd):
     return shutil.which(cmd) is not None
 
@@ -76,19 +81,19 @@ if ext in ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'):
                    os.path.exists(os.path.join(root, 'biome.jsonc'))
 
     if biome_cfg and os.path.exists(local_biome):
-        run_linter([local_biome, 'lint', path_arg])
+        run_linter([local_biome, 'lint', file_path])
     elif os.path.exists(local_eslint):
-        run_linter([local_eslint, '--max-warnings=0', '--no-warn-ignored', path_arg])
+        run_linter([local_eslint, '--max-warnings=0', '--no-warn-ignored', file_path])
     elif biome_cfg and cmd_exists('biome'):
-        run_linter(['biome', 'lint', path_arg])
+        run_linter(['biome', 'lint', file_path])
     elif cmd_exists('eslint'):
-        run_linter(['eslint', '--max-warnings=0', path_arg])
+        run_linter(['eslint', '--max-warnings=0', file_path])
 
 elif ext == '.py':
     if cmd_exists('ruff'):
-        run_linter(['ruff', 'check', path_arg])
+        run_linter(['ruff', 'check', file_path])
     elif cmd_exists('flake8'):
-        run_linter(['flake8', path_arg])
+        run_linter(['flake8', file_path])
 
 elif ext == '.go':
     if cmd_exists('go'):
@@ -98,7 +103,7 @@ elif ext == '.go':
 
 elif ext == '.rb':
     if cmd_exists('rubocop'):
-        run_linter(['rubocop', '--no-color', '--format', 'simple', path_arg])
+        run_linter(['rubocop', '--no-color', '--format', 'simple', file_path])
 PYLINT
 
 exit 0

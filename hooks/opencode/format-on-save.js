@@ -14,7 +14,7 @@
  * that diff can differ from the file on disk.
  */
 
-import { existsSync, extname, join, findRoot, which, runCommand, pathArg } from './utils.js';
+import { existsSync, extname, join, findRoot, which, runCommand, editedPath } from './utils.js';
 
 const FORMAT_EXTS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py', '.go', '.rb']);
 
@@ -26,17 +26,16 @@ async function runFormatter(cmd, args, cwd) {
   await runCommand(cmd, args, { cwd, timeout: FORMAT_TIMEOUT_MS, output: 'ignore' });
 }
 
-export async function formatOnSave(_ctx) {
+export async function formatOnSave(ctx) {
   return {
     'file.edited': async (event) => {
-      const filePath = event.file ?? event.path ?? '';
+      const filePath = editedPath(event.file ?? event.path ?? '', ctx?.directory);
       if (!filePath || !existsSync(filePath)) return;
 
       const ext = extname(filePath).toLowerCase();
       if (!FORMAT_EXTS.has(ext)) return;
 
       const root = findRoot(filePath);
-      const arg  = pathArg(filePath);
 
       if (['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'].includes(ext)) {
         const localBiome    = join(root, 'node_modules', '.bin', 'biome');
@@ -44,27 +43,27 @@ export async function formatOnSave(_ctx) {
         const biomeCfg = existsSync(join(root, 'biome.json')) || existsSync(join(root, 'biome.jsonc'));
 
         if (biomeCfg && existsSync(localBiome)) {
-          await runFormatter(localBiome, ['format', '--write', arg], root);
+          await runFormatter(localBiome, ['format', '--write', filePath], root);
         } else if (existsSync(localPrettier)) {
-          await runFormatter(localPrettier, ['--write', arg], root);
+          await runFormatter(localPrettier, ['--write', filePath], root);
         } else if (biomeCfg && await which('biome')) {
-          await runFormatter('biome', ['format', '--write', arg], root);
+          await runFormatter('biome', ['format', '--write', filePath], root);
         } else if (await which('prettier')) {
-          await runFormatter('prettier', ['--write', arg], root);
+          await runFormatter('prettier', ['--write', filePath], root);
         }
       } else if (ext === '.py') {
         if (await which('ruff')) {
-          await runFormatter('ruff', ['format', arg], root);
+          await runFormatter('ruff', ['format', filePath], root);
         } else if (await which('black')) {
-          await runFormatter('black', ['--quiet', arg], root);
+          await runFormatter('black', ['--quiet', filePath], root);
         }
       } else if (ext === '.go') {
         if (await which('gofmt')) {
-          await runFormatter('gofmt', ['-w', arg], root);
+          await runFormatter('gofmt', ['-w', filePath], root);
         }
       } else if (ext === '.rb') {
         if (await which('rubocop')) {
-          await runFormatter('rubocop', ['--autocorrect-all', '--no-color', '--format', 'quiet', arg], root);
+          await runFormatter('rubocop', ['--autocorrect-all', '--no-color', '--format', 'quiet', filePath], root);
         }
       }
     },

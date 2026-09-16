@@ -25,14 +25,17 @@ export function findRoot(filePath) {
 }
 
 /**
- * pathArg — the edited path in the form handed to a tool as an argument.
+ * editedPath — the edited file as an absolute path.
  *
- * A relative path that starts with '-' reaches a tool as an option, and ruff
- * reads one that starts with '@' as an argument file, even after '--' (#121).
- * Every tool reads a './' path as a path; an absolute path passes unchanged.
+ * opencode sends an absolute path. A relative one is resolved the way
+ * opencode's edit tool resolves it: against the session directory
+ * (ctx.directory), else the process cwd. Tools run from the project root, so
+ * they get the absolute path, which no tool reads as an option (#121). An
+ * absolute path passes unchanged.
  */
-export function pathArg(filePath) {
-  return isAbsolute(filePath) ? filePath : `./${filePath}`;
+export function editedPath(file, directory) {
+  if (!file || isAbsolute(file)) return file;
+  return join(typeof directory === 'string' && isAbsolute(directory) ? directory : process.cwd(), file);
 }
 
 /**
