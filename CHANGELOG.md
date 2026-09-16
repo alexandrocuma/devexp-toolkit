@@ -204,6 +204,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Release guide: rollback defined.** `docs/guides/release.md` now defines rollback
+  for both targets, so `/release` no longer blocks on `[CONFIRM]`: `cli` is
+  hotfix-forward (mark the bad release pre-release so `latest` falls back, users
+  pin `DEVEXP_VERSION`, cut the next patch); `toolkit-clone` reverts on `main`
+  through a PR. The GitHub Release is created by `/release` with the CHANGELOG
+  section as notes, goreleaser uploads the assets.
 - `/release` phases renumbered: new Phase 7 (Ship Targets); retirement is now
   Phase 8 and the report Phase 9. Retirement requires every target shipped or
   skipped, not just a successful tag.

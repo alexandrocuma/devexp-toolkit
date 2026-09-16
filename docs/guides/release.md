@@ -1,6 +1,6 @@
 # Release Guide
 
-> Kit doc · Last verified: 2026-09-16 against commit `a86d2c3f6a41a6d033d31afd858ff723d5267dd7`
+> Kit doc · Last verified: 2026-09-16 against commit `653387863c7fdc8d4e2ee1075bd2dc801c1e751b`
 >
 > Consumed by `/release` (executes ship steps), grooming (affected targets), `/deliver` (release readiness) and `/monitor` (post-release checks). Why release guides exist and how the lifecycle reads them: [`release-targets.md`](release-targets.md). Build and test commands: [`../development/setup.md`](../development/setup.md).
 
@@ -8,8 +8,8 @@
 
 | Target | Kind | Path | Channel | Rollback |
 |--------|------|------|---------|----------|
-| `cli` | cli | `cli/`, plus the assets embedded at build time: `agents/`, `skills/`, `hooks/`, `mcps/`, `devexp.config.json`, `uninstall.sh`; build config `.goreleaser.yaml`, `.github/workflows/release.yml` | GitHub Releases for `alexandrocuma/devexp-toolkit`, built by goreleaser on a `v*` tag push; installed with `scripts/remote-install.sh` | `[CONFIRM] no rollback strategy defined — see Target: cli` |
-| `toolkit-clone` | other | `agents/`, `skills/`, `hooks/`, `mcps/`, `templates/`, `devexp.config.json`, `devexp.config.schema.json`, `install.sh`, `uninstall.sh`, `scripts/` (and `cli/` for clone users, who build it locally) | the `main` branch — contributors and teams run `git pull` + `./install.sh` from a clone | `[CONFIRM] no rollback strategy defined — see Target: toolkit-clone` |
+| `cli` | cli | `cli/`, plus the assets embedded at build time: `agents/`, `skills/`, `hooks/`, `mcps/`, `devexp.config.json`, `uninstall.sh`; build config `.goreleaser.yaml`, `.github/workflows/release.yml` | GitHub Releases for `alexandrocuma/devexp-toolkit`, built by goreleaser on a `v*` tag push; installed with `scripts/remote-install.sh` | hotfix-forward with a new patch tag; mark the bad release pre-release so `latest` falls back — see Target: cli |
+| `toolkit-clone` | other | `agents/`, `skills/`, `hooks/`, `mcps/`, `templates/`, `devexp.config.json`, `devexp.config.schema.json`, `install.sh`, `uninstall.sh`, `scripts/` (and `cli/` for clone users, who build it locally) | the `main` branch — contributors and teams run `git pull` + `./install.sh` from a clone | `git revert` the offending merge on `main` — see Target: toolkit-clone |
 
 Kinds: `library` · `cli` · `web` · `service` · `ios` · `android` · `desktop` · `other`
 
@@ -20,7 +20,7 @@ Asset edits reach the two targets at different times. Clone users get them on th
 - Version source of truth: **the git tag.** There is no version file. goreleaser injects the tag's version at build time with `-X devexp/cmd.version={{ .Version }}` (`.goreleaser.yaml:23`, `cli/cmd/root.go:9-15`); local builds report `dev`. Scheme: SemVer (`CHANGELOG.md:6`).
 - Tag format: `v<version>`, annotated, message `Release v<version> — <summary>` (`git tag -n1 v0.7.0 v0.6.0`). Any pushed `v*` tag starts the `release` workflow (`.github/workflows/release.yml:3-6`).
 - Release commit: `chore: release v<version>`, committed directly on `main`, changing only `CHANGELOG.md`. It moves the `## [Unreleased]` entries under `## [<version>] - YYYY-MM-DD` (Keep a Changelog — `CHANGELOG.md:5,8,60`). See `git show --stat d5f6943 f88f123 879a5c8 d15c02d` (v0.7.0, v0.6.0, v0.5.0, v0.4.0).
-- GitHub Release object: `[INCONSISTENT — created by the maintainer with the CHANGELOG entry as notes, with goreleaser then uploading the assets to it (v0.7.0, v0.5.0) vs created by goreleaser with its own commit-list notes (v0.6.0)]`. Both produced the full asset set. The latest release (v0.7.0) follows the first pattern, which is what `/release` Phase 6 does (`gh release create … --notes "<changelog entry>"`, `skills/release/SKILL.md:191`). goreleaser kept the existing notes. When goreleaser writes the notes itself, it leaves out `docs:`, `test:` and `chore:` commits (`.goreleaser.yaml:34-40`).
+- GitHub Release object: **created by `/release` right after the tag push**, with the version's `CHANGELOG.md` section as notes (`gh release create v<version> --title v<version> --notes-file <section> --verify-tag`); goreleaser then uploads the assets to it and keeps those notes. This is how v0.7.1, v0.7.0 and v0.5.0 were released. v0.6.0 was the exception: goreleaser created it with its own commit-list notes, which leave out `docs:`, `test:` and `chore:` commits (`.goreleaser.yaml:34-40`).
 - Nothing waits for CI before the tag. `main` has no branch protection or rulesets (GitHub API, checked 2026-09-16), and `release.yml` runs no tests. For v0.7.0, `ci` started on the release commit at 04:48:20Z and `release` started from the tag at 04:48:23Z (`gh run list`).
 
 ## Target: cli
@@ -52,10 +52,18 @@ N/A — there is no pre-production channel. `.goreleaser.yaml` sets no draft, pr
 
 ### Rollback
 
-Strategy: `[CONFIRM] rollback strategy for a bad CLI release — the repo defines none. What exists (not documented as policy): users can pin an earlier tag with DEVEXP_VERSION=v<previous> (scripts/remote-install.sh:39); new installs get whichever release GitHub marks Latest (scripts/remote-install.sh:42); or hotfix-forward with a new patch tag`
+Strategy: **hotfix-forward.** A pushed tag and its GitHub Release are never deleted or moved — users may already have installed them, and `remote-install.sh` pins by tag. A bad release is replaced by the next patch release through the normal cut. Until that ships:
+
+1. Mark the bad release as a pre-release. GitHub's `releases/latest` excludes pre-releases, so new `remote-install.sh` installs fall back to the previous release (`scripts/remote-install.sh:41`).
+2. Tell users who already installed it to pin the last good release with `DEVEXP_VERSION` (`scripts/remote-install.sh:38`).
+3. Fix on a branch, merge, and cut `v<next patch>`; the new release becomes `latest` again.
 
 ```bash
-[CONFIRM] no rollback commands defined
+gh release edit v<bad> --prerelease                      # latest falls back to the previous release
+gh release list --limit 3                                # verify: v<previous> shows as Latest
+# users on the bad version:
+DEVEXP_VERSION=v<previous> bash <(curl -fsSL https://raw.githubusercontent.com/alexandrocuma/devexp-toolkit/main/scripts/remote-install.sh)
+# after the fix: /release cuts v<next patch>, which becomes Latest; leave v<bad> marked pre-release
 ```
 
 ### Post-release verification
@@ -93,10 +101,14 @@ N/A — no pre-production branch or channel. Work reaches `main` through pull re
 
 ### Rollback
 
-Strategy: `[CONFIRM] rollback strategy for a bad change on main — the repo defines none (git revert on main followed by users re-running git pull && ./install.sh is the git-native option, not documented as policy)`
+Strategy: **revert on `main`.** Undo the offending change with `git revert` (history is never rewritten on `main`), land it through a PR like any other change, and have clone users pull and rebuild. If the bad change also shipped in a CLI tag, roll that target back too (see Target: cli).
 
 ```bash
-[CONFIRM] no rollback commands defined
+git revert <sha>              # a squash-merged PR (one commit on main)
+git revert -m 1 <merge-sha>   # a merge commit
+# open a PR with the revert; ci must pass before merging
+# clone users after it lands:
+git pull && rm -f bin/devexp && ./install.sh   # install.sh never rebuilds an existing binary (install.sh:7-18)
 ```
 
 ### Post-release verification
