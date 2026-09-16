@@ -756,9 +756,57 @@ func TestDetectTargets(t *testing.T) {
 
 // ── Install target paths ──────────────────────────────────────────────────────
 
+func TestTargetHome(t *testing.T) {
+	tests := map[string]struct {
+		home    string
+		wantErr bool
+	}{
+		"absolute":      {home: "/home/me"},
+		"cleaned":       {home: "/home/me/"},
+		"empty":         {home: "", wantErr: true},
+		"relative":      {home: "home/me", wantErr: true},
+		"dot":           {home: ".", wantErr: true},
+		"tilde literal": {home: "~", wantErr: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := targetHome(tt.home)
+			if tt.wantErr {
+				if err == nil || got != "" || !strings.Contains(err.Error(), "not an absolute path") {
+					t.Errorf("targetHome(%q) = %q, %v; want a refusal", tt.home, got, err)
+				}
+				return
+			}
+			if err != nil || got != "/home/me" {
+				t.Errorf("targetHome(%q) = %q, %v; want /home/me", tt.home, got, err)
+			}
+		})
+	}
+}
+
+// testClaudePaths and testOpencodePaths resolve the target paths under a home
+// a test controls, which is always absolute.
+func testClaudePaths(t *testing.T, home string) claudePaths {
+	t.Helper()
+	p, err := claudeTargetPaths(home, time.Now())
+	if err != nil {
+		t.Fatalf("claudeTargetPaths(%q) error = %v", home, err)
+	}
+	return p
+}
+
+func testOpencodePaths(t *testing.T, home string) opencodePaths {
+	t.Helper()
+	p, err := opencodeTargetPaths(home)
+	if err != nil {
+		t.Fatalf("opencodeTargetPaths(%q) error = %v", home, err)
+	}
+	return p
+}
+
 func TestClaudeTargetPaths(t *testing.T) {
 	now := time.Date(2026, 9, 16, 4, 5, 6, 0, time.UTC)
-	got := claudeTargetPaths("/home/u", now)
+	got, err := claudeTargetPaths("/home/u", now)
 
 	want := claudePaths{
 		agents:   "/home/u/.claude/agents",
@@ -769,13 +817,20 @@ func TestClaudeTargetPaths(t *testing.T) {
 		// whatever the clock said when the test ran.
 		backup: "/home/u/.claude/.devexp-backup-20260916T040506",
 	}
-	if got != want {
-		t.Errorf("claudeTargetPaths() = %+v, want %+v", got, want)
+	if err != nil || got != want {
+		t.Errorf("claudeTargetPaths() = %+v, %v; want %+v", got, err, want)
+	}
+
+	// A relative target path would land under the current directory.
+	for _, home := range []string{"", "home/u", "."} {
+		if got, err := claudeTargetPaths(home, now); err == nil || got != (claudePaths{}) {
+			t.Errorf("claudeTargetPaths(%q) = %+v, %v; want no paths and an error", home, got, err)
+		}
 	}
 }
 
 func TestOpencodeTargetPaths(t *testing.T) {
-	got := opencodeTargetPaths("/home/u")
+	got, err := opencodeTargetPaths("/home/u")
 
 	want := opencodePaths{
 		agents: "/home/u/.config/opencode/agents",
@@ -785,8 +840,14 @@ func TestOpencodeTargetPaths(t *testing.T) {
 		config:   "/home/u/.config/opencode/config.json",
 		manifest: "/home/u/.config/opencode/.devexp-manifest.json",
 	}
-	if got != want {
-		t.Errorf("opencodeTargetPaths() = %+v, want %+v", got, want)
+	if err != nil || got != want {
+		t.Errorf("opencodeTargetPaths() = %+v, %v; want %+v", got, err, want)
+	}
+
+	for _, home := range []string{"", "home/u", "."} {
+		if got, err := opencodeTargetPaths(home); err == nil || got != (opencodePaths{}) {
+			t.Errorf("opencodeTargetPaths(%q) = %+v, %v; want no paths and an error", home, got, err)
+		}
 	}
 }
 
@@ -1252,14 +1313,14 @@ func TestDoInstall_UnreadableManifest(t *testing.T) {
 	type layout struct{ manifest, agents, plugins string }
 	targets := map[string]struct {
 		install func(*installOpts) error
-		paths   func(home string) layout
+		paths   func(t *testing.T, home string) layout
 	}{
-		"claude": {doInstallClaude, func(home string) layout {
-			p := claudeTargetPaths(home, time.Now())
+		"claude": {doInstallClaude, func(t *testing.T, home string) layout {
+			p := testClaudePaths(t, home)
 			return layout{p.manifest, p.agents, ""}
 		}},
-		"opencode": {doInstallOpencode, func(home string) layout {
-			p := opencodeTargetPaths(home)
+		"opencode": {doInstallOpencode, func(t *testing.T, home string) layout {
+			p := testOpencodePaths(t, home)
 			return layout{p.manifest, p.agents, p.plugins}
 		}},
 	}
@@ -1285,7 +1346,7 @@ func TestDoInstall_UnreadableManifest(t *testing.T) {
 				home := t.TempDir()
 				t.Setenv("HOME", home)
 				fakeCLI(t)
-				l := target.paths(home)
+				l := target.paths(t, home)
 				precious := []string{filepath.Join(l.agents, "mine.md")}
 				if l.plugins != "" {
 					precious = append(precious, filepath.Join(l.plugins, "devexp", "old.js"))
@@ -1364,7 +1425,7 @@ func TestDoInstallOpencode_RefusalKeepsLegacyInstall(t *testing.T) {
 	t.Setenv("HOME", home)
 	fakeCLI(t)
 	repoDir := writeOpencodeHookRepo(t)
-	p := opencodeTargetPaths(home)
+	p := testOpencodePaths(t, home)
 	os.MkdirAll(p.plugins, 0o755) //nolint:errcheck
 	fixtures := filepath.Join("..", "internal", "hooks", "testdata", "legacy-opencode")
 	entries, err := os.ReadDir(fixtures)
@@ -1403,7 +1464,7 @@ func TestDoInstallOpencode_LostManifest(t *testing.T) {
 		if out, err := runOpencode(t, repoDir, &config.Config{}); err != nil {
 			t.Fatalf("install: %v\n%s", err, out)
 		}
-		p = opencodeTargetPaths(home)
+		p = testOpencodePaths(t, home)
 		os.WriteFile(p.manifest, []byte(`{"agents": "oops"`), 0o644) //nolint:errcheck
 		return repoDir, p
 	}
@@ -1445,7 +1506,7 @@ func TestDoInstallOpencode_SymlinkedDevexpAllDisabled(t *testing.T) {
 	if out, err := runOpencode(t, repoDir, &config.Config{}); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
-	p := opencodeTargetPaths(home)
+	p := testOpencodePaths(t, home)
 	checkout := filepath.Join(t.TempDir(), "checkout")
 	if err := os.Rename(filepath.Join(repoDir, "hooks", "opencode"), checkout); err != nil {
 		t.Fatal(err)
@@ -1476,7 +1537,7 @@ func TestDoInstallOpencode_SymlinkedPluginsDir(t *testing.T) {
 	t.Setenv("HOME", home)
 	fakeCLI(t)
 	repoDir := writeOpencodeHookRepo(t)
-	p := opencodeTargetPaths(home)
+	p := testOpencodePaths(t, home)
 	dotfiles := filepath.Join(t.TempDir(), "dotfiles-plugins")
 	os.MkdirAll(dotfiles, 0o755)                //nolint:errcheck
 	os.MkdirAll(filepath.Dir(p.plugins), 0o755) //nolint:errcheck
@@ -1513,5 +1574,152 @@ func TestDoInstallOpencode_SymlinkedPluginsDir(t *testing.T) {
 	}
 	if fi, err := os.Lstat(p.plugins); err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		t.Errorf("plugins symlink removed or replaced")
+	}
+}
+
+// ── HOME refusal (#126) ───────────────────────────────────────────────────────
+
+// badHomes are the HOME values that would turn every target path into one
+// under the current directory: unset, empty and relative.
+var badHomes = map[string]func(t *testing.T){
+	"unset":    func(t *testing.T) { t.Setenv("HOME", ""); os.Unsetenv("HOME") }, //nolint:errcheck
+	"empty":    func(t *testing.T) { t.Setenv("HOME", "") },
+	"relative": func(t *testing.T) { t.Setenv("HOME", "home") },
+}
+
+// writeDotfilesTree fills dir with what a bad HOME would make devexp read,
+// write or remove there: an existing Claude Code and opencode install at the
+// top (HOME empty) and under home/ (HOME=home), each with a stale agent the
+// manifest lists, plus an embedded-asset cache from another version under
+// home/'s user cache dir (darwin and linux), which repo.Resolve would wipe.
+func writeDotfilesTree(t *testing.T, dir string) {
+	t.Helper()
+	files := map[string]string{
+		"Library/Caches/devexp/assets/.devexp-version": "some-other",
+		".cache/devexp/assets/.devexp-version":         "some-other",
+	}
+	for rel, content := range map[string]string{
+		".claude/agents/mine.md":                          "mine\n",
+		".claude/agents/old.md":                           "old\n",
+		".claude/skills/mine/SKILL.md":                    "mine\n",
+		".claude/settings.json":                           "{\"hooks\": {}}\n",
+		".claude/.devexp-manifest.json":                   `{"agents":["old.md"]}`,
+		".config/opencode/agents/old.md":                  "old\n",
+		".config/opencode/config.json":                    "{\"mcp\": {}}\n",
+		".config/opencode/.devexp-manifest.json":          `{"agents":["old.md"],"plugins":["devexp.js"]}`,
+		".config/opencode/plugins/devexp.js":              "/**\n * devexp-plugin.js — entry point for devexp opencode hooks\n */\n",
+		".config/opencode/plugins/devexp/secret-guard.js": "// secret-guard\n",
+	} {
+		files[rel] = content
+		files["home/"+rel] = content
+	}
+	for rel, content := range files {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// treeState is treeBytes plus every directory, so a run that only creates an
+// empty directory (a backup dir, a plugins dir) still shows up as a change.
+func treeState(t *testing.T, root string) map[string]string {
+	t.Helper()
+	snap := treeBytes(t, root)
+	filepath.Walk(root, func(p string, info os.FileInfo, err error) error { //nolint:errcheck
+		if err == nil && info.IsDir() {
+			rel, _ := filepath.Rel(root, p)
+			snap[rel+"/"] = "dir"
+		}
+		return nil
+	})
+	return snap
+}
+
+// TestInstallCmd_RefusesBadHome: `devexp install` refuses an unset, empty or
+// relative HOME before it does anything — before resolving the assets (a
+// standalone binary extracts them under the user cache dir, which a relative
+// HOME puts under the current directory), before the wizard, and before MCP
+// registration — so a dotfiles tree in the current directory is left byte for
+// byte as it was.
+func TestInstallCmd_RefusesBadHome(t *testing.T) {
+	runs := map[string]struct {
+		clis       []string
+		args       []string
+		standalone bool // no DEVEXP_DIR: assets come from the binary
+	}{
+		"flags, claude":     {clis: []string{"claude"}, args: []string{"install", "--reinstall-mcps"}},
+		"flags, opencode":   {clis: []string{"opencode"}, args: []string{"install", "--reinstall-mcps"}},
+		"flags, mcps only":  {clis: []string{"claude"}, args: []string{"install", "--mcps-only"}},
+		"flags, standalone": {clis: []string{"opencode"}, args: []string{"install", "--agents-only"}, standalone: true},
+		"wizard":            {clis: []string{"claude"}, args: []string{"install"}},
+	}
+	for rname, run := range runs {
+		for hname, setHome := range badHomes {
+			t.Run(rname+", HOME "+hname, func(t *testing.T) {
+				cwd := t.TempDir()
+				writeDotfilesTree(t, cwd)
+				t.Chdir(cwd)
+				tmp := t.TempDir() // where the embedded assets go when there is no user cache dir
+				t.Setenv("TMPDIR", tmp)
+				t.Setenv("XDG_CACHE_HOME", "")
+				fakeCLI(t, run.clis...)
+				if run.standalone {
+					t.Setenv("DEVEXP_DIR", "")
+				} else {
+					t.Setenv("DEVEXP_DIR", writeOpencodeHookRepo(t))
+				}
+				before := treeState(t, cwd)
+				setHome(t)
+
+				out, err := executeRoot(t, run.args...)
+				if err == nil || !strings.Contains(err.Error(), "HOME is") || !strings.Contains(err.Error(), "refusing to install anything") {
+					t.Errorf("install error = %v, want a HOME refusal\n%s", err, out)
+				}
+				if after := treeState(t, cwd); !reflect.DeepEqual(before, after) {
+					t.Errorf("files under the current directory changed:\nbefore %v\nafter  %v", before, after)
+				}
+				if got := treeState(t, tmp); len(got) != 1 {
+					t.Errorf("wrote under TMPDIR: %v", got)
+				}
+			})
+		}
+	}
+}
+
+// TestDoInstall_RefusesBadHome: the per-target installers resolve their paths
+// through the same check, so even called directly they refuse before MCP
+// registration or any other write.
+func TestDoInstall_RefusesBadHome(t *testing.T) {
+	targets := map[string]func(*installOpts) error{
+		"claude":   doInstallClaude,
+		"opencode": doInstallOpencode,
+	}
+	for tname, install := range targets {
+		for hname, setHome := range badHomes {
+			t.Run(tname+", HOME "+hname, func(t *testing.T) {
+				cwd := t.TempDir()
+				writeDotfilesTree(t, cwd)
+				t.Chdir(cwd)
+				fakeCLI(t, "claude", "opencode")
+				repoDir := writeOpencodeHookRepo(t)
+				before := treeState(t, cwd)
+				setHome(t)
+
+				var err error
+				out := captureStdout(t, func() {
+					err = install(&installOpts{repoDir: repoDir, cfg: &config.Config{}, env: map[string]string{}})
+				})
+				if err == nil || !strings.Contains(err.Error(), "not an absolute path") {
+					t.Errorf("install error = %v, want a HOME refusal\n%s", err, out)
+				}
+				if after := treeState(t, cwd); !reflect.DeepEqual(before, after) {
+					t.Errorf("files under the current directory changed:\nbefore %v\nafter  %v", before, after)
+				}
+			})
+		}
 	}
 }

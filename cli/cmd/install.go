@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -70,6 +71,14 @@ type wizardResult struct {
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 func runInstall(cmd *cobra.Command, args []string) error {
+	// Before anything else, flags and wizard alike: repo.Resolve may already
+	// write (a standalone binary extracts its assets under the user cache dir,
+	// which a relative HOME puts under the current directory), and MCP
+	// registration runs before any target path is built.
+	if _, err := targetHome(os.Getenv("HOME")); err != nil {
+		return fmt.Errorf("%w — refusing to install anything; set HOME and re-run", err)
+	}
+
 	fmt.Println()
 	fmt.Println("\033[1mdevexp Framework Installer\033[0m")
 	fmt.Println("────────────────────────────────────────")

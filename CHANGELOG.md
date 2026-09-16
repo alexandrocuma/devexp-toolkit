@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`devexp install` refuses an unset, empty or relative `HOME` (#126).** Every
+  install target is built from `HOME`, so with it unset, empty or relative the
+  installer would write into, back up from and remove stale files under the
+  current directory — a dotfiles checkout, say. A standalone binary would also
+  wipe and re-extract its assets there, since the user cache dir follows `HOME`.
+  - `devexp install` now stops with a non-zero exit and
+    `HOME is "…", not an absolute path — refusing to install anything` before
+    anything else: no asset extraction, no wizard, no MCP registration, no
+    writes or backups. This covers every flag path, the wizard (including its
+    Remove action) and both targets.
+  - The check #109 added for `devexp uninstall` is now one shared helper
+    (`targetHome` in `cli/cmd/paths.go`), and `claudeTargetPaths` /
+    `opencodeTargetPaths` go through it, so they can no longer return a relative
+    target path. `devexp uninstall` behaves and reports as before.
+
 ## [0.8.0] - 2026-09-16
 
 ### Added
