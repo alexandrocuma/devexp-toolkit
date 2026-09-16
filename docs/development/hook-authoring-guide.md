@@ -96,6 +96,8 @@ For `Bash`: `tool_input.command`
 
 Every value in `tool_input` — paths, commands, content — is untrusted. Never expand one into program text: not inside a `python3 -c "..."` string, not through `eval`, `bash -c` or an unquoted expansion. Pass it as data instead — on stdin, as an argument (`python3 -I - "$value" <<'PY'` with a **quoted** heredoc delimiter, then `sys.argv[1]`), or through the environment — and always quote shell expansions (`"$value"`). In opencode modules, use `execFileSync`/`spawnSync` with an argument array, never a shell string.
 
+**Hand a path to a tool so it can't be read as an option:** pass an absolute path unchanged, `./`-prefix any other (`path_arg` / `pathArg` in `utils.js`), and bind an option's value with `=` (`--testPathPattern=<path>`). Don't rely on `--`, which ruff (`@argfile`) and vitest don't honour for this (#121).
+
 Two more rules for the Python calls:
 
 - **Always run the interpreter isolated: `python3 -I`.** Hooks run with the project as their working directory; isolated mode keeps the interpreter from importing anything from the project. It also ignores `PYTHON*` environment variables and the user's site-packages; hooks use only the standard library, so they lose nothing. Child processes still inherit the full environment, so project tools a hook launches (formatters, linters, test runners) find their configuration as before.

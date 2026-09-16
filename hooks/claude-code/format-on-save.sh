@@ -49,6 +49,11 @@ def find_root(path):
 
 root = find_root(file_path)
 
+# A relative path that starts with '-' reaches a tool as an option, and ruff
+# reads one that starts with '@' as an argument file, even after '--' (#121).
+# Every tool reads a './' path as a path; an absolute path passes unchanged.
+path_arg = file_path if os.path.isabs(file_path) else './' + file_path
+
 def cmd_exists(cmd):
     return shutil.which(cmd) is not None
 
@@ -71,27 +76,27 @@ if ext in ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'):
                      os.path.exists(os.path.join(root, 'biome.jsonc'))
 
     if biome_cfg and os.path.exists(local_biome):
-        run_formatter([local_biome, 'format', '--write', file_path])
+        run_formatter([local_biome, 'format', '--write', path_arg])
     elif os.path.exists(local_prettier):
-        run_formatter([local_prettier, '--write', file_path])
+        run_formatter([local_prettier, '--write', path_arg])
     elif biome_cfg and cmd_exists('biome'):
-        run_formatter(['biome', 'format', '--write', file_path])
+        run_formatter(['biome', 'format', '--write', path_arg])
     elif cmd_exists('prettier'):
-        run_formatter(['prettier', '--write', file_path])
+        run_formatter(['prettier', '--write', path_arg])
 
 elif ext == '.py':
     if cmd_exists('ruff'):
-        run_formatter(['ruff', 'format', file_path])
+        run_formatter(['ruff', 'format', path_arg])
     elif cmd_exists('black'):
-        run_formatter(['black', '--quiet', file_path])
+        run_formatter(['black', '--quiet', path_arg])
 
 elif ext == '.go':
     if cmd_exists('gofmt'):
-        run_formatter(['gofmt', '-w', file_path])
+        run_formatter(['gofmt', '-w', path_arg])
 
 elif ext == '.rb':
     if cmd_exists('rubocop'):
-        run_formatter(['rubocop', '--autocorrect-all', '--no-color', '--format', 'quiet', file_path])
+        run_formatter(['rubocop', '--autocorrect-all', '--no-color', '--format', 'quiet', path_arg])
 
 PYFORMAT
 

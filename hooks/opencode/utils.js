@@ -4,7 +4,7 @@
 
 import { spawn } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
-import { join, dirname, resolve, extname, basename } from 'path';
+import { join, dirname, resolve, extname, basename, isAbsolute } from 'path';
 
 export const LINT_EXTS = new Set([
   '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
@@ -22,6 +22,17 @@ export function findRoot(filePath) {
     if (parent === dir) return dir;
     dir = parent;
   }
+}
+
+/**
+ * pathArg — the edited path in the form handed to a tool as an argument.
+ *
+ * A relative path that starts with '-' reaches a tool as an option, and ruff
+ * reads one that starts with '@' as an argument file, even after '--' (#121).
+ * Every tool reads a './' path as a path; an absolute path passes unchanged.
+ */
+export function pathArg(filePath) {
+  return isAbsolute(filePath) ? filePath : `./${filePath}`;
 }
 
 /**

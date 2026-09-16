@@ -90,17 +90,19 @@ if ext in ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'):
 
     local_jest    = os.path.join(root, 'node_modules', '.bin', 'jest')
     local_vitest  = os.path.join(root, 'node_modules', '.bin', 'vitest')
+    # The pattern is relative to root and can start with '-'; given as a
+    # separate argument, jest would read it as options (#121). vitest gets an
+    # absolute path: '--' would take it out of vitest's file filters.
+    jest_pattern  = '--testPathPattern=' + os.path.relpath(test_file, root)
 
     if os.path.exists(local_vitest):
         run_tests([local_vitest, 'run', test_file], cwd=root)
     elif os.path.exists(local_jest):
-        run_tests([local_jest, '--testPathPattern', os.path.relpath(test_file, root),
-                   '--passWithNoTests', '--no-coverage'], cwd=root)
+        run_tests([local_jest, jest_pattern, '--passWithNoTests', '--no-coverage'], cwd=root)
     elif cmd_exists('vitest'):
         run_tests(['vitest', 'run', test_file], cwd=root)
     elif cmd_exists('jest'):
-        run_tests(['jest', '--testPathPattern', os.path.relpath(test_file, root),
-                   '--passWithNoTests', '--no-coverage'], cwd=root)
+        run_tests(['jest', jest_pattern, '--passWithNoTests', '--no-coverage'], cwd=root)
 
 # ── Go ───────────────────────────────────────────────────────────────────────
 elif ext == '.go':

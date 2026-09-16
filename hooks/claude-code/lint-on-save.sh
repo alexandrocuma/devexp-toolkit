@@ -49,6 +49,11 @@ def find_root(path):
 
 root = find_root(file_path)
 
+# A relative path that starts with '-' reaches a tool as an option, and ruff
+# reads one that starts with '@' as an argument file, even after '--' (#121).
+# Every tool reads a './' path as a path; an absolute path passes unchanged.
+path_arg = file_path if os.path.isabs(file_path) else './' + file_path
+
 def cmd_exists(cmd):
     return shutil.which(cmd) is not None
 
@@ -71,19 +76,19 @@ if ext in ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'):
                    os.path.exists(os.path.join(root, 'biome.jsonc'))
 
     if biome_cfg and os.path.exists(local_biome):
-        run_linter([local_biome, 'lint', file_path])
+        run_linter([local_biome, 'lint', path_arg])
     elif os.path.exists(local_eslint):
-        run_linter([local_eslint, '--max-warnings=0', '--no-warn-ignored', file_path])
+        run_linter([local_eslint, '--max-warnings=0', '--no-warn-ignored', path_arg])
     elif biome_cfg and cmd_exists('biome'):
-        run_linter(['biome', 'lint', file_path])
+        run_linter(['biome', 'lint', path_arg])
     elif cmd_exists('eslint'):
-        run_linter(['eslint', '--max-warnings=0', file_path])
+        run_linter(['eslint', '--max-warnings=0', path_arg])
 
 elif ext == '.py':
     if cmd_exists('ruff'):
-        run_linter(['ruff', 'check', file_path])
+        run_linter(['ruff', 'check', path_arg])
     elif cmd_exists('flake8'):
-        run_linter(['flake8', file_path])
+        run_linter(['flake8', path_arg])
 
 elif ext == '.go':
     if cmd_exists('go'):
@@ -93,7 +98,7 @@ elif ext == '.go':
 
 elif ext == '.rb':
     if cmd_exists('rubocop'):
-        run_linter(['rubocop', '--no-color', '--format', 'simple', file_path])
+        run_linter(['rubocop', '--no-color', '--format', 'simple', path_arg])
 PYLINT
 
 exit 0

@@ -61,16 +61,19 @@ export async function testOnSave(_ctx) {
 
           const localVitest = join(root, 'node_modules', '.bin', 'vitest');
           const localJest   = join(root, 'node_modules', '.bin', 'jest');
-          const relTest     = relative(root, testFile);
+          // The pattern is relative to root and can start with '-'; given as a
+          // separate argument, jest would read it as options (#121). vitest gets an
+          // absolute path: '--' would take it out of vitest's file filters.
+          const jestPattern = `--testPathPattern=${relative(root, testFile)}`;
 
           if (existsSync(localVitest)) {
             await runTests(localVitest, ['run', testFile], root);
           } else if (existsSync(localJest)) {
-            await runTests(localJest, ['--testPathPattern', relTest, '--passWithNoTests', '--no-coverage'], root);
+            await runTests(localJest, [jestPattern, '--passWithNoTests', '--no-coverage'], root);
           } else if (await which('vitest')) {
             await runTests('vitest', ['run', testFile], root);
           } else if (await which('jest')) {
-            await runTests('jest', ['--testPathPattern', relTest, '--passWithNoTests', '--no-coverage'], root);
+            await runTests('jest', [jestPattern, '--passWithNoTests', '--no-coverage'], root);
           }
 
         // ── Go ───────────────────────────────────────────────────────────────

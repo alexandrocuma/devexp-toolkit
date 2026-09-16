@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **On-save hooks: a path that looks like an option now reaches the tool as a
+  path (#121).** The format- and lint-on-save hooks, for both Claude Code and
+  opencode, passed the edited path to the tool as it was. A relative path that
+  starts with `-` was then read as options, and the tool failed or did the
+  wrong thing: `ruff`, `black`, `flake8`, `prettier`, `eslint`, `gofmt` and
+  `rubocop` all do this. A relative path that starts with `@` was read by `ruff`
+  as an argument file. Such paths are now `./`-prefixed, which every tool reads
+  as a path, even where `--` would not help: ruff expands `@file` after `--`,
+  and vitest drops file filters after `--`. Absolute paths, which both CLIs
+  send, reach the tools byte-for-byte as before. test-on-save now binds jest's
+  pattern with `=` (`--testPathPattern=<path>`), because a test file whose
+  relative path starts with `-` made jest 29 run the wrong tests. vitest,
+  pytest, rspec and `go vet`/`go test` already got an absolute or `./` path and
+  are unchanged. New `hooks/claude-code/on-save-path.test.sh` cases and
+  `hooks/opencode/on-save-path.test.js` pin the exact argv of every tool call,
+  for an absolute path and for a leading-dash relative path.
+
 ## [0.8.0] - 2026-09-16
 
 ### Added
