@@ -64,8 +64,15 @@ command -v graphify >/dev/null 2>&1 && echo "graphify CLI: installed" || echo "g
 # CLAUDE.md — existence, age, and whether it is an index or a knowledge dump
 ls CLAUDE.md 2>/dev/null && echo "CLAUDE.md: EXISTS" || echo "CLAUDE.md: MISSING"
 git log -1 --format="%ai" -- CLAUDE.md 2>/dev/null
-wc -l < CLAUDE.md 2>/dev/null                      # > 150 lines = content has leaked in
-grep -c '^```' CLAUDE.md 2>/dev/null               # code blocks = content has leaked in
+# devexp:preserve blocks hold content owned outside the repo — they never count as leakage
+STRIP='/^[[:space:]]*<!-- devexp:preserve /,/^[[:space:]]*<!-- \/devexp:preserve -->/'
+sed -E "${STRIP}d" CLAUDE.md 2>/dev/null | wc -l             # > 150 lines = content has leaked in
+sed -E "${STRIP}d" CLAUDE.md 2>/dev/null | grep -c '^```'    # code blocks = content has leaked in
+grep -nE '^[[:space:]]*<!-- devexp:preserve' CLAUDE.md 2>/dev/null   # preserve blocks present
+# devexp:inherit blocks in ancestor CLAUDE.md files (parent … $HOME) — matching ones belong in this CLAUDE.md
+d=$(dirname "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+while :; do grep -HnE '^[[:space:]]*<!-- devexp:inherit' "$d/CLAUDE.md" 2>/dev/null; { [ "$d" = "$HOME" ] || [ "$d" = "/" ]; } && break; d=$(dirname "$d"); done
+git remote get-url origin 2>/dev/null                # an inherit block's remote= regex is matched against this
 
 # Development kit — each doc, and its last touch
 for f in docs/README.md docs/development/setup.md docs/development/conventions.md docs/development/testing.md \
@@ -104,7 +111,7 @@ Then judge **staleness**, not just existence:
   ```bash
   git log --since="<doc last-touch date>" --oneline -- <the paths that doc describes> | head -5
   ```
-- **CLAUDE.md** — stale when any kit doc is created or moved in this run (its pointers change), when it links to a path that no longer exists, or when code changed materially since its last touch. It is **leaky** — routed to `update-indexer` even if otherwise current — when it is over 150 lines, contains code blocks, or has sections that restate a kit doc instead of pointing to it.
+- **CLAUDE.md** — stale when any kit doc is created or moved in this run (its pointers change), when it links to a path that no longer exists, or when code changed materially since its last touch. It is also stale when an ancestor directory's `CLAUDE.md` has a `devexp:inherit` block whose `remote` regex matches this repo's origin (or has no `remote`) and whose `id` has no `devexp:preserve` block here — `update-indexer` adds it. It is **leaky** — routed to `update-indexer` even if otherwise current — when it is over 150 lines, contains code blocks, or has sections that restate a kit doc instead of pointing to it, all measured outside `devexp:preserve` blocks (content owned outside the repo, which the indexers keep verbatim).
 - Deep drift (a `[NOT FOUND]` now answerable, a moved canonical example) is the specialists' job — route correctly, don't pre-diagnose.
 
 ### Phase 1 — Present a Plan, Get Confirmation
@@ -152,7 +159,7 @@ Delegate for real — each specialist step runs by reading the relevant agent de
    - Read `~/.claude/agents/update-indexer.md` and follow its instructions if CLAUDE.md is stale or leaky — leaked content is moved into the matching kit doc and replaced with a pointer
    - skip if current
 
-   Before accepting the result, check it is an index: ≤150 lines, no code blocks, every `docs/` pointer resolves (`ls` each one). Send it back to the indexer agent if not.
+   Before accepting the result, check it is an index: ≤150 lines, no code blocks, every `docs/` pointer resolves (`ls` each one) — all outside `devexp:preserve` blocks — and every preserve block that was there before is still there, unchanged. Send it back to the indexer agent if not.
 4. **`graphify`** (optional, never blocking — detect-and-offer only):
    - If `graphify-out/graph.json` exists: run `graphify query "What are the architecture, conventions, and known issues for this project?"` and fold the results into your Phase 3 report
    - If the CLI is installed but no graph exists: offer `/graphify` — don't run it unprompted
@@ -166,6 +173,7 @@ Report exactly what exists now, where, and what still needs a human — not a su
 ## Repo ready
 
 CLAUDE.md — <generated / refreshed / current> — <N> lines, index only
+  Preserve blocks: <kept <ids> · added from inherit <ids> · unresolved paths <id: path> / none>
   Start here → docs/architecture/overview.md → docs/development/setup.md → docs/guides/workflows.md
 
 Development kit

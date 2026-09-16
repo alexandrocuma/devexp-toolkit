@@ -1,6 +1,6 @@
 ---
 name: gen-indexer
-description: Generates a CLAUDE.md from scratch that is strictly an index — what the project is, always/never rules, gotchas, a short command table, and "I need to… → docs/…" pointers into the Development Kit. Never stores knowledge; anything without a doc is sent to gen-docs, not inlined. ≤150 lines, every pointer verified.
+description: Generates a CLAUDE.md from scratch that is strictly an index — what the project is, always/never rules, gotchas, a short command table, and "I need to… → docs/…" pointers into the Development Kit. Never stores knowledge; anything without a doc is sent to gen-docs, not inlined. ≤150 lines, every pointer verified. Carries `devexp:preserve` blocks over verbatim and adds matching `devexp:inherit` blocks from parent directories.
 tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
@@ -41,9 +41,9 @@ When a project needs a `CLAUDE.md` for the first time. Phrases: "generate a CLAU
 
 ## Hard Limits
 
-The file you write must pass all of these — check them before Phase 4 finishes:
+The file you write must pass all of these — check them before Phase 4 finishes. They apply to everything **outside** `devexp:preserve` blocks (see [Preserve and Inherit Blocks](#preserve-and-inherit-blocks)):
 
-1. **≤150 lines** total.
+1. **≤150 lines**, not counting preserve blocks.
 2. **No code blocks.** Commands go in a table, one line each. Code examples live in `conventions.md`.
 3. **No section longer than ~15 lines.** A long section is content that has leaked in.
 4. **Every `docs/` pointer resolves** — `ls` each path. A pointer to a doc that doesn't exist is written `[NOT FOUND — run /devxp to create <path>]`, never replaced by the content itself.
@@ -59,6 +59,66 @@ The file you write must pass all of these — check them before Phase 4 finishes
 
 ---
 
+## Preserve and Inherit Blocks
+
+Some `CLAUDE.md` content is owned **outside the repo** — for example a rulebook shared by a family of repos. It can't be verified against this repo's `docs/`, and moving it there would fork it from its owner. Two HTML-comment markers carry it. They are the **only** exception to the index rules.
+
+**Preserve block** — in the repo's `CLAUDE.md`. Everything from the opening marker line to the closing marker line is carried verbatim:
+
+```markdown
+<!-- devexp:preserve id="family-rulebook" -->
+## Rule 1 — Follow the family rulebook
+...any markdown...
+<!-- /devexp:preserve -->
+```
+
+**Inherit block** — in the `CLAUDE.md` of an **ancestor directory** of the repo root (its parent, grandparent, … up to and including `$HOME`; up to `/` for a repo outside `$HOME`). It is the template for a preserve block every matching repo below it should carry:
+
+```markdown
+<!-- devexp:inherit id="family-rulebook" remote="example.com[:/]acme/apps/" -->
+## Rule 1 — Follow the family rulebook
+Read `{{repo_to_parent}}/rulebook/README.md` before changing a family-wide convention.
+<!-- /devexp:inherit -->
+```
+
+Rules:
+
+- **Markers sit alone on their own line.** `id` is required and unique within a file. Blocks never nest. An unclosed, nested or `id`-less block is malformed: report it with its line number and don't write `CLAUDE.md` until the user fixes it — never guess where a block ends.
+- **Exempt from the index rules.** A preserve block is not a rule, gotcha, command or pointer, and it is never leaked knowledge: it is excluded from the Hard Limits (line count, code blocks, section length, citations) and from the evidence rules. Measure the limits on the file with its blocks stripped.
+- **`remote`** (optional) is an extended regex (`grep -E`) matched, unanchored, against `git remote get-url origin`. The inherit block applies when it matches, or when `remote` is absent. A repo with no `origin` only gets inherit blocks that have no `remote`.
+- **Same `id` in several ancestors** → the nearest ancestor wins.
+- **An existing preserve block wins** over an inherit block with the same `id`, even if their content differs — the inherit block is skipped, never merged.
+- **`{{repo_to_parent}}`** in inherit content is replaced on insertion by the relative path from the repo root to the directory holding that ancestor `CLAUDE.md`: `..` for the parent, `../..` for the grandparent. Nothing else is substituted. From then on the preserve block holds the literal path.
+- **Paths inside a block are reported, never fixed.** Repo-relative paths are checked; one that doesn't resolve goes in the report. URLs, absolute paths, `~` paths and paths starting with `../` (outside the repo) are not verified.
+
+```bash
+root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+echo "origin: $(git -C "$root" remote get-url origin 2>/dev/null || echo NONE)"
+# preserve blocks in this repo's CLAUDE.md (opening + closing marker lines)
+grep -nE '^[[:space:]]*<!-- /?devexp:preserve' "$root/CLAUDE.md" 2>/dev/null
+# inherit blocks in ancestor CLAUDE.md files, nearest first
+dir=$(dirname "$root"); rel=".."
+while :; do
+  [ -f "$dir/CLAUDE.md" ] && grep -nE '^[[:space:]]*<!-- /?devexp:inherit' "$dir/CLAUDE.md" \
+    | sed "s#^#$dir/CLAUDE.md repo_to_parent=$rel line #"
+  { [ "$dir" = "$HOME" ] || [ "$dir" = "/" ]; } && break
+  dir=$(dirname "$dir"); rel="$rel/.."
+done
+# does a block's remote match? (no remote attribute = always applies)
+git -C "$root" remote get-url origin 2>/dev/null | grep -Eq '<remote regex>' && echo MATCH || echo "NO MATCH"
+```
+
+```bash
+STRIP='/^[[:space:]]*<!-- devexp:preserve /,/^[[:space:]]*<!-- \/devexp:preserve -->/'
+sed -E "${STRIP}d" CLAUDE.md                      # the file the Hard Limits apply to
+# unresolved repo-relative paths inside preserve blocks — report only
+sed -nE "${STRIP}p" CLAUDE.md | grep -oE '\]\([^)]+\)|`[^` ]*/[^` ]*`' \
+  | sed -E 's/^\]\(//; s/\)$//; s/^`//; s/`$//; s/#.*$//' | grep -vE '^(https?:|mailto:|/|~|\.\./|$)' \
+  | while read -r p; do [ -e "$p" ] || echo "UNRESOLVED (report only): $p"; done
+```
+
+---
+
 ## Process
 
 ### Phase 0 — Orient
@@ -70,7 +130,8 @@ ls -la
 ls ~/.claude/agent-memory/codebase-navigator/ 2>/dev/null
 ```
 
-- **If `CLAUDE.md` exists**: stop and tell the user — "A CLAUDE.md exists. Refresh it in place with update-indexer (recommended), or overwrite it?" Only overwrite on an explicit answer.
+- **If `CLAUDE.md` exists**: stop and tell the user — "A CLAUDE.md exists. Refresh it in place with update-indexer (recommended), or overwrite it?" Only overwrite on an explicit answer. **Before overwriting**, save a copy (`cp CLAUDE.md "${TMPDIR:-/tmp}/CLAUDE.md.before-gen-indexer"`) and record every preserve block in it: its `id`, its full text, and what it follows (the title block, or the section heading right above it).
+- **Find preserve and inherit blocks** with the commands in [Preserve and Inherit Blocks](#preserve-and-inherit-blocks). Stop on malformed markers.
 - Read the root `README.md` and, if present and recent, the `codebase-navigator` atlas (Stack, Layer Map, Canonical Example).
 - If `graphify-out/graph.json` exists, run `graphify query "What are the architecture, conventions, gotchas, and ADRs for this project?"` to speed up Phase 2.
 
@@ -117,6 +178,12 @@ plus README/docs "note"/"warning" callouts, generated-code headers, and ordering
 
 **Commands** — the ≤6 most-used (install, run, test, lint, build, one more if central), taken from `docs/development/setup.md` when it exists, else from manifests/task files. Verify each name exists.
 
+**Carried blocks** — gathered as-is, never rewritten, summarised or cited:
+- every preserve block from the `CLAUDE.md` being overwritten, verbatim, keeping its relative position;
+- every inherit block from an ancestor `CLAUDE.md` whose `remote` matches (or is absent) and whose `id` isn't already carried — its content (the lines between the inherit markers) with `{{repo_to_parent}}` replaced, wrapped as `<!-- devexp:preserve id="<same id>" -->` … `<!-- /devexp:preserve -->`.
+
+One block per `id`. If the old file has two preserve blocks with the same `id`, show both in Phase 3 and ask which to keep — never merge them.
+
 ### Phase 3 — Pre-write Review
 
 **Do not write yet.** Present:
@@ -137,7 +204,13 @@ Pointers:
   OK         docs/guides/workflows.md (draft — 2 open markers)
   NOT FOUND  docs/development/testing.md → will point as [NOT FOUND — run /devxp]
 
-Estimated length: <N> lines (limit 150)
+Preserve blocks (verbatim, exempt from the limits):
+  kept       <id> — from the existing CLAUDE.md, after <title block / section>
+  inherited  <id> — from <ancestor>/CLAUDE.md (remote matched / no remote), {{repo_to_parent}} → <..>
+  skipped    <id> — <ancestor>/CLAUDE.md: remote "<regex>" doesn't match <origin> / preserve block already exists
+  unresolved paths (report only): <id: path / none>
+
+Estimated length: <N> lines outside preserve blocks (limit 150)
 
 Proceed? (yes / correct anything above)
 ```
@@ -148,10 +221,14 @@ Wait for explicit confirmation. If corrected, update and re-confirm.
 
 Write to the project root using this template. Omit the optional Layer Map if `docs/architecture/overview.md` exists and the map would exceed 8 rows.
 
+**Placing preserve blocks.** A carried block goes back in the same relative position: one that sat near the top (after the title, the index note or top rules such as a `Rule 0` section) goes right after the title block; one that followed a section goes after the matching section of the new file, or after the title block if that section no longer exists. Inherited blocks go right after the title block, after any carried ones there. Multiple blocks keep their original order. Nothing is ever written between a block's markers.
+
 ```markdown
 # <Project Name>
 
 > Index generated by devexp `gen-indexer` on <YYYY-MM-DD>. This file only points to knowledge — it lives in `docs/`. Edit the docs, not this file; run `/devxp` to refresh.
+
+<devexp:preserve blocks — carried over and inherited, verbatim with their markers>
 
 <1–3 sentences: what this project does and for whom.>
 
@@ -206,15 +283,18 @@ Full list and env vars: [setup](docs/development/setup.md)
 
 Rows for folders that don't exist (e.g. no `docs/api/` in a CLI tool) are dropped, not marked — only kit docs get `[NOT FOUND]` pointers. Add rows for significant non-kit docs the folder indexes list (e.g. a business-logic guide central to the domain).
 
-**Then enforce the Hard Limits:**
+**Then enforce the Hard Limits** — on the file with preserve blocks stripped — and prove every carried block is byte-identical:
 
 ```bash
-wc -l < CLAUDE.md                                   # ≤ 150
-grep -c '^```' CLAUDE.md                            # 0
-grep -oE '\(docs/[^)]+\)' CLAUDE.md | tr -d '()' | while read p; do [ -e "$p" ] || echo "BROKEN: $p"; done
+STRIP='/^[[:space:]]*<!-- devexp:preserve /,/^[[:space:]]*<!-- \/devexp:preserve -->/'
+sed -E "${STRIP}d" CLAUDE.md | wc -l                # ≤ 150
+sed -E "${STRIP}d" CLAUDE.md | grep -c '^```'       # 0
+sed -E "${STRIP}d" CLAUDE.md | grep -oE '\(docs/[^)]+\)' | tr -d '()' | while read p; do [ -e "$p" ] || echo "BROKEN: $p"; done
+block() { sed -nE "/^[[:space:]]*<!-- devexp:preserve id=\"$2\"/,/^[[:space:]]*<!-- \/devexp:preserve -->/p" "$1"; }
+diff <(block "${TMPDIR:-/tmp}/CLAUDE.md.before-gen-indexer" <id>) <(block CLAUDE.md <id>)   # per carried id: no output
 ```
 
-Any failure → fix before reporting: move excess content to the kit doc it belongs in (hand to `gen-docs`/`update-docs` if that means writing docs), repair or mark broken pointers.
+Any failure → fix before reporting (a carried block that differs is restored from the saved copy, never edited): move excess content to the kit doc it belongs in (hand to `gen-docs`/`update-docs` if that means writing docs), repair or mark broken pointers.
 
 ### Phase 5 — Report
 
@@ -224,6 +304,7 @@ If `graphify-out/graph.json` exists, run `/graphify --update`; otherwise skip si
 CLAUDE.md written: <path> — <N> lines, 0 code blocks, <N> pointers (all resolve / <N> [NOT FOUND])
 
 Rules: <N> · Gotchas: <N> · Commands: <N>
+Preserve blocks: kept <N> — <ids> · added from inherit <N> — <id ← ancestor CLAUDE.md> · skipped <N> — <id: reason> · unresolved paths <N> — <id: path> (not fixed)
 Needs review:
   [verify]: <items>
   [INCONSISTENT]: <items>
@@ -239,3 +320,4 @@ Needs review:
 - **Rules and gotchas are the only prose** — and each is one or two lines with a citation
 - **Do not hallucinate** — a short, honest index with `[verify]` markers beats a confident, wrong one
 - **Verify every pointer** — a link that 404s teaches agents to stop following links
+- **A preserve block is not yours** — its owner is outside the repo; carry it byte-identical, never cite-check, trim or move it, and report its broken paths instead of fixing them

@@ -201,6 +201,7 @@ After syncing docs:
 ## Rules
 
 - **Never rewrite accurate content.** If a doc surface correctly describes the current state, leave it alone.
+- **Never edit inside a `devexp:preserve` block** (`<!-- devexp:preserve id="…" -->` … `<!-- /devexp:preserve -->`) in `CLAUDE.md` — its content is owned outside the repo. Report a stale line in it instead.
 - **Match the existing style.** Table formatting, casing, backtick usage — copy the surrounding rows exactly.
 - **Descriptions come from the source.** Copy the first sentence of an agent's description frontmatter. Copy a hook's description from `registry.json`. Don't invent your own.
 - **One pass per surface.** Read each doc surface once, apply all changes to it, then move on. Don't re-read repeatedly.
