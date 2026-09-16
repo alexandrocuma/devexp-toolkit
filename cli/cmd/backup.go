@@ -71,8 +71,9 @@ func loadOldManifest(path string) *manifest.Manifest {
 type staleShape int
 
 const (
-	staleFile staleShape = iota // <name>.md, a regular file: agents, opencode commands
-	staleDir                    // <name>, a real directory: Claude Code skills
+	staleFile    staleShape = iota // <name>.md, a regular file: agents
+	staleDir                       // <name>, a real directory: Claude Code skills
+	staleCommand                   // <name>, recorded without .md, a regular <name>.md file: opencode commands
 )
 
 // isInstalledName reports whether name has the shape of an entry devexp
@@ -85,8 +86,11 @@ func isInstalledName(name string, shape staleShape) bool {
 	if name == "" || name == "." || strings.Contains(name, "..") || strings.ContainsAny(name, `/\`) {
 		return false
 	}
-	if shape == staleFile {
+	switch shape {
+	case staleFile:
 		return strings.HasSuffix(name, ".md") && name != ".md"
+	case staleCommand:
+		return isInstalledName(name+".md", staleFile)
 	}
 	return true
 }
@@ -95,16 +99,22 @@ func isInstalledName(name string, shape staleShape) bool {
 // ui. In dry-run mode it only reports what would be removed.
 //
 // An entry is removed only when it is a name devexp installs (isInstalledName)
-// and what is on disk has that shape: a regular file for staleFile, a real
-// directory for staleDir. Anything else is kept with a warning. A symlink is
-// never removed: it is the user's own setup, as for opencode plugin files.
+// and what is on disk has that shape: a regular file for staleFile and
+// staleCommand (<name>.md), a real directory for staleDir. Anything else is
+// kept with a warning, which names a rejected entry exactly as the manifest
+// records it. A symlink is never removed: it is the user's own setup, as for
+// opencode plugin files.
 func removeStale(dir string, stale []string, shape staleShape, removeFn func(path string) error, dryRun bool) {
 	for _, name := range stale {
 		if !isInstalledName(name, shape) {
 			ui.Warn(fmt.Sprintf("%q left untouched: listed in the manifest but not a name devexp installs in %s", name, dir))
 			continue
 		}
-		path := filepath.Join(dir, name)
+		file := name
+		if shape == staleCommand {
+			file += ".md"
+		}
+		path := filepath.Join(dir, file)
 		if fi, err := os.Lstat(path); err == nil && !hasStaleShape(fi, shape) {
 			ui.Warn(fmt.Sprintf("%s left untouched: no longer in this release, but %s", path, describeMode(fi)))
 			continue
@@ -117,7 +127,7 @@ func removeStale(dir string, stale []string, shape staleShape, removeFn func(pat
 			ui.Warn(fmt.Sprintf("remove %s: %v", path, err))
 			continue
 		}
-		ui.Removed(name)
+		ui.Removed(file)
 	}
 }
 

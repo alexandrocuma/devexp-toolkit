@@ -516,23 +516,29 @@ func TestIsInstalledName(t *testing.T) {
 		shape staleShape
 		want  bool
 	}{
-		"an agent file":                           {name: "dev-agent.md", shape: staleFile, want: true},
-		"a skill directory":                       {name: "graphify", shape: staleDir, want: true},
-		"a file without .md":                      {name: "dev-agent", shape: staleFile},
-		"a bare .md":                              {name: ".md", shape: staleFile},
-		"an empty file name":                      {name: "", shape: staleFile},
-		"an empty directory name":                 {name: "", shape: staleDir},
-		"the target directory itself":             {name: ".", shape: staleDir},
-		"the parent directory":                    {name: "..", shape: staleDir},
-		"a parent-relative file":                  {name: "../precious.md", shape: staleFile},
-		"a parent-relative directory":             {name: "../precious", shape: staleDir},
-		"a dot-dot hidden in a file name":         {name: "..md", shape: staleFile},
-		"a nested file":                           {name: "sub/agent.md", shape: staleFile},
-		"a path that cleans back into the target": {name: "sub/../agent.md", shape: staleFile},
-		"a trailing separator":                    {name: "graphify/", shape: staleDir},
-		"an absolute file path":                   {name: "/etc/agent.md", shape: staleFile},
-		"an absolute directory path":              {name: "/etc", shape: staleDir},
-		"a backslash separator":                   {name: `..\agent.md`, shape: staleFile},
+		"an agent file":                             {name: "dev-agent.md", shape: staleFile, want: true},
+		"a skill directory":                         {name: "graphify", shape: staleDir, want: true},
+		"a file without .md":                        {name: "dev-agent", shape: staleFile},
+		"a bare .md":                                {name: ".md", shape: staleFile},
+		"an empty file name":                        {name: "", shape: staleFile},
+		"an empty directory name":                   {name: "", shape: staleDir},
+		"the target directory itself":               {name: ".", shape: staleDir},
+		"the parent directory":                      {name: "..", shape: staleDir},
+		"a parent-relative file":                    {name: "../precious.md", shape: staleFile},
+		"a parent-relative directory":               {name: "../precious", shape: staleDir},
+		"a dot-dot hidden in a file name":           {name: "..md", shape: staleFile},
+		"a nested file":                             {name: "sub/agent.md", shape: staleFile},
+		"a path that cleans back into the target":   {name: "sub/../agent.md", shape: staleFile},
+		"a trailing separator":                      {name: "graphify/", shape: staleDir},
+		"an absolute file path":                     {name: "/etc/agent.md", shape: staleFile},
+		"an absolute directory path":                {name: "/etc", shape: staleDir},
+		"an opencode command, recorded without .md": {name: "deliver", shape: staleCommand, want: true},
+		"an opencode command recorded with .md":     {name: "deliver.md", shape: staleCommand, want: true},
+		"an empty opencode command":                 {name: "", shape: staleCommand},
+		"a parent-relative opencode command":        {name: "../precious", shape: staleCommand},
+		"an opencode command that gains a dot-dot":  {name: "x.", shape: staleCommand},
+		"an absolute opencode command":              {name: "/etc/precious", shape: staleCommand},
+		"a backslash separator":                     {name: `..\agent.md`, shape: staleFile},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -560,6 +566,9 @@ func TestRemoveStale_TamperedEntries(t *testing.T) {
 		"skill directories": {shape: staleDir, removeFn: os.RemoveAll, entries: func(l layout) []string {
 			return []string{"", ".", "..", "../precious", filepath.Join(l.root, "precious"), "mine/"}
 		}},
+		"opencode commands": {shape: staleCommand, removeFn: os.Remove, entries: func(l layout) []string {
+			return []string{"", ".", "../precious", filepath.Join(l.root, "precious"), "sub/../mine", "x."}
+		}},
 	}
 	for name, tt := range tests {
 		for _, dryRun := range []bool{false, true} {
@@ -584,7 +593,7 @@ func TestRemoveStale_TamperedEntries(t *testing.T) {
 					t.Errorf("tree changed:\n got %v\nwant %v\n%s", after, before, out)
 				}
 				for _, e := range entries {
-					if !strings.Contains(out, fmt.Sprintf("%q left untouched: listed in the manifest", e)) {
+					if !strings.Contains(out, fmt.Sprintf("%q left untouched: listed in the manifest but not a name devexp installs in %s\n", e, l.target)) {
 						t.Errorf("no warning naming %q:\n%s", e, out)
 					}
 				}
@@ -618,6 +627,10 @@ func TestRemoveStale_EntryShape(t *testing.T) {
 			os.MkdirAll(filepath.Join(target, "empty.md"), 0o755) //nolint:errcheck
 			return "empty.md"
 		}},
+		"a symlinked opencode command": {shape: staleCommand, removeFn: os.Remove, wantWarn: "a symlink", setup: func(t *testing.T, root, target string) string {
+			mustSymlink(t, filepath.Join(root, "outside.md"), filepath.Join(target, "linked.md"))
+			return "linked"
+		}},
 		"a file where a skill directory was": {shape: staleDir, removeFn: os.RemoveAll, wantWarn: "a file", setup: func(t *testing.T, root, target string) string {
 			os.WriteFile(filepath.Join(target, "loose"), []byte("keep\n"), 0o644) //nolint:errcheck
 			return "loose"
@@ -632,17 +645,29 @@ func TestRemoveStale_EntryShape(t *testing.T) {
 			os.WriteFile(filepath.Join(root, "outside.md"), []byte("keep\n"), 0o644)          //nolint:errcheck
 			os.MkdirAll(target, 0o755)                                                        //nolint:errcheck
 			kept := tt.setup(t, root, target)
+			// onDisk is the path an entry names: opencode commands are
+			// recorded without the .md their file has.
+			onDisk := func(entry string) string {
+				if tt.shape == staleCommand {
+					entry += ".md"
+				}
+				return filepath.Join(target, entry)
+			}
 			valid := "old.md"
-			if tt.shape == staleDir {
+			switch tt.shape {
+			case staleDir:
 				valid = "old-skill"
-				os.MkdirAll(filepath.Join(target, valid), 0o755) //nolint:errcheck
-			} else {
-				os.WriteFile(filepath.Join(target, valid), []byte("old\n"), 0o644) //nolint:errcheck
+				os.MkdirAll(onDisk(valid), 0o755) //nolint:errcheck
+			case staleCommand:
+				valid = "old-cmd"
+				os.WriteFile(onDisk(valid), []byte("old\n"), 0o644) //nolint:errcheck
+			default:
+				os.WriteFile(onDisk(valid), []byte("old\n"), 0o644) //nolint:errcheck
 			}
 
 			out := captureStdout(t, func() { removeStale(target, []string{kept, valid}, tt.shape, tt.removeFn, false) })
 
-			if _, err := os.Lstat(filepath.Join(target, kept)); err != nil {
+			if _, err := os.Lstat(onDisk(kept)); err != nil {
 				t.Errorf("%s removed, want kept: %v\n%s", kept, err, out)
 			}
 			for _, p := range []string{filepath.Join(root, "outside.md"), filepath.Join(root, "outside", "SKILL.md")} {
@@ -650,10 +675,10 @@ func TestRemoveStale_EntryShape(t *testing.T) {
 					t.Errorf("%s = %q, want untouched", p, got)
 				}
 			}
-			if !strings.Contains(out, filepath.Join(target, kept)+" left untouched") || !strings.Contains(out, tt.wantWarn) {
+			if !strings.Contains(out, onDisk(kept)+" left untouched") || !strings.Contains(out, tt.wantWarn) {
 				t.Errorf("no warning naming %s as %s:\n%s", kept, tt.wantWarn, out)
 			}
-			if _, err := os.Lstat(filepath.Join(target, valid)); !os.IsNotExist(err) {
+			if _, err := os.Lstat(onDisk(valid)); !os.IsNotExist(err) {
 				t.Errorf("valid stale entry %s not removed, stat err = %v", valid, err)
 			}
 		})
@@ -703,7 +728,7 @@ func TestDoInstall_TamperedAgentSkillManifest(t *testing.T) {
 				return layout{manifest: p.manifest, base: filepath.Dir(p.manifest), agents: p.agents, skills: p.skills,
 					validAgent: "old.md", validSkill: "old-cmd", validSkillPath: filepath.Join(p.skills, "old-cmd.md")}
 			},
-			// The installer appends .md to each command entry.
+			// Command entries are recorded without .md; the file has it.
 			skills: func(l layout, home string) []string {
 				return []string{"", relPath(t, l.skills, filepath.Join(home, "precious")), filepath.Join(home, "precious"), "sub/../mine"}
 			},
@@ -755,6 +780,15 @@ func TestDoInstall_TamperedAgentSkillManifest(t *testing.T) {
 			}
 			if want, n := len(badAgents)+len(badSkills), strings.Count(out, "left untouched: listed in the manifest"); n != want {
 				t.Errorf("warned about %d manifest entries, want %d:\n%s", n, want, out)
+			}
+			// Each warning names the entry exactly as the manifest records it.
+			for dir, entries := range map[string][]string{l.agents: badAgents, l.skills: badSkills} {
+				for _, e := range entries {
+					want := fmt.Sprintf("[devexp]\x1b[0m %q left untouched: listed in the manifest but not a name devexp installs in %s\n", e, dir)
+					if !strings.Contains(out, want) {
+						t.Errorf("no warning line %q:\n%s", want, out)
+					}
+				}
 			}
 		})
 	}

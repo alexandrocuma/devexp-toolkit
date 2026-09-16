@@ -87,12 +87,7 @@ func doInstallOpencode(opts *installOpts) error {
 		fmt.Println()
 
 		newManifest.Skills = installedSkills
-		staleSkills := manifest.Stale(old.Skills, installedSkills)
-		staleSkillFiles := make([]string, len(staleSkills))
-		for i, s := range staleSkills {
-			staleSkillFiles[i] = s + ".md"
-		}
-		removeStale(skillsTarget, staleSkillFiles, staleFile, os.Remove, opts.dryRun)
+		removeStale(skillsTarget, manifest.Stale(old.Skills, installedSkills), staleCommand, os.Remove, opts.dryRun)
 	}
 
 	if !opts.agentsOnly && !opts.skillsOnly {

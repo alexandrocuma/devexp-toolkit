@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removed recursively: an entry of `""`, `.` or `..` removed the whole
   `~/.claude/skills` or `~/.claude` directory.
   - An entry is removed only when it is a bare name devexp installs: no `/` or
-    `\`, no `..`, not empty or `.`, and ending in `.md` for agent and opencode
-    command files. Any other entry is kept and a warning names it. This covers
+    `\`, no `..`, not empty or `.`, and ending in `.md` for agent files (opencode
+    commands are recorded as `<name>` for a `<name>.md` file). Any other entry is
+    kept and a warning names it exactly as the manifest records it. This covers
     both Claude Code and opencode, in real runs and `--dry-run`.
   - A valid entry is removed only when it is still what devexp installs: a
     regular file for agents and commands, a real directory for Claude Code
