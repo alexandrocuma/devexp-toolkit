@@ -852,11 +852,11 @@ func TestDoInstall_CaseVariantManifest(t *testing.T) {
 		paths   func(home string) (manifest string, installed []string)
 	}{
 		"claude": {doInstallClaude, func(home string) (string, []string) {
-			p := claudeTargetPaths(home, time.Now())
+			p := testClaudePaths(t, home)
 			return p.manifest, []string{filepath.Join(p.agents, "dev-agent.md"), filepath.Join(p.skills, "graphify", "SKILL.md")}
 		}},
 		"opencode": {doInstallOpencode, func(home string) (string, []string) {
-			p := opencodeTargetPaths(home)
+			p := testOpencodePaths(t, home)
 			return p.manifest, []string{filepath.Join(p.agents, "dev-agent.md"), filepath.Join(p.skills, "graphify.md")}
 		}},
 	}
@@ -924,7 +924,7 @@ func TestDoInstall_TamperedAgentSkillManifest(t *testing.T) {
 		"claude": {
 			install: doInstallClaude,
 			layout: func(home string) layout {
-				p := claudeTargetPaths(home, time.Now())
+				p := testClaudePaths(t, home)
 				return layout{manifest: p.manifest, base: filepath.Dir(p.manifest), agents: p.agents, skills: p.skills,
 					validAgent: "old.md", validSkill: "old-skill", validSkillPath: filepath.Join(p.skills, "old-skill", "SKILL.md")}
 			},
@@ -936,7 +936,7 @@ func TestDoInstall_TamperedAgentSkillManifest(t *testing.T) {
 		"opencode": {
 			install: doInstallOpencode,
 			layout: func(home string) layout {
-				p := opencodeTargetPaths(home)
+				p := testOpencodePaths(t, home)
 				return layout{manifest: p.manifest, base: filepath.Dir(p.manifest), agents: p.agents, skills: p.skills,
 					validAgent: "old.md", validSkill: "old-cmd", validSkillPath: filepath.Join(p.skills, "old-cmd.md")}
 			},
