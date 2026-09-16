@@ -9,8 +9,9 @@ import (
 
 func TestLoad(t *testing.T) {
 	tests := map[string]struct {
-		setup func(t *testing.T, dir string) string // returns manifest path
-		want  *Manifest
+		setup   func(t *testing.T, dir string) string // returns manifest path
+		want    *Manifest
+		wantErr bool
 	}{
 		"missing file returns empty manifest": {
 			setup: func(t *testing.T, dir string) string {
@@ -51,7 +52,7 @@ func TestLoad(t *testing.T) {
 			},
 			want: &Manifest{Plugins: []string{"devexp.js", "devexp/hooks.json"}},
 		},
-		"malformed JSON returns empty manifest": {
+		"malformed JSON returns an empty manifest and the error": {
 			setup: func(t *testing.T, dir string) string {
 				path := filepath.Join(dir, "bad.json")
 				if err := os.WriteFile(path, []byte("not json"), 0644); err != nil {
@@ -59,7 +60,33 @@ func TestLoad(t *testing.T) {
 				}
 				return path
 			},
-			want: &Manifest{},
+			want:    &Manifest{},
+			wantErr: true,
+		},
+		// A type mismatch still fills the fields decoded before and after it;
+		// none of that partial data may be trusted.
+		"type mismatch discards partially decoded fields": {
+			setup: func(t *testing.T, dir string) string {
+				path := filepath.Join(dir, "partial.json")
+				data := `{"agents":["mine.md"],"skills":{"x":1},"plugins":["devexp/old.js"]}`
+				if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+					t.Fatalf("WriteFile: %v", err)
+				}
+				return path
+			},
+			want:    &Manifest{},
+			wantErr: true,
+		},
+		"unreadable path returns an empty manifest and the error": {
+			setup: func(t *testing.T, dir string) string {
+				path := filepath.Join(dir, "manifest.json")
+				if err := os.Mkdir(path, 0755); err != nil {
+					t.Fatalf("Mkdir: %v", err)
+				}
+				return path
+			},
+			want:    &Manifest{},
+			wantErr: true,
 		},
 	}
 
@@ -69,10 +96,11 @@ func TestLoad(t *testing.T) {
 			path := tt.setup(t, dir)
 
 			got, err := Load(path)
-			if err != nil {
-				t.Fatalf("Load() error = %v", err)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Load() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if !reflect.DeepEqual(got, tt.want) {
+			// Callers dereference the result even on error.
+			if got == nil || !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Load() = %+v, want %+v", got, tt.want)
 			}
 		})

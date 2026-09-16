@@ -39,7 +39,7 @@ func doInstallOpencode(opts *installOpts) error {
 	}
 
 	manifestPath := p.manifest
-	old, _ := manifest.Load(manifestPath)
+	old := loadOldManifest(manifestPath)
 	newManifest := &manifest.Manifest{Agents: old.Agents, Skills: old.Skills, Plugins: old.Plugins}
 
 	if !opts.skillsOnly {
@@ -126,7 +126,9 @@ func doInstallOpencode(opts *installOpts) error {
 	ui.Success("opencode installation complete.")
 	fmt.Printf("  Agents : %s\n", agentsTarget)
 	fmt.Printf("  Skills : %s\n", skillsTarget)
-	fmt.Printf("  Hooks  : %s\n", p.plugins)
+	if !opts.agentsOnly && !opts.skillsOnly {
+		fmt.Printf("  Hooks  : %s\n", p.plugins)
+	}
 	fmt.Println()
 	ui.Info("Restart opencode to activate.")
 	fmt.Println()

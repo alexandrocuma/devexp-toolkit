@@ -1189,3 +1189,122 @@ func TestDoInstallOpencode_TamperedManifest(t *testing.T) {
 		t.Errorf("warned about %d manifest paths, want 3:\n%s", n, out)
 	}
 }
+
+// TestDoInstall_PartialRunsPrintNoHooks: --agents-only and --skills-only
+// don't install hooks, so neither target may print anything about hooks.
+func TestDoInstall_PartialRunsPrintNoHooks(t *testing.T) {
+	repoDir := writeOpencodeHookRepo(t)
+	targets := map[string]func(*installOpts) error{"claude": doInstallClaude, "opencode": doInstallOpencode}
+	scopes := map[string]installOpts{
+		"agents-only": {agentsOnly: true},
+		"skills-only": {skillsOnly: true},
+	}
+	for tname, install := range targets {
+		for sname, scope := range scopes {
+			t.Run(tname+" "+sname, func(t *testing.T) {
+				home := t.TempDir()
+				t.Setenv("HOME", home)
+				fakeCLI(t)
+				opts := scope
+				opts.repoDir, opts.cfg, opts.env = repoDir, &config.Config{}, map[string]string{}
+				var err error
+				out := captureStdout(t, func() { err = install(&opts) })
+				if err != nil {
+					t.Fatalf("install error = %v\n%s", err, out)
+				}
+				// Temp paths carry this test's name, which contains "Hooks".
+				plain := strings.NewReplacer(home, "<home>", repoDir, "<repo>").Replace(out)
+				if strings.Contains(strings.ToLower(plain), "hook") {
+					t.Errorf("%s run printed hook output:\n%s", sname, plain)
+				}
+			})
+		}
+	}
+}
+
+// TestDoInstall_UnreadableManifest: a manifest that can't be read or parsed
+// must not panic, must be reported, must not make anything stale, and the
+// install must finish and rewrite the manifest when it can.
+func TestDoInstall_UnreadableManifest(t *testing.T) {
+	repoDir := writeOpencodeHookRepo(t)
+	// Lists files that exist on disk and that this repo doesn't ship: a
+	// trusted manifest would mark them stale. skills is a type mismatch, so
+	// json still fills agents and plugins before reporting the error.
+	const partial = `{"agents":["mine.md"],"skills":{"x":1},"plugins":["devexp/old.js"]}`
+	type layout struct{ manifest, agents, plugins string }
+	targets := map[string]struct {
+		install func(*installOpts) error
+		paths   func(home string) layout
+	}{
+		"claude": {doInstallClaude, func(home string) layout {
+			p := claudeTargetPaths(home, time.Now())
+			return layout{p.manifest, p.agents, ""}
+		}},
+		"opencode": {doInstallOpencode, func(home string) layout {
+			p := opencodeTargetPaths(home)
+			return layout{p.manifest, p.agents, p.plugins}
+		}},
+	}
+	corruptions := map[string]struct {
+		write       func(t *testing.T, path string)
+		wantRewrite bool
+	}{
+		"a directory at the manifest path": {write: func(t *testing.T, path string) {
+			if err := os.MkdirAll(path, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		"invalid JSON": {wantRewrite: true, write: func(t *testing.T, path string) {
+			os.WriteFile(path, []byte("{not json"), 0o644) //nolint:errcheck
+		}},
+		"partially decodable JSON": {wantRewrite: true, write: func(t *testing.T, path string) {
+			os.WriteFile(path, []byte(partial), 0o644) //nolint:errcheck
+		}},
+	}
+	for tname, target := range targets {
+		for cname, c := range corruptions {
+			t.Run(tname+" "+cname, func(t *testing.T) {
+				home := t.TempDir()
+				t.Setenv("HOME", home)
+				fakeCLI(t)
+				l := target.paths(home)
+				precious := []string{filepath.Join(l.agents, "mine.md")}
+				if l.plugins != "" {
+					precious = append(precious, filepath.Join(l.plugins, "devexp", "old.js"))
+				}
+				for _, p := range precious {
+					os.MkdirAll(filepath.Dir(p), 0o755)      //nolint:errcheck
+					os.WriteFile(p, []byte("keep\n"), 0o644) //nolint:errcheck
+				}
+				os.MkdirAll(filepath.Dir(l.manifest), 0o755) //nolint:errcheck
+				c.write(t, l.manifest)
+
+				var err error
+				out := captureStdout(t, func() {
+					err = target.install(&installOpts{repoDir: repoDir, cfg: &config.Config{}, env: map[string]string{}})
+				})
+				if err != nil {
+					t.Fatalf("install error = %v\n%s", err, out)
+				}
+				if !strings.Contains(out, "manifest "+l.manifest+" is unreadable") {
+					t.Errorf("no warning naming the manifest:\n%s", out)
+				}
+				for _, p := range precious {
+					if got, _ := os.ReadFile(p); string(got) != "keep\n" {
+						t.Errorf("%s removed or changed on a run with an unreadable manifest", p)
+					}
+				}
+				if !strings.Contains(out, "installation complete") {
+					t.Errorf("install did not complete:\n%s", out)
+				}
+				if c.wantRewrite {
+					data, _ := os.ReadFile(l.manifest)
+					var m map[string]any
+					if json.Unmarshal(data, &m) != nil {
+						t.Errorf("manifest not rewritten as valid JSON: %q", data)
+					}
+				}
+			})
+		}
+	}
+}

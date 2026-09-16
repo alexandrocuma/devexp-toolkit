@@ -65,7 +65,8 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
                        → cli/internal/mcp/claude.go InstallClaude → AddClaude:
                          skip if `claude mcp list` output contains the name; else `claude mcp add --scope user …`
                          (missing required_env → ui.Required + setup_instructions, not an error)
-          2. manifest  cli/internal/manifest Load(~/.claude/.devexp-manifest.json)
+          2. manifest  cli/cmd/backup.go loadOldManifest → cli/internal/manifest Load(~/.claude/.devexp-manifest.json)
+                       (unreadable/corrupt → warn, treat as empty, so nothing is stale this run)
           3. agents    cli/cmd/backup.go backupExisting(*.md → ~/.claude/.devexp-backup-<YYYYMMDDTHHMMSS>)
                        → cli/internal/agents/installer.go InstallClaude (copy; --model rewrites an existing model: line)
                        → removeStale(manifest.Stale(old, new), os.Remove)

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"devexp/internal/manifest"
 	"devexp/internal/skills"
 	"devexp/internal/ui"
 )
@@ -51,6 +52,18 @@ func backupExistingDirs(dir, backupDir string, dryRun bool) {
 		}
 		skills.CopyDir(srcDir, filepath.Join(backupDir, name)) //nolint:errcheck
 	}
+}
+
+// loadOldManifest reads the previous run's manifest. An unreadable or corrupt
+// manifest is reported and treated as empty: the install carries on, nothing
+// counts as stale on this run (an empty old list marks nothing for removal),
+// and the manifest is rewritten at the end as usual.
+func loadOldManifest(path string) *manifest.Manifest {
+	old, err := manifest.Load(path)
+	if err != nil {
+		ui.Warn(fmt.Sprintf("manifest %s is unreadable, so no stale files are removed this run: %v", path, err))
+	}
+	return old
 }
 
 // removeStale removes each entry in stale from dir via removeFn (file or

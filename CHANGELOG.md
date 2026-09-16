@@ -77,6 +77,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Clone users:** run `rm bin/devexp && ./install.sh`. `install.sh` never
     rebuilds an existing binary.
 
+- **An unreadable install manifest crashed `devexp install`.** When
+  `.devexp-manifest.json` couldn't be read (for example a directory at that
+  path), `manifest.Load` returned no manifest and both install targets panicked.
+  It now returns an empty manifest with the error. The install warns, removes
+  nothing as stale on that run, and rewrites the manifest at the end. A
+  malformed manifest gets the same warning; before, it was silently treated as
+  empty. Partly decoded data is discarded, so it can never mark files stale.
+  `--agents-only`/`--skills-only` runs no longer print the opencode `Hooks :`
+  line.
+
 - **opencode plugin: data-driven entry, explicit registry mapping, parity fixes
   (#107).** Groundwork for installing the plugin (#108); no user-visible change
   until then.

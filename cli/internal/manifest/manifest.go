@@ -5,6 +5,7 @@ package manifest
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -23,22 +24,28 @@ type Manifest struct {
 	Plugins []string `json:"plugins,omitempty"`
 }
 
-// Load reads a manifest from path. A missing file is not an error — it
-// returns an empty Manifest, which is the expected state on a first install
-// or when upgrading from a devexp version that predates manifests. A
-// malformed file is tolerated the same way, so a corrupt cache file never
-// blocks install.
+// Load reads a manifest from path. It always returns a non-nil Manifest.
+//
+// A missing file is not an error: it returns an empty Manifest, the expected
+// state on a first install or when upgrading from a devexp version that
+// predates manifests.
+//
+// A file that exists but can't be read or parsed returns an empty Manifest
+// together with the error, so the caller can warn and still install. The
+// manifest is empty rather than whatever decoded before the error (a type
+// mismatch leaves earlier fields filled in): an untrustworthy manifest must
+// never mark files as stale, and an empty one marks none.
 func Load(path string) (*Manifest, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return &Manifest{}, nil
 	}
 	if err != nil {
-		return nil, err
+		return &Manifest{}, err
 	}
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
-		return &Manifest{}, nil
+		return &Manifest{}, fmt.Errorf("parse %s: %w", path, err)
 	}
 	return &m, nil
 }
