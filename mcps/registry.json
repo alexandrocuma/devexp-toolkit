@@ -10,12 +10,12 @@
   },
   {
     "name": "ui-inspector",
-    "description": "UI/UX inspection via headless Chromium — screenshot, interact (click/type/scroll), ARIA accessibility tree, computed CSS, axe-core a11y audit, and page metrics. No external daemon required.",
+    "description": "UI/UX inspection via headless Chromium — screenshot, interact (click/type/scroll), ARIA accessibility tree, computed CSS, axe-core a11y audit, and page metrics. No external daemon required. Ships as its own repo: github.com/alexandrocuma/mcp-ui-inspector",
     "command": "node",
-    "args": ["${DEVEXP_DIR}/mcps/ui-inspector/dist/index.js"],
+    "args": ["${UI_INSPECTOR_DIR}/dist/index.js"],
     "scope": "user",
     "env": {},
-    "required_env": [],
-    "setup_instructions": "Run setup once:\n  cd ${DEVEXP_DIR}/mcps/ui-inspector && ./setup.sh"
+    "required_env": ["UI_INSPECTOR_DIR"],
+    "setup_instructions": "ui-inspector ships as its own repo:\n  git clone https://github.com/alexandrocuma/mcp-ui-inspector\n  cd mcp-ui-inspector && ./setup.sh\nThen set UI_INSPECTOR_DIR to that directory and re-run ./install.sh --mcps-only"
   }
 ]

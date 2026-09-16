@@ -263,7 +263,7 @@ The server process can be started in two ways:
 1. Create `mcps/<name>/docker-compose.yml` with the service definition.
 2. Set `"docker_compose": "mcps/<name>/docker-compose.yml"` in the registry entry.
 
-**Self-contained process** — the MCP launches and manages its own backend process on demand. Reference implementation: `ui-inspector` — a Node MCP that spins up a headless Chromium browser when first called and shuts it down on SIGTERM. No installer-managed venvs, Docker, or separate daemon. Run `./setup.sh` once to install npm deps and download the Playwright Chromium binary.
+**Self-contained process** — the MCP launches and manages its own backend process on demand. Reference implementation: [`mcp-ui-inspector`](https://github.com/alexandrocuma/mcp-ui-inspector) — a Node MCP that spins up a headless Chromium browser when first called and shuts it down on SIGTERM. No installer-managed venvs, Docker, or separate daemon. It ships as its own repo rather than vendored here: clone it, run `./setup.sh` once, and point `UI_INSPECTOR_DIR` at it. A distribution repo should distribute, not host a build.
 
 ### Step 4: Test the install
 

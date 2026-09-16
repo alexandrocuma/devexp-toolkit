@@ -414,6 +414,8 @@ Critical actions before next sprint:
 
 Next cycle:
   /refine "<next feature>"   — begin the next sprint
+  postmortem agent           — if the retro surfaced an incident, write it up before
+                               the timeline fades; it feeds the next Start/Stop item
 ```
 
 ---

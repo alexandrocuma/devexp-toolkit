@@ -111,15 +111,6 @@ The installer detects which AI coding CLI(s) you have installed and asks which t
 
 Existing files are backed up automatically before any overwrite. `install.sh` is idempotent.
 
-### Restart services
-
-After a machine restart or session, MCP services may have stopped:
-
-```bash
-./start-services.sh            # start anything that isn't running
-./start-services.sh --status   # check service health without starting
-```
-
 ### Uninstall
 
 ```bash
@@ -219,7 +210,6 @@ names no longer cause payment failures.
 devexp-toolkit/
 ├── install.sh                  # Thin wrapper — builds the devexp Go CLI and execs `devexp install`
 ├── uninstall.sh                # Removes devexp components
-├── start-services.sh           # Starts/checks MCP services (ui-inspector)
 ├── CLAUDE.md                   # Instructions for Claude when working in this repo
 ├── devexp.config.json          # Team distribution config (model, disabled agents/hooks, custom MCPs)
 ├── devexp.config.schema.json   # JSON schema for devexp.config.json
@@ -253,8 +243,7 @@ devexp-toolkit/
 │   └── opencode/                   # JS modules composed into a single plugin
 ├── mcps/                          # MCP server registry and secrets
 │   ├── registry.json              # Curated MCP server list (context7, ui-inspector)
-│   ├── .env.example                # Template for API keys (copy to .env)
-│   └── ui-inspector/                # ui-inspector MCP server (headless Chromium via Playwright)
+│   └── .env.example                # Template for API keys (copy to .env)
 ├── scripts/                        # Install, build, and packaging helper scripts
 │   ├── remote-install.sh           # curl | bash entry point — downloads a release binary
 │   └── stage-assets.sh             # Copies agents/skills/hooks/mcps into cli/internal/assets for go:embed
