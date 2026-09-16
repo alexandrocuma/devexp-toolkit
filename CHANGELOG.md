@@ -32,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     default `~/.local/bin` would have been `/.local/bin` or a path under the
     current directory), and when `DEVEXP_INSTALL_DIR` is relative. An absolute
     `DEVEXP_INSTALL_DIR` still works without HOME.
+  - `install.sh` refuses the same HOME values before it builds `bin/devexp`.
+    In a fresh clone the build ran first and put Go's caches under the clone.
+- **A standalone binary no longer extracts its assets to a temp directory
+  (#126).** With no usable user cache dir (the lookup failed, or it was relative,
+  e.g. a relative `XDG_CACHE_HOME` on Linux), `devexp` fell back to
+  `os.TempDir()`. That was either a relative `$TMPDIR` under the current
+  directory, wiped and re-extracted, or the shared `/tmp/devexp/assets`, reused
+  when its version marker matched, so another local user could plant agents and
+  hook scripts that the install then copied and registered. It now refuses with
+  a message asking for an absolute `HOME` (or `XDG_CACHE_HOME`).
 
 ## [0.8.0] - 2026-09-16
 

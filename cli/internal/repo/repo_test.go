@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -238,6 +239,54 @@ func TestExtractEmbedded(t *testing.T) {
 			t.Errorf("a version change should discard the old extraction, stat err = %v", err)
 		}
 	})
+}
+
+// TestExtractEmbedded_NoUsableCacheDir: with no cache dir, or a relative one,
+// extraction is refused — never redirected to os.TempDir() (a relative $TMPDIR,
+// or the shared /tmp another user can plant) and never under the cwd (#126).
+func TestExtractEmbedded_NoUsableCacheDir(t *testing.T) {
+	tests := map[string]struct {
+		cacheDir func() (string, error)
+		wantErr  string
+	}{
+		"the cache dir lookup fails": {
+			cacheDir: func() (string, error) { return "", errors.New("$HOME is not defined") },
+			wantErr:  "no user cache dir",
+		},
+		"the cache dir is relative": {
+			cacheDir: func() (string, error) { return "relcache", nil },
+			wantErr:  `user cache dir "relcache" is not an absolute path`,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			orig := userCacheDir
+			userCacheDir = tt.cacheDir
+			t.Cleanup(func() { userCacheDir = orig })
+
+			// A relative TMPDIR under the cwd, plus an absolute one: the old
+			// fallback wrote to whichever os.TempDir() returned.
+			for tname, tmp := range map[string]string{"relative TMPDIR": "tmprel", "absolute TMPDIR": t.TempDir()} {
+				t.Run(tname, func(t *testing.T) {
+					cwd := t.TempDir()
+					t.Chdir(cwd)
+					t.Setenv("TMPDIR", tmp)
+					dest, err := extractEmbedded("v1.0.0")
+					if err == nil || dest != "" || !strings.Contains(err.Error(), tt.wantErr) || !strings.Contains(err.Error(), "absolute path") {
+						t.Errorf("extractEmbedded() = %q, %v; want a refusal containing %q", dest, err, tt.wantErr)
+					}
+					if entries, _ := os.ReadDir(cwd); len(entries) != 0 {
+						t.Errorf("wrote under the cwd: %v", entries)
+					}
+					if filepath.IsAbs(tmp) {
+						if entries, _ := os.ReadDir(tmp); len(entries) != 0 {
+							t.Errorf("wrote under TMPDIR: %v", entries)
+						}
+					}
+				})
+			}
+		})
+	}
 }
 
 // ── Resolve dispatch ──────────────────────────────────────────────────────────

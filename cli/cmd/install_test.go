@@ -1588,17 +1588,19 @@ var badHomes = map[string]func(t *testing.T){
 }
 
 // writeDotfilesTree fills dir with what a bad HOME would make devexp read,
-// write or remove there: an existing Claude Code and opencode install at the
-// top (HOME empty) and under home/ (HOME=home), each with a stale agent the
-// manifest lists, plus an embedded-asset cache from another version under
-// home/'s user cache dir (darwin and linux), which repo.Resolve would wipe.
+// write or remove there, at the top (HOME empty) and under home/ (HOME=home):
+// an existing Claude Code and opencode install, each with a stale agent the
+// manifest lists, and an embedded-asset cache from another version in the
+// user cache dir (darwin and linux) holding a file of its own, which
+// repo.Resolve would wipe before re-extracting.
 func writeDotfilesTree(t *testing.T, dir string) {
 	t.Helper()
-	files := map[string]string{
-		"Library/Caches/devexp/assets/.devexp-version": "some-other",
-		".cache/devexp/assets/.devexp-version":         "some-other",
-	}
+	files := map[string]string{}
 	for rel, content := range map[string]string{
+		"Library/Caches/devexp/assets/.devexp-version":    "some-other",
+		"Library/Caches/devexp/assets/precious.txt":       "keep\n",
+		".cache/devexp/assets/.devexp-version":            "some-other",
+		".cache/devexp/assets/precious.txt":               "keep\n",
 		".claude/agents/mine.md":                          "mine\n",
 		".claude/agents/old.md":                           "old\n",
 		".claude/skills/mine/SKILL.md":                    "mine\n",
@@ -1621,6 +1623,44 @@ func writeDotfilesTree(t *testing.T, dir string) {
 		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// refusalRepo is writeOpencodeHookRepo with one stdio MCP in the registry, so
+// an install that got as far as MCP registration would call the CLI.
+func refusalRepo(t *testing.T) string {
+	t.Helper()
+	repoDir := writeOpencodeHookRepo(t)
+	registry := `[{"name": "probe", "command": "echo", "args": ["hi"], "scope": "user"}]`
+	if err := os.WriteFile(filepath.Join(repoDir, "mcps", "registry.json"), []byte(registry), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return repoDir
+}
+
+// loggingCLI is fakeCLI whose executables append every invocation to a log
+// file and succeed. The log's absolute path is written into each script, so no
+// HOME, cwd or environment change can send a call anywhere else. It returns
+// the log path; the file exists only once something was called.
+func loggingCLI(t *testing.T, names ...string) (calls string) {
+	t.Helper()
+	dir := t.TempDir()
+	calls = filepath.Join(t.TempDir(), "calls")
+	for _, n := range names {
+		script := "#!/bin/sh\necho \"$0 $*\" >> '" + calls + "'\n"
+		if err := os.WriteFile(filepath.Join(dir, n), []byte(script), 0o755); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", n, err)
+		}
+	}
+	t.Setenv("PATH", dir)
+	return calls
+}
+
+// noCalls fails the test if any logged CLI was invoked.
+func noCalls(t *testing.T, calls string) {
+	t.Helper()
+	if data, err := os.ReadFile(calls); err == nil {
+		t.Errorf("CLI called despite the HOME refusal:\n%s", data)
 	}
 }
 
@@ -1666,11 +1706,11 @@ func TestInstallCmd_RefusesBadHome(t *testing.T) {
 				tmp := t.TempDir() // where the embedded assets go when there is no user cache dir
 				t.Setenv("TMPDIR", tmp)
 				t.Setenv("XDG_CACHE_HOME", "")
-				fakeCLI(t, run.clis...)
+				calls := loggingCLI(t, run.clis...)
 				if run.standalone {
 					t.Setenv("DEVEXP_DIR", "")
 				} else {
-					t.Setenv("DEVEXP_DIR", writeOpencodeHookRepo(t))
+					t.Setenv("DEVEXP_DIR", refusalRepo(t))
 				}
 				before := treeState(t, cwd)
 				setHome(t)
@@ -1685,6 +1725,7 @@ func TestInstallCmd_RefusesBadHome(t *testing.T) {
 				if got := treeState(t, tmp); len(got) != 1 {
 					t.Errorf("wrote under TMPDIR: %v", got)
 				}
+				noCalls(t, calls)
 			})
 		}
 	}
@@ -1704,8 +1745,8 @@ func TestDoInstall_RefusesBadHome(t *testing.T) {
 				cwd := t.TempDir()
 				writeDotfilesTree(t, cwd)
 				t.Chdir(cwd)
-				fakeCLI(t, "claude", "opencode")
-				repoDir := writeOpencodeHookRepo(t)
+				calls := loggingCLI(t, "claude", "opencode")
+				repoDir := refusalRepo(t)
 				before := treeState(t, cwd)
 				setHome(t)
 
@@ -1719,6 +1760,7 @@ func TestDoInstall_RefusesBadHome(t *testing.T) {
 				if after := treeState(t, cwd); !reflect.DeepEqual(before, after) {
 					t.Errorf("files under the current directory changed:\nbefore %v\nafter  %v", before, after)
 				}
+				noCalls(t, calls)
 			})
 		}
 	}

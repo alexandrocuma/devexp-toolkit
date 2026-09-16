@@ -85,10 +85,20 @@ var userCacheDir = os.UserCacheDir
 // extractEmbedded materializes assets.FS onto disk under the user's cache
 // directory, keyed by binary version so an upgrade gets a fresh copy. Returns
 // the destination directory, reusing a prior extraction when present.
+//
+// With no usable cache directory it refuses rather than fall back (#126). The
+// old fallback, os.TempDir(), was either a relative $TMPDIR — a directory under
+// wherever devexp runs, wiped and re-extracted — or the shared /tmp, where
+// another local user could plant a matching extraction whose hook scripts
+// would then be registered and run. A relative cache dir (a relative HOME, or
+// XDG_CACHE_HOME on Linux) is refused for the same reason.
 func extractEmbedded(version string) (string, error) {
 	base, err := userCacheDir()
 	if err != nil {
-		base = os.TempDir()
+		return "", fmt.Errorf("no user cache dir to extract the bundled assets to (%v) — set HOME (or XDG_CACHE_HOME) to an absolute path and re-run", err)
+	}
+	if !filepath.IsAbs(base) {
+		return "", fmt.Errorf("user cache dir %q is not an absolute path, refusing to extract the bundled assets there — set HOME (or XDG_CACHE_HOME) to an absolute path and re-run", base)
 	}
 	dest := filepath.Join(base, "devexp", "assets")
 	marker := filepath.Join(dest, ".devexp-version")
