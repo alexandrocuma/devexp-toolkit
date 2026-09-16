@@ -534,6 +534,24 @@ func TestRunRemove(t *testing.T) {
 		}
 	})
 
+	t.Run("passes this binary to uninstall.sh as DEVEXP_BIN", func(t *testing.T) {
+		repoDir := t.TempDir()
+		got := filepath.Join(repoDir, "devexp-bin")
+		script := filepath.Join(repoDir, "uninstall.sh")
+		if err := os.WriteFile(script, []byte("#!/bin/bash\nprintf '%s' \"$DEVEXP_BIN\" > \""+got+"\"\n"), 0755); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		t.Setenv("DEVEXP_BIN", "stale")
+
+		if err := runRemove(repoDir); err != nil {
+			t.Fatalf("runRemove() error = %v", err)
+		}
+		exe, _ := os.Executable()
+		if data, _ := os.ReadFile(got); string(data) != exe {
+			t.Errorf("DEVEXP_BIN = %q, want %q", data, exe)
+		}
+	})
+
 	t.Run("propagates nonzero exit from uninstall.sh", func(t *testing.T) {
 		repoDir := t.TempDir()
 		script := filepath.Join(repoDir, "uninstall.sh")
