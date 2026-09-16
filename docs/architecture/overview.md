@@ -69,7 +69,8 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
                        (unreadable/corrupt → warn, treat as empty, so nothing is stale this run)
           3. agents    cli/cmd/backup.go backupExisting(*.md → ~/.claude/.devexp-backup-<YYYYMMDDTHHMMSS>)
                        → cli/internal/agents/installer.go InstallClaude (copy; --model rewrites an existing model: line)
-                       → removeStale(manifest.Stale(old, new), staleFile, os.Remove)
+                       → removeStale(old, new, staleFile, os.Remove): manifest.Stale(old, new), minus
+                         case variants of / the same file as an installed name
                          (bare <name>.md regular files only; other entries and symlinks kept, warned)
           4. skills    backupExistingDirs → cli/internal/skills/installer.go InstallClaude (CopyDir whole skill dir)
                        → removeStale(..., staleDir, os.RemoveAll) (bare names, real directories only)

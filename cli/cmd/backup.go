@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"devexp/internal/manifest"
 	"devexp/internal/skills"
@@ -81,9 +83,11 @@ const (
 // file. The manifest is a file on disk, so an entry can be anything; joined
 // onto the target directory unchecked, "../x" removed a file outside it, and
 // for skills (removed recursively) "", "." or ".." removed the skills
-// directory itself or its parent.
+// directory itself or its parent. No installed name has a control character,
+// and one printed raw could fake output lines or clear the terminal.
 func isInstalledName(name string, shape staleShape) bool {
-	if name == "" || name == "." || strings.Contains(name, "..") || strings.ContainsAny(name, `/\`) {
+	if name == "" || name == "." || strings.Contains(name, "..") || strings.ContainsAny(name, `/\`) ||
+		strings.ContainsFunc(name, unicode.IsControl) {
 		return false
 	}
 	switch shape {
@@ -95,40 +99,102 @@ func isInstalledName(name string, shape staleShape) bool {
 	return true
 }
 
-// removeStale removes each entry in stale from dir via removeFn, reporting via
-// ui. In dry-run mode it only reports what would be removed.
+// onDisk is the name an entry has in its target directory: opencode commands
+// are recorded without the .md their file has.
+func onDisk(name string, shape staleShape) string {
+	if shape == staleCommand {
+		return name + ".md"
+	}
+	return name
+}
+
+// lstat is os.Lstat; tests swap it to inject errors.
+var lstat = os.Lstat
+
+// removeStale removes from dir, via removeFn, the entries of old (the previous
+// manifest) that this run didn't install, reporting via ui. In dry-run mode it
+// only reports what would be removed.
 //
-// An entry is removed only when it is a name devexp installs (isInstalledName)
-// and what is on disk has that shape: a regular file for staleFile and
-// staleCommand (<name>.md), a real directory for staleDir. Anything else is
-// kept with a warning, which names a rejected entry exactly as the manifest
-// records it. A symlink is never removed: it is the user's own setup, as for
-// opencode plugin files.
-func removeStale(dir string, stale []string, shape staleShape, removeFn func(path string) error, dryRun bool) {
-	for _, name := range stale {
+// An entry is kept, with a warning, unless all of these hold:
+//   - it is a name devexp installs (isInstalledName);
+//   - it is not a name this run installed apart from case, nor the same file
+//     on disk as one. manifest.Stale compares names exactly, but a
+//     case-insensitive filesystem (the macOS default) resolves "DEV-AGENT.md"
+//     to the dev-agent.md this run just wrote, and ignores Unicode
+//     normalization too. The case check works in a dry run; os.SameFile
+//     catches any other variant once the install is on disk, so a dry run
+//     can still preview removing a normalization-only variant;
+//   - what is on disk can be checked and has the entry's shape: a regular
+//     file for staleFile and staleCommand, a real directory for staleDir. A
+//     symlink is never removed: it is the user's own setup, as for opencode
+//     plugin files.
+//
+// An entry that is already gone needs nothing. Names and paths are printed
+// quoted, so nothing from the manifest reaches the terminal raw.
+func removeStale(dir string, old, installed []string, shape staleShape, removeFn func(path string) error, dryRun bool) {
+	for _, name := range manifest.Stale(old, installed) {
 		if !isInstalledName(name, shape) {
-			ui.Warn(fmt.Sprintf("%q left untouched: listed in the manifest but not a name devexp installs in %s", name, dir))
+			ui.Warn(fmt.Sprintf("%q left untouched: listed in the manifest but not a name devexp installs in %q", name, dir))
 			continue
 		}
-		file := name
-		if shape == staleCommand {
-			file += ".md"
+		if twin, ok := foldMatch(name, installed); ok {
+			ui.Warn(fmt.Sprintf("%q left untouched: the same name as %q, installed by this run, apart from case", name, twin))
+			continue
 		}
-		path := filepath.Join(dir, file)
-		if fi, err := os.Lstat(path); err == nil && !hasStaleShape(fi, shape) {
-			ui.Warn(fmt.Sprintf("%s left untouched: no longer in this release, but %s", path, describeMode(fi)))
+		path := filepath.Join(dir, onDisk(name, shape))
+		fi, err := lstat(path)
+		switch {
+		case os.IsNotExist(err):
+			continue
+		case err != nil:
+			ui.Warn(fmt.Sprintf("%q left untouched: %v", path, pathErrCause(err)))
+			continue
+		case !hasStaleShape(fi, shape):
+			ui.Warn(fmt.Sprintf("%q left untouched: no longer in this release, but %s", path, describeMode(fi)))
+			continue
+		}
+		if twin, ok := sameFileAs(fi, dir, installed, shape); ok {
+			ui.Warn(fmt.Sprintf("%q left untouched: the same file as %q, installed by this run", path, twin))
 			continue
 		}
 		if dryRun {
-			ui.DryRun(fmt.Sprintf("remove %s (no longer in this release)", path))
+			ui.DryRun(fmt.Sprintf("remove %q (no longer in this release)", path))
 			continue
 		}
 		if err := removeFn(path); err != nil && !os.IsNotExist(err) {
-			ui.Warn(fmt.Sprintf("remove %s: %v", path, err))
+			ui.Warn(fmt.Sprintf("remove %q: %v", path, pathErrCause(err)))
 			continue
 		}
-		ui.Removed(file)
+		ui.Removed(fmt.Sprintf("%q", onDisk(name, shape)))
 	}
+}
+
+func foldMatch(name string, installed []string) (string, bool) {
+	for _, in := range installed {
+		if strings.EqualFold(name, in) {
+			return in, true
+		}
+	}
+	return "", false
+}
+
+func sameFileAs(fi os.FileInfo, dir string, installed []string, shape staleShape) (string, bool) {
+	for _, in := range installed {
+		if other, err := lstat(filepath.Join(dir, onDisk(in, shape))); err == nil && os.SameFile(fi, other) {
+			return in, true
+		}
+	}
+	return "", false
+}
+
+// pathErrCause drops the path an *os.PathError repeats, which callers print
+// quoted themselves.
+func pathErrCause(err error) error {
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		return pe.Err
+	}
+	return err
 }
 
 func hasStaleShape(fi os.FileInfo, shape staleShape) bool {

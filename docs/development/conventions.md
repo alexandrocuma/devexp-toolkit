@@ -48,7 +48,7 @@ func selectTargets(hasClaude, hasOpencode bool, choice string) (claude, opencode
 ```
 — `cli/cmd/targets.go`
 
-- **Test seams are passed-in functions, not interfaces.** The repo has no interfaces and no DI container. For example, `removeStale(dir string, stale []string, shape staleShape, removeFn func(path string) error, dryRun bool)` in `cli/cmd/backup.go` receives `os.Remove` or `os.RemoveAll`, and `var userCacheDir = os.UserCacheDir` in `cli/internal/repo/repo.go` is a package variable that tests swap.
+- **Test seams are passed-in functions, not interfaces.** The repo has no interfaces and no DI container. For example, `removeStale(dir string, old, installed []string, shape staleShape, removeFn func(path string) error, dryRun bool)` in `cli/cmd/backup.go` receives `os.Remove` or `os.RemoveAll`, and `var userCacheDir = os.UserCacheDir` in `cli/internal/repo/repo.go` is a package variable that tests swap.
 - **Section banners** such as `// ── Title ───…` split longer Go files (`cli/cmd/install.go`, `cli/cmd/wizard.go`, `cli/internal/repo/repo.go`, `cli/internal/ui/prompts.go`). Shell files use the same style with `#` (`hooks/claude-code/dangerous-cmd-guard.sh`, `hooks/claude-code/fail-closed.test.sh`, `uninstall.sh`).
 
 **Assets** — each kind has its own layout, described in its authoring guide. The cross-cutting rules are:
