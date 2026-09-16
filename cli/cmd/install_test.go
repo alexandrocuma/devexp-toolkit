@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -761,6 +763,7 @@ func TestOpencodeTargetPaths(t *testing.T) {
 		agents: "/home/u/.config/opencode/agents",
 		// skills land in commands/, which is why the field and directory differ
 		skills:   "/home/u/.config/opencode/commands",
+		plugins:  "/home/u/.config/opencode/plugins",
 		config:   "/home/u/.config/opencode/config.json",
 		manifest: "/home/u/.config/opencode/.devexp-manifest.json",
 	}
@@ -933,5 +936,256 @@ func TestRemoveStale_RemoveError(t *testing.T) {
 	want := []string{"boom-one", "fine", "boom-two"}
 	if !reflect.DeepEqual(attempted, want) {
 		t.Errorf("attempted = %v, want %v — a failure must not abort the rest", attempted, want)
+	}
+}
+
+// ── opencode hook plugin ──────────────────────────────────────────────────────
+
+// writeOpencodeHookRepo builds a repo with no agents, skills or MCPs and three
+// opencode hooks: two enabled, and graphify-read-guard, which is off for
+// Claude Code but on for opencode. Every module has a *.test.js sibling that
+// must never be installed.
+func writeOpencodeHookRepo(t *testing.T) string {
+	t.Helper()
+	repoDir := t.TempDir()
+	files := map[string]string{
+		"mcps/registry.json": "[]",
+		"hooks/registry.json": `[
+  {"name": "secret-guard", "enabled": true,
+   "claude_code": {"event": "PreToolUse", "matcher": "Read", "script": "hooks/claude-code/secret-guard.sh"},
+   "opencode": {"event": "tool.execute.before", "module": "hooks/opencode/secret-guard.js", "export": "secretGuard", "fail_closed": true}},
+  {"name": "lint-on-save", "enabled": true,
+   "opencode": {"event": "file.edited", "module": "hooks/opencode/lint-on-save.js", "export": "lintOnSave"}},
+  {"name": "graphify-read-guard", "enabled": false,
+   "opencode": {"event": "tool.execute.before", "module": "hooks/opencode/graphify-read-guard.js", "export": "graphifyReadGuard", "enabled": true}}
+]`,
+		"hooks/opencode/devexp-plugin.js": "/**\n * devexp-plugin.js — entry point for devexp opencode hooks\n */\n",
+		"hooks/opencode/utils.js":         "// utils\n",
+		"hooks/opencode/package.json":     "{ \"type\": \"module\" }\n",
+	}
+	for _, n := range []string{"secret-guard", "lint-on-save", "graphify-read-guard"} {
+		files["hooks/opencode/"+n+".js"] = "// " + n + "\n"
+		files["hooks/opencode/"+n+".test.js"] = "// test " + n + "\n"
+	}
+	for rel, content := range files {
+		p := filepath.Join(repoDir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("MkdirAll error = %v", err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile error = %v", err)
+		}
+	}
+	for _, d := range []string{"agents/opencode", "skills"} {
+		if err := os.MkdirAll(filepath.Join(repoDir, d), 0o755); err != nil {
+			t.Fatalf("MkdirAll error = %v", err)
+		}
+	}
+	return repoDir
+}
+
+func pluginTree(t *testing.T, pluginsDir string) []string {
+	t.Helper()
+	var out []string
+	filepath.Walk(pluginsDir, func(p string, info os.FileInfo, err error) error { //nolint:errcheck
+		if err == nil && !info.IsDir() {
+			rel, _ := filepath.Rel(pluginsDir, p)
+			out = append(out, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	sort.Strings(out)
+	return out
+}
+
+func loadManifestPlugins(t *testing.T, home string) []string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(home, ".config", "opencode", ".devexp-manifest.json"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	var m struct {
+		Plugins []string `json:"plugins"`
+	}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("parse manifest: %v", err)
+	}
+	return m.Plugins
+}
+
+// TestDoInstallOpencode_Hooks drives the opencode install end to end in a temp
+// HOME, one run after another as a user would.
+func TestDoInstallOpencode_Hooks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repoDir := writeOpencodeHookRepo(t)
+	pluginsDir := filepath.Join(home, ".config", "opencode", "plugins")
+	run := func(t *testing.T, opts *installOpts) string {
+		t.Helper()
+		opts.repoDir = repoDir
+		if opts.cfg == nil {
+			opts.cfg = &config.Config{}
+		}
+		opts.env = map[string]string{}
+		var err error
+		out := captureStdout(t, func() { err = doInstallOpencode(opts) })
+		if err != nil {
+			t.Fatalf("doInstallOpencode() error = %v\n%s", err, out)
+		}
+		return out
+	}
+	full := []string{
+		"devexp.js", "devexp/graphify-read-guard.js", "devexp/hooks.json", "devexp/lint-on-save.js",
+		"devexp/package.json", "devexp/secret-guard.js", "devexp/utils.js",
+	}
+
+	t.Run("1 full install writes the plugin and records it entry first", func(t *testing.T) {
+		out := run(t, &installOpts{})
+		if got := pluginTree(t, pluginsDir); !reflect.DeepEqual(got, full) {
+			t.Errorf("plugins tree = %v, want %v", got, full)
+		}
+		if got := loadManifestPlugins(t, home); len(got) != len(full) || got[0] != "devexp.js" {
+			t.Errorf("manifest plugins = %v, want %d entries with devexp.js first", got, len(full))
+		}
+		if !strings.Contains(out, "opencode hooks (3): secret-guard, lint-on-save, graphify-read-guard") ||
+			!strings.Contains(out, "Hooks  : "+pluginsDir) {
+			t.Errorf("output does not list the opencode hooks and their path:\n%s", out)
+		}
+	})
+
+	t.Run("2 a hook disabled in config is removed on re-install", func(t *testing.T) {
+		out := run(t, &installOpts{cfg: &config.Config{DisabledHooks: []string{"lint-on-save"}}})
+		if _, err := os.Stat(filepath.Join(pluginsDir, "devexp", "lint-on-save.js")); !os.IsNotExist(err) {
+			t.Errorf("devexp/lint-on-save.js still installed")
+		}
+		for _, p := range loadManifestPlugins(t, home) {
+			if p == "devexp/lint-on-save.js" {
+				t.Errorf("manifest still lists devexp/lint-on-save.js")
+			}
+		}
+		if !strings.Contains(out, "devexp/lint-on-save.js") {
+			t.Errorf("output does not report the removal:\n%s", out)
+		}
+	})
+
+	t.Run("3 --agents-only keeps the recorded plugins", func(t *testing.T) {
+		before := loadManifestPlugins(t, home)
+		run(t, &installOpts{agentsOnly: true, cfg: &config.Config{DisabledHooks: []string{"lint-on-save"}}})
+		if got := loadManifestPlugins(t, home); !reflect.DeepEqual(got, before) || len(got) == 0 {
+			t.Errorf("manifest plugins after --agents-only = %v, want %v", got, before)
+		}
+		run(t, &installOpts{skillsOnly: true})
+		if got := loadManifestPlugins(t, home); !reflect.DeepEqual(got, before) {
+			t.Errorf("manifest plugins after --skills-only = %v, want %v", got, before)
+		}
+	})
+
+	t.Run("4 a hook deselected in the wizard is not installed", func(t *testing.T) {
+		run(t, &installOpts{selectedHooks: []string{"lint-on-save"}})
+		if _, err := os.Stat(filepath.Join(pluginsDir, "devexp", "secret-guard.js")); !os.IsNotExist(err) {
+			t.Errorf("devexp/secret-guard.js installed though deselected")
+		}
+		if _, err := os.Stat(filepath.Join(pluginsDir, "devexp", "lint-on-save.js")); err != nil {
+			t.Errorf("devexp/lint-on-save.js not installed though selected: %v", err)
+		}
+	})
+
+	t.Run("5 every hook disabled removes the plugin and says why", func(t *testing.T) {
+		foreign := filepath.Join(pluginsDir, "my-plugin.js")
+		os.WriteFile(foreign, []byte("export const mine = 1\n"), 0o644) //nolint:errcheck
+		out := run(t, &installOpts{cfg: &config.Config{DisabledHooks: []string{"secret-guard", "lint-on-save", "graphify-read-guard"}}})
+		if got := pluginTree(t, pluginsDir); !reflect.DeepEqual(got, []string{"my-plugin.js"}) {
+			t.Errorf("plugins tree = %v, want only the foreign my-plugin.js", got)
+		}
+		if _, err := os.Stat(filepath.Join(pluginsDir, "devexp")); !os.IsNotExist(err) {
+			t.Errorf("devexp/ directory left behind")
+		}
+		if got := loadManifestPlugins(t, home); len(got) != 0 {
+			t.Errorf("manifest plugins = %v, want none", got)
+		}
+		if !strings.Contains(out, "every hook is disabled") {
+			t.Errorf("output does not say why:\n%s", out)
+		}
+	})
+
+	t.Run("6 dry-run on a clean HOME writes nothing", func(t *testing.T) {
+		clean := t.TempDir()
+		t.Setenv("HOME", clean)
+		out := run(t, &installOpts{dryRun: true})
+		if _, err := os.Stat(filepath.Join(clean, ".config")); !os.IsNotExist(err) {
+			t.Errorf("dry-run wrote under HOME: %v", pluginTree(t, clean))
+		}
+		if n := strings.Count(out, "write "+filepath.Join(clean, ".config", "opencode", "plugins")); n != len(full) {
+			t.Errorf("dry-run listed %d plugin files, want %d:\n%s", n, len(full), out)
+		}
+	})
+
+	t.Run("7 a legacy flat install is cleaned up, foreign content kept", func(t *testing.T) {
+		clean := t.TempDir()
+		t.Setenv("HOME", clean)
+		plugins := filepath.Join(clean, ".config", "opencode", "plugins")
+		os.MkdirAll(plugins, 0o755) //nolint:errcheck
+		legacy := "/**\n * secret-guard.js — blocks accidental reads of .env and private key files\n */\n"
+		os.WriteFile(filepath.Join(plugins, "secret-guard.js"), []byte(legacy), 0o644)              //nolint:errcheck
+		os.WriteFile(filepath.Join(plugins, "utils.js"), []byte("export const mine = 1\n"), 0o644)  //nolint:errcheck
+		os.WriteFile(filepath.Join(plugins, "package.json"), []byte(`{ "type": "module" }`), 0o644) //nolint:errcheck
+		configPath := filepath.Join(clean, ".config", "opencode", "config.json")
+		config := `{"theme":"x","plugin":["` + filepath.Join(plugins, "devexp-plugin.js") + `","npm-plugin"]}`
+		os.WriteFile(configPath, []byte(config), 0o644) //nolint:errcheck
+
+		run(t, &installOpts{})
+		for _, gone := range []string{"secret-guard.js", "package.json"} {
+			if _, err := os.Stat(filepath.Join(plugins, gone)); !os.IsNotExist(err) {
+				t.Errorf("legacy %s not removed", gone)
+			}
+		}
+		if got, _ := os.ReadFile(filepath.Join(plugins, "utils.js")); string(got) != "export const mine = 1\n" {
+			t.Errorf("user utils.js = %q, changed", got)
+		}
+		got, _ := os.ReadFile(configPath)
+		var cfg map[string]any
+		json.Unmarshal(got, &cfg) //nolint:errcheck
+		if !reflect.DeepEqual(cfg["plugin"], []any{"npm-plugin"}) || cfg["theme"] != "x" {
+			t.Errorf("config.json = %s, want the legacy entry dropped and the rest kept", got)
+		}
+	})
+}
+
+// TestDoInstallOpencode_TamperedManifest: stale removal trusts the manifest
+// only for paths devexp installs, so a hand-edited plugins list can never
+// delete a file outside devexp.js and devexp/.
+func TestDoInstallOpencode_TamperedManifest(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repoDir := writeOpencodeHookRepo(t)
+	base := filepath.Join(home, ".config", "opencode")
+	plugins := filepath.Join(base, "plugins")
+	os.MkdirAll(plugins, 0o755) //nolint:errcheck
+	precious := map[string]string{
+		filepath.Join(base, "precious.txt"):      "keep me\n",
+		filepath.Join(plugins, "my-plugin.js"):   "export const mine = 1\n",
+		filepath.Join(plugins, "devexp", "x.md"): "mine\n",
+	}
+	for p, c := range precious {
+		os.MkdirAll(filepath.Dir(p), 0o755) //nolint:errcheck
+		os.WriteFile(p, []byte(c), 0o644)   //nolint:errcheck
+	}
+	manifestJSON := `{"agents":[],"skills":[],"plugins":["devexp.js","../precious.txt","my-plugin.js","devexp/x.md"]}`
+	os.WriteFile(filepath.Join(base, ".devexp-manifest.json"), []byte(manifestJSON), 0o644) //nolint:errcheck
+
+	var err error
+	out := captureStdout(t, func() {
+		err = doInstallOpencode(&installOpts{repoDir: repoDir, cfg: &config.Config{}, env: map[string]string{}})
+	})
+	if err != nil {
+		t.Fatalf("doInstallOpencode() error = %v\n%s", err, out)
+	}
+	for p, c := range precious {
+		if got, _ := os.ReadFile(p); string(got) != c {
+			t.Errorf("%s = %q, want %q untouched", p, got, c)
+		}
+	}
+	if n := strings.Count(out, "left untouched: listed in the manifest"); n != 3 {
+		t.Errorf("warned about %d manifest paths, want 3:\n%s", n, out)
 	}
 }

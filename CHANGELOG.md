@@ -53,6 +53,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **opencode: `devexp install` now installs the hook plugin (#106, #107, #108).**
+  The Go CLI never deployed the opencode hooks, so opencode users got no guards
+  while the installer reported success.
+  - It installs `~/.config/opencode/plugins/devexp.js` (the single entry opencode
+    loads) plus `devexp/` with only the selected modules, `utils.js`,
+    `package.json` and `hooks.json`. Files are copied by the registry list, so
+    `*.test.js` never ships, and `plugins/package.json` is never written.
+  - It honours `hooks.disabled` and the wizard selection, the same way the Claude
+    Code path does. A hook disabled or removed since the last install is deleted
+    on re-install, tracked through the new `plugins` key in
+    `~/.config/opencode/.devexp-manifest.json`. With every hook disabled it
+    installs no plugin and says why.
+  - It turns on lint/format/test-on-save for opencode. The `graphify-*` hooks are
+    on for opencode (turn them off with `hooks.disabled`).
+  - It cleans up the pre-v0.1.0 flat install. A file is removed only when its name
+    is in the legacy set and its content carries the devexp header; a same-named
+    user file is kept with a warning. The legacy `config.json` `plugin` entry is
+    removed only on an exact match, and the rest of `config.json` keeps its bytes.
+  - It never overwrites a `devexp.js` that isn't a devexp entry, never writes
+    through a symlink, and never deletes a manifest path outside `devexp.js` and
+    `devexp/`. `--dry-run` lists every file and writes nothing.
+  - **Clone users:** run `rm bin/devexp && ./install.sh`. `install.sh` never
+    rebuilds an existing binary.
+
 - **opencode plugin: data-driven entry, explicit registry mapping, parity fixes
   (#107).** Groundwork for installing the plugin (#108); no user-visible change
   until then.

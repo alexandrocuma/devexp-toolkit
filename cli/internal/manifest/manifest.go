@@ -1,5 +1,5 @@
-// Package manifest tracks which agent and skill files devexp installed on a
-// prior run, so a later run can detect and remove files that are no longer
+// Package manifest tracks which agent and skill files — and opencode plugin
+// files — devexp installed on a prior run, so a later run can detect and remove files that are no longer
 // shipped by the toolkit (stale files left over from an older version).
 package manifest
 
@@ -13,9 +13,14 @@ import (
 // (Claude or opencode) on the most recent run of each category. Entries are
 // the same names returned by the agents/skills installers (e.g.
 // "code-reviewer.md" for an agent, "graphify" for a skill directory).
+//
+// Plugins is opencode-only: paths relative to the plugins directory, entry
+// first (e.g. "devexp.js", "devexp/hooks.json"). It is omitted when empty, so
+// the Claude Code manifest keeps its exact shape.
 type Manifest struct {
-	Agents []string `json:"agents"`
-	Skills []string `json:"skills"`
+	Agents  []string `json:"agents"`
+	Skills  []string `json:"skills"`
+	Plugins []string `json:"plugins,omitempty"`
 }
 
 // Load reads a manifest from path. A missing file is not an error — it

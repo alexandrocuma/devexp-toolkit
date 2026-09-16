@@ -29,6 +29,28 @@ func TestLoad(t *testing.T) {
 			},
 			want: &Manifest{Agents: []string{"a.md", "b.md"}, Skills: []string{"graphify"}},
 		},
+		"manifest without plugins loads with nil Plugins": {
+			setup: func(t *testing.T, dir string) string {
+				path := filepath.Join(dir, "manifest.json")
+				data := `{"agents":["a.md"],"skills":[]}`
+				if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+					t.Fatalf("WriteFile: %v", err)
+				}
+				return path
+			},
+			want: &Manifest{Agents: []string{"a.md"}, Skills: []string{}},
+		},
+		"plugins round-trip in order": {
+			setup: func(t *testing.T, dir string) string {
+				path := filepath.Join(dir, "manifest.json")
+				data := `{"agents":null,"skills":null,"plugins":["devexp.js","devexp/hooks.json"]}`
+				if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+					t.Fatalf("WriteFile: %v", err)
+				}
+				return path
+			},
+			want: &Manifest{Plugins: []string{"devexp.js", "devexp/hooks.json"}},
+		},
 		"malformed JSON returns empty manifest": {
 			setup: func(t *testing.T, dir string) string {
 				path := filepath.Join(dir, "bad.json")
@@ -67,6 +89,9 @@ func TestSave(t *testing.T) {
 		"writes empty manifest": {
 			manifest: &Manifest{},
 		},
+		"writes and round-trips plugins": {
+			manifest: &Manifest{Agents: []string{"a.md"}, Skills: []string{"graphify"}, Plugins: []string{"devexp.js", "devexp/utils.js"}},
+		},
 	}
 
 	for name, tt := range tests {
@@ -86,6 +111,23 @@ func TestSave(t *testing.T) {
 				t.Errorf("round-trip = %+v, want %+v", got, tt.manifest)
 			}
 		})
+	}
+}
+
+// A manifest with no plugins must stay byte-for-byte what it was before the
+// field existed: the Claude Code manifest never has plugins.
+func TestSave_OmitsNilPlugins(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "manifest.json")
+	if err := Save(path, &Manifest{Agents: []string{"a.md"}, Skills: []string{"graphify"}}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	want := "{\n  \"agents\": [\n    \"a.md\"\n  ],\n  \"skills\": [\n    \"graphify\"\n  ]\n}"
+	if string(data) != want {
+		t.Errorf("Save() wrote %q, want %q", data, want)
 	}
 }
 
