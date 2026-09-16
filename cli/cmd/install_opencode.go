@@ -16,7 +16,10 @@ import (
 // ── opencode ──────────────────────────────────────────────────────────────────
 
 func doInstallOpencode(opts *installOpts) error {
-	p := opencodeTargetPaths(os.Getenv("HOME"))
+	p, err := opencodeTargetPaths(os.Getenv("HOME"))
+	if err != nil {
+		return err
+	}
 	agentsTarget := p.agents
 	skillsTarget := p.skills
 	configPath := p.config
@@ -69,7 +72,7 @@ func doInstallOpencode(opts *installOpts) error {
 		fmt.Println()
 
 		newManifest.Agents = allInstalledAgents
-		removeStale(agentsTarget, manifest.Stale(old.Agents, allInstalledAgents), os.Remove, opts.dryRun)
+		removeStale(agentsTarget, old.Agents, allInstalledAgents, staleFile, os.Remove, opts.dryRun)
 	}
 
 	if !opts.agentsOnly {
@@ -87,12 +90,7 @@ func doInstallOpencode(opts *installOpts) error {
 		fmt.Println()
 
 		newManifest.Skills = installedSkills
-		staleSkills := manifest.Stale(old.Skills, installedSkills)
-		staleSkillFiles := make([]string, len(staleSkills))
-		for i, s := range staleSkills {
-			staleSkillFiles[i] = s + ".md"
-		}
-		removeStale(skillsTarget, staleSkillFiles, os.Remove, opts.dryRun)
+		removeStale(skillsTarget, old.Skills, installedSkills, staleCommand, os.Remove, opts.dryRun)
 	}
 
 	if !opts.agentsOnly && !opts.skillsOnly {

@@ -77,21 +77,11 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	if !ok {
 		return fmt.Errorf("unsupported target %q (%s)", flagUninstallTarget, supportedUninstallTargets())
 	}
-	home, err := uninstallHome(os.Getenv("HOME"))
+	home, err := targetHome(os.Getenv("HOME"))
 	if err != nil {
-		return err
+		return fmt.Errorf("%w — refusing to remove anything; set HOME and re-run", err)
 	}
 	return handler(home, flagUninstallDryRun)
-}
-
-// uninstallHome refuses a HOME that is unset, empty or relative: every target
-// path is built from it, and a relative one would remove files under whatever
-// directory the command happens to run in.
-func uninstallHome(home string) (string, error) {
-	if home == "" || !filepath.IsAbs(home) {
-		return "", fmt.Errorf("HOME is %q, not an absolute path — refusing to remove anything; set HOME and re-run", home)
-	}
-	return filepath.Clean(home), nil
 }
 
 // doUninstallOpencode removes devexp's opencode hook plugin and whatever the
@@ -102,7 +92,10 @@ func uninstallHome(home string) (string, error) {
 // kept stays recorded in the manifest. An error means the plugin roots were
 // refused and nothing was removed, legacy files and config.json included.
 func doUninstallOpencode(home string, dryRun bool) error {
-	p := opencodeTargetPaths(home)
+	p, err := opencodeTargetPaths(home)
+	if err != nil {
+		return err
+	}
 
 	// Only a regular file counts as an existing manifest. A symlink (dangling
 	// or not) is never written through: saving would create or change a file

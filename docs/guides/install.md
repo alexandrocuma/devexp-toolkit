@@ -11,13 +11,16 @@ curl -fsSL https://raw.githubusercontent.com/alexandrocuma/devexp-toolkit/main/s
 This detects your OS/architecture, downloads the matching release binary into `~/.local/bin/devexp`, and runs `devexp install`. Useful overrides:
 
 ```bash
-DEVEXP_VERSION=v1.2.3 curl -fsSL .../remote-install.sh | bash   # install a specific tag
-DEVEXP_SKIP_RUN=1 curl -fsSL .../remote-install.sh | bash       # download only, don't run install
+curl -fsSL .../remote-install.sh | DEVEXP_VERSION=v1.2.3 bash   # install a specific tag
+curl -fsSL .../remote-install.sh | DEVEXP_SKIP_RUN=1 bash       # download only, don't run install
+curl -fsSL .../remote-install.sh | DEVEXP_INSTALL_DIR=/opt/bin bash  # put the binary somewhere else (absolute path)
 ```
+
+The script refuses to run, before downloading anything, when `DEVEXP_INSTALL_DIR` is unset and `HOME` is unset, empty or not an absolute path (the default `~/.local/bin` would otherwise land in `/` or under the current directory), or when `DEVEXP_INSTALL_DIR` itself is relative. An absolute `DEVEXP_INSTALL_DIR` works without `HOME`, but `devexp install`, which runs next, still needs one — combine it with `DEVEXP_SKIP_RUN=1` in that case.
 
 You can also grab a binary manually from the [Releases page](https://github.com/alexandrocuma/devexp-toolkit/releases) — pick the archive matching your OS/arch (`devexp-toolkit_<os>_<arch>.tar.gz`), extract it, and run `./devexp install`. Run `devexp --version` any time to confirm what's installed.
 
-> **How it finds its assets:** when `devexp` runs from inside a cloned repo (or with `DEVEXP_DIR` set), it reads agents/skills/hooks/MCPs live from disk — so local edits never need a rebuild. Agents and skills are *copied* into the CLI's config directory, so re-run the installer to pick up edits to them; Claude Code hooks are registered by absolute path into the repo, so edits to a registered hook script apply immediately. A standalone downloaded binary instead uses the copies baked in at release time, extracted to `<user cache dir>/devexp/assets` and re-extracted when the binary's version changes (`cli/internal/repo/repo.go`, `extractEmbedded`). Filesystem always wins when both are available.
+> **How it finds its assets:** when `devexp` runs from inside a cloned repo (or with `DEVEXP_DIR` set), it reads agents/skills/hooks/MCPs live from disk — so local edits never need a rebuild. Agents and skills are *copied* into the CLI's config directory, so re-run the installer to pick up edits to them; Claude Code hooks are registered by absolute path into the repo, so edits to a registered hook script apply immediately. A standalone downloaded binary instead uses the copies baked in at release time, extracted to `<user cache dir>/devexp/assets` and re-extracted when the binary's version changes (`cli/internal/repo/repo.go`, `extractEmbedded`). With no absolute user cache dir (`HOME`, or `XDG_CACHE_HOME` on Linux, unset or relative) it refuses to extract rather than fall back to a temp directory. Filesystem always wins when both are available.
 
 ---
 
@@ -37,11 +40,12 @@ The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed a
 ./install.sh --agents-only --model sonnet   # rewrite agents' model: lines (see below)
 ```
 
-Passing any of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only` or `--skills-only` skips the interactive wizard; with none of them, the wizard runs (`cli/cmd/install.go:108-112`).
+Passing any of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only` or `--skills-only` skips the interactive wizard; with none of them, the wizard runs (`cli/cmd/install.go:117-121`).
 
-`--model` overrides the `model` value from `devexp.config.json` (`cli/cmd/install.go:93-95`). It does **not** skip the wizard — the wizard has no model prompt (`cli/cmd/wizard.go`) — so combine it with one of the flags above for a non-interactive run. It accepts a short alias (`sonnet`, `opus`, `haiku`, `gpt4o`, `deepseek`, `kimi`, …), resolved to a provider-prefixed ID such as `anthropic/claude-sonnet-4-6`, or any other string used verbatim (`modelMap` / `resolveModel` in `cli/internal/agents/installer.go`). The value only **replaces an existing `model:` frontmatter line**; agents without one — most of them (only `dep-audit`, `docs-sync` and `runbook` declare `model:` today) — get no model line, for both CLIs.
+`--model` overrides the `model` value from `devexp.config.json` (`cli/cmd/install.go:102-104`). It does **not** skip the wizard — the wizard has no model prompt (`cli/cmd/wizard.go`) — so combine it with one of the flags above for a non-interactive run. It accepts a short alias (`sonnet`, `opus`, `haiku`, `gpt4o`, `deepseek`, `kimi`, …), resolved to a provider-prefixed ID such as `anthropic/claude-sonnet-4-6`, or any other string used verbatim (`modelMap` / `resolveModel` in `cli/internal/agents/installer.go`). The value only **replaces an existing `model:` frontmatter line**; agents without one — most of them (only `dep-audit`, `docs-sync` and `runbook` declare `model:` today) — get no model line, for both CLIs.
 
 **Behavior:**
+- Refuses to run when `HOME` is unset, empty or not an absolute path, because every destination below is built from it and would otherwise land under the current directory. `install.sh` checks before it builds `bin/devexp` (a build would put Go's caches under the clone), and `devexp install` checks again as its first step, before it resolves assets, opens the wizard, registers MCPs or writes/backs up anything (`targetHome` in `cli/cmd/paths.go`, checked first in `runInstall`)
 - Detects `claude` and/or `opencode` in PATH; prompts which to install for only when both are found, and stops with an error when neither is (`cli/cmd/targets.go`)
 - **Claude Code**: copies agents to `~/.claude/agents/`, skill directories to `~/.claude/skills/`, registers MCPs via `claude mcp add`, and registers enabled hooks in `~/.claude/settings.json` (`cli/cmd/install_claude.go`)
 - **opencode**: transforms agent frontmatter (model aliases, tool mapping, adds `mode: subagent`) and installs to `~/.config/opencode/agents/`; each skill's `SKILL.md` goes to `~/.config/opencode/commands/<name>.md`; MCPs are written to the `mcp` key of `~/.config/opencode/config.json`; the hook plugin goes to `~/.config/opencode/plugins/` — the entry `devexp.js` plus `devexp/` holding the selected modules, `utils.js`, `package.json` and the `hooks.json` selection (`cli/cmd/install_opencode.go`, `cli/internal/hooks/opencode.go`). With every hook disabled no plugin is installed
@@ -70,6 +74,10 @@ Re-running the installer is how you update devexp — there's no separate "upgra
 `devexp install` removes files that a previous run installed but that are no longer part of the current version:
 
 - **Agents and skills**: devexp tracks what it installed in `~/.claude/.devexp-manifest.json` (and `~/.config/opencode/.devexp-manifest.json` for opencode). On each run, anything from the previous manifest that isn't part of this run's install set is removed from disk and dropped from the manifest.
+  - Only a bare name devexp installs is ever removed: no path separators, no `..`, no control characters, not empty or `.`. Agents are recorded as `<name>.md`; Claude Code skill directories and opencode commands as `<name>` (a command's file is `<name>.md`). Any other manifest entry is kept, with a warning naming it exactly as recorded, so a corrupted or hand-edited manifest can't delete anything outside `agents/`, `skills/` or `commands/`, or the directory itself.
+  - An entry is removed only when it is still what devexp installs there: a regular file, or a real directory for a Claude Code skill. A symlink is never removed (nor what it points at), and neither is a file where a skill directory was, or a directory where an agent file was. Each is kept with a warning, as is an entry that can't be checked (for example, permission denied) (`removeStale` in `cli/cmd/backup.go`).
+  - A stale entry that names something this run installed is never removed: the same name apart from case (for example `DEV-AGENT.md` after a rename to `dev-agent.md`, which a case-insensitive filesystem such as default APFS treats as the same file), or the same file on disk. It is kept with a warning. A variant that differs only in Unicode normalization is recognised by the file on disk, so `--dry-run`, which installs nothing, may still preview removing it.
+  - Entry names and paths in these lines are printed quoted, so nothing from the manifest reaches the terminal raw. An entry already gone from disk is skipped silently.
   - **One-time caveat**: if you're upgrading from a devexp version that predates manifests, the first run after upgrading has no prior manifest to diff against — it just records a baseline. Stale-file cleanup takes effect starting with the *second* run after upgrading.
 - **opencode plugin files**: the opencode manifest's `plugins` key lists every plugin file installed (`devexp.js` first, then `devexp/…`).
   - A plugin file this run doesn't install is removed, and `devexp/` is removed once empty. That covers files from the previous list, plus the devexp files recognised on disk if the manifest was lost.
@@ -85,7 +93,7 @@ Re-running the installer is how you update devexp — there's no separate "upgra
   - A file in `plugins/` is removed only when its name is one of the 9 legacy file names **and** its content starts with that file's devexp header. A same-named file without the header is kept, with a warning.
   - `plugins/package.json` is removed only alongside such a match and only if it is exactly `{ "type": "module" }`.
   - The `config.json` `plugin` entry is removed only when it is exactly `<HOME>/.config/opencode/plugins/devexp-plugin.js`. The key goes when the array ends up empty, and every other byte of `config.json` is kept. A symlinked or read-only `config.json` is left untouched, with a warning to remove the entry by hand (`CleanLegacyOpencode` in `cli/internal/hooks/opencode.go`).
-- **Hooks (Claude Code)**: devexp checks every registered hook command that points into the devexp repo/cache directory. If the backing script no longer exists (because the hook was removed from `hooks/registry.json`), the dangling entry is removed from `settings.json`. A devexp hook registered from a *different* install root (e.g. a release-binary install later replaced by a clone install) is also removed as a duplicate, matched by registry script name under `hooks/claude-code/` (`pruneForeignDevexpHooks` in `cli/internal/hooks/installer.go`). Other user-authored hooks are never touched.
+- **Hooks (Claude Code)**: devexp checks every registered hook command that points into the devexp repo/cache directory. If the backing script no longer exists (because the hook was removed from `hooks/registry.json`), the dangling entry is removed from `settings.json`. A devexp hook registered from a *different* install root (e.g. a release-binary install later replaced by a clone install) is also removed as a duplicate, matched by registry script name directly under a `hooks/claude-code/` path segment (`pruneForeignDevexpHooks` in `cli/internal/hooks/installer.go`); so is a devexp entry registered as a relative path by an earlier install. Only plain paths count: a command with arguments, variables (`$CLAUDE_PROJECT_DIR/…`), `~`, quotes or other shell syntax, or one under a directory like `my-hooks/claude-code/`, is the user's (`isManagedScriptPath`; `uninstall.sh` uses the same rule). Other user-authored hooks are never touched.
 
 ### Behavior change: disabling now removes
 
@@ -113,6 +121,7 @@ Shows every add, update, and removal devexp would make — including stale-file 
 ```
 
 **Behavior:**
+- Refuses to run (nothing is read or removed, exit 1) when `HOME` is unset, empty or not an absolute path — every path it removes from is built from `HOME`
 - Detects which CLIs have devexp agents installed; asks which to remove from only when both are found
 - Removes agents from the appropriate directory for each CLI
 - Skills (`~/.claude/skills/`) are only removed if uninstalling from all CLIs that use them

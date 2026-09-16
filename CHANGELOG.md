@@ -9,6 +9,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`devexp install` refuses an unset, empty or relative `HOME` (#126).** Every
+  install target is built from `HOME`, so with it unset, empty or relative the
+  installer would write into, back up from and remove stale files under the
+  current directory — a dotfiles checkout, say. A standalone binary would also
+  wipe and re-extract its assets there, since the user cache dir follows `HOME`.
+  - `devexp install` now stops with a non-zero exit and
+    `HOME is "…", not an absolute path — refusing to install anything` before
+    anything else: no asset extraction, no wizard, no MCP registration, no
+    writes or backups. This covers every flag path, the wizard (including its
+    Remove action) and both targets.
+  - The check #109 added for `devexp uninstall` is now one shared helper
+    (`targetHome` in `cli/cmd/paths.go`), and `claudeTargetPaths` /
+    `opencodeTargetPaths` go through it, so they can no longer return a relative
+    target path. `devexp uninstall` behaves and reports as before.
+  - `uninstall.sh` refuses the same HOME values (exit 1,
+    `refusing to remove anything`) before it looks at anything. Before, an
+    empty HOME pointed it at `/.claude/…` and a relative one at the current
+    directory.
+  - `scripts/remote-install.sh` refuses, before downloading, when
+    `DEVEXP_INSTALL_DIR` is unset and HOME is unset, empty or relative (the
+    default `~/.local/bin` would have been `/.local/bin` or a path under the
+    current directory), and when `DEVEXP_INSTALL_DIR` is relative. An absolute
+    `DEVEXP_INSTALL_DIR` still works without HOME.
+  - `install.sh` refuses the same HOME values before it builds `bin/devexp`.
+    In a fresh clone the build ran first and put Go's caches under the clone.
+- **A standalone binary no longer extracts its assets to a temp directory
+  (#126).** With no usable user cache dir (the lookup failed, or it was relative,
+  e.g. a relative `XDG_CACHE_HOME` on Linux), `devexp` fell back to
+  `os.TempDir()`. That was either a relative `$TMPDIR` under the current
+  directory, wiped and re-extracted, or the shared `/tmp/devexp/assets`, which
+  is not private to the user but was reused whenever its version marker
+  matched. It now refuses with a message asking for an absolute `HOME` (or
+  `XDG_CACHE_HOME`).
+- **Hook commands are always absolute (#126).** A relative `DEVEXP_DIR` produced
+  relative hook command paths in `~/.claude/settings.json`, which resolve
+  against whatever directory Claude Code runs in rather than the devexp repo.
+  - `DEVEXP_DIR` is now resolved to an absolute path and must be a devexp repo
+    (`agents/`, `skills/`, `mcps/`); otherwise `devexp install` stops with an
+    error instead of falling back to another lookup. Every resolved asset dir
+    is checked to be absolute.
+  - `hooks.InstallClaude` refuses a non-absolute repo dir.
+  - Relative devexp hook entries left by an earlier install are removed on the
+    next install and replaced by the absolute registration; relative hooks that
+    aren't devexp's are left alone. `uninstall.sh` already removed them; it now
+    has tests for it.
+  - A hook command counts as devexp's only if it is a plain path (no
+    whitespace, variables, `~`, quotes or other shell syntax) ending in
+    `hooks/claude-code/<registry script>`, with `hooks/claude-code/` at a path
+    segment boundary. This applies to install-time pruning and to
+    `uninstall.sh`. Before, commands such as `$CLAUDE_PROJECT_DIR/hooks/claude-code/…`
+    or `…/my-hooks/claude-code/…` could be removed.
+- **Stale agent and skill removal no longer trusts manifest names (#117).**
+  `devexp install` joined each stale entry of the previous manifest onto the
+  agents/skills directory unchecked, so a corrupted or hand-edited
+  `.devexp-manifest.json` could delete files outside it. Claude Code skills are
+  removed recursively: an entry of `""`, `.` or `..` removed the whole
+  `~/.claude/skills` or `~/.claude` directory.
+  - An entry is removed only when it is a bare name devexp installs: no `/` or
+    `\`, no `..`, no control characters, not empty or `.`, and ending in `.md` for agent files (opencode
+    commands are recorded as `<name>` for a `<name>.md` file). Any other entry is
+    kept and a warning names it exactly as the manifest records it. This covers
+    both Claude Code and opencode, in real runs and `--dry-run`.
+  - A valid entry is removed only when it is still what devexp installs: a
+    regular file for agents and commands, a real directory for Claude Code
+    skills. A symlink is never removed (as for opencode plugin files since
+    #108); it is kept with a warning. So is an entry that can't be checked
+    (for example, permission denied).
+  - A stale entry is never removed when it names something this run installed:
+    the same name apart from case (a case-only rename between releases), or
+    the same file on disk. On a case-insensitive filesystem (the macOS default)
+    `DEV-AGENT.md` in the old manifest used to delete the `dev-agent.md` just
+    installed. It is kept with a warning. A variant that differs only in
+    Unicode normalization is caught once the install is on disk, so
+    `--dry-run` may still preview removing it.
+  - Names and paths in these warnings, previews and removal lines are printed
+    quoted, so a manifest entry can't write control sequences to the terminal.
+    An entry that is already gone is no longer reported as removed.
+  - Stale removal of valid entries is otherwise unchanged. The manifest format
+    is unchanged.
 - **On-save hooks: every tool now gets the edited file, as a path, and
   test-on-save works with Jest 30 (#121).**
   - A relative path that starts with `-` was passed on as given, in both

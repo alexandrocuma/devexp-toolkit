@@ -13,10 +13,21 @@
 set -euo pipefail
 
 REPO="alexandrocuma/devexp-toolkit"
-INSTALL_DIR="${DEVEXP_INSTALL_DIR:-$HOME/.local/bin}"
 
 say() { echo "[devexp] $*"; }
 die() { echo "[devexp] error: $*" >&2; exit 1; }
+
+# ── Resolve the install directory ─────────────────────────────────────────────
+# Before any download. The default is built from HOME: unset, empty or relative,
+# it would be /.local/bin or a directory under wherever this runs (#126). An
+# explicit DEVEXP_INSTALL_DIR doesn't need HOME, but must be absolute too.
+if [[ -n "${DEVEXP_INSTALL_DIR:-}" ]]; then
+    INSTALL_DIR="$DEVEXP_INSTALL_DIR"
+    [[ "$INSTALL_DIR" == /* ]] || die "DEVEXP_INSTALL_DIR is \"$INSTALL_DIR\", not an absolute path — refusing to install; set it to an absolute path and re-run"
+else
+    [[ "${HOME:-}" == /* ]] || die "HOME is \"${HOME:-}\", not an absolute path — refusing to install; set HOME (or an absolute DEVEXP_INSTALL_DIR) and re-run"
+    INSTALL_DIR="$HOME/.local/bin"
+fi
 
 # ── Detect platform ───────────────────────────────────────────────────────────
 
