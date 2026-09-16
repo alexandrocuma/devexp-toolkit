@@ -149,7 +149,8 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 		json.Unmarshal(hooksRaw, &hooksMap) //nolint:errcheck
 	}
 
-	pruned := pruneStaleHooks(hooksMap, repoDir, dryRun)
+	pruned := requoteDevexpHooks(hooksMap, registry, repoDir, dryRun)
+	pruned = pruneStaleHooks(hooksMap, repoDir, dryRun) || pruned
 	pruned = pruneForeignDevexpHooks(hooksMap, registry, repoDir, dryRun) || pruned
 
 	isDisabled := func(name string) bool {
@@ -174,7 +175,7 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 		if cc.Event == "" || cc.Script == "" {
 			continue
 		}
-		scriptAbs := filepath.Join(repoDir, cc.Script)
+		command := hookCommand(filepath.Join(repoDir, cc.Script))
 
 		if dryRun {
 			ui.DryRun(fmt.Sprintf("add %s hook: %s", cc.Event, filepath.Base(cc.Script)))
@@ -185,7 +186,7 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 		alreadyIn := false
 		for _, e := range hooksMap[cc.Event] {
 			for _, h := range e.Hooks {
-				if h.Command == scriptAbs {
+				if h.Command == command {
 					alreadyIn = true
 					break
 				}
@@ -198,7 +199,7 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 
 		hooksMap[cc.Event] = append(hooksMap[cc.Event], hookEntry{
 			Matcher: cc.Matcher,
-			Hooks:   []hookCmd{{Type: "command", Command: scriptAbs}},
+			Hooks:   []hookCmd{{Type: "command", Command: command}},
 		})
 		changed = true
 		fmt.Printf("  \033[0;32m+\033[0m %s: %s\n", cc.Event, filepath.Base(cc.Script))
@@ -243,10 +244,11 @@ func pruneStaleHooks(hooksMap map[string][]hookEntry, repoDir string, dryRun boo
 			var keptCmds []hookCmd
 			for _, h := range e.Hooks {
 				if isStaleDevexpHook(h.Command, repoDir) {
+					name := commandBase(h.Command)
 					if dryRun {
-						ui.DryRun(fmt.Sprintf("remove %s hook: %s (script no longer exists)", event, filepath.Base(h.Command)))
+						ui.DryRun(fmt.Sprintf("remove %s hook: %s (script no longer exists)", event, name))
 					} else {
-						ui.Removed(fmt.Sprintf("%s: %s (script no longer exists)", event, filepath.Base(h.Command)))
+						ui.Removed(fmt.Sprintf("%s: %s (script no longer exists)", event, name))
 					}
 					pruned = true
 					continue
@@ -269,8 +271,12 @@ func pruneStaleHooks(hooksMap map[string][]hookEntry, repoDir string, dryRun boo
 }
 
 // isStaleDevexpHook reports whether cmd is a devexp-managed command (lives
-// under repoDir) whose script no longer exists on disk.
+// under repoDir) whose script no longer exists on disk. A quoted command is
+// judged by the path it runs (#135).
 func isStaleDevexpHook(cmd, repoDir string) bool {
+	if p, ok := commandPath(cmd); ok {
+		cmd = p
+	}
 	rel, err := filepath.Rel(repoDir, cmd)
 	if err != nil || strings.HasPrefix(rel, "..") || rel == "." {
 		return false
@@ -289,17 +295,72 @@ const scriptDir = "hooks/claude-code/"
 // expansions ($, ~, backticks), quoting and other shell operators.
 const shellSyntax = " \t\n\r$~'\"`\\;&|<>()*?[]{}!#"
 
-// isManagedScriptPath reports whether cmd is a plain path to a registry script:
-// no shell syntax, a managed basename, and scriptDir directly above it starting
-// at a path-segment boundary (the start of cmd or right after a "/"). devexp
-// only ever registers such paths; a command that expands variables, takes
+// hookCommand is the command devexp registers for the script at p. Claude Code
+// runs a command hook through a shell (sh -c), so a path with shell syntax — a
+// space in "My Projects", a quote, a $ — would be split or expanded: the hook
+// fails to run, which Claude Code treats as a non-blocking error, or something
+// else runs (#135). Such a path is registered as one single-quoted word; any
+// other path stays plain, byte-identical to what earlier releases wrote.
+func hookCommand(p string) string {
+	if !strings.ContainsAny(p, shellSyntax) {
+		return p
+	}
+	return shellQuote(p)
+}
+
+// shellQuote renders s as one POSIX single-quoted shell word. Nothing inside
+// single quotes is special, so each ' becomes: close quote, backslash-quote,
+// reopen quote.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// commandPath returns the path cmd runs, if cmd is in a form devexp writes:
+//   - a plain path, with no shell syntax at all, or
+//   - exactly one single-quoted word holding an absolute path, as shellQuote
+//     renders it (the whole command re-quotes to itself).
+//
+// Anything else — double quotes, a quoted word followed by arguments or ";",
+// concatenated words like '/a'b, a quoted relative path — is not devexp's.
+func commandPath(cmd string) (string, bool) {
+	if cmd == "" {
+		return "", false
+	}
+	if !strings.ContainsAny(cmd, shellSyntax) {
+		return cmd, true
+	}
+	if len(cmd) < 2 || cmd[0] != '\'' || cmd[len(cmd)-1] != '\'' {
+		return "", false
+	}
+	p := strings.ReplaceAll(cmd[1:len(cmd)-1], `'\''`, "'")
+	if !filepath.IsAbs(p) || shellQuote(p) != cmd {
+		return "", false
+	}
+	return p, true
+}
+
+// commandBase is the script name to show for cmd: the basename of the path it
+// runs, or of the raw string when it isn't in a devexp form.
+func commandBase(cmd string) string {
+	if p, ok := commandPath(cmd); ok {
+		return filepath.Base(p)
+	}
+	return filepath.Base(cmd)
+}
+
+// isManagedScriptPath reports whether cmd runs a registry script: it is in a
+// form devexp writes (commandPath — a plain path, or one single-quoted absolute
+// path), with a managed basename and scriptDir directly above it starting at a
+// path-segment boundary (the start of the path or right after a "/"). devexp
+// only ever registers such commands; one that expands variables, takes
 // arguments or lives in some other */hooks/claude-code/ directory (e.g.
 // my-hooks/claude-code/) is the user's, and is never pruned.
 func isManagedScriptPath(cmd string, managed map[string]bool) bool {
-	if cmd == "" || strings.ContainsAny(cmd, shellSyntax) {
+	cmdPath, ok := commandPath(cmd)
+	if !ok {
 		return false
 	}
-	p := filepath.ToSlash(cmd)
+	p := filepath.ToSlash(cmdPath)
 	base := path.Base(p)
 	if !managed[base] {
 		return false
@@ -331,10 +392,11 @@ func managedScriptNames(registry Registry) map[string]bool {
 // registry basename plus the registry's own script directory, so a user hook
 // that happens to share a filename is untouched.
 func isForeignDevexpHook(cmd string, managed map[string]bool, repoDir string) bool {
-	if !filepath.IsAbs(cmd) || !isManagedScriptPath(cmd, managed) {
+	p, ok := commandPath(cmd)
+	if !ok || !filepath.IsAbs(p) || !isManagedScriptPath(cmd, managed) {
 		return false
 	}
-	rel, err := filepath.Rel(repoDir, cmd)
+	rel, err := filepath.Rel(repoDir, p)
 	if err != nil {
 		return false
 	}
@@ -348,7 +410,8 @@ func isForeignDevexpHook(cmd string, managed map[string]bool, repoDir string) bo
 // isForeignDevexpHook, by isManagedScriptPath, and replaced by the absolute
 // registration on the same run.
 func isRelativeDevexpHook(cmd string, managed map[string]bool) bool {
-	return !filepath.IsAbs(cmd) && isManagedScriptPath(cmd, managed)
+	p, ok := commandPath(cmd)
+	return ok && !filepath.IsAbs(p) && isManagedScriptPath(cmd, managed)
 }
 
 // pruneForeignDevexpHooks removes devexp-managed registrations that point at an
@@ -372,7 +435,7 @@ func pruneForeignDevexpHooks(hooksMap map[string][]hookEntry, registry Registry,
 					reason = "duplicate from another install root"
 				}
 				if reason != "" {
-					msg := fmt.Sprintf("%s: %s (%s)", event, filepath.Base(h.Command), reason)
+					msg := fmt.Sprintf("%s: %s (%s)", event, commandBase(h.Command), reason)
 					if dryRun {
 						ui.DryRun("remove " + msg)
 					} else {
@@ -396,4 +459,47 @@ func pruneForeignDevexpHooks(hooksMap map[string][]hookEntry, registry Registry,
 		}
 	}
 	return pruned
+}
+
+// requoteDevexpHooks rewrites, in place, each registration of a registry script
+// under repoDir that is not in the form hookCommand gives it — the unquoted
+// path an earlier install wrote before paths needing quotes were quoted (#135),
+// which the shell splits, or a quoted form of a path that needs none. Disabled
+// hooks are included: the entry keeps its event, matcher and position and only
+// becomes runnable. Only the exact unquoted path and the exact quoted form of a
+// script under repoDir are rewritten; a user's command never is.
+func requoteDevexpHooks(hooksMap map[string][]hookEntry, registry Registry, repoDir string, dryRun bool) bool {
+	want := map[string]string{} // script path under repoDir -> command to register
+	for _, h := range registry {
+		if s := h.Targets[TargetClaudeCode].Script; s != "" {
+			abs := filepath.Join(repoDir, s)
+			want[abs] = hookCommand(abs)
+		}
+	}
+	changed := false
+	for event, entries := range hooksMap {
+		for i := range entries {
+			for j, h := range entries[i].Hooks {
+				p := h.Command
+				if _, legacy := want[p]; !legacy {
+					if p, _ = commandPath(h.Command); p == "" {
+						continue
+					}
+				}
+				cmd, ok := want[p]
+				if !ok || cmd == h.Command {
+					continue
+				}
+				msg := fmt.Sprintf("%s: %s (command re-quoted for the shell)", event, filepath.Base(p))
+				if dryRun {
+					ui.DryRun("rewrite " + msg)
+					continue
+				}
+				fmt.Printf("  \033[0;33m~\033[0m %s\n", msg)
+				entries[i].Hooks[j].Command = cmd
+				changed = true
+			}
+		}
+	}
+	return changed
 }

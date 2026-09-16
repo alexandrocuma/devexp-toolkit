@@ -3,8 +3,10 @@ package hooks
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -867,5 +869,311 @@ func TestLoadRegistry_RepoRegistry(t *testing.T) {
 				t.Errorf("%s: EnabledFor(%q) = false, want true", h.Name, TargetOpencode)
 			}
 		}
+	}
+}
+
+// ── Paths that need shell quoting (#135) ─────────────────────────────────────
+
+// needsQuoting are repo dir names with each kind of character Claude Code's
+// shell (sh -c) would split on or interpret.
+var needsQuoting = map[string]string{
+	"space":      "My Proj",
+	"quote":      "it's",
+	"dollar":     "a$b",
+	"semicolon":  "a;b",
+	"ampersand":  "a&b",
+	"everything": "My Proj/it's $x;&`y`(z)",
+}
+
+// decoys are where an unquoted command from each needsQuoting dir would land,
+// relative to the dir's parent: cut at the space or operator, or with $b
+// expanded to nothing. ("it's" is an unterminated quote: nothing runs at all.)
+var decoys = map[string][]string{
+	"space":      {"My"},
+	"dollar":     {"a/hooks/claude-code/secret-guard.sh", "a/hooks/claude-code/dangerous-cmd-guard.sh"},
+	"semicolon":  {"a"},
+	"ampersand":  {"a"},
+	"everything": {"My"},
+}
+
+func TestHookCommand(t *testing.T) {
+	tests := map[string]struct {
+		path, want string
+	}{
+		"plain path stays plain":      {path: "/opt/devexp/hooks/claude-code/secret-guard.sh", want: "/opt/devexp/hooks/claude-code/secret-guard.sh"},
+		"space is quoted":             {path: "/My Proj/hooks/claude-code/secret-guard.sh", want: "'/My Proj/hooks/claude-code/secret-guard.sh'"},
+		"single quote is escaped":     {path: "/it's/hooks/claude-code/secret-guard.sh", want: `'/it'\''s/hooks/claude-code/secret-guard.sh'`},
+		"dollar is quoted":            {path: "/a$b/hooks/claude-code/secret-guard.sh", want: "'/a$b/hooks/claude-code/secret-guard.sh'"},
+		"semicolon is quoted":         {path: "/a;b/hooks/claude-code/secret-guard.sh", want: "'/a;b/hooks/claude-code/secret-guard.sh'"},
+		"ampersand is quoted":         {path: "/a&b/hooks/claude-code/secret-guard.sh", want: "'/a&b/hooks/claude-code/secret-guard.sh'"},
+		"two quotes, both escaped":    {path: "/''/x.sh", want: `'/'\'''\''/x.sh'`},
+		"backslash needs no escaping": {path: `/a\b/x.sh`, want: `'/a\b/x.sh'`},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := hookCommand(tt.path); got != tt.want {
+				t.Errorf("hookCommand(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+			if got, ok := commandPath(tt.want); !ok || got != tt.path {
+				t.Errorf("commandPath(%q) = %q, %v; want %q, true", tt.want, got, ok, tt.path)
+			}
+		})
+	}
+}
+
+func TestCommandPath(t *testing.T) {
+	const abs = "/My Proj/hooks/claude-code/secret-guard.sh"
+	tests := map[string]struct {
+		cmd    string
+		want   string
+		wantOK bool
+	}{
+		"plain absolute path":                   {cmd: "/opt/x/hooks/claude-code/secret-guard.sh", want: "/opt/x/hooks/claude-code/secret-guard.sh", wantOK: true},
+		"plain relative path":                   {cmd: "hooks/claude-code/secret-guard.sh", want: "hooks/claude-code/secret-guard.sh", wantOK: true},
+		"single-quoted absolute path":           {cmd: "'" + abs + "'", want: abs, wantOK: true},
+		"single-quoted path needing no quoting": {cmd: "'/opt/x/secret-guard.sh'", want: "/opt/x/secret-guard.sh", wantOK: true},
+		"escaped single quote":                  {cmd: `'/it'\''s/x.sh'`, want: "/it's/x.sh", wantOK: true},
+		"empty":                                 {cmd: ""},
+		"lone quote":                            {cmd: "'"},
+		"empty quotes":                          {cmd: "''"},
+		"unquoted space":                        {cmd: abs},
+		"single-quoted relative path":           {cmd: "'hooks/claude-code/secret-guard.sh'"},
+		"double-quoted":                         {cmd: `"` + abs + `"`},
+		"quoted then argument":                  {cmd: "'" + abs + "' --flag"},
+		"quoted then chained command":           {cmd: "'" + abs + "';true"},
+		"quoted word ending in a quote after ;": {cmd: "'/a';'" + abs + "'"},
+		"concatenated quoted and bare words":    {cmd: "'/My Proj/hooks/'claude-code/secret-guard.sh"},
+		"bare word then quoted word":            {cmd: "/x'/My Proj/secret-guard.sh'"},
+		"unbalanced quote inside":               {cmd: "'/it's/x.sh'"},
+		"other escape spelling of a quote":      {cmd: `'/it'"'"'s/x.sh'`},
+		"wrapper around a quoted path":          {cmd: "bash '" + abs + "'"},
+		"variable":                              {cmd: "$CLAUDE_PROJECT_DIR/hooks/claude-code/secret-guard.sh"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, ok := commandPath(tt.cmd)
+			if ok != tt.wantOK || got != tt.want {
+				t.Errorf("commandPath(%q) = %q, %v; want %q, %v", tt.cmd, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
+// TestInstallClaude_PathsNeedingQuotes registers hooks from repo dirs that need
+// quoting, then runs every registered command the way Claude Code does — through
+// sh -c — from an unrelated directory. Only the intended script may run: a decoy
+// sits wherever an unquoted command would land (see decoys).
+func TestInstallClaude_PathsNeedingQuotes(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	for name, dir := range needsQuoting {
+		t.Run(name, func(t *testing.T) {
+			base := t.TempDir()
+			repoDir := filepath.Join(base, dir)
+			log := filepath.Join(t.TempDir(), "ran.log")
+			writeExec := func(p, body string) {
+				t.Helper()
+				if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, s := range []string{"secret-guard.sh", "dangerous-cmd-guard.sh"} {
+				writeExec(filepath.Join(repoDir, "hooks", "claude-code", s), `echo "intended `+s+`" >> "$LOG"`)
+			}
+			decoy := `echo "DECOY $0" >> "$LOG"`
+			for _, p := range decoys[name] {
+				writeExec(filepath.Join(base, p), decoy)
+			}
+			settingsPath := filepath.Join(t.TempDir(), "settings.json")
+
+			var err error
+			out := captureOutput(t, func() { err = InstallClaude(testRegistry(), repoDir, settingsPath, nil, false) })
+			if err != nil {
+				t.Fatalf("InstallClaude() error = %v\n%s", err, out)
+			}
+
+			cwd := t.TempDir()
+			ran := 0
+			for _, entries := range readHooks(t, settingsPath) {
+				for _, e := range entries {
+					for _, h := range e.Hooks {
+						if h.Command == filepath.Join(repoDir, "hooks", "claude-code", filepath.Base(h.Command)) {
+							t.Errorf("registered the unquoted path %q", h.Command)
+						}
+						c := exec.Command("sh", "-c", h.Command)
+						c.Dir = cwd
+						c.Env = append(os.Environ(), "LOG="+log, "b=", "x=", "y=", "z=")
+						if combined, err := c.CombinedOutput(); err != nil {
+							t.Errorf("sh -c %q: %v\n%s", h.Command, err, combined)
+						}
+						ran++
+					}
+				}
+			}
+			if ran != 2 {
+				t.Fatalf("ran %d registered commands, want 2 (the enabled hooks)", ran)
+			}
+			got, _ := os.ReadFile(log)
+			lines := strings.Split(strings.TrimSpace(string(got)), "\n")
+			sort.Strings(lines)
+			want := []string{"intended dangerous-cmd-guard.sh", "intended secret-guard.sh"}
+			if !reflect.DeepEqual(lines, want) {
+				t.Errorf("what ran = %q, want %q", lines, want)
+			}
+		})
+	}
+}
+
+// TestInstallClaude_QuotingOnlyWhenNeeded: a path with no shell syntax is
+// registered exactly as earlier releases wrote it, so existing settings don't
+// change and older matchers still recognise the command.
+func TestInstallClaude_QuotingOnlyWhenNeeded(t *testing.T) {
+	repoDir := filepath.Join(t.TempDir(), "plain-repo_1.0")
+	scriptAbs := createScript(t, repoDir, "hooks/claude-code/secret-guard.sh")
+	createScript(t, repoDir, "hooks/claude-code/dangerous-cmd-guard.sh")
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	captureOutput(t, func() {
+		if err := InstallClaude(testRegistry(), repoDir, settingsPath, nil, false); err != nil {
+			t.Error(err)
+		}
+	})
+	got := readHooks(t, settingsPath)["PreToolUse"]
+	if len(got) == 0 || got[0].Hooks[0].Command != scriptAbs {
+		t.Errorf("hooks = %+v, want the plain path %q first", got, scriptAbs)
+	}
+}
+
+// TestInstallClaude_MigratesUnquotedCommands: an earlier install from a repo
+// dir needing quotes wrote the bare path, which the shell splits. It is
+// rewritten in place — disabled hooks included — and the user's own commands,
+// however they quote a devexp path, are left exactly as they were.
+func TestInstallClaude_MigratesUnquotedCommands(t *testing.T) {
+	base := t.TempDir()
+	repoDir := filepath.Join(base, "My Proj", "it's $x;&clone")
+	otherRoot := filepath.Join(base, "Other Root", "cache")
+	for _, s := range []string{"secret-guard.sh", "dangerous-cmd-guard.sh", "graphify-read-guard.sh"} {
+		createScript(t, repoDir, "hooks/claude-code/"+s)
+	}
+	mine := func(s string) string { return filepath.Join(repoDir, "hooks", "claude-code", s) }
+	foreign := filepath.Join(otherRoot, "hooks", "claude-code", "secret-guard.sh")
+	userCmds := []string{
+		`"` + mine("secret-guard.sh") + `"`,
+		shellQuote(mine("secret-guard.sh")) + " --strict",
+		"bash " + shellQuote(foreign),
+		shellQuote(filepath.Join(otherRoot, "hooks", "claude-code")+"/") + "secret-guard.sh",
+		shellQuote("hooks/claude-code/secret-guard.sh"),
+		shellQuote(filepath.Join(otherRoot, "my-hooks", "claude-code", "secret-guard.sh")),
+		foreign, // another root's unquoted path: indistinguishable from a command with arguments
+	}
+	var userHooks []hookCmd
+	for _, c := range userCmds {
+		userHooks = append(userHooks, hookCmd{Type: "command", Command: c})
+	}
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	writeSettingsHooks(t, settingsPath, hooksMapT{
+		"PreToolUse": {
+			{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: mine("secret-guard.sh")}}},
+			{Matcher: "Read|Glob", Hooks: []hookCmd{{Type: "command", Command: mine("graphify-read-guard.sh")}}}, // disabled
+			{Matcher: "Bash", Hooks: []hookCmd{{Type: "command", Command: shellQuote(filepath.Join(otherRoot, "hooks", "claude-code", "dangerous-cmd-guard.sh"))}}},
+			{Matcher: "Write", Hooks: userHooks},
+		},
+	})
+
+	var err error
+	out := captureOutput(t, func() { err = InstallClaude(testRegistry(), repoDir, settingsPath, nil, false) })
+	if err != nil {
+		t.Fatalf("InstallClaude() error = %v\n%s", err, out)
+	}
+	want := hooksMapT{"PreToolUse": {
+		{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: shellQuote(mine("secret-guard.sh"))}}},
+		{Matcher: "Read|Glob", Hooks: []hookCmd{{Type: "command", Command: shellQuote(mine("graphify-read-guard.sh"))}}},
+		{Matcher: "Write", Hooks: userHooks},
+		{Matcher: "Bash", Hooks: []hookCmd{{Type: "command", Command: shellQuote(mine("dangerous-cmd-guard.sh"))}}},
+	}}
+	if got := readHooks(t, settingsPath); !reflect.DeepEqual(got, want) {
+		t.Errorf("hooks =\n%+v\nwant\n%+v\noutput:\n%s", got, want, out)
+	}
+
+	// A second run finds everything registered and writes nothing.
+	before, _ := os.ReadFile(settingsPath)
+	out = captureOutput(t, func() { err = InstallClaude(testRegistry(), repoDir, settingsPath, nil, false) })
+	if err != nil {
+		t.Fatalf("second InstallClaude() error = %v", err)
+	}
+	if after, _ := os.ReadFile(settingsPath); string(after) != string(before) || strings.Contains(out, "Saved:") {
+		t.Errorf("second install changed settings.json:\n%s", out)
+	}
+}
+
+// TestInstallClaude_RequotesQuotedPlainPath: a quoted form of a path that
+// needs no quoting runs the same script, so it is devexp's and is rewritten to
+// the plain form rather than registered twice.
+func TestInstallClaude_RequotesQuotedPlainPath(t *testing.T) {
+	repoDir := t.TempDir()
+	scriptAbs := createScript(t, repoDir, "hooks/claude-code/secret-guard.sh")
+	createScript(t, repoDir, "hooks/claude-code/dangerous-cmd-guard.sh")
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	writeSettingsHooks(t, settingsPath, hooksMapT{"PreToolUse": {
+		{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: "'" + scriptAbs + "'"}}},
+	}})
+	captureOutput(t, func() {
+		if err := InstallClaude(testRegistry(), repoDir, settingsPath, nil, false); err != nil {
+			t.Error(err)
+		}
+	})
+	got := readHooks(t, settingsPath)["PreToolUse"]
+	if len(got) != 2 || got[0].Hooks[0].Command != scriptAbs {
+		t.Errorf("hooks = %+v, want %q rewritten plain and one dangerous-cmd-guard entry", got, scriptAbs)
+	}
+}
+
+func TestQuotedDevexpHookMatchers(t *testing.T) {
+	base := t.TempDir()
+	repoDir := filepath.Join(base, "My Proj")
+	otherRoot := filepath.Join(base, "it's $other;&")
+	createScript(t, repoDir, "hooks/claude-code/secret-guard.sh")
+	managed := managedScriptNames(testRegistry())
+	sd := func(root, s string) string { return filepath.Join(root, "hooks", "claude-code", s) }
+
+	tests := map[string]struct {
+		cmd                      string
+		foreign, relative, stale bool
+	}{
+		"quoted own hook":                        {cmd: shellQuote(sd(repoDir, "secret-guard.sh"))},
+		"quoted own hook, script removed":        {cmd: shellQuote(sd(repoDir, "removed.sh")), stale: true},
+		"quoted foreign hook":                    {cmd: shellQuote(sd(otherRoot, "secret-guard.sh")), foreign: true},
+		"quoted foreign copy of a disabled hook": {cmd: shellQuote(sd(otherRoot, "graphify-read-guard.sh")), foreign: true},
+		"quoted foreign plain-path hook":         {cmd: "'/opt/devexp/hooks/claude-code/secret-guard.sh'", foreign: true},
+		"plain foreign hook":                     {cmd: "/opt/devexp/hooks/claude-code/secret-guard.sh", foreign: true},
+		"plain relative hook":                    {cmd: "hooks/claude-code/secret-guard.sh", relative: true},
+		"quoted relative path":                   {cmd: "'hooks/claude-code/secret-guard.sh'"},
+		"quoted unknown script":                  {cmd: shellQuote(sd(otherRoot, "mine.sh"))},
+		"quoted my-hooks/claude-code":            {cmd: shellQuote(filepath.Join(otherRoot, "my-hooks", "claude-code", "secret-guard.sh"))},
+		"double-quoted foreign hook":             {cmd: `"` + sd(otherRoot, "secret-guard.sh") + `"`},
+		"quoted foreign hook with argument":      {cmd: shellQuote(sd(otherRoot, "secret-guard.sh")) + " --x"},
+		"quoted foreign hook, chained":           {cmd: shellQuote(sd(otherRoot, "secret-guard.sh")) + ";true"},
+		"wrapper around quoted foreign hook":     {cmd: "bash " + shellQuote(sd(otherRoot, "secret-guard.sh"))},
+		"concatenated words":                     {cmd: shellQuote(filepath.Join(otherRoot, "hooks")) + "/claude-code/secret-guard.sh"},
+		"two quoted words chained":               {cmd: shellQuote(filepath.Join(otherRoot, "setup")) + ";" + shellQuote(sd(otherRoot, "secret-guard.sh"))},
+		"quote escaped another way":              {cmd: `'/it'"'"'s/hooks/claude-code/secret-guard.sh'`},
+		"unquoted foreign path needing quotes":   {cmd: sd(otherRoot, "secret-guard.sh")},
+		"quoted variable":                        {cmd: `'$CLAUDE_PROJECT_DIR/hooks/claude-code/secret-guard.sh'`},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := isForeignDevexpHook(tt.cmd, managed, repoDir); got != tt.foreign {
+				t.Errorf("isForeignDevexpHook(%q) = %v, want %v", tt.cmd, got, tt.foreign)
+			}
+			if got := isRelativeDevexpHook(tt.cmd, managed); got != tt.relative {
+				t.Errorf("isRelativeDevexpHook(%q) = %v, want %v", tt.cmd, got, tt.relative)
+			}
+			if got := isStaleDevexpHook(tt.cmd, repoDir); got != tt.stale {
+				t.Errorf("isStaleDevexpHook(%q) = %v, want %v", tt.cmd, got, tt.stale)
+			}
+		})
 	}
 }

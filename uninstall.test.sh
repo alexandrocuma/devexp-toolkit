@@ -152,6 +152,79 @@ expect "keeps a my-hooks/claude-code/ hook, relative and absolute" \
   "my-hooks/claude-code/secret-guard.sh
 $OTHER/my-hooks/claude-code/secret-guard.sh"
 
+# ── Paths that need shell quoting (#135) ─────────────────────────────────────
+# devexp registers a path with a space or shell syntax as one single-quoted
+# word. Those are devexp's; so is the unquoted path an earlier install from
+# this repo wrote. Other quoting, arguments or concatenation stay the user's.
+
+q() { # POSIX single-quote $1, written independently of the code under test
+    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+settings_with() { # commands... -> settings json with one entry holding them all
+    python3 -c 'import json,sys; print(json.dumps({"hooks":{"PreToolUse":[{"matcher":"Read","hooks":[{"type":"command","command":c} for c in sys.argv[1:]]}]}}))' "$@"
+}
+
+SPACED="$TMP/My Proj/it's \$x;&clone"
+SPACED_OTHER="$TMP/Other Root/cache"
+mkdir -p "$SPACED/hooks/claude-code"
+cp "$REPO/hooks/registry.json" "$SPACED/hooks/registry.json"
+SP_MINE="$SPACED/hooks/claude-code/secret-guard.sh"
+SP_FOREIGN="$SPACED_OTHER/hooks/claude-code/secret-guard.sh"
+SP_FOREIGN_DISABLED="$SPACED_OTHER/hooks/claude-code/graphify-read-guard.sh"
+
+# The helper really is shell quoting: sh reads each quoted path back unchanged.
+for p in "$SP_MINE" "$SP_FOREIGN"; do
+    if [ "$(sh -c "printf '%s' $(q "$p")")" = "$p" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL q() does not round-trip %s\n' "$p"; fi
+done
+
+REPO_PLAIN="$REPO"
+REPO="$SPACED"
+
+expect "removes the repo's own quoted hook (space, ', \$, ;, &)" \
+  "$(settings_with "$(q "$SP_MINE")")" \
+  ""
+
+expect "removes the repo's legacy unquoted hook" \
+  "$(settings_with "$SP_MINE")" \
+  ""
+
+expect "removes quoted hooks from a foreign root, disabled ones too" \
+  "$(settings_with "$(q "$SP_FOREIGN")" "$(q "$SP_FOREIGN_DISABLED")" "$(q "$FOREIGN")")" \
+  ""
+
+expect "keeps user commands that quote or wrap a devexp path another way" \
+  "$(settings_with \
+      "\"$SP_MINE\"" \
+      "$(q "$SP_FOREIGN") --flag" \
+      "$(q "$SP_FOREIGN"); true" \
+      "$(q "$SPACED_OTHER/setup");$(q "$SP_FOREIGN")" \
+      "'$TMP/it'\"'\"'s/hooks/claude-code/secret-guard.sh'" \
+      "bash $(q "$SP_FOREIGN")" \
+      "$(q "$SPACED_OTHER/hooks/claude-code/")secret-guard.sh" \
+      "'$SPACED_OTHER/hooks/claude-code/secret-guard.sh" \
+      "$(q "hooks/claude-code/secret-guard.sh")" \
+      "$(q "$SPACED_OTHER/my-hooks/claude-code/secret-guard.sh")" \
+      "$(q "$SPACED_OTHER/hooks/claude-code/format-check.sh")")" \
+  "\"$SP_MINE\"
+$(q "$SP_FOREIGN") --flag
+$(q "$SP_FOREIGN"); true
+$(q "$SPACED_OTHER/setup");$(q "$SP_FOREIGN")
+'$TMP/it'\"'\"'s/hooks/claude-code/secret-guard.sh'
+bash $(q "$SP_FOREIGN")
+$(q "$SPACED_OTHER/hooks/claude-code/")secret-guard.sh
+'$SPACED_OTHER/hooks/claude-code/secret-guard.sh
+$(q "hooks/claude-code/secret-guard.sh")
+$(q "$SPACED_OTHER/my-hooks/claude-code/secret-guard.sh")
+$(q "$SPACED_OTHER/hooks/claude-code/format-check.sh")"
+
+# Another root's legacy unquoted path can't be told apart from a user command
+# that takes arguments, so it is left for that root's own install to fix.
+expect "keeps another root's unquoted path that needs quoting" \
+  "$(settings_with "$SP_FOREIGN")" \
+  "$SP_FOREIGN"
+
+REPO="$REPO_PLAIN"
+
 # ── opencode (#109) ──────────────────────────────────────────────────────────
 
 ok() { pass=$((pass+1)); }

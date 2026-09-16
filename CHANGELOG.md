@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Hook commands run from paths with spaces or shell syntax (#135).** Claude
+  Code runs a hook command through `sh -c`, and devexp registered the absolute
+  script path unquoted. From a repo or asset-cache dir with a space, quote, `$`,
+  `;`, `&` or other shell syntax in its path, the shell split or expanded the
+  command, so the hook didn't run (a non-blocking error, meaning the guard
+  failed open) or a different program ran.
+  - Such a path is now registered as one POSIX single-quoted word (`'…'`, each
+    `'` written as `'\''`). Every other path is registered as before, byte for
+    byte.
+  - An unquoted entry an earlier install wrote from the same repo/cache dir is
+    rewritten in place on the next `devexp install`, disabled hooks included.
+  - Install-time pruning (stale, foreign-root, relative) and `uninstall.sh`
+    recognise exactly the two forms devexp writes: a plain path, or one
+    single-quoted absolute path that re-quotes to itself.
+    `uninstall.sh` also removes its own repo's unquoted entries. Double quotes,
+    arguments, chained or concatenated words and other quoting are still the
+    user's and are never touched.
+  - Not migrated: an unquoted entry from a different root, which can't be told
+    apart from a user command with arguments. An install or uninstall from its
+    own root fixes it.
 - **`devexp install` refuses an unset, empty or relative `HOME` (#126).** Every
   install target is built from `HOME`, so with it unset, empty or relative the
   installer would write into, back up from and remove stale files under the
