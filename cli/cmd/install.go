@@ -84,15 +84,13 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	fmt.Println("────────────────────────────────────────")
 	fmt.Println()
 
-	src, err := repo.Resolve(version)
+	// The asset root is printed as soon as it is decided: before a standalone
+	// binary extracts its assets, and before anything is installed from it.
+	src, err := repo.Resolve(version, announceAssetRoot)
 	if err != nil {
 		return err
 	}
 	repoDir := src.RepoDir
-	if src.Embedded {
-		ui.Info("Running standalone — using assets bundled in this binary.")
-		fmt.Println()
-	}
 
 	cfg, err := config.Load(filepath.Join(repoDir, "devexp.config.json"))
 	if err != nil {
@@ -199,4 +197,14 @@ func runInstall(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("\033[0;32m\033[1mAll done.\033[0m\n\n")
 	return nil
+}
+
+// announceAssetRoot tells the user which directory devexp installs from and
+// how it was chosen (#134).
+func announceAssetRoot(src repo.Source) {
+	if src.Embedded {
+		ui.Info("Running standalone — using assets bundled in this binary.")
+	}
+	ui.Info(fmt.Sprintf("Asset root: %s (%s)", src.RepoDir, src.Origin))
+	fmt.Println()
 }

@@ -129,6 +129,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   points to the async `runCommand` helper, which takes an argument array and
   uses no shell.
 
+### Security
+
+- **Asset root detection only accepts a devexp-toolkit checkout (#134).** Repo
+  detection accepted non-toolkit directories that merely had the same
+  directory names, and `devexp install` only said which root it used when it
+  fell back to the bundled assets.
+  - A checkout is now identified by the committed `.devexp-toolkit` marker file
+    (first line `devexp-toolkit`) plus `agents/`, `skills/` and `mcps/`. The
+    marker is embedded in the binary, so the extracted bundled assets still
+    qualify. `DEVEXP_DIR` gets the same check and is refused when it fails.
+  - Tagged release builds use `DEVEXP_DIR` or their bundled assets only; they
+    no longer look for a checkout next to the binary or above the current
+    directory. Binaries built from a clone (`./install.sh`, `go run`) still find
+    it there.
+  - `devexp install` prints `Asset root: <dir> (<how it was chosen>)` before it
+    extracts or installs anything.
+  - Forks must keep `.devexp-toolkit` at the repo root.
+
 ## [0.8.0] - 2026-09-16
 
 ### Added

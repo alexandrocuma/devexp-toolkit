@@ -483,7 +483,7 @@ if command -v go >/dev/null 2>&1 && [ -d "$ROOT/cli/internal/assets/hooks" ]; th
     new_env
     R="$E/repo"; H="$E/h"; OC="$H/.config/opencode"; P="$OC/plugins"
     mkdir -p "$R"
-    cp -R "$ROOT/agents" "$ROOT/skills" "$ROOT/hooks" "$ROOT/mcps" "$ROOT/devexp.config.json" "$ROOT/uninstall.sh" "$R/"
+    cp -R "$ROOT/.devexp-toolkit" "$ROOT/agents" "$ROOT/skills" "$ROOT/hooks" "$ROOT/mcps" "$ROOT/devexp.config.json" "$ROOT/uninstall.sh" "$R/"
     printf '#!/bin/sh\nexit 0\n' > "$E/bin/opencode"; chmod +x "$E/bin/opencode"
     if (cd "$ROOT/cli" && go build -o "$E/devexp" .) > "$E/out" 2>&1 \
         && env -i HOME="$H" PATH="$E/bin:/usr/bin:/bin" DEVEXP_DIR="$R" "$E/devexp" install --reinstall-mcps > "$E/out" 2>&1; then

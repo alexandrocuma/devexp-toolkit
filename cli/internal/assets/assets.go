@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed all:agents all:skills all:hooks all:mcps devexp.config.json uninstall.sh
+//go:embed all:agents all:skills all:hooks all:mcps devexp.config.json uninstall.sh .devexp-toolkit
 var FS embed.FS
 
 // ExtractFile copies srcPath out of fsys onto the real filesystem at destPath

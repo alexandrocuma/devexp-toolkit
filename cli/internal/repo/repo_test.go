@@ -2,83 +2,151 @@ package repo
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
 )
 
-// makeRepoDir creates dir with the subdirectories isRepoDir looks for.
-func makeRepoDir(t *testing.T, dir string) {
+// makeShapeDir creates dir with the toolkit's directory names — agents/,
+// skills/, mcps/, and a hooks registry naming a Claude Code hook — but no
+// marker file: the shape of many projects that are not a devexp-toolkit
+// checkout.
+func makeShapeDir(t *testing.T, dir string) {
 	t.Helper()
-	for _, sub := range []string{"agents", "skills", "mcps"} {
+	for _, sub := range []string{"agents", "skills", "mcps", filepath.Join("hooks", "claude-code")} {
 		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
 			t.Fatalf("MkdirAll(%s) error = %v", sub, err)
 		}
 	}
+	registry := `[{"name": "shape-hook", "enabled": true, "claude_code": {"event": "PreToolUse", "script": "hooks/claude-code/shape-hook.sh"}}]`
+	if err := os.WriteFile(filepath.Join(dir, "hooks", "registry.json"), []byte(registry), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// makeRepoDir creates a devexp-toolkit checkout: the shape plus the marker.
+func makeRepoDir(t *testing.T, dir string) {
+	t.Helper()
+	makeShapeDir(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, markerFile), []byte(markerID+"\n# comment\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestFindRepoDir_DevexpDirEnv: DEVEXP_DIR is resolved to a clean absolute
-// path, relative forms included, and must be a devexp repo (#126).
+// path, relative forms included (#126), and must be a devexp-toolkit checkout,
+// not merely a directory of the same shape (#134) — in dev and tagged builds.
 func TestFindRepoDir_DevexpDirEnv(t *testing.T) {
 	tests := map[string]struct {
 		devexpDir string // relative values are relative to the test's cwd
 		wantRepo  string // relative to the cwd; "" = want an error
 	}{
-		"absolute":             {devexpDir: "<cwd>/repo", wantRepo: "repo"},
-		"absolute, uncleaned":  {devexpDir: "<cwd>/repo/../repo/", wantRepo: "repo"},
-		"dot":                  {devexpDir: ".", wantRepo: "."},
-		"relative":             {devexpDir: "repo", wantRepo: "repo"},
-		"relative through ..":  {devexpDir: "sub/../repo", wantRepo: "repo"},
-		"not a repo":           {devexpDir: "sub"},
-		"does not exist":       {devexpDir: "missing"},
-		"absolute, not a repo": {devexpDir: "<cwd>/sub"},
+		"absolute":              {devexpDir: "<cwd>/repo", wantRepo: "repo"},
+		"absolute, uncleaned":   {devexpDir: "<cwd>/repo/../repo/", wantRepo: "repo"},
+		"dot":                   {devexpDir: ".", wantRepo: "."},
+		"relative":              {devexpDir: "repo", wantRepo: "repo"},
+		"relative through ..":   {devexpDir: "sub/../repo", wantRepo: "repo"},
+		"not a repo":            {devexpDir: "sub"},
+		"does not exist":        {devexpDir: "missing"},
+		"absolute, not a repo":  {devexpDir: "<cwd>/sub"},
+		"same shape, no marker": {devexpDir: "shape"},
+		"inside a checkout":     {devexpDir: "repo/agents"},
 	}
 	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			cwd, err := filepath.EvalSymlinks(t.TempDir())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if tt.wantRepo == "." {
-				makeRepoDir(t, cwd)
-			}
-			makeRepoDir(t, filepath.Join(cwd, "repo"))
-			os.MkdirAll(filepath.Join(cwd, "sub"), 0o755) //nolint:errcheck
-			t.Chdir(cwd)
-			t.Setenv("DEVEXP_DIR", strings.ReplaceAll(tt.devexpDir, "<cwd>", cwd))
-
-			got, err := findRepoDir()
-			if tt.wantRepo == "" {
-				if err == nil || got != "" || errors.Is(err, errRepoNotFound) || !strings.Contains(err.Error(), "not a devexp repo") {
-					t.Errorf("findRepoDir() = %q, %v; want a not-a-repo error", got, err)
+		for _, tagged := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s, tagged=%v", name, tagged), func(t *testing.T) {
+				cwd, err := filepath.EvalSymlinks(t.TempDir())
+				if err != nil {
+					t.Fatal(err)
 				}
-				return
-			}
-			if want := filepath.Join(cwd, tt.wantRepo); err != nil || got != want {
-				t.Errorf("findRepoDir() = %q, %v; want %q", got, err, want)
-			}
-		})
+				if tt.wantRepo == "." {
+					makeRepoDir(t, cwd)
+				}
+				makeRepoDir(t, filepath.Join(cwd, "repo"))
+				makeShapeDir(t, filepath.Join(cwd, "shape"))
+				os.MkdirAll(filepath.Join(cwd, "sub"), 0o755) //nolint:errcheck
+				t.Chdir(cwd)
+				t.Setenv("DEVEXP_DIR", strings.ReplaceAll(tt.devexpDir, "<cwd>", cwd))
+
+				got, origin, err := findRepoDir(tagged)
+				if tt.wantRepo == "" {
+					if err == nil || got != "" || errors.Is(err, errRepoNotFound) || !strings.Contains(err.Error(), "not a devexp-toolkit checkout") {
+						t.Errorf("findRepoDir() = %q, %v; want a not-a-checkout error", got, err)
+					}
+					return
+				}
+				if want := filepath.Join(cwd, tt.wantRepo); err != nil || got != want || origin != OriginDevexpDir {
+					t.Errorf("findRepoDir() = %q, %q, %v; want %q from DEVEXP_DIR", got, origin, err, want)
+				}
+			})
+		}
 	}
 }
 
+// TestIsRepoDir: only a directory with the marker file — a regular file whose
+// first line is the toolkit's id — and agents/, skills/, mcps/ is a checkout.
 func TestIsRepoDir(t *testing.T) {
+	marker := func(content string) func(t *testing.T, dir string) {
+		return func(t *testing.T, dir string) {
+			if err := os.WriteFile(filepath.Join(dir, markerFile), []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	tests := map[string]struct {
-		dirs []string
-		want bool
+		dirs   []string
+		marker func(t *testing.T, dir string)
+		want   bool
 	}{
-		"true when agents, skills, mcps all present": {
-			dirs: []string{"agents", "skills", "mcps"},
-			want: true,
+		"true with the marker and agents, skills, mcps": {
+			dirs: []string{"agents", "skills", "mcps"}, marker: marker("devexp-toolkit\n# note\n"), want: true,
 		},
-		"false when a subdir is missing": {
-			dirs: []string{"agents", "skills"},
+		"true with a marker without a trailing newline": {
+			dirs: []string{"agents", "skills", "mcps"}, marker: marker("devexp-toolkit"), want: true,
+		},
+		"true with a CRLF marker": {
+			dirs: []string{"agents", "skills", "mcps"}, marker: marker("devexp-toolkit\r\n"), want: true,
+		},
+		"false for the same shape without the marker": {
+			dirs: []string{"agents", "skills", "mcps", "hooks"}, want: false,
+		},
+		"false when the marker names something else": {
+			dirs: []string{"agents", "skills", "mcps"}, marker: marker("devexp-toolkit-fork\n"), want: false,
+		},
+		"false when the id is not the first line": {
+			dirs: []string{"agents", "skills", "mcps"}, marker: marker("# note\ndevexp-toolkit\n"), want: false,
+		},
+		"false for an empty marker": {
+			dirs: []string{"agents", "skills", "mcps"}, marker: marker(""), want: false,
+		},
+		"false for an oversized marker": {
+			dirs: []string{"agents", "skills", "mcps"}, marker: marker("devexp-toolkit\n" + strings.Repeat("#", 5000)), want: false,
+		},
+		"false when the marker is a directory": {
+			dirs: []string{"agents", "skills", "mcps", markerFile}, want: false,
+		},
+		"false when the marker is a symlink to a real marker": {
+			dirs: []string{"agents", "skills", "mcps"},
+			marker: func(t *testing.T, dir string) {
+				real := filepath.Join(t.TempDir(), markerFile)
+				if err := os.WriteFile(real, []byte(markerID+"\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(real, filepath.Join(dir, markerFile)); err != nil {
+					t.Fatal(err)
+				}
+			},
 			want: false,
+		},
+		"false with the marker when a subdir is missing": {
+			dirs: []string{"agents", "skills"}, marker: marker("devexp-toolkit\n"), want: false,
 		},
 		"false for empty directory": {
-			dirs: nil,
-			want: false,
+			dirs: nil, want: false,
 		},
 	}
 
@@ -90,6 +158,9 @@ func TestIsRepoDir(t *testing.T) {
 					t.Fatalf("Mkdir(%s) error = %v", sub, err)
 				}
 			}
+			if tt.marker != nil {
+				tt.marker(t, dir)
+			}
 
 			if got := isRepoDir(dir); got != tt.want {
 				t.Errorf("isRepoDir(%s) = %v, want %v", dir, got, tt.want)
@@ -98,40 +169,123 @@ func TestIsRepoDir(t *testing.T) {
 	}
 }
 
+// noExecutableCheckout points the next-to-binary lookup at an empty temp dir,
+// so a test's result never depends on where the test binary was built.
+func noExecutableCheckout(t *testing.T) {
+	t.Helper()
+	exe := filepath.Join(t.TempDir(), "bin", "devexp")
+	orig := executable
+	executable = func() (string, error) { return exe, nil }
+	t.Cleanup(func() { executable = orig })
+}
+
 func TestFindRepoDir_WalksUpToRepoRoot(t *testing.T) {
 	t.Setenv("DEVEXP_DIR", "")
+	noExecutableCheckout(t)
 
-	root := t.TempDir()
-	for _, sub := range []string{"agents", "skills", "mcps"} {
-		if err := os.Mkdir(filepath.Join(root, sub), 0755); err != nil {
-			t.Fatalf("Mkdir(%s) error = %v", sub, err)
-		}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
 	}
+	makeRepoDir(t, root)
+	// A directory of the same shape between the cwd and the checkout is
+	// passed over: the marker, not the directory names, is what counts.
+	makeShapeDir(t, filepath.Join(root, "a"))
 
 	nested := filepath.Join(root, "a", "b", "c")
 	if err := os.MkdirAll(nested, 0755); err != nil {
 		t.Fatalf("MkdirAll(%s) error = %v", nested, err)
 	}
-
 	t.Chdir(nested)
 
-	got, err := findRepoDir()
-	if err != nil {
-		t.Fatalf("findRepoDir() error = %v", err)
+	got, origin, err := findRepoDir(false)
+	if err != nil || got != root || origin != OriginWorkingDir {
+		t.Errorf("findRepoDir(dev) = %q, %q, %v; want %q from the working dir", got, origin, err, root)
 	}
+}
 
-	// Resolve symlinks (e.g. /tmp -> /private/tmp on macOS) before comparing.
-	wantResolved, err := filepath.EvalSymlinks(root)
+// TestFindRepoDir_IgnoresUnmarkedShape: a directory with the toolkit's shape
+// but no marker, above the cwd or above the binary, is never used (#134).
+func TestFindRepoDir_IgnoresUnmarkedShape(t *testing.T) {
+	t.Setenv("DEVEXP_DIR", "")
+	project, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
-		t.Fatalf("EvalSymlinks(%s) error = %v", root, err)
+		t.Fatal(err)
 	}
-	gotResolved, err := filepath.EvalSymlinks(got)
-	if err != nil {
-		t.Fatalf("EvalSymlinks(%s) error = %v", got, err)
+	makeShapeDir(t, project)
+	sub := filepath.Join(project, "src", "pkg")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
 	}
+	t.Chdir(sub)
+	orig := executable
+	executable = func() (string, error) { return filepath.Join(project, "bin", "devexp"), nil }
+	t.Cleanup(func() { executable = orig })
 
-	if gotResolved != wantResolved {
-		t.Errorf("findRepoDir() = %q, want %q", gotResolved, wantResolved)
+	for _, tagged := range []bool{false, true} {
+		if got, origin, err := findRepoDir(tagged); !errors.Is(err, errRepoNotFound) || got != "" || origin != "" {
+			t.Errorf("findRepoDir(tagged=%v) = %q, %q, %v; want errRepoNotFound", tagged, got, origin, err)
+		}
+	}
+}
+
+// TestFindRepoDir_TaggedBuild: a tagged build doesn't adopt a checkout it
+// finds next to the binary or above the cwd; a dev build does (#134).
+func TestFindRepoDir_TaggedBuild(t *testing.T) {
+	tests := map[string]struct {
+		binInCheckout bool
+		cwdInCheckout bool
+		wantDevOrigin string
+	}{
+		"checkout above the cwd":       {cwdInCheckout: true, wantDevOrigin: OriginWorkingDir},
+		"checkout above the binary":    {binInCheckout: true, wantDevOrigin: OriginBinaryDir},
+		"binary and cwd in a checkout": {binInCheckout: true, cwdInCheckout: true, wantDevOrigin: OriginBinaryDir},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("DEVEXP_DIR", "")
+			checkout, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			makeRepoDir(t, checkout)
+			cwd := t.TempDir()
+			if tt.cwdInCheckout {
+				cwd = filepath.Join(checkout, "agents")
+			}
+			t.Chdir(cwd)
+			exe := filepath.Join(t.TempDir(), "bin", "devexp")
+			if tt.binInCheckout {
+				exe = filepath.Join(checkout, "bin", "devexp")
+			}
+			orig := executable
+			executable = func() (string, error) { return exe, nil }
+			t.Cleanup(func() { executable = orig })
+
+			if got, origin, err := findRepoDir(true); !errors.Is(err, errRepoNotFound) || got != "" {
+				t.Errorf("findRepoDir(tagged) = %q, %q, %v; want errRepoNotFound", got, origin, err)
+			}
+			if got, origin, err := findRepoDir(false); err != nil || got != checkout || origin != tt.wantDevOrigin {
+				t.Errorf("findRepoDir(dev) = %q, %q, %v; want %q from %q", got, origin, err, checkout, tt.wantDevOrigin)
+			}
+		})
+	}
+}
+
+// TestFindRepoDir_RealCheckout: this repository is a checkout — its committed
+// marker matches — and a dev build run inside it finds it.
+func TestFindRepoDir_RealCheckout(t *testing.T) {
+	t.Setenv("DEVEXP_DIR", "")
+	noExecutableCheckout(t)
+	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isRepoDir(root) {
+		t.Fatalf("isRepoDir(%s) = false; the repository root must be a checkout", root)
+	}
+	if got, origin, err := findRepoDir(false); err != nil || got != root || origin != OriginWorkingDir {
+		t.Errorf("findRepoDir(dev) = %q, %q, %v; want %q", got, origin, err, root)
 	}
 }
 
@@ -232,6 +386,9 @@ func TestExtractEmbedded(t *testing.T) {
 			if info, err := os.Stat(filepath.Join(dest, sub)); err != nil || !info.IsDir() {
 				t.Errorf("expected %s/ to be extracted, err = %v", sub, err)
 			}
+		}
+		if !isRepoDir(dest) {
+			t.Errorf("the extracted assets are not a devexp-toolkit checkout (missing %s?)", markerFile)
 		}
 		marker, err := os.ReadFile(filepath.Join(dest, ".devexp-version"))
 		if err != nil {
@@ -334,40 +491,54 @@ func TestExtractEmbedded_NoUsableCacheDir(t *testing.T) {
 // ── Resolve dispatch ──────────────────────────────────────────────────────────
 
 func TestResolve(t *testing.T) {
-	t.Run("uses a live repo when one is found", func(t *testing.T) {
-		root := t.TempDir()
-		for _, sub := range []string{"agents", "skills", "mcps"} {
-			if err := os.Mkdir(filepath.Join(root, sub), 0o755); err != nil {
-				t.Fatalf("Mkdir(%s) error = %v", sub, err)
+	t.Run("uses a checkout named by DEVEXP_DIR, dev and tagged builds alike", func(t *testing.T) {
+		for _, version := range []string{devBuild, "v1.0.0"} {
+			base := withTempCache(t)
+			root := t.TempDir()
+			makeRepoDir(t, root)
+			t.Setenv("DEVEXP_DIR", root)
+
+			var announced []Source
+			got, err := Resolve(version, func(s Source) { announced = append(announced, s) })
+			if err != nil {
+				t.Fatalf("Resolve(%s) error = %v", version, err)
+			}
+			want := Source{RepoDir: root, Origin: OriginDevexpDir}
+			if got != want {
+				t.Errorf("Resolve(%s) = %+v, want %+v", version, got, want)
+			}
+			if !reflect.DeepEqual(announced, []Source{want}) {
+				t.Errorf("announced %+v, want exactly %+v", announced, want)
+			}
+			if entries, _ := os.ReadDir(base); len(entries) != 0 {
+				t.Errorf("extracted the embedded assets anyway: %v", entries)
 			}
 		}
-		t.Setenv("DEVEXP_DIR", root)
-
-		got, err := Resolve("v1.0.0")
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		if got.Embedded {
-			t.Errorf("Embedded = true, want false when a repo dir is found")
-		}
-		if got.RepoDir != root {
-			t.Errorf("RepoDir = %q, want %q", got.RepoDir, root)
-		}
 	})
 
-	t.Run("a DEVEXP_DIR that isn't a repo is an error, with no fallback", func(t *testing.T) {
-		base := withTempCache(t)
-		t.Setenv("DEVEXP_DIR", t.TempDir())
-		t.Chdir(t.TempDir())
+	notACheckout := map[string]func(t *testing.T) string{
+		"an empty dir":              func(t *testing.T) string { return t.TempDir() },
+		"the same shape, no marker": func(t *testing.T) string { d := t.TempDir(); makeShapeDir(t, d); return d },
+	}
+	for name, dir := range notACheckout {
+		t.Run("a DEVEXP_DIR that is "+name+" is an error, with no fallback", func(t *testing.T) {
+			base := withTempCache(t)
+			t.Setenv("DEVEXP_DIR", dir(t))
+			t.Chdir(t.TempDir())
 
-		got, err := Resolve("v3.0.0")
-		if err == nil || got != (Source{}) || !strings.Contains(err.Error(), "not a devexp repo") {
-			t.Errorf("Resolve() = %+v, %v; want a not-a-repo error", got, err)
-		}
-		if entries, _ := os.ReadDir(base); len(entries) != 0 {
-			t.Errorf("extracted the embedded assets anyway: %v", entries)
-		}
-	})
+			announced := false
+			got, err := Resolve("v3.0.0", func(Source) { announced = true })
+			if err == nil || got != (Source{}) || !strings.Contains(err.Error(), "not a devexp-toolkit checkout") {
+				t.Errorf("Resolve() = %+v, %v; want a not-a-checkout error", got, err)
+			}
+			if announced {
+				t.Errorf("announced an asset root for a refused DEVEXP_DIR")
+			}
+			if entries, _ := os.ReadDir(base); len(entries) != 0 {
+				t.Errorf("extracted the embedded assets anyway: %v", entries)
+			}
+		})
+	}
 
 	t.Run("a relative DEVEXP_DIR resolves to an absolute RepoDir", func(t *testing.T) {
 		cwd, err := filepath.EvalSymlinks(t.TempDir())
@@ -378,7 +549,7 @@ func TestResolve(t *testing.T) {
 		t.Chdir(cwd)
 		t.Setenv("DEVEXP_DIR", "sub/../repo")
 
-		got, err := Resolve("v1.0.0")
+		got, err := Resolve("v1.0.0", nil)
 		if want := filepath.Join(cwd, "repo"); err != nil || got.RepoDir != want || got.Embedded {
 			t.Errorf("Resolve() = %+v, %v; want RepoDir %q", got, err, want)
 		}
@@ -393,26 +564,62 @@ func TestResolve(t *testing.T) {
 		}
 	})
 
-	t.Run("falls back to embedded extraction when no repo is found", func(t *testing.T) {
-		base := withTempCache(t)
-		// DEVEXP_DIR unset and cwd under a temp dir, so the walk up finds no
-		// repo — otherwise `go test` run inside this checkout would find the
-		// toolkit itself and never reach the fallback.
-		t.Setenv("DEVEXP_DIR", "")
-		t.Chdir(t.TempDir())
+	// fallbacks: where the embedded assets are used instead of a directory on
+	// disk. cwd is always under a temp dir, so `go test` run inside this
+	// checkout never finds the toolkit itself.
+	fallbacks := map[string]struct {
+		version string
+		cwd     func(t *testing.T) string
+	}{
+		"no checkout anywhere": {
+			version: "v3.0.0",
+			cwd:     func(t *testing.T) string { return t.TempDir() },
+		},
+		"dev build, only an unmarked directory of the same shape above the cwd": {
+			version: devBuild,
+			cwd: func(t *testing.T) string {
+				d := t.TempDir()
+				makeShapeDir(t, d)
+				return filepath.Join(d, "agents")
+			},
+		},
+		"tagged build, a real checkout above the cwd": {
+			version: "v3.0.0",
+			cwd: func(t *testing.T) string {
+				d := t.TempDir()
+				makeRepoDir(t, d)
+				return filepath.Join(d, "agents")
+			},
+		},
+	}
+	for name, tt := range fallbacks {
+		t.Run("falls back to the embedded assets: "+name, func(t *testing.T) {
+			base := withTempCache(t)
+			noExecutableCheckout(t)
+			t.Setenv("DEVEXP_DIR", "")
+			t.Chdir(tt.cwd(t))
+			want := Source{RepoDir: filepath.Join(base, "devexp", "assets"), Embedded: true, Origin: OriginEmbedded}
 
-		got, err := Resolve("v3.0.0")
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		if !got.Embedded {
-			t.Fatalf("Embedded = false, want true when no repo dir exists")
-		}
-		if want := filepath.Join(base, "devexp", "assets"); got.RepoDir != want {
-			t.Errorf("RepoDir = %q, want %q", got.RepoDir, want)
-		}
-		if !isRepoDir(got.RepoDir) {
-			t.Errorf("extracted dir should look like a repo dir")
-		}
-	})
+			calls := 0
+			got, err := Resolve(tt.version, func(s Source) {
+				calls++
+				if s != want {
+					t.Errorf("announced %+v, want %+v", s, want)
+				}
+				// Announced before anything is written.
+				if entries, _ := os.ReadDir(base); len(entries) != 0 {
+					t.Errorf("wrote before announcing the asset root: %v", entries)
+				}
+			})
+			if err != nil {
+				t.Fatalf("Resolve() error = %v", err)
+			}
+			if got != want || calls != 1 {
+				t.Errorf("Resolve() = %+v after %d announcements, want %+v after 1", got, calls, want)
+			}
+			if !isRepoDir(got.RepoDir) {
+				t.Errorf("extracted dir should be a devexp-toolkit checkout")
+			}
+		})
+	}
 }

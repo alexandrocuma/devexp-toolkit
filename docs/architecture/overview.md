@@ -45,12 +45,18 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
   → install.sh: if bin/devexp is missing → scripts/stage-assets.sh + (cd cli && go build -o ../bin/devexp .)
   → exec bin/devexp install "$@"
   → cli/cmd/root.go Execute() → cli/cmd/install.go runInstall()
-      → cli/internal/repo/repo.go Resolve(version)
-          findRepoDir(): $DEVEXP_DIR → parent of the executable's dir (bin/devexp → repo root)
-                         → walk up from cwd; a root must contain agents/ skills/ mcps/ (isRepoDir)
-          else extractEmbedded(): assets.FS → os.UserCacheDir()/devexp/assets,
+      → cli/internal/repo/repo.go Resolve(version, announceAssetRoot)
+          findRepoDir(tagged = version != "dev"):
+                         $DEVEXP_DIR (must be a checkout, else error — no fallback)
+                         → dev builds only: parent of the executable's dir (bin/devexp → repo root)
+                         → dev builds only: walk up from cwd
+                         a checkout = .devexp-toolkit marker (regular file, first line
+                         "devexp-toolkit") + agents/ skills/ mcps/ (isRepoDir)
+          else embeddedDir(): os.UserCacheDir()/devexp/assets (must be absolute)
+          → announce(Source): install.go prints "Asset root: <dir> (<origin>)" — before any write
+          → if embedded, extractEmbedded(): assets.FS (marker included) → that dir,
                          reused while .devexp-version == binary version; *.sh written 0755
-          → Source{RepoDir, Embedded}; every installer below reads RepoDir on disk
+          → Source{RepoDir, Embedded, Origin}; every installer below reads RepoDir on disk
       → cli/internal/config/config.go Load(<repo>/devexp.config.json)   (missing → ui.Warn + defaults; --model overrides)
       → cli/internal/config/dotenv.go LoadDotenv(<repo>/mcps/.env)
       → cli/cmd/registry.go buildEnv(): OS env + DEVEXP_DIR + dotenv (dotenv wins)

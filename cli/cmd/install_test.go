@@ -1543,6 +1543,7 @@ func writeOpencodeHookRepo(t *testing.T) string {
 	t.Helper()
 	repoDir := t.TempDir()
 	files := map[string]string{
+		".devexp-toolkit":    "devexp-toolkit\n",
 		"mcps/registry.json": "[]",
 		"hooks/registry.json": `[
   {"name": "secret-guard", "enabled": true,
@@ -2309,26 +2310,7 @@ func TestInstallCmd_RelativeDevexpDir(t *testing.T) {
 			if err != nil {
 				t.Fatalf("install error = %v\n%s", err, out)
 			}
-			data, err := os.ReadFile(testClaudePaths(t, home).settings)
-			if err != nil {
-				t.Fatalf("settings.json not written: %v\n%s", err, out)
-			}
-			var settings struct {
-				Hooks map[string][]struct {
-					Hooks []struct{ Command string } `json:"hooks"`
-				} `json:"hooks"`
-			}
-			if err := json.Unmarshal(data, &settings); err != nil {
-				t.Fatal(err)
-			}
-			var commands []string
-			for _, entries := range settings.Hooks {
-				for _, e := range entries {
-					for _, h := range e.Hooks {
-						commands = append(commands, h.Command)
-					}
-				}
-			}
+			commands := hookCommands(t, home)
 			if len(commands) != 1 {
 				t.Fatalf("hook commands = %v, want the one secret-guard registration", commands)
 			}
@@ -2344,7 +2326,34 @@ func TestInstallCmd_RelativeDevexpDir(t *testing.T) {
 	}
 }
 
-// TestInstallCmd_DevexpDirNotARepo: a DEVEXP_DIR that isn't a devexp repo is an
+// hookCommands returns every hook command in HOME's Claude Code settings.json,
+// failing the test when the file was not written.
+func hookCommands(t *testing.T, home string) []string {
+	t.Helper()
+	data, err := os.ReadFile(testClaudePaths(t, home).settings)
+	if err != nil {
+		t.Fatalf("settings.json not written: %v", err)
+	}
+	var settings struct {
+		Hooks map[string][]struct {
+			Hooks []struct{ Command string } `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	var commands []string
+	for _, entries := range settings.Hooks {
+		for _, e := range entries {
+			for _, h := range e.Hooks {
+				commands = append(commands, h.Command)
+			}
+		}
+	}
+	return commands
+}
+
+// TestInstallCmd_DevexpDirNotARepo: a DEVEXP_DIR that isn't a devexp-toolkit checkout is an
 // error before anything is installed — no fallback to another repo or to the
 // embedded assets, no CLI call, nothing under HOME.
 func TestInstallCmd_DevexpDirNotARepo(t *testing.T) {
@@ -2358,8 +2367,8 @@ func TestInstallCmd_DevexpDirNotARepo(t *testing.T) {
 	t.Setenv("DEVEXP_DIR", "not-a-repo")
 
 	out, err := executeRoot(t, "install", "--reinstall-mcps")
-	if err == nil || !strings.Contains(err.Error(), "not a devexp repo") {
-		t.Errorf("install error = %v, want a not-a-repo error\n%s", err, out)
+	if err == nil || !strings.Contains(err.Error(), "not a devexp-toolkit checkout") {
+		t.Errorf("install error = %v, want a not-a-checkout error\n%s", err, out)
 	}
 	if got := treeState(t, home); len(got) != 1 {
 		t.Errorf("wrote under HOME: %v", got)
@@ -2368,4 +2377,93 @@ func TestInstallCmd_DevexpDirNotARepo(t *testing.T) {
 		t.Errorf("wrote under the cwd: %v", got)
 	}
 	noCalls(t, calls)
+}
+
+// ── Asset root detection (#134) ───────────────────────────────────────────────
+
+// TestInstallCmd_AssetRoot: without DEVEXP_DIR, `devexp install` run inside a
+// directory tree installs from it only when it is a devexp-toolkit checkout
+// (it has the marker file) and the binary is a dev build. Otherwise nothing
+// from that tree is registered or copied, the tree is left as it was, and the
+// bundled assets are used. Either way the asset root is printed before
+// anything is installed.
+func TestInstallCmd_AssetRoot(t *testing.T) {
+	tests := map[string]struct {
+		version  string
+		marker   bool
+		wantUsed bool
+	}{
+		"dev build, same shape without the marker":    {version: "dev"},
+		"tagged build, same shape without the marker": {version: "v9.9.9"},
+		"tagged build, a devexp-toolkit checkout":     {version: "v9.9.9", marker: true},
+		"dev build, a devexp-toolkit checkout":        {version: "dev", marker: true, wantUsed: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			origVersion := version
+			version = tt.version
+			t.Cleanup(func() { version = origVersion })
+
+			tree, err := filepath.EvalSymlinks(refusalRepo(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(tree, "hooks", "claude-code"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			os.WriteFile(filepath.Join(tree, "hooks", "claude-code", "secret-guard.sh"), []byte("#!/bin/sh\n"), 0o755) //nolint:errcheck
+			if !tt.marker {
+				if err := os.Remove(filepath.Join(tree, ".devexp-toolkit")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			sub := filepath.Join(tree, "hooks", "opencode")
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CACHE_HOME", "")
+			t.Setenv("DEVEXP_DIR", "")
+			calls := loggingCLI(t, "claude")
+			t.Chdir(sub)
+			before := treeState(t, tree)
+
+			out, err := executeRoot(t, "install", "--reinstall-mcps")
+			if err != nil {
+				t.Fatalf("install error = %v\n%s", err, out)
+			}
+
+			wantRoot, wantOrigin := tree, "the devexp-toolkit checkout containing the current directory"
+			if !tt.wantUsed {
+				cache, err := os.UserCacheDir()
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantRoot, wantOrigin = filepath.Join(cache, "devexp", "assets"), "assets bundled in this binary, extracted to the user cache"
+			}
+			announce := "Asset root: " + wantRoot + " (" + wantOrigin + ")"
+			at := strings.Index(out, announce)
+			if at < 0 {
+				t.Fatalf("output does not announce %q:\n%s", announce, out)
+			}
+			if detected := strings.Index(out, "Detected:"); detected < at {
+				t.Errorf("asset root announced after the install started (at %d, first install output at %d):\n%s", at, detected, out)
+			}
+
+			commands := hookCommands(t, home)
+			if len(commands) == 0 {
+				t.Fatalf("no hooks registered\n%s", out)
+			}
+			for _, c := range commands {
+				if !strings.HasPrefix(c, wantRoot+string(filepath.Separator)) {
+					t.Errorf("hook command %q is not under the asset root %q", c, wantRoot)
+				}
+			}
+			logged, _ := os.ReadFile(calls)
+			if used := strings.Contains(string(logged), "probe"); used != tt.wantUsed {
+				t.Errorf("MCP from the tree registered = %v, want %v; CLI calls:\n%s", used, tt.wantUsed, logged)
+			}
+			if after := treeState(t, tree); !reflect.DeepEqual(before, after) {
+				t.Errorf("files in the tree changed:\nbefore %v\nafter  %v", before, after)
+			}
+		})
+	}
 }
