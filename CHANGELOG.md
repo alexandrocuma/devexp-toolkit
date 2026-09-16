@@ -33,6 +33,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `/cleanup` and `/improve` treat a ticket with a pending target as live.
   - New maintainer guide: `docs/guides/release-targets.md`.
 
+- **Development Kit + CLAUDE.md as a strict index.** `/devxp` wrote CLAUDE.md
+  *before* docs/, and `gen-indexer`'s template inlined dev commands, conventions,
+  testing, env vars and playbooks whenever a doc was missing — so new repos got
+  the fat CLAUDE.md the docs-architecture guide warns against.
+  - `gen-docs`/`update-docs` define a required **Development Kit** —
+    `development/setup.md`, `development/conventions.md`, `development/testing.md`,
+    `architecture/overview.md`, `guides/workflows.md`, `guides/release.md` — with
+    templates, evidence rules, visible gap markers and `ready`/`draft` status.
+  - `/devxp` now builds atlas → kit → CLAUDE.md, judges each kit doc
+    individually, and lists every doc with its status and open markers in the
+    plan and report.
+  - `gen-indexer` rewritten to produce only an index: what the project is,
+    Start Here, Rules, Gotchas, ≤6 commands, Where Things Are. Hard limits —
+    ≤150 lines, no code blocks, every pointer verified. Missing docs become
+    `[NOT FOUND]` pointers, never inlined content.
+  - `update-indexer` detects leaked knowledge and moves it into the owning kit
+    doc (re-verified against code) before replacing it with a pointer.
+
 ### Changed
 
 - `/release` phases renumbered: new Phase 7 (Ship Targets); retirement is now

@@ -202,10 +202,10 @@ All specialist capabilities are inline within orchestrators, invoked as agents, 
 
 | Component | Type | Description |
 |-----------|------|-------------|
-| `gen-docs` | agent | Write new project documentation from scratch — invoked by `devxp` |
+| `gen-docs` | agent | Write new documentation and the Development Kit — invoked by `devxp` before the index |
 | `update-docs` | agent | Refresh stale documentation in place — invoked by `devxp` |
-| `gen-indexer` | agent | Generate directive CLAUDE.md from scratch — invoked by `devxp` |
-| `update-indexer` | agent | Refresh existing CLAUDE.md sections — invoked by `devxp` |
+| `gen-indexer` | agent | Generate CLAUDE.md as a strict index into docs/ — invoked by `devxp` after the kit |
+| `update-indexer` | agent | Refresh CLAUDE.md and move leaked knowledge into docs/ — invoked by `devxp` |
 | `explain` | inline in `devxp` | Audience-calibrated code explanation |
 | `git-archaeology` | inline in `devxp` | Reconstruct intent and history from git |
 | `onboarding` | agent | Structured onboarding guides for new contributors |

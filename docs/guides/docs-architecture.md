@@ -24,6 +24,25 @@ The AI navigates the index chain to find what it needs mid-task. The pre-tool-us
 
 ---
 
+## The Development Kit
+
+An index is only useful if there is something to point to. Every repo gets a minimum set of docs — the **Development Kit** — holding everything needed to work on the project effectively:
+
+| Kit doc | Answers |
+|---------|---------|
+| `docs/development/setup.md` | Install, run, build, configure; full command list; env vars |
+| `docs/development/conventions.md` | Naming, module structure, error handling, logging, style, commits |
+| `docs/development/testing.md` | Test types, locations, reference tests, fixtures, pre-commit checks |
+| `docs/architecture/overview.md` | Layers, request flow, key directories, external deps, reference implementation |
+| `docs/guides/workflows.md` | Exact steps with real paths: add a feature, fix a bug, change the data model, add config/dependency |
+| `docs/guides/release.md` | Release targets — build, distribute, promote, roll back, verify ([release-targets.md](release-targets.md)) |
+
+Templates and rules live in the `gen-docs` / `update-docs` agents. Every claim is cited from code; what can't be proven is a visible marker (`[NOT FOUND]`, `[verify]`, `[INCONSISTENT]`, `[CONFIRM]`, `N/A — reason`) and the doc is `draft` until they're closed.
+
+**Order matters.** `/devxp` builds the kit **before** `CLAUDE.md`. Generating the index first leaves it nothing to link to, which is exactly how knowledge ends up inlined.
+
+---
+
 ## Standard docs/ Folder Tree
 
 Every repo this framework works in uses this structure:
@@ -95,13 +114,15 @@ The status column lets agents skip irrelevant files without opening them.
 
 | Keep in CLAUDE.md | Move to docs/ |
 |---|---|
-| Behavioral directives (must-do, must-not-do) | Full component catalogs |
-| Must-know gotchas (silent bugs if forgotten) | Convention patterns with code examples |
-| Quick command table | Step-by-step playbooks |
-| Layer map / structure (file paths only, 1 line each) | Full API reference |
-| Navigation pointers to docs/ | Environment variables tables |
+| What the project is (1–3 sentences + stack line) | Architecture walkthroughs, request traces → `architecture/overview.md` |
+| Start Here — newcomer reading order | Convention patterns with code examples → `development/conventions.md` |
+| Rules — always/never directives, one line, cited | Step-by-step playbooks → `guides/workflows.md` |
+| Gotchas — silent failures, one or two lines, cited | Full command list, env var tables → `development/setup.md` |
+| Commands — the ≤6 most used | Test patterns and fixtures → `development/testing.md` |
+| Layer map — paths + one-line roles, ≤8 rows (optional) | Full component catalogs, API reference → `reference/`, `api/` |
+| Where Things Are — "I need to… → docs/…" | ADR content → `architecture/adr/` |
 
-**Target size: ≤150 lines.** If CLAUDE.md is growing past this, content is leaking in that belongs in docs/.
+**Hard limits** (`gen-indexer` and `update-indexer` check them): ≤150 lines · no code blocks · no section over ~15 lines · every `docs/` pointer resolves. The test for every line: is it a rule, a gotcha, a command, or a pointer? If not, it belongs in docs/.
 
 ---
 
@@ -122,6 +143,8 @@ Handlers never write error JSON. They call `_ = c.Error(err); return`...
 ---
 
 ## How to Migrate a Fat CLAUDE.md
+
+Run `/devxp` — it detects a leaky CLAUDE.md (over 150 lines, code blocks, restated docs) and `update-indexer` performs these steps, verifying moved content against current code. By hand:
 
 1. **Categorize** — read each section and assign it to a routing target (reference/, guides/, development/, etc.)
 2. **Create target files** — write the content into the appropriate `docs/` file using the standard template for that type

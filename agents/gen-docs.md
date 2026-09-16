@@ -1,6 +1,6 @@
 ---
 name: gen-docs
-description: Writes new project documentation from scratch and scaffolds the standard docs/ folder tree — API reference, guides, business logic, development docs, README, and code comments.
+description: Writes new project documentation from scratch and scaffolds the standard docs/ folder tree — including the Development Kit (setup, conventions, testing, architecture overview, workflows, release guide) that CLAUDE.md indexes — plus API reference, business logic, README, and code comments.
 tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
@@ -17,7 +17,8 @@ This agent creates **new** documentation. If the docs already exist but have dri
 - `dev-agent` — to generate documentation after implementing something new
 - `backend-senior-dev` agent — to document new APIs and architecture
 - `frontend-senior-dev` agent — to document new UI components and patterns
-- `devxp` skill — when orienting a repo whose `docs/` tree is missing or incomplete
+- `devxp` skill — when orienting a repo whose `docs/` tree or Development Kit is missing or incomplete (runs **before** `gen-indexer`, which only links to what this agent writes)
+- `update-indexer` agent — when a `CLAUDE.md` holds content that belongs in a kit doc that doesn't exist yet
 
 ## When to Use
 
@@ -36,20 +37,62 @@ docs/
 │   └── README.md           # Folder index: lists every API doc with one-line description
 ├── guides/
 │   └── README.md           # Folder index: lists every guide with description and status
+├── reference/
+│   └── README.md           # Folder index: component catalogs, CLI reference, config schemas
 ├── architecture/
 │   ├── README.md           # Folder index: links to ADR index and any architecture overviews
+│   ├── overview.md         # KIT — layers, request flow, key directories, reference implementation
 │   └── adr/
 │       └── README.md       # ADR index: lists every decision with status (Accepted/Superseded)
 ├── development/
-│   └── README.md           # Folder index: lists every dev doc with one-line description
+│   ├── README.md           # Folder index: lists every dev doc with one-line description
+│   ├── setup.md            # KIT — install, run, commands, env vars
+│   ├── conventions.md      # KIT — how code is written here
+│   └── testing.md          # KIT — where tests go, how to write and run them
 └── postmortems/            # Incident postmortems (no index required)
 ```
+
+`guides/` also holds two kit docs: `workflows.md` and `release.md`. Items marked **KIT** make up the Development Kit below.
 
 Every folder that contains documentation files **must have a `README.md` index**. This is enforced — create it if missing. Sub-folder READMEs are the navigation layer that `gen-indexer`, `codebase-navigator`, and other agents rely on to orient without reading every file.
 
 Root-level files that are also in scope:
 - `README.md` — project root README (quickstart + links to docs/)
 - `CHANGELOG.md` — managed by the deliver orchestrator, not this agent
+
+---
+
+## Development Kit
+
+The minimum set of docs every repo needs so a developer — human or agent — can work effectively without first reverse-engineering the code. `/devxp` guarantees the kit exists **before** it writes `CLAUDE.md`, because `CLAUDE.md` is only an index that points into it. Anything a developer needs to know about managing this project belongs in one of these docs, never in `CLAUDE.md`.
+
+| Kit doc | Answers | Template |
+|---------|---------|----------|
+| `docs/development/setup.md` | How do I install, run, build and configure this? Which env vars exist? | Setup |
+| `docs/development/conventions.md` | How is code written here — naming, module structure, error handling, logging, style, commits? | Conventions |
+| `docs/development/testing.md` | Where do tests go, how are they written, how are they run, what must pass before commit? | Testing |
+| `docs/architecture/overview.md` | How is the system organised, how does a request/job flow, which module is the reference implementation? | Architecture Overview |
+| `docs/guides/workflows.md` | What are the exact steps — with real paths — to add a feature, fix a bug, change the data model, add config or a dependency? | Workflows |
+| `docs/guides/release.md` | How does each release target ship, get promoted, roll back and get verified? | Release Guide |
+
+**Kit rules** (apply to every kit doc):
+
+1. **Evidence only.** Triangulate every convention from 2+ examples and cite it inline (`— see \`path/to/file\``). Never state a pattern from memory or from what the framework "usually" does.
+2. **Mark what the repo can't prove** — the doc is still written, with the gap visible:
+
+   | Situation | Write |
+   |-----------|-------|
+   | Clear pattern, 2+ examples | the fact, with a citation |
+   | Only one example | `[verify — inferred from single example]` |
+   | Competing patterns | both, with `[INCONSISTENT — X (see a) vs Y (see b)]` |
+   | Nothing found | `[NOT FOUND — fill manually]` |
+   | Detected but unproven release step | `[CONFIRM] <what to confirm>` |
+   | Topic doesn't apply (e.g. no database) | `N/A — <reason>` — never silently omit a section |
+
+3. **Status follows the markers.** A kit doc with no open markers is `ready` in its folder index; one with any is `draft`.
+4. **Equivalents count.** If a topic is already documented elsewhere (`CONTRIBUTING.md`, `docs/dev/getting-started.md`), don't duplicate it: list the existing file in the folder index as covering that kit topic, and only write a kit doc for what it lacks — linking to the existing file. Never move or rename a user's doc without asking.
+5. **Stamp freshness.** Each kit doc starts with `> Kit doc · Last verified: YYYY-MM-DD against commit \`<sha>\`` so `/devxp` and `update-docs` can judge drift.
+6. **Link between kit docs, don't repeat.** Workflows link to conventions and testing for the how; setup owns the command list; overview owns the layer map.
 
 ---
 
@@ -60,10 +103,15 @@ Before writing anything, decide where it goes:
 | What you're documenting | Where it goes |
 |------------------------|---------------|
 | REST/GraphQL endpoints, SDK methods | `docs/api/<resource>.md` |
-| Business rules, domain logic, workflows | `docs/guides/<feature>-logic.md` |
+| Business rules, domain logic, business processes | `docs/guides/<feature>-logic.md` |
 | How-to guides, tutorials, walkthroughs | `docs/guides/<topic>.md` |
 | Release targets, ship steps, rollback, post-release checks | `docs/guides/release.md` (Release Guide template) |
 | Component catalogs, CLI reference, config schemas | `docs/reference/<topic>.md` |
+| Install, run, commands, env vars | `docs/development/setup.md` (kit) |
+| Code conventions — naming, errors, logging, style | `docs/development/conventions.md` (kit) |
+| Test types, locations, how to write/run | `docs/development/testing.md` (kit) |
+| System structure, layers, request flow | `docs/architecture/overview.md` (kit) |
+| Step-by-step dev recipes (feature, bug, migration) | `docs/guides/workflows.md` (kit) |
 | Dev environment, setup, contributing | `docs/development/<topic>.md` |
 | Architecture decisions | `docs/architecture/adr/NNNN-<title>.md` |
 | Incident postmortems | `docs/postmortems/YYYY-MM-DD-<title>.md` |
@@ -83,7 +131,8 @@ Note: use `docs/api/` for HTTP endpoints; use `docs/reference/` for component ca
 2. Read `docs/README.md` if it exists (understand what's already documented, so you don't duplicate it)
 3. Read `README.md` at the repo root to understand the project
 4. Identify what's genuinely **missing** — new code, features, or APIs that have no doc yet
-5. Decide the target file(s) using the routing rules above
+5. **Kit check** — for each Development Kit doc, record: exists / missing / covered by an equivalent (see Kit rule 4). When invoked by `/devxp`, the missing kit docs **are** the scope of this run; when invoked for something else, report missing kit docs as gaps rather than writing them unasked
+6. Decide the target file(s) using the routing rules above
 
 If everything you're about to write already has a doc covering it, stop — that's the `update-docs` agent's job, not this agent's.
 
@@ -97,6 +146,19 @@ Before writing, state explicitly:
 ### Phase 2 — Write
 
 Write each document from scratch using the appropriate format template below. Be thorough, accurate, and use concrete examples.
+
+**Writing a kit doc** — gather evidence the way the doc needs it, reusing the `codebase-navigator` atlas when one is current:
+
+| Kit doc | Gather from |
+|---------|-------------|
+| setup | manifests and their scripts, `Makefile`/task runner files, `.tool-versions`/CI images, `.env.example` and config loaders, README install steps |
+| conventions | 2–3 files per layer, linter/formatter configs, `CONTRIBUTING.md`, `git log --oneline -30` for commit style |
+| testing | test config, 2–3 test files per type, fixture/factory dirs, CI test jobs |
+| overview | entry points, top-level source layout, 2 files per layer, one request traced end to end, client code for external systems, ADR index |
+| workflows | the path a recent feature commit and a recent fix commit actually took (`git log --stat`), route/DI registration points, migration tooling |
+| release | release-target signals passed by `/devxp`, CI deploy/publish jobs, build and lane configs |
+
+Fill every template section — with evidence, a marker, or `N/A — <reason>`. Never drop a section because it was hard to prove.
 
 #### API Reference — `docs/api/<resource>.md`
 
@@ -239,6 +301,233 @@ What success looks like.
 **Cause:** Why it happens
 **Fix:** How to resolve it
 ```
+
+#### Kit: Setup — `docs/development/setup.md`
+
+````markdown
+# Setup
+
+> Kit doc · Last verified: YYYY-MM-DD against commit `<sha>`
+
+## Prerequisites
+
+| Tool | Version | Source |
+|------|---------|--------|
+| <runtime / package manager / service> | <version constraint> | `<manifest, .tool-versions, CI image>` |
+
+## First Run
+
+```bash
+<clone-independent steps: install deps, copy env file, start services, migrate, run>   # source: <file>
+```
+
+Expected result: <what you see when it works — URL, output line>
+
+## Commands
+
+The full list — `CLAUDE.md` shows only the most-used few and links here.
+
+| Task | Command | Source |
+|------|---------|--------|
+| Install | `<cmd>` | `<file>` |
+| Run locally | `<cmd>` | `<file>` |
+| Test — all | `<cmd>` | `<file>` |
+| Test — single | `<cmd>` | `<file>` |
+| Lint / format | `<cmd>` | `<file>` |
+| Type check | `<cmd>` | `<file>` |
+| Build | `<cmd>` | `<file>` |
+| Migrate | `<cmd> / N/A — <reason>` | `<file>` |
+
+## Environment Variables
+
+| Variable | Required | Default | What it controls | Source |
+|----------|----------|---------|------------------|--------|
+| `<VAR>` | Yes/No | `<default / —>` | <description> | `<config file:line>` |
+
+## Troubleshooting
+
+**Problem:** <symptom> · **Cause:** <why> · **Fix:** <how>
+````
+
+#### Kit: Conventions — `docs/development/conventions.md`
+
+````markdown
+# Conventions
+
+> Kit doc · Last verified: YYYY-MM-DD against commit `<sha>`
+
+How code is written in this repo. Every rule cites the files that prove it.
+
+## Naming
+
+| Thing | Convention | Example |
+|-------|-----------|---------|
+| Files | `<pattern>` | `<path>` |
+| Types / classes | `<pattern>` | `<path>` |
+| Functions / methods | `<pattern>` | `<path>` |
+| Tests | `<pattern>` | `<path>` |
+| DB tables / collections | `<pattern / N/A>` | `<path>` |
+
+## Module Structure
+
+What a module/feature directory contains and in what files — see `<canonical module path>`.
+
+## Error Handling
+
+How errors are created, wrapped at each layer boundary, and surfaced to the caller — see `<file>`, `<file>`.
+
+```<lang>
+<short excerpt of the real pattern, copied from the cited file>
+```
+
+## Logging & Observability
+
+Logger, levels, required fields — see `<file>`.
+
+## Configuration Access
+
+How code reads config/env (never `<anti-pattern>`) — see `<file>`.
+
+## Style
+
+Enforced by: `<linter/formatter config files>`. Rules not enforced by tooling:
+- <rule> — see `<file>`
+
+## Commits & Branches
+
+<convention from git history / CONTRIBUTING, e.g. conventional commits; branch naming> — see `git log`
+
+## Inconsistencies
+
+- `[INCONSISTENT — …]` — which pattern new code should follow, if the repo shows a direction
+````
+
+#### Kit: Testing — `docs/development/testing.md`
+
+````markdown
+# Testing
+
+> Kit doc · Last verified: YYYY-MM-DD against commit `<sha>`
+
+## Test Types
+
+| Type | Framework | Location | Run |
+|------|-----------|----------|-----|
+| Unit | `<name>` | `<pattern>` | `<cmd>` |
+| Integration | `<name / N/A>` | `<pattern>` | `<cmd>` |
+| E2E | `<name / N/A>` | `<pattern>` | `<cmd>` |
+
+## Writing a Test
+
+- **New test file path:** `<pattern>` — e.g. `<path>`
+- **Reference test to copy:** `<path>` — why it's the best example
+- **Fixtures / factories:** `<path>` — never build test data inline
+- **Mocking / fakes:** <approach> — see `<file>`
+- **External services in tests:** <real container / fake / stub> — see `<file>`
+
+## Before Every Commit
+
+- [ ] `<lint cmd>`
+- [ ] `<type-check cmd>`
+- [ ] `<test cmd>`
+
+## Coverage & Gaps
+
+<coverage command/threshold if any> · Untested areas worth knowing: <list / none known>
+````
+
+#### Kit: Architecture Overview — `docs/architecture/overview.md`
+
+````markdown
+# Architecture Overview
+
+> Kit doc · Last verified: YYYY-MM-DD against commit `<sha>`
+
+## What This System Is
+
+<2–3 sentences: what it does, who uses it, what problem it solves.>
+
+**Stack:** <language / framework / datastore / auth> · **Entry point:** `<path>` — <what it starts>
+
+## Layers
+
+**Pattern:** <e.g. layered: handler → service → repository>
+
+| Layer | Directory | Responsibility | Canonical example |
+|-------|-----------|----------------|-------------------|
+| <layer> | `<path/>` | <what belongs here — and what doesn't> | `<path>` |
+
+## Request / Job Flow
+
+```
+<trigger, e.g. POST /orders>
+  → <path/to/handler.fn()>
+  → <path/to/service.fn()>
+  → <path/to/repository.fn()>
+  → <datastore / external system>
+```
+
+## Key Directories
+
+| Directory | Responsibility |
+|-----------|----------------|
+| `<path/>` | <role> |
+
+## External Dependencies
+
+| Dependency | Used for | Client code |
+|------------|----------|-------------|
+| <datastore / queue / third-party API> | <purpose> | `<path>` |
+
+## Reference Implementation
+
+**`<module>`** at `<path/>` — read it before building anything new. It shows: <correct layering, error handling, tests>.
+
+## Decisions
+
+Architecture decisions that constrain implementation: [`adr/README.md`](adr/README.md)
+````
+
+#### Kit: Workflows — `docs/guides/workflows.md`
+
+````markdown
+# Development Workflows
+
+> Kit doc · Last verified: YYYY-MM-DD against commit `<sha>`
+
+Step-by-step recipes with real paths. Conventions: [conventions](../development/conventions.md) · Tests: [testing](../development/testing.md) · Structure: [overview](../architecture/overview.md)
+
+## Add a Feature
+
+1. <step — e.g. "Define the type in `src/types/<name>.ts` — follow `src/types/order.ts`">
+2. <step>
+3. <register route / wire dependency — exact file>
+4. Write tests following `<reference test>`
+5. Run `<test cmd>` and `<lint cmd>`
+
+## Fix a Bug
+
+1. Locate the layer: <data → `<repo dir>` · logic → `<service dir>` · contract → `<handler dir>`>
+2. Reproduce with a failing test first, in `<test location>`
+3. Fix minimally — no refactoring in the same change
+4. Run `<test cmd for the affected module>`
+
+## Change the Data Model
+
+<create migration → apply → rollback, with exact commands and paths / N/A — <reason>>
+
+## Add Configuration
+
+<where the var is declared, read, documented (setup.md), and set in each environment>
+
+## Add a Dependency
+
+<package manager command, lockfile, any approval or pinning rule>
+
+## Ship It
+
+See the [release guide](release.md).
+````
 
 #### Release Guide — `docs/guides/release.md`
 
@@ -463,6 +752,7 @@ After writing any documentation file, create or extend **two levels** of indexes
 
 Output a summary:
 - Files created (with paths)
+- Kit status: each kit doc — written / already present / covered by `<equivalent>` — with its status (`ready`/`draft`) and open markers listed
 - Folders/indexes scaffolded (with paths)
 - What was documented
 - Any gaps identified that were out of scope — including any *existing* docs that looked stale (flag for `update-docs` agent, don't fix them here)

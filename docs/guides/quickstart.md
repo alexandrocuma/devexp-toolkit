@@ -32,8 +32,8 @@ Run this the first time you open a repo — or any time you return to one you ha
 
 What it does:
 - Reads the project's structure, stack, and conventions
-- Ensures a `CLAUDE.md` exists (creates or refreshes it)
-- Ensures a `docs/` folder exists (scaffolds it if missing)
+- Writes the **development kit** in `docs/` — setup, conventions, testing, architecture overview, workflows (add a feature, fix a bug, change the data model) — every claim cited from the code
+- Writes a `CLAUDE.md` that is only an **index** into those docs: rules, gotchas, a few commands, and "I need to… → go to docs/…" pointers
 - Detects what this repo ships — a service, a web app, an iOS/Android app, a library — and writes `docs/guides/release.md`, the release guide `/release` follows. Anything it can't prove from the repo (usually rollback and store gates) is marked `[CONFIRM]` for you to fill in
 - Hands off to `/refine` when you're ready to start work
 

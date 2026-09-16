@@ -6,7 +6,7 @@ The toolkit runs through eight slash commands — six lifecycle orchestrators an
 
 | Command | When to use |
 |---------|-------------|
-| `/devxp` | First time on a repo — orient, ensure CLAUDE.md, docs/ and the release guide exist, get routing |
+| `/devxp` | First time on a repo — build the docs/ Development Kit, then a CLAUDE.md that indexes it; get routing |
 | `/refine` | Turn an idea or request into a groomed, ready-to-build ticket |
 | `/deliver <ticket>` | Implement, test, review, and release a ticket end-to-end |
 | `/release [<ticket>]` | Release phase — gated cut (merge, changelog, version, tag) then per-target ship (deploy, beta/store channels, publish) from the release guide; also resumes deferred or store-gated releases |
@@ -32,9 +32,10 @@ The first four orchestrators *build* software and `/release` *ships* it; `/monit
 ## What Each Orchestrator Does
 
 ### `/devxp`
-- Reads project structure, stack, and conventions
-- Ensures CLAUDE.md exists (runs `gen-indexer` agent if missing, `update-indexer` if stale)
-- Ensures `docs/` is scaffolded (runs `gen-docs` / `update-docs` agents)
+- Reads project structure, stack, and conventions; judges each artifact missing / stale / current
+- **Docs first:** ensures the **Development Kit** exists in `docs/` — `development/setup.md`, `development/conventions.md`, `development/testing.md`, `architecture/overview.md`, `guides/workflows.md`, `guides/release.md` — plus folder indexes, per doc via `gen-docs` (missing) / `update-docs` (stale). Evidence only; gaps are `[NOT FOUND]`/`[verify]`/`[CONFIRM]` markers and the doc is marked `draft`
+- **Index last:** writes `CLAUDE.md` via `gen-indexer` (missing) / `update-indexer` (stale or leaky) as a strict index — what the project is, Start Here, Rules, Gotchas, ≤6 commands, "I need to… → docs/…" pointers; ≤150 lines, no code blocks, every pointer verified. Knowledge found in CLAUDE.md is moved into the owning kit doc
+- Plan and report list every kit doc explicitly, with status and the open markers a human needs to close
 - Detects release targets by generic file shapes (containers/IaC/deploy CI, Xcode projects, Android application modules, cross-platform mobile manifests, publishable packages) and writes or refreshes `docs/guides/release.md` — unproven fields are `[CONFIRM]` markers, never guesses
 - Handles inline: code explanation ("explain X to a junior"), git archaeology ("why does X exist"), routing recommendations ("what should I use for Y?")
 
