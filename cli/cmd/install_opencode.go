@@ -69,7 +69,7 @@ func doInstallOpencode(opts *installOpts) error {
 		fmt.Println()
 
 		newManifest.Agents = allInstalledAgents
-		removeStale(agentsTarget, manifest.Stale(old.Agents, allInstalledAgents), os.Remove, opts.dryRun)
+		removeStale(agentsTarget, manifest.Stale(old.Agents, allInstalledAgents), staleFile, os.Remove, opts.dryRun)
 	}
 
 	if !opts.agentsOnly {
@@ -92,7 +92,7 @@ func doInstallOpencode(opts *installOpts) error {
 		for i, s := range staleSkills {
 			staleSkillFiles[i] = s + ".md"
 		}
-		removeStale(skillsTarget, staleSkillFiles, os.Remove, opts.dryRun)
+		removeStale(skillsTarget, staleSkillFiles, staleFile, os.Remove, opts.dryRun)
 	}
 
 	if !opts.agentsOnly && !opts.skillsOnly {

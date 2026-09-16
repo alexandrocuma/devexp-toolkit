@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stale agent and skill removal no longer trusts manifest names (#117).**
+  `devexp install` joined each stale entry of the previous manifest onto the
+  agents/skills directory unchecked, so a corrupted or hand-edited
+  `.devexp-manifest.json` could delete files outside it. Claude Code skills are
+  removed recursively: an entry of `""`, `.` or `..` removed the whole
+  `~/.claude/skills` or `~/.claude` directory.
+  - An entry is removed only when it is a bare name devexp installs: no `/` or
+    `\`, no `..`, not empty or `.`, and ending in `.md` for agent and opencode
+    command files. Any other entry is kept and a warning names it. This covers
+    both Claude Code and opencode, in real runs and `--dry-run`.
+  - A valid entry is removed only when it is still what devexp installs: a
+    regular file for agents and commands, a real directory for Claude Code
+    skills. A symlink is never removed (as for opencode plugin files since
+    #108); it is kept with a warning.
+  - Stale removal of valid entries is otherwise unchanged. The manifest format
+    is unchanged.
+
 ## [0.8.0] - 2026-09-16
 
 ### Added

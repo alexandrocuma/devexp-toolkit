@@ -60,7 +60,7 @@ func doInstallClaude(opts *installOpts) error {
 		fmt.Println()
 
 		newManifest.Agents = installedAgents
-		removeStale(agentsTarget, manifest.Stale(old.Agents, installedAgents), os.Remove, opts.dryRun)
+		removeStale(agentsTarget, manifest.Stale(old.Agents, installedAgents), staleFile, os.Remove, opts.dryRun)
 	}
 
 	if !opts.agentsOnly {
@@ -79,7 +79,7 @@ func doInstallClaude(opts *installOpts) error {
 		fmt.Println()
 
 		newManifest.Skills = installedSkills
-		removeStale(skillsTarget, manifest.Stale(old.Skills, installedSkills), os.RemoveAll, opts.dryRun)
+		removeStale(skillsTarget, manifest.Stale(old.Skills, installedSkills), staleDir, os.RemoveAll, opts.dryRun)
 	}
 
 	if !opts.agentsOnly && !opts.skillsOnly {

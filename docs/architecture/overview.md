@@ -69,9 +69,10 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
                        (unreadable/corrupt → warn, treat as empty, so nothing is stale this run)
           3. agents    cli/cmd/backup.go backupExisting(*.md → ~/.claude/.devexp-backup-<YYYYMMDDTHHMMSS>)
                        → cli/internal/agents/installer.go InstallClaude (copy; --model rewrites an existing model: line)
-                       → removeStale(manifest.Stale(old, new), os.Remove)
+                       → removeStale(manifest.Stale(old, new), staleFile, os.Remove)
+                         (bare <name>.md regular files only; other entries and symlinks kept, warned)
           4. skills    backupExistingDirs → cli/internal/skills/installer.go InstallClaude (CopyDir whole skill dir)
-                       → removeStale(..., os.RemoveAll)
+                       → removeStale(..., staleDir, os.RemoveAll) (bare names, real directories only)
           5. hooks     cli/internal/hooks/installer.go LoadRegistry → InstallClaude(~/.claude/settings.json):
                        keep unknown keys; pruneStaleHooks (under repoDir, script gone)
                        + pruneForeignDevexpHooks (same registry script under another install root);
@@ -101,7 +102,7 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
    - It then writes the selected modules, `utils.js`, `package.json` and `devexp/hooks.json` atomically, the entry `plugins/devexp.js` last.
    - It removes plugin files it no longer installs, entry first. Those are the previous manifest's `plugins` plus the devexp files it recognises on disk. Removal is all-or-nothing when the entry must stay (a symlink, undeletable, or not recognised as devexp's), and an empty real `devexp/` is removed. `devexp uninstall --target opencode` uses the same removal code. With nothing selected it installs nothing.
    - Only after that succeeds, `CleanLegacyOpencode` removes pre-v0.1.0 flat-install files (legacy name **and** header signature) and the exact legacy `config.json` `plugin` entry.
-6. Stale entries are removed, then `manifest.Save` writes `~/.config/opencode/.devexp-manifest.json`.
+6. Stale entries are removed with the same name and shape checks as the Claude Code target (`removeStale`, `staleFile` for agents and `<name>.md` commands), then `manifest.Save` writes `~/.config/opencode/.devexp-manifest.json`.
 
 Unlike the Claude Code target, there's **no backup step**.
 
