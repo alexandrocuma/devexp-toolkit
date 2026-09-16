@@ -203,17 +203,21 @@ export async function myGuard(_ctx) {
 
 ```js
 import {
-  findRoot, which, runLinter, countLines,
+  findRoot, which, runLinter, runCommand, countLines,
   existsSync, join, dirname, resolve, extname, basename,
   LINT_EXTS,
 } from './utils.js';
 
 findRoot(filePath)         // walks up to find package.json / go.mod / .git
-which('ruff')              // returns binary path or null
-runLinter(cmd, args, cwd)  // runs linter, prints output, swallows non-zero exit, 10s timeout
+await which('ruff')                     // resolves binary path or null
+await runLinter(cmd, args, cwd)         // runs linter, prints output, swallows non-zero exit, 10s timeout
+await runCommand(cmd, args, { cwd, timeout, output })
+                                        // async spawn; never rejects; resolves { code, signal, stdout, stderr, error }
 countLines(filePath)       // returns line count, 0 on error
 LINT_EXTS                  // Set of lintable extensions: .js, .ts, .py, .go, .rb, etc.
 ```
+
+**Never spawn synchronously** (`execFileSync`, `spawnSync`, `execSync`) in an opencode module. opencode runs plugins inside its server process, so a synchronous spawn freezes every session until the tool exits. Use `runCommand` (or `which` / `runLinter`) and `await` it.
 
 Path helpers (`join`, `dirname`, `resolve`, `extname`, `basename`) are re-exported from Node's `path` module for convenience. `existsSync` is re-exported from `fs`.
 
@@ -243,7 +247,7 @@ A module may import only `./utils.js` relatively — the installed plugin direct
 
 ### The `devexp/hooks.json` contract
 
-The installed plugin is `<plugins>/devexp.js` (the entry) next to `<plugins>/devexp/`, which holds `hooks.json`, `utils.js`, `package.json` and the selected modules. `hooks.json` is a JSON array in registry order:
+The installed plugin is `<plugins>/devexp.js` (the entry) next to `<plugins>/devexp/`, which holds `hooks.json`, `utils.js`, `package.json` and the selected modules. `hooks.json` is a **non-empty** JSON array in registry order, one object per selected hook with exactly the keys `name`, `module`, `export` and `failClosed` (note: camelCase here, `fail_closed` in the registry):
 
 ```json
 [
@@ -252,19 +256,28 @@ The installed plugin is `<plugins>/devexp.js` (the entry) next to `<plugins>/dev
 ]
 ```
 
-`module` is a bare file name inside `devexp/`; the entry refuses any value containing `/` or `..`. Writing this file is the installer's job (not done yet — see [Known gaps](../architecture/overview.md#known-gaps)).
+- `module` must match `^[A-Za-z0-9][A-Za-z0-9._-]*\.js$` and resolve to a `file:` URL inside `devexp/`. Anything else — a path, a `node:` builtin, encoded dot segments — is refused as a load failure.
+- An empty array is **not** a valid selection. With every hook disabled the installer installs no plugin at all, so `[]` can only be an installer bug and is treated like an unreadable file.
+- `hooks/opencode/devexp-plugin.test.js` parses the example above and asserts these exact key names, so it is the target the installer must write.
+
+Writing this file is the installer's job (not done yet — see [Known gaps](../architecture/overview.md#known-gaps)).
 
 ### Failure behaviour
 
-- **`hooks.json` missing, invalid or not an array** → every tool call is blocked with `[devexp] opencode plugin is misconfigured (devexp/hooks.json unreadable) — re-run devexp install. Blocking to be safe.`
-- **A module fails to import or initialise** (or its export is not a function):
-  - with `failClosed` → a stub blocks every tool call with `[devexp <name>] internal error — the guard failed to load, so it did not run. Blocking to be safe: <error>`
+- **`hooks.json` missing, invalid, not an array or empty** → every tool call is blocked with `[devexp] opencode plugin is misconfigured (devexp/hooks.json unreadable) — re-run devexp install. Blocking to be safe.`
+- **An entry that is not an object with a non-empty string `name`** → every tool call is blocked (`… (devexp/hooks.json entry <i> is not a hook entry) …`); it is never skipped.
+- **A module fails to import or initialise** (or its export is not a function, or `module` is refused):
+  - if the entry is fail-closed → a stub blocks every tool call with `[devexp <name>] internal error — the guard failed to load, so it did not run. Blocking to be safe: <error>`. An entry is fail-closed when `failClosed: true`, when it carries the registry spelling `fail_closed: true`, **or** when its name is one of the security guards (`secret-guard`, `secret-in-write-guard`, `dangerous-cmd-guard`) — the entry hard-codes that set so a guard can't fail open because one flag was dropped or misspelled
   - without → `[devexp <name>] failed to load; skipped: <error>` is logged and the other hooks keep running
 - **At runtime** `tool.execute.before` handlers run one after another in selection order; the first throw blocks the call.
 
 ### File events
 
-opencode has no `file.edited` plugin hook: file events reach plugins only through the `event` hook. The entry adapts every `event` of type `file.edited` into a call to each module's `file.edited` handler with `{ file }` (the absolute path). Errors from those handlers are logged, never rethrown — opencode dispatches `event` without awaiting a result.
+opencode has no `file.edited` plugin hook: file events reach plugins only through the `event` hook. The entry adapts every `event` of type `file.edited` into a call to each module's `file.edited` handler with `{ file }` (the absolute path).
+
+- The handlers are **queued, not awaited**: `event` returns at once, and the queue runs one edit at a time, calling the modules in selection order. opencode's event publisher is never held while a linter, formatter or test runner works.
+- Errors from those handlers are logged, never rethrown.
+- `format-on-save` rewrites the file in place **after** opencode's edit tool has already computed the diff it reports (and after opencode's own formatter ran), so the diff shown for that edit can differ from what ends up on disk.
 
 ---
 

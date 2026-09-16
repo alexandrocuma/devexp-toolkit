@@ -10,21 +10,20 @@
  *   Ruby:   rubocop --autocorrect-all
  *
  * Advisory only — cannot block. Modifies the file in-place. Silent if no formatter found.
+ * The rewrite lands after opencode's edit tool computed the diff it reports, so
+ * that diff can differ from the file on disk.
  */
 
-import { execFileSync } from 'child_process';
-import { existsSync, extname, join, findRoot, which } from './utils.js';
+import { existsSync, extname, join, findRoot, which, runCommand } from './utils.js';
 
 const FORMAT_EXTS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py', '.go', '.rb']);
 
-function runFormatter(cmd, args, cwd) {
-  try {
-    execFileSync(cmd, args, { cwd, timeout: 15000, stdio: 'ignore' });
-  } catch (e) {
-    if (e.code === 'ENOENT') return;
-    const output = ((e.stdout ?? '') + (e.stderr ?? '')).trim();
-    if (output) console.log(`[devexp format-on-save] ${cmd.split('/').pop()}:\n${output}`);
-  }
+export const FORMAT_TIMEOUT_MS = 15000;
+
+// Output is ignored, so a formatter that fails, times out or is missing is
+// silent — as it was with execFileSync(…, { stdio: 'ignore' }).
+async function runFormatter(cmd, args, cwd) {
+  await runCommand(cmd, args, { cwd, timeout: FORMAT_TIMEOUT_MS, output: 'ignore' });
 }
 
 export async function formatOnSave(_ctx) {
@@ -44,27 +43,27 @@ export async function formatOnSave(_ctx) {
         const biomeCfg = existsSync(join(root, 'biome.json')) || existsSync(join(root, 'biome.jsonc'));
 
         if (biomeCfg && existsSync(localBiome)) {
-          runFormatter(localBiome, ['format', '--write', filePath], root);
+          await runFormatter(localBiome, ['format', '--write', filePath], root);
         } else if (existsSync(localPrettier)) {
-          runFormatter(localPrettier, ['--write', filePath], root);
-        } else if (biomeCfg && which('biome')) {
-          runFormatter('biome', ['format', '--write', filePath], root);
-        } else if (which('prettier')) {
-          runFormatter('prettier', ['--write', filePath], root);
+          await runFormatter(localPrettier, ['--write', filePath], root);
+        } else if (biomeCfg && await which('biome')) {
+          await runFormatter('biome', ['format', '--write', filePath], root);
+        } else if (await which('prettier')) {
+          await runFormatter('prettier', ['--write', filePath], root);
         }
       } else if (ext === '.py') {
-        if (which('ruff')) {
-          runFormatter('ruff', ['format', filePath], root);
-        } else if (which('black')) {
-          runFormatter('black', ['--quiet', filePath], root);
+        if (await which('ruff')) {
+          await runFormatter('ruff', ['format', filePath], root);
+        } else if (await which('black')) {
+          await runFormatter('black', ['--quiet', filePath], root);
         }
       } else if (ext === '.go') {
-        if (which('gofmt')) {
-          runFormatter('gofmt', ['-w', filePath], root);
+        if (await which('gofmt')) {
+          await runFormatter('gofmt', ['-w', filePath], root);
         }
       } else if (ext === '.rb') {
-        if (which('rubocop')) {
-          runFormatter('rubocop', ['--autocorrect-all', '--no-color', '--format', 'quiet', filePath], root);
+        if (await which('rubocop')) {
+          await runFormatter('rubocop', ['--autocorrect-all', '--no-color', '--format', 'quiet', filePath], root);
         }
       }
     },

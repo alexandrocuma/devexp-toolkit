@@ -34,32 +34,32 @@ export async function lintOnSave(_ctx) {
                               existsSync(join(root, 'biome.jsonc'));
 
           if (biomeCfg && existsSync(localBiome)) {
-            runLinter(localBiome, ['lint', filePath], root);
+            await runLinter(localBiome, ['lint', filePath], root);
           } else if (existsSync(localEslint)) {
-            runLinter(localEslint, ['--max-warnings=0', '--no-warn-ignored', filePath], root);
-          } else if (biomeCfg && which('biome')) {
-            runLinter('biome', ['lint', filePath], root);
-          } else if (which('eslint')) {
-            runLinter('eslint', ['--max-warnings=0', filePath], root);
+            await runLinter(localEslint, ['--max-warnings=0', '--no-warn-ignored', filePath], root);
+          } else if (biomeCfg && await which('biome')) {
+            await runLinter('biome', ['lint', filePath], root);
+          } else if (await which('eslint')) {
+            await runLinter('eslint', ['--max-warnings=0', filePath], root);
           }
 
         } else if (ext === '.py') {
-          const ruff   = which('ruff');
-          const flake8 = which('flake8');
-          if (ruff)        runLinter(ruff,   ['check', filePath], root);
-          else if (flake8) runLinter(flake8, [filePath], root);
+          const ruff   = await which('ruff');
+          const flake8 = ruff ? null : await which('flake8');
+          if (ruff)        await runLinter(ruff,   ['check', filePath], root);
+          else if (flake8) await runLinter(flake8, [filePath], root);
 
         } else if (ext === '.go') {
-          const go = which('go');
+          const go = await which('go');
           if (go) {
             const relDir = resolve(dirname(resolve(filePath))).replace(root, '').replace(/^\//, '');
             const pkg    = relDir === '' ? './...' : `./${relDir}`;
-            runLinter(go, ['vet', pkg], root);
+            await runLinter(go, ['vet', pkg], root);
           }
 
         } else if (ext === '.rb') {
-          const rubocop = which('rubocop');
-          if (rubocop) runLinter(rubocop, ['--no-color', '--format', 'simple', filePath], root);
+          const rubocop = await which('rubocop');
+          if (rubocop) await runLinter(rubocop, ['--no-color', '--format', 'simple', filePath], root);
         }
       } catch {
         // Advisory — never propagate errors from file.edited

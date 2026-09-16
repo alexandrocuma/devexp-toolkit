@@ -106,7 +106,7 @@ opencode tool.execute.before
   → hooks/opencode/devexp-plugin.js loads the modules listed in devexp/hooks.json and runs their handlers in sequence; the first throw blocks
 
 opencode event (type file.edited)
-  → devexp-plugin.js adapts it to each module's file.edited handler with { file }; errors are logged, never rethrown
+  → devexp-plugin.js queues each module's file.edited handler with { file } and returns at once; the queue runs edits one at a time, commands spawn asynchronously, errors are logged, never rethrown
 ```
 
 Hook commands point into the install root, so editing a registered script in the clone changes behavior immediately. Moving or deleting the clone breaks the registrations until the next install prunes them (`scriptAbs := filepath.Join(repoDir, cc.Script)` and `pruneStaleHooks` in `cli/internal/hooks/installer.go`). Agents and skills are copies, so changes to them need a re-install.

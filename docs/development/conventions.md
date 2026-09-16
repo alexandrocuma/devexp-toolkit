@@ -100,7 +100,7 @@ command=$(echo "$input" | python3 -c \
 ```
 — `hooks/claude-code/dangerous-cmd-guard.sh`
 
-- **Post-edit hooks never block.** JS `file.edited` handlers are "Advisory only — never throws" (`hooks/opencode/lint-on-save.js`). A guard that fails in opencode stops the chain, because handlers run one after another and the first throw wins (`hooks/opencode/devexp-plugin.js`).
+- **Post-edit hooks never block.** JS `file.edited` handlers are "Advisory only — never throws" (`hooks/opencode/lint-on-save.js`). A guard that fails in opencode stops the chain, because handlers run one after another and the first throw wins (`hooks/opencode/devexp-plugin.js`). opencode modules never spawn synchronously — opencode runs plugins in its server process — so they `await` `runCommand` / `which` / `runLinter` from `hooks/opencode/utils.js`.
 
 ## Logging & Observability
 

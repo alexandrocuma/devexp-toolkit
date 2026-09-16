@@ -37,7 +37,7 @@ hooks/
   └── dangerous-cmd-guard.test.sh
   └── fail-closed.test.sh      # Guards fail closed / advisory hooks fail open but loud
   opencode/                   # One .js module per hook + shared utils + entry point + tests
-  └── utils.js                # Shared helpers: findRoot, which, runLinter, countLines
+  └── utils.js                # Shared helpers: findRoot, which, runLinter, runCommand (async spawn), countLines
   └── secret-guard.js
   └── secret-in-write-guard.js
   └── dangerous-cmd-guard.js
@@ -106,7 +106,7 @@ Every key other than `name`, `description` and `enabled` whose value is an objec
 | `dangerous-cmd-guard` | PreToolUse | `Bash` | Hard-blocks `rm -rf /`, unanchored wildcard deletes in sensitive dirs (`/tmp/*`, `~/.claude/.../*`), fork bombs, `DROP DATABASE`, `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
 | `large-file-guard` | PreToolUse | `Write` | Asks for confirmation before overwriting a file with >500 lines |
 | `lint-on-save` | PostToolUse | `Write\|Edit` | Runs the project linter on edited source files (JS/TS → biome/eslint, Python → ruff/flake8, Go → go vet, Ruby → rubocop) |
-| `format-on-save` | PostToolUse | `Write\|Edit` | Runs the project formatter in-place (JS/TS → biome/prettier, Python → ruff/black, Go → gofmt, Ruby → rubocop) |
+| `format-on-save` | PostToolUse | `Write\|Edit` | Runs the project formatter in-place (JS/TS → biome/prettier, Python → ruff/black, Go → gofmt, Ruby → rubocop). In opencode it rewrites the file after the edit tool computed its diff, so the reported diff can differ from the file on disk |
 | `test-on-save` | PostToolUse | `Write\|Edit` | Runs the associated test file after editing a source file — skips silently if no test file found |
 | `graphify-read-guard` *(disabled)* | PreToolUse | `Read\|Glob` | Gates source reads/globs behind a tapering `graphify query` cadence (5 → 3 → 1 queries to unlock, ~6 reads per cycle) — pairs with the [`graphify`](../../skills/graphify/SKILL.md) skill |
 | `graphify-session-sentinel` *(disabled)* | PostToolUse | `Bash` | Tracks `graphify query/path/explain` usage toward `graphify-read-guard`'s tapering gate |
