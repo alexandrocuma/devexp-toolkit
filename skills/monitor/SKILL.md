@@ -185,6 +185,11 @@ Overall: <composite score>   (<N> surfaces reviewed, <N> N/A)
 
 Anomalies / blind spots:
   - <actionable item with evidence>
+
+Next:
+  /improve     — health-check the codebase behind these surfaces
+  postmortem   — if an anomaly here traces to an incident, invoke the `postmortem`
+                 agent to write it up blamelessly while the timeline is fresh
 ```
 
 ### Phase 5 — Persist

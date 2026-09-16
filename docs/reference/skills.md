@@ -40,7 +40,7 @@ The first four orchestrators *build* software and `/release` *ships* it; `/monit
 - Estimates complexity from the actual codebase
 - Creates a structured ticket on GitHub Issues, GitLab, Linear, or Jira (auto-detected)
 - Validates ticket claims against the codebase (via `grooming-agent`)
-- Produces a verified execution plan attached to the ticket
+- **Planification** — produces a verified execution plan attached to the ticket. This is the cycle's planning phase; it has no command of its own because a plan with no ticket to attach to is just a document
 
 ### `/deliver <ticket>`
 - Loads the groom plan (or runs grooming if missing)

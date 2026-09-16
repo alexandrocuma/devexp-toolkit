@@ -11,7 +11,7 @@ Install them by running `../install.sh` from the repo root.
 | MCP | Transport | Description |
 |-----|-----------|-------------|
 | **context7** | stdio | Up-to-date library documentation and code examples for any package — fetched at query time, not from training data. |
-| **ui-inspector** | stdio | UI/UX inspection via headless Chromium — screenshot, interact (click/type/scroll), ARIA accessibility tree, computed CSS, axe-core a11y audit, page metrics. No external daemon required. |
+| **ui-inspector** | stdio | UI/UX inspection via headless Chromium — screenshot, interact (click/type/scroll), ARIA accessibility tree, computed CSS, axe-core a11y audit, page metrics. **Ships separately** — [mcp-ui-inspector](https://github.com/alexandrocuma/mcp-ui-inspector); set `UI_INSPECTOR_DIR` to its clone. |
 
 Full registry format and details: [`docs/reference/mcps.md`](../docs/reference/mcps.md)
 

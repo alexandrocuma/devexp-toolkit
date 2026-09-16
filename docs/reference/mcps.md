@@ -55,7 +55,7 @@ MCP servers are declared in `mcps/registry.json`. Two transport types are suppor
 | Name | Transport | Description |
 |------|-----------|-------------|
 | context7 | stdio | Up-to-date library documentation and code examples for any package |
-| ui-inspector | stdio | UI/UX inspection via headless Chromium — screenshot, interact (click/type/scroll), ARIA accessibility tree, computed CSS, axe-core a11y audit, page metrics. No external daemon required. |
+| ui-inspector | stdio | UI/UX inspection via headless Chromium. **Not vendored** — lives at [mcp-ui-inspector](https://github.com/alexandrocuma/mcp-ui-inspector); clone it, run `./setup.sh`, and set `UI_INSPECTOR_DIR`. The installer shows a `[REQUIRED]` warning with setup guidance until it is set. |
 
 ---
 

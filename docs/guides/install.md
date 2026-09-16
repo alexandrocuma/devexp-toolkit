@@ -88,23 +88,6 @@ Shows every add, update, and removal devexp would make — including stale-file 
 
 ---
 
-## start-services.sh
-
-Use this after a machine restart or when MCP services have stopped. Never wipes data or venvs.
-
-```bash
-./start-services.sh            # start anything that isn't running
-./start-services.sh --status   # check service health without starting
-```
-
-**Behavior:**
-- **ui-inspector** manages its own headless Chromium process — no daemons to start
-- Safe to run at any time — skips services that are already running
-
-After running, reconnect your MCP in Claude Code (`/mcp`) or opencode.
-
----
-
 ## uninstall.sh
 
 ```bash

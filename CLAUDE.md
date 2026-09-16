@@ -14,7 +14,6 @@ A curated collection of Claude Code agents, skills, hooks, and MCP servers that 
 |------|---------|
 | Install everything | `./install.sh` |
 | Dry-run (preview) | `./install.sh --dry-run` |
-| Restart MCP services | `./start-services.sh` |
 | Uninstall | `./uninstall.sh` |
 
 After editing any file in `agents/`, `skills/`, or `hooks/` — run `./install.sh` to deploy. The script is idempotent.
@@ -55,7 +54,7 @@ Start at [`docs/README.md`](docs/README.md) for the full index.
 | Full skill catalog + how skills work | [`docs/reference/skills.md`](docs/reference/skills.md) |
 | Hooks reference + registry format | [`docs/reference/hooks.md`](docs/reference/hooks.md) |
 | MCP registry format + adding MCPs | [`docs/reference/mcps.md`](docs/reference/mcps.md) |
-| Install / uninstall / start-services | [`docs/guides/install.md`](docs/guides/install.md) |
+| Install / uninstall | [`docs/guides/install.md`](docs/guides/install.md) |
 | Team distribution + devexp.config.json | [`docs/guides/team-distribution.md`](docs/guides/team-distribution.md) |
 | Worktree-per-ticket delivery convention | [`docs/guides/worktree-per-ticket.md`](docs/guides/worktree-per-ticket.md) |
 | On-demand cleanup of finished worktrees + delivery artifacts (`/cleanup`) | [`docs/reference/skills.md`](docs/reference/skills.md) |
