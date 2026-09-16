@@ -1,6 +1,6 @@
 # Testing
 
-> Kit doc · Last verified: 2026-09-16 against commit `06678076acdad3aad74e12807ad8248fe1ae9249`
+> Kit doc · Last verified: 2026-09-16 against commit `eaebd52de9323825e6f3fdf286253a89ea89a7a5`
 
 Where tests live, how they're written and run, and what must pass before a commit. Commands for everything else (build, install, env vars) are in [`setup.md`](setup.md); code style in [`conventions.md`](conventions.md).
 
@@ -81,11 +81,11 @@ No threshold: CI prints per-package coverage (`go test ./... -race -cover`, `ci.
 cd cli && go test ./... -coverprofile=/tmp/cover.out && go tool cover -func=/tmp/cover.out
 ```
 
-Per package at this commit: `cmd` 35.4% · `config` 48.5% · `ui` 61.5% · `mcp` 64.7% · `repo` 83.0% · `assets` 83.3% · `agents` 85.9% · `skills` 86.0% · `manifest` 87.0% · `hooks` 91.6%.
+Per package at this commit: `config` 48.5% · `cmd` 50.5% · `ui` 61.5% · `mcp` 64.7% · `repo` 83.0% · `assets` 83.3% · `agents` 85.9% · `skills` 86.0% · `manifest` 87.0% · `hooks` 91.4%.
 
 Untested areas worth knowing:
 
-- **Install orchestration (0%):** `runInstall`, `doInstallClaude`, `installMCPsClaude`, `doInstallOpencode`, `installMCPsOpencode`, `runWizard`. The `doInstall*` functions read `os.Getenv("HOME")` directly (`cli/cmd/install_claude.go:20`, `install_opencode.go:18`) and `runWizard` needs a TTY.
+- **Install orchestration:** `runInstall`, `doInstallClaude`, `installMCPsClaude` and `runWizard` are untested (0%). The `doInstall*` functions read `os.Getenv("HOME")` directly (`cli/cmd/install_claude.go:20`, `install_opencode.go:18`) and `runWizard` needs a TTY. `doInstallOpencode` and `installMCPsOpencode` are partly covered: `TestDoInstallOpencode_Hooks` and `TestDoInstallOpencode_TamperedManifest` (`cmd/install_test.go`) run them in a temp `HOME` with `t.Setenv`, covering the hook plugin install, disabling, `--agents-only`/`--skills-only`, dry-run and legacy cleanup. The plugin installer itself is covered by `cli/internal/hooks/opencode_test.go`, which includes a `node` load of the Go-written tree (skipped when `node` isn't on `PATH`) and legacy fixtures in `cli/internal/hooks/testdata/legacy-opencode/`.
 - **Config (0%):** `config.Load` and `IsAgentDisabled`/`IsSkillDisabled`/`IsHookDisabled` (`cli/internal/config/config.go`); only `dotenv.go` has tests.
 - **Registry and exec paths (0%):** `mcp.InstallClaude`, `isInstalledClaude`, `RemoveClaude`; all promptui prompts in `cli/internal/ui/prompts.go`.
 - **Hooks without behaviour tests:** `secret-in-write-guard`, `large-file-guard`, `format-on-save`, `lint-on-save`, `test-on-save` are covered only by `fail-closed.test.sh` (shell side); the three `graphify-*` hooks have no tests at all; on the opencode side `secret-guard` and `dangerous-cmd-guard` have their own `.test.js` files, and `devexp-plugin.test.js` covers the entry plus the lint/format/test-on-save edit handlers only as far as they run with no linter, formatter or test runner found (no tool output is asserted).

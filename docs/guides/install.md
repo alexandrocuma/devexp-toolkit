@@ -44,7 +44,7 @@ Passing any of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only` o
 **Behavior:**
 - Detects `claude` and/or `opencode` in PATH; prompts which to install for only when both are found, and stops with an error when neither is (`cli/cmd/targets.go`)
 - **Claude Code**: copies agents to `~/.claude/agents/`, skill directories to `~/.claude/skills/`, registers MCPs via `claude mcp add`, and registers enabled hooks in `~/.claude/settings.json` (`cli/cmd/install_claude.go`)
-- **opencode**: transforms agent frontmatter (model aliases, tool mapping, adds `mode: subagent`) and installs to `~/.config/opencode/agents/`; each skill's `SKILL.md` goes to `~/.config/opencode/commands/<name>.md`; MCPs are written to the `mcp` key of `~/.config/opencode/config.json`. **No hooks are installed for opencode** (`cli/cmd/install_opencode.go`) — see [Known gaps](../architecture/overview.md#known-gaps)
+- **opencode**: transforms agent frontmatter (model aliases, tool mapping, adds `mode: subagent`) and installs to `~/.config/opencode/agents/`; each skill's `SKILL.md` goes to `~/.config/opencode/commands/<name>.md`; MCPs are written to the `mcp` key of `~/.config/opencode/config.json`; the hook plugin goes to `~/.config/opencode/plugins/` — the entry `devexp.js` plus `devexp/` holding the selected modules, `utils.js`, `package.json` and the `hooks.json` selection (`cli/cmd/install_opencode.go`, `cli/internal/hooks/opencode.go`). With every hook disabled no plugin is installed
 - Backs up existing agents and skills before overwriting — **Claude Code target only**; the opencode install has no backup step (`backupExisting` / `backupExistingDirs` are called only from `cli/cmd/install_claude.go`)
 - The install script is **idempotent** — safe to run multiple times
 
@@ -55,13 +55,15 @@ Passing any of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only` o
 Re-running the installer is how you update devexp — there's no separate "upgrade" command.
 
 - **Binary install**: re-run the `remote-install.sh` one-liner from [Quick install](#quick-install-no-clone). It downloads the latest release binary, overwrites `~/.local/bin/devexp`, and runs `devexp install` again.
-- **Clone install**: `git pull && ./install.sh` re-runs `devexp install` against the updated assets, which are read live from the clone (`cli/internal/repo/repo.go`). It does **not** rebuild the CLI — `install.sh` builds only when `bin/devexp` is missing (`install.sh:7`). If the pull changed Go code under `cli/`, rebuild explicitly: `git pull && rm bin/devexp && ./install.sh`.
+- **Clone install**: `git pull && ./install.sh` re-runs `devexp install` against the updated assets, which are read live from the clone (`cli/internal/repo/repo.go`). It does **not** rebuild the CLI — `install.sh` builds only when `bin/devexp` is missing (`install.sh:7`). If the pull changed Go code under `cli/`, rebuild explicitly: `git pull && rm bin/devexp && ./install.sh`. Updating to the release that installs the opencode hook plugin (#108) needs this rebuild.
 
 ### What gets overwritten vs. preserved
 
 - **Agents and skills** are overwritten in place with the versions shipped in the new release. Before overwriting, the Claude Code install backs up your existing `~/.claude/agents/*.md` and `~/.claude/skills/<name>/` directories into a timestamped `~/.claude/.devexp-backup-<timestamp>/` folder (`cli/cmd/backup.go`, `cli/cmd/paths.go`). The opencode install makes **no backup** of `~/.config/opencode/agents/` or `commands/` (`cli/cmd/install_opencode.go`).
 - **MCP server registrations** are *not* refreshed automatically — pass `--reinstall-mcps` if an MCP's config (command, args, env) changed in the new release.
-- **Hooks** (Claude Code only): new hooks in `hooks/registry.json` are added to `settings.json`; hooks already registered are left as-is.
+- **Hooks**:
+  - Claude Code: new hooks in `hooks/registry.json` are added to `settings.json`; hooks already registered are left as-is, including ones disabled since.
+  - opencode: the plugin files are copied again and rewritten only when their bytes changed. Only the selected modules are copied, and a module disabled since the last run is removed.
 
 ### Stale-file cleanup
 
@@ -69,7 +71,12 @@ Re-running the installer is how you update devexp — there's no separate "upgra
 
 - **Agents and skills**: devexp tracks what it installed in `~/.claude/.devexp-manifest.json` (and `~/.config/opencode/.devexp-manifest.json` for opencode). On each run, anything from the previous manifest that isn't part of this run's install set is removed from disk and dropped from the manifest.
   - **One-time caveat**: if you're upgrading from a devexp version that predates manifests, the first run after upgrading has no prior manifest to diff against — it just records a baseline. Stale-file cleanup takes effect starting with the *second* run after upgrading.
-- **Hooks**: devexp checks every registered hook command that points into the devexp repo/cache directory. If the backing script no longer exists (because the hook was removed from `hooks/registry.json`), the dangling entry is removed from `settings.json`. A devexp hook registered from a *different* install root (e.g. a release-binary install later replaced by a clone install) is also removed as a duplicate, matched by registry script name under `hooks/claude-code/` (`pruneForeignDevexpHooks` in `cli/internal/hooks/installer.go`). Other user-authored hooks are never touched.
+- **opencode plugin files**: the opencode manifest's `plugins` key lists every plugin file installed (`devexp.js` first, then `devexp/…`). A file from the previous list that this run doesn't install is removed, and `devexp/` is removed once empty. Only `devexp.js` (while it is still a devexp entry) and file names devexp installs directly in `devexp/` are ever removed this way; any other path in the manifest is kept with a warning.
+- **Legacy opencode flat install** (clones from before v0.1.0 copied every hook file flat into `plugins/` and registered `plugins/devexp-plugin.js` in `config.json`):
+  - A file in `plugins/` is removed only when its name is one of the 9 legacy file names **and** its content starts with that file's devexp header. A same-named file without the header is kept, with a warning.
+  - `plugins/package.json` is removed only alongside such a match and only if it is exactly `{ "type": "module" }`.
+  - The `config.json` `plugin` entry is removed only when it is exactly `<HOME>/.config/opencode/plugins/devexp-plugin.js`. The key goes when the array ends up empty, and every other byte of `config.json` is kept (`CleanLegacyOpencode` in `cli/internal/hooks/opencode.go`).
+- **Hooks (Claude Code)**: devexp checks every registered hook command that points into the devexp repo/cache directory. If the backing script no longer exists (because the hook was removed from `hooks/registry.json`), the dangling entry is removed from `settings.json`. A devexp hook registered from a *different* install root (e.g. a release-binary install later replaced by a clone install) is also removed as a duplicate, matched by registry script name under `hooks/claude-code/` (`pruneForeignDevexpHooks` in `cli/internal/hooks/installer.go`). Other user-authored hooks are never touched.
 
 ### Behavior change: disabling now removes
 
@@ -111,16 +118,16 @@ Shows every add, update, and removal devexp would make — including stale-file 
 |-----------|-------------|----------|
 | Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (transformed) |
 | Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) |
-| Hooks | `~/.claude/settings.json` (shell scripts) | **Not installed** — JS modules exist in `hooks/opencode/` but the CLI doesn't deploy them ([Known gaps](../architecture/overview.md#known-gaps)) |
+| Hooks | `~/.claude/settings.json` (shell scripts) | `~/.config/opencode/plugins/devexp.js` + `devexp/` (selected modules, `utils.js`, `package.json`, `hooks.json`) |
 | MCPs | via `claude mcp add` | `mcp` key of `~/.config/opencode/config.json` |
 | `CLAUDE.md` / `AGENTS.md` | `~/.claude/CLAUDE.md` | `~/.config/opencode/AGENTS.md` (or project root) |
 | Agent tools | All Claude tools | `read/write/edit/bash/glob/grep/webfetch/websearch` only |
 | `Agent`, `Skill`, `Task*` tools | Supported | No opencode equivalent — dropped at transform |
 
-> **`.devexp-manifest.json`**: devexp writes `~/.claude/.devexp-manifest.json` and `~/.config/opencode/.devexp-manifest.json` to track which agent/skill files it installed, so future updates can detect and remove files no longer shipped by the toolkit (see [Updating](#updating)). These are managed automatically — don't hand-edit them.
+> **`.devexp-manifest.json`**: devexp writes `~/.claude/.devexp-manifest.json` and `~/.config/opencode/.devexp-manifest.json` to track which agent/skill files (and, for opencode, plugin files) it installed, so future updates can detect and remove files no longer shipped by the toolkit (see [Updating](#updating)). These are managed automatically — don't hand-edit them.
 
 > **opencode users — feature subset:**
 > The following features are unavailable under opencode and are dropped at install time (the installer prints a one-line warning, `cli/cmd/install_opencode.go`):
-> multi-agent orchestration tools (`Agent`, `Skill`, `Task*`), persistent agent memory, and terminal colors. Safety hooks are also not installed for opencode (see [Known gaps](../architecture/overview.md#known-gaps)).
+> multi-agent orchestration tools (`Agent`, `Skill`, `Task*`), persistent agent memory, and terminal colors. Hooks are installed for opencode, including the advisory lint/format/test-on-save hooks, and the three `graphify-*` hooks are on by default there (turn them off with `hooks.disabled`).
 > Skills that rely on agent spawning — including the `/deliver` and `/improve` orchestrators — will run in degraded mode.
 > **Claude Code is recommended for the full experience.**

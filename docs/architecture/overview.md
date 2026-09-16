@@ -90,9 +90,13 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
 2. `installMCPsOpencode` → `cli/internal/mcp/opencode.go` `InstallOpencode` writes the `mcp` map in `~/.config/opencode/config.json` (`type: local|remote`, updating entries in place when they differ).
 3. `agents.InstallOpencode` → `transformForOpencode` drops `name`/`color`/`memory`, turns `tools` into an explicit `false` deny list over the 8 opencode tools, resolves model aliases and appends `mode: subagent`. `agents.InstallOpencodeExclusive` then installs `agents/opencode/*.md`, changing only the model.
 4. `skills.InstallOpencode` writes `~/.config/opencode/commands/<name>.md` from `SKILL.md` alone, with the top-level `name:` stripped.
-5. Stale entries are removed, then `manifest.Save` writes `~/.config/opencode/.devexp-manifest.json`.
+5. Hooks (skipped by `--agents-only`/`--skills-only`), in `cli/internal/hooks/opencode.go`:
+   - `CleanLegacyOpencode` removes pre-v0.1.0 flat-install files (legacy name **and** header signature) and the exact legacy `config.json` `plugin` entry.
+   - `InstallOpencode` selects hooks with an `opencode.module` that are `EnabledFor(opencode)` and not in `resolveHookDisabled`. It copies the entry to `plugins/devexp.js` and the selected modules, `utils.js` and `package.json` to `plugins/devexp/`, and writes `devexp/hooks.json`. The entry is written last. With nothing selected it installs nothing.
+   - `OwnedStalePlugins` + `removeStale` remove plugin files the previous manifest's `plugins` list has and this run doesn't; `PruneOpencodeDir` removes an empty `devexp/`.
+6. Stale entries are removed, then `manifest.Save` writes `~/.config/opencode/.devexp-manifest.json`.
 
-Unlike the Claude Code target, there's **no backup step and no hook step** (see [Known gaps](#known-gaps)).
+Unlike the Claude Code target, there's **no backup step**.
 
 ### A tool call at runtime (after install)
 
@@ -146,8 +150,8 @@ Hook commands point into the install root, so editing a registered script in the
 
 ### Known gaps
 
-- **The Go CLI doesn't install opencode hooks.** No code under `cli/` mentions `devexp-plugin.js` or `~/.config/opencode/plugins`: `doInstallOpencode` in `cli/cmd/install_opencode.go` installs MCPs, agents and skills only, and `hooks.InstallClaude` is the only hook installer. The plugin modules in `hooks/opencode/` are maintained and tested but never deployed, so opencode users get no safety guards. The bash installer that came before the Go CLI did deploy them; that was lost when the Go CLI replaced it (`46ca772`). Several existing docs describe the plugin as installed. Treat that as intended behavior, not current behavior.
-- **`uninstall.sh` doesn't match the CLI.** It treats `~/.claude/skills` as "shared between both CLIs" (`uninstall.sh`, `SKILLS_DIR`), but the CLI writes opencode skills to `~/.config/opencode/commands/` (`cli/cmd/paths.go`). Its plugin cleanup lists only 6 JS files. It doesn't remove `.devexp-manifest.json`.
+- **Disabled hooks behave differently per CLI.** Re-installing opencode removes a hook disabled since the last run; Claude Code keeps it registered in `settings.json` (`hooks.InstallClaude` only adds).
+- **`uninstall.sh` doesn't match the CLI.** It treats `~/.claude/skills` as "shared between both CLIs" (`uninstall.sh`, `SKILLS_DIR`), but the CLI writes opencode skills to `~/.config/opencode/commands/` (`cli/cmd/paths.go`). Its plugin cleanup lists only 6 JS files of the legacy flat layout and doesn't know the `plugins/devexp.js` + `devexp/` layout the CLI installs (#109). It doesn't remove `.devexp-manifest.json`.
 - **Config schema is narrower than the loader.** `devexp.config.schema.json` `mcps.items` sets `additionalProperties: false` and requires `command`, but `mcp.MCP` also accepts `transport`, `url`, `headers` and `setup_instructions` (`cli/internal/mcp/types.go`). An HTTP/SSE MCP declared in config fails schema validation even though the installer supports it.
 
 ## Reference Implementation

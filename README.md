@@ -63,7 +63,7 @@ The orchestrators handle everything internally — implementation, testing, code
 
 ### Hooks
 
-Hooks run automatically on matching tool calls — no configuration needed. 10 hooks ship in `hooks/registry.json`: 7 enabled by default — safety guards for secret protection, destructive command blocking and large-file confirmation, plus advisory lint/format/test-on-save — and 3 opt-in `graphify-*` hooks. The installer registers them for **Claude Code** (shell scripts). Matching opencode JS modules exist in `hooks/opencode/`, but the installer doesn't deploy them yet ([Known gaps](docs/architecture/overview.md#known-gaps)).
+Hooks run automatically on matching tool calls — no configuration needed. 10 hooks ship in `hooks/registry.json`: 7 enabled by default — safety guards for secret protection, destructive command blocking and large-file confirmation, plus advisory lint/format/test-on-save — and 3 opt-in `graphify-*` hooks. The installer registers them for **Claude Code** (shell scripts) and installs the **opencode** plugin (JS modules).
 
 → Browse the catalog: [`hooks/`](hooks/) · Full reference: [`docs/reference/hooks.md`](docs/reference/hooks.md)
 
@@ -108,7 +108,7 @@ Any of these flags except `--model` skips the interactive wizard.
 |-----------|-------------|----------|
 | Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (frontmatter transformed) |
 | Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) |
-| Hooks | `~/.claude/settings.json` (shell scripts, per-tool matchers) | Not installed ([Known gaps](docs/architecture/overview.md#known-gaps)) |
+| Hooks | `~/.claude/settings.json` (shell scripts, per-tool matchers) | `~/.config/opencode/plugins/devexp.js` + `devexp/` |
 | MCPs | via `claude mcp add` | `~/.config/opencode/config.json` |
 
 For Claude Code, existing agents and skills are backed up before any overwrite (the opencode install has no backup step). `install.sh` is idempotent.
@@ -239,7 +239,7 @@ devexp-toolkit/
 ├── hooks/                         # Safety and quality hooks
 │   ├── registry.json              # Source of truth for all hooks
 │   ├── claude-code/                # Shell scripts registered in ~/.claude/settings.json
-│   └── opencode/                   # JS modules composed into a single plugin (not deployed by the installer yet)
+│   └── opencode/                   # JS modules composed into a single opencode plugin
 ├── mcps/                          # MCP server registry and secrets
 │   ├── registry.json              # Curated MCP server list (context7, ui-inspector)
 │   └── .env.example                # Template for API keys (copy to .env)
