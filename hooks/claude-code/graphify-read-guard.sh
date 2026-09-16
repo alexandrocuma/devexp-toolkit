@@ -23,7 +23,7 @@
 
 set -euo pipefail
 
-exec python3 -c "$(cat <<'PYEOF'
+exec python3 -I -c "$(cat <<'PYEOF'
 import json, sys, os, re
 
 d = json.load(sys.stdin)

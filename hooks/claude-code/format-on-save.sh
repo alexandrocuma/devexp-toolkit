@@ -15,13 +15,15 @@ set -euo pipefail
 
 input=$(cat)
 
-file_path=$(echo "$input" | python3 -c \
-    "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))") || {
+# The trailing "x" keeps $(...) from trimming newlines that belong to the path.
+file_path=$(echo "$input" | python3 -I -c \
+    "import sys,json; d=json.load(sys.stdin); sys.stdout.write(str(d.get('tool_input',{}).get('file_path','')) + 'x')") || {
     echo "[devexp format-on-save] internal error -- could not read hook input, skipping. The interpreter's error is above." >&2
     exit 0
 }
+file_path=${file_path%x}
 
-python3 - "$file_path" <<'PYFORMAT'
+python3 -I - "$file_path" <<'PYFORMAT'
 import sys, os, shutil, subprocess
 
 file_path = sys.argv[1]
