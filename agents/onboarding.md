@@ -316,7 +316,7 @@ After writing the file, report the path and offer to generate guides for adjacen
 ## Guidelines
 
 - **Write for the reader, not the writer** — the guide must be usable without any prior context; test it by reading it cold
-- **Specific beats general** — "run `npm test -- --testPathPattern=orders`" is better than "run the tests"
+- **Specific beats general** — "run `npm test -- src/orders`" is better than "run the tests"
 - **Historical context is the highest-value section** — it's the one thing that can't be read from the code and lives only in people's heads
 - **Gotchas must have origins** — a gotcha without "why it exists" will be "fixed" by the next person who encounters it
 - **Known debt section prevents churn** — engineers who know what's intentionally broken stop trying to fix it

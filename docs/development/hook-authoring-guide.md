@@ -96,7 +96,7 @@ For `Bash`: `tool_input.command`
 
 Every value in `tool_input` — paths, commands, content — is untrusted. Never expand one into program text: not inside a `python3 -c "..."` string, not through `eval`, `bash -c` or an unquoted expansion. Pass it as data instead — on stdin, as an argument (`python3 -I - "$value" <<'PY'` with a **quoted** heredoc delimiter, then `sys.argv[1]`), or through the environment — and always quote shell expansions (`"$value"`). In opencode modules, spawn with `await runCommand(cmd, [args…], { cwd, timeout })` from `utils.js`: an argument array, no shell, never a synchronous spawn (see [Shared utilities](#shared-utilities-utilsjs)).
 
-**Hand a tool the edited file as an absolute path.** Resolve a relative path first, against the input's `cwd` (Claude Code) or `ctx.directory` (opencode, `editedPath` in `utils.js`), else the process cwd. Tools run from the project root, and an absolute path is never read as an option. When a tool needs a relative value, pass it after `--` (jest), and check that the tool honours `--`: ruff still expands `@argfile` after it, and vitest drops file filters after it (#121).
+**Hand a tool the edited file as an absolute path.** Resolve a relative path first, against the input's `cwd` (Claude Code) or `ctx.directory` (opencode, `editedPath` in `utils.js`), else the process cwd. Tools run from the project root, and an absolute path is never read as an option. When a tool needs a relative value, pass it after `--`, and check how the tool reads it: jest treats a bare path as a regex, so the hook adds `--runTestsByPath` to match the exact file; ruff still expands `@argfile` after `--`; vitest drops file filters after it (#121).
 
 Two more rules for the Python calls:
 

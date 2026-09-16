@@ -61,10 +61,13 @@ export async function testOnSave(ctx) {
 
           const localVitest = join(root, 'node_modules', '.bin', 'vitest');
           const localJest   = join(root, 'node_modules', '.bin', 'jest');
-          // jest 29 and 30 both read a pattern given after '--' (30 renamed
-          // --testPathPattern), and after '--' a pattern starting with '-' is never
-          // read as options (#121). vitest gets no '--': it would drop the file filter.
-          const jestArgs    = ['--passWithNoTests', '--no-coverage', '--', relative(root, testFile)];
+          // --runTestsByPath runs exactly this file: a plain pattern is a regex that
+          // can match other tests or none. It works on jest 29 and 30 (30 renamed
+          // --testPathPattern). After '--' a path starting with '-' is never read as
+          // options, and it stays relative to root: an absolute path through a
+          // symlinked root finds no tests (#121). vitest gets no '--': it would drop
+          // the file filter.
+          const jestArgs    = ['--passWithNoTests', '--no-coverage', '--runTestsByPath', '--', relative(root, testFile)];
 
           if (existsSync(localVitest)) {
             await runTests(localVitest, ['run', testFile], root);

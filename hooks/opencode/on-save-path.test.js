@@ -8,7 +8,8 @@
  * PATH that holds only the stubs and `which`. Every tool gets the edited file
  * as an absolute path, whatever form the event used:
  *   abs   an absolute path: argv exactly as at v0.8.0 (jest aside: its pattern
- *         now follows '--', the form jest 29 and 30 both accept)
+ *         is an exact path after
+ *         --runTestsByPath --, a form jest 29 and 30 both accept)
  *   dash  a relative path starting with '-', process cwd = project
  *   the cases after the per-tool table cover a relative path when the process
  *   cwd is not the project root: resolved against ctx.directory, else the
@@ -161,14 +162,14 @@ setup('node_modules/.bin/vitest', ...JST);
 await want('test-on-save', 'local vitest abs', `${P}/mod.js`, `vitest {${P}} [run] [${P}/mod.test.js]`);
 await want('test-on-save', 'local vitest dash', '-mod.js', `vitest {${P}} [run] [${P}/-mod.test.js]`);
 setup('node_modules/.bin/jest', ...JST);
-await want('test-on-save', 'local jest abs', `${P}/mod.js`, `jest {${P}} [--passWithNoTests] [--no-coverage] [--] [mod.test.js]`);
-await want('test-on-save', 'local jest dash', '-mod.js', `jest {${P}} [--passWithNoTests] [--no-coverage] [--] [-mod.test.js]`);
+await want('test-on-save', 'local jest abs', `${P}/mod.js`, `jest {${P}} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [mod.test.js]`);
+await want('test-on-save', 'local jest dash', '-mod.js', `jest {${P}} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [-mod.test.js]`);
 setup('bin/vitest', ...JST);
 await want('test-on-save', 'vitest abs', `${P}/mod.js`, `vitest {${P}} [run] [${P}/mod.test.js]`);
 await want('test-on-save', 'vitest dash', '-mod.js', `vitest {${P}} [run] [${P}/-mod.test.js]`);
 setup('bin/jest', ...JST);
-await want('test-on-save', 'jest abs', `${P}/mod.js`, `jest {${P}} [--passWithNoTests] [--no-coverage] [--] [mod.test.js]`);
-await want('test-on-save', 'jest dash', '-mod.js', `jest {${P}} [--passWithNoTests] [--no-coverage] [--] [-mod.test.js]`);
+await want('test-on-save', 'jest abs', `${P}/mod.js`, `jest {${P}} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [mod.test.js]`);
+await want('test-on-save', 'jest dash', '-mod.js', `jest {${P}} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [-mod.test.js]`);
 setup('bin/go', 'mod.go', '-pkg/mod.go');
 await want('test-on-save', 'go test abs', `${P}/mod.go`, `go {${P}} [test] [-timeout] [20s] [./...]`);
 await want('test-on-save', 'go test dash', '-pkg/mod.go', `go {${P}} [test] [-timeout] [20s] [./-pkg]`);
@@ -195,10 +196,24 @@ await want('format-on-save', 'no ctx.directory: process cwd', '-mod.py', '', { c
 await want('format-on-save', 'ctx.directory ruff', 'sub/-mod.py', `ruff {${P}/sub} [format] [${P}/sub/-mod.py]`, { cwd: OUT, directory: P });
 await want('lint-on-save', 'ctx.directory ruff', 'sub/-mod.py', `ruff {${P}/sub} [check] [${P}/sub/-mod.py]`, { cwd: OUT, directory: P });
 setup('sub/package.json', 'sub/node_modules/.bin/jest', 'sub/-mod.js', 'sub/-mod.test.js');
-await want('test-on-save', 'nested jest', 'sub/-mod.js', `jest {${P}/sub} [--passWithNoTests] [--no-coverage] [--] [-mod.test.js]`);
-await want('test-on-save', 'ctx.directory jest', 'sub/-mod.js', `jest {${P}/sub} [--passWithNoTests] [--no-coverage] [--] [-mod.test.js]`, { cwd: OUT, directory: P });
+await want('test-on-save', 'nested jest', 'sub/-mod.js', `jest {${P}/sub} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [-mod.test.js]`);
+await want('test-on-save', 'ctx.directory jest', 'sub/-mod.js', `jest {${P}/sub} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [-mod.test.js]`, { cwd: OUT, directory: P });
 setup('bin/rspec', 'sub/pyproject.toml', 'sub/lib/-mod.rb', 'sub/spec/-mod_spec.rb');
 await want('test-on-save', 'ctx.directory rspec', 'sub/lib/-mod.rb', `rspec {${P}/sub} [${P}/sub/spec/-mod_spec.rb] [--format] [progress]`, { cwd: OUT, directory: P });
+
+// ── Relative path with '.' / '..' segments: normalised, same argv as Claude Code
+// (a/ exists, so an unnormalised path would still reach the tool, as a/../-mod.py)
+setup('bin/ruff', ...PY, 'a/keep', 'test_-mod.py', 'bin/pytest');
+await want('format-on-save', 'normalised ./', './-mod.py', `ruff {${P}} [format] [${P}/-mod.py]`);
+await want('format-on-save', 'normalised ..', 'a/../-mod.py', `ruff {${P}} [format] [${P}/-mod.py]`);
+await want('lint-on-save', 'normalised ./', './-mod.py', `ruff {${P}} [check] [${P}/-mod.py]`);
+await want('lint-on-save', 'normalised ..', 'a/../-mod.py', `ruff {${P}} [check] [${P}/-mod.py]`);
+await want('test-on-save', 'normalised ..', 'a/../-mod.py', `pytest {${P}} [${P}/test_-mod.py] [-x] [-q]`);
+
+// ── jest runs the exact test file: names with regex metacharacters
+setup('node_modules/.bin/jest', 'a+b.js', 'a+b.test.js', 'ab.test.js', 'c(1).js', 'c(1).test.js');
+await want('test-on-save', 'jest a+b', `${P}/a+b.js`, `jest {${P}} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [a+b.test.js]`);
+await want('test-on-save', 'jest c(1)', `${P}/c(1).js`, `jest {${P}} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [c(1).test.js]`);
 
 rmSync(TMP, { recursive: true, force: true });
 

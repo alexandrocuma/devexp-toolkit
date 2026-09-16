@@ -19,20 +19,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     session directory, they were pointed at a file that doesn't exist.
   - The hooks now resolve a relative path first: against the input's `cwd` in
     Claude Code, or `ctx.directory` in opencode (the directory opencode's own
-    edit tool resolves against), else the process cwd. Every tool gets the
-    absolute path, which is never read as an option or as a ruff `@argfile`.
+    edit tool resolves against), else the process cwd. `.` and `..` segments
+    are normalised the same way in both CLIs, so both give a tool the same
+    argv. Every tool gets the absolute path, which is never read as an option
+    or as a ruff `@argfile`.
     Absolute paths, which both CLIs send, still reach the tools byte for byte.
   - test-on-save passed jest `--testPathPattern <path>`. On Jest 29 a path
     starting with `-` ran the wrong tests. Jest 30, which renamed the option to
-    `--testPathPatterns`, rejected it on every run. The pattern now follows
-    `--` (`jest --passWithNoTests --no-coverage -- <path>`), which Jest 29.7
-    and 30.5 both read as the test path pattern, including a leading `-`.
+    `--testPathPatterns`, rejected it on every run. The pattern was also a
+    regex, so a test file named `a+b.test.js` ran `ab.test.js`, one named
+    `c(1).test.js` ran nothing and still reported PASS, and `mod.test.js`
+    also ran `sub/mod.test.js` and `mod.test.jsx`. The hook now runs
+    `jest --passWithNoTests --no-coverage --runTestsByPath -- <path>`, with
+    the path relative to the project root. On Jest 29.7 and 30.5 that runs
+    exactly the one test file, including names with regex characters or a
+    leading `-`.
   - vitest keeps its absolute path with no `--`, because vitest drops file
     filters after `--`.
   - `hooks/claude-code/on-save-path.test.sh` and the new
     `hooks/opencode/on-save-path.test.js` pin every tool call's argv and
     working directory. The cases cover absolute paths, leading-dash relative
-    paths, nested projects and the input `cwd` / `ctx.directory`.
+    paths, `./` and `..` segments, nested projects, the input `cwd` /
+    `ctx.directory`, and jest test files with regex characters in their names.
+- **Onboarding agent: its example test command works on Jest 30.** It showed
+  `npm test -- --testPathPattern=orders`, which Jest 30 rejects, and now
+  shows `npm test -- src/orders`.
 - **Hook authoring guide: opencode modules spawn through `runCommand`.** The
   "tool input as data" section told opencode authors to use
   `execFileSync`/`spawnSync`, which the same guide forbids further down. It now

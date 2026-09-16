@@ -71,7 +71,8 @@ done
 # that tool as a stub and a PATH that holds nothing else. Every tool gets the
 # edited file as an absolute path, whatever form the input used:
 #   abs   an absolute path: argv exactly as at v0.8.0 (jest aside: its pattern
-#         now follows '--', the form jest 29 and 30 both accept)
+#         is an exact path after
+#         --runTestsByPath --, a form jest 29 and 30 both accept)
 #   dash  a relative path starting with '-', hook cwd = project
 #   the cases after the per-tool table cover a relative path when the hook's
 #   cwd is not the project root: resolved against the input's cwd, else the
@@ -191,14 +192,14 @@ setup node_modules/.bin/vitest "${JST[@]}"
 want test-on-save 'local vitest abs'  "$P/mod.js" "vitest {$P} [run] [$P/mod.test.js]"
 want test-on-save 'local vitest dash' -mod.js     "vitest {$P} [run] [$P/-mod.test.js]"
 setup node_modules/.bin/jest "${JST[@]}"
-want test-on-save 'local jest abs'  "$P/mod.js" "jest {$P} [--passWithNoTests] [--no-coverage] [--] [mod.test.js]"
-want test-on-save 'local jest dash' -mod.js     "jest {$P} [--passWithNoTests] [--no-coverage] [--] [-mod.test.js]"
+want test-on-save 'local jest abs'  "$P/mod.js" "jest {$P} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [mod.test.js]"
+want test-on-save 'local jest dash' -mod.js     "jest {$P} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [-mod.test.js]"
 setup bin/vitest "${JST[@]}"
 want test-on-save 'vitest abs'  "$P/mod.js" "vitest {$P} [run] [$P/mod.test.js]"
 want test-on-save 'vitest dash' -mod.js     "vitest {$P} [run] [$P/-mod.test.js]"
 setup bin/jest "${JST[@]}"
-want test-on-save 'jest abs'  "$P/mod.js" "jest {$P} [--passWithNoTests] [--no-coverage] [--] [mod.test.js]"
-want test-on-save 'jest dash' -mod.js     "jest {$P} [--passWithNoTests] [--no-coverage] [--] [-mod.test.js]"
+want test-on-save 'jest abs'  "$P/mod.js" "jest {$P} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [mod.test.js]"
+want test-on-save 'jest dash' -mod.js     "jest {$P} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [-mod.test.js]"
 setup bin/go mod.go -pkg/mod.go
 want test-on-save 'go test abs'  "$P/mod.go"  "go {$P} [test] [-timeout] [20s] [./...]"
 want test-on-save 'go test dash' -pkg/mod.go  "go {$P} [test] [-timeout] [20s] [./-pkg]"
@@ -224,10 +225,24 @@ want format-on-save 'no input cwd: hook cwd' -mod.py "" "$OUT"   # $OUT/-mod.py 
 want format-on-save 'input cwd ruff'  sub/-mod.py "ruff {$P/sub} [format] [$P/sub/-mod.py]" "$OUT" "$P"
 want lint-on-save   'input cwd ruff'  sub/-mod.py "ruff {$P/sub} [check] [$P/sub/-mod.py]"  "$OUT" "$P"
 setup sub/package.json sub/node_modules/.bin/jest sub/-mod.js sub/-mod.test.js
-want test-on-save 'nested jest'    sub/-mod.js "jest {$P/sub} [--passWithNoTests] [--no-coverage] [--] [-mod.test.js]"
-want test-on-save 'input cwd jest' sub/-mod.js "jest {$P/sub} [--passWithNoTests] [--no-coverage] [--] [-mod.test.js]" "$OUT" "$P"
+want test-on-save 'nested jest'    sub/-mod.js "jest {$P/sub} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [-mod.test.js]"
+want test-on-save 'input cwd jest' sub/-mod.js "jest {$P/sub} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [-mod.test.js]" "$OUT" "$P"
 setup bin/rspec sub/pyproject.toml sub/lib/-mod.rb sub/spec/-mod_spec.rb
 want test-on-save 'input cwd rspec' sub/lib/-mod.rb "rspec {$P/sub} [$P/sub/spec/-mod_spec.rb] [--format] [progress]" "$OUT" "$P"
+
+# ── Relative path with '.' / '..' segments: normalised, same argv as opencode
+# (a/ exists, so an unnormalised path would still reach the tool, as a/../-mod.py)
+setup bin/ruff "${PY[@]}" a/keep test_-mod.py bin/pytest
+want format-on-save 'normalised ./'  ./-mod.py     "ruff {$P} [format] [$P/-mod.py]"
+want format-on-save 'normalised ..'  a/../-mod.py  "ruff {$P} [format] [$P/-mod.py]"
+want lint-on-save   'normalised ./'  ./-mod.py     "ruff {$P} [check] [$P/-mod.py]"
+want lint-on-save   'normalised ..'  a/../-mod.py  "ruff {$P} [check] [$P/-mod.py]"
+want test-on-save   'normalised ..'  a/../-mod.py  "pytest {$P} [$P/test_-mod.py] [-x] [-q]"
+
+# ── jest runs the exact test file: names with regex metacharacters
+setup node_modules/.bin/jest a+b.js a+b.test.js ab.test.js 'c(1).js' 'c(1).test.js'
+want test-on-save 'jest a+b'  "$P/a+b.js"  "jest {$P} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [a+b.test.js]"
+want test-on-save 'jest c(1)' "$P/c(1).js" "jest {$P} [--passWithNoTests] [--no-coverage] [--runTestsByPath] [--] [c(1).test.js]"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
