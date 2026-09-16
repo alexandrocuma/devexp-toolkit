@@ -21,6 +21,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The `postmortem` agent is reachable again.** It was a complete agent that no command ever invoked — `/improve` Phase 5 ran its own retro instead, and `/monitor` had no incident path at all. Both now hand off to it: `/monitor`'s report suggests it when an anomaly traces to an incident, and `/improve`'s retro suggests it before the timeline fades.
 - **The planification phase is named.** The cycle includes it, but no document did. `/refine`'s verified execution plan *is* that phase; the skills reference now says so — and says why it has no command of its own: a plan with no ticket to attach to is just a document.
 
+### Fixed
+
+- **`secret-guard` no longer blocks committed templates or bare mentions.** Two
+  distinct false positives in the same guard, both of which obstructed without
+  protecting anything:
+  - **Templates.** A `.env.` catch-all classified every dotenv-prefixed file as a
+    secret, including the committed templates (`*.example`, `*.sample`,
+    `*.template`, `*.dist`) that exist precisely to document which keys a project
+    needs. The guard blocked the one file a user is meant to read in order to
+    configure the rest, and `docs/reference/mcps.md` tells them to read it.
+    Templates are now allowed even when their stem is a real secret name.
+  - **Mentions.** Every shell token was treated as a path, so program text and
+    prose that merely contained such a string were refused: `jq -r '.key'` was
+    blocked as a key file, and a heredoc naming a dotenv file blocked the whole
+    command. A token now counts as a path only if it plausibly is one — heredoc
+    bodies are stripped, tokens carrying program syntax or spaces are skipped,
+    and an extension match requires a stem, so `server.key` blocks while `.key`
+    does not. Exact names stay blocked unconditionally.
+  - Both implementations fixed together (shell and opencode JS), each with a test
+    twin asserting the red cases still block and the green cases now pass.
+
+- **Hook tests now run in CI.** `dangerous-cmd-guard` shipped with tests that
+  nothing executed; the workflow ran only `go test`. A `hooks` job now runs every
+  `*.test.sh` and `*.test.js` beside the hooks, so a guard regression fails the
+  build instead of surfacing as a mysterious block months later.
+
 ### Changed
 
 - **`ui-inspector` now ships as its own repo** — [mcp-ui-inspector](https://github.com/alexandrocuma/mcp-ui-inspector). It was vendored here as a Node project with its own `setup.sh` and a committed `dist/`, which quietly turned a distribution repo into a monorepo. The registry locates it via `UI_INSPECTOR_DIR`, documented in the MCP env template, reusing the installer's existing `[REQUIRED]` warning and `setup_instructions` path — **no Go changes were needed**, because the CLI never special-cased it (it generically injects `DEVEXP_DIR` and renders `setup_instructions`). The extracted repo gitignores `dist/` instead of committing it; the vendored copy had gone stale, with `src/tools/interact.ts` having no built counterpart.

@@ -19,3 +19,21 @@ jobs:
       - name: go test
         working-directory: cli
         run: go test ./... -race -cover
+
+  hooks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: claude-code hook tests
+        run: |
+          for f in hooks/claude-code/*.test.sh; do
+            echo "== $f"; bash "$f" || exit 1
+          done
+      - name: opencode hook tests
+        run: |
+          for f in hooks/opencode/*.test.js; do
+            echo "== $f"; node "$f" || exit 1
+          done
