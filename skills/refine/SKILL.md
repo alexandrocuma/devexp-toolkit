@@ -134,10 +134,12 @@ Risk multipliers (bump up one size):
 - Requires a new external integration
 - No existing tests in the area
 - The codebase hasn't touched this area in > 6 months (unknown state)
+- Ships through an external gate or to several targets — per `docs/guides/release.md`, the change needs a store review, a staged rollout, or coordinated releases across targets (e.g. API + mobile app)
 
 Report:
 ```
 Estimate: <S/M/L>  (<N files likely affected>, <risk factors if any>)
+Release targets: <target ids likely affected, from docs/guides/release.md — or "no release guide">
 ```
 
 ---
@@ -180,6 +182,9 @@ For a single ticket — create with body:
 - <item>
 
 ## Estimate: <S/M/L>
+
+## Release Targets
+- <target id> — <why it is affected>
 ```
 
 For an epic — decompose into 3-8 atomic tickets (each S or M), map dependencies, present the critical path before creating.
@@ -210,6 +215,7 @@ Refinement complete
   Ticket:       <url or ID> — "<title>"
   Estimate:     <S/M/L>
   Groom status: READY TO BUILD / corrections applied
+  Release:      <affected targets from the groom plan + impact notes, e.g. "api, android — android needs store build">
 
 Next:
   /deliver <ticket-id>   — pick this up and build it

@@ -92,6 +92,14 @@ Detected surfaces (scope: <all / "<surface>">):
   Tracing / Metrics   : N/A      — no signals
 ```
 
+**Release targets (if the repo declares them).** If `docs/guides/release.md` exists, read its target list and each target's **Post-release verification** table (signal, where, healthy-when). These are the team's own declared health signals per shipped artifact — a service's health endpoint and error rate, a mobile app's crash-free sessions. Add a line to the inventory:
+
+```
+  Release targets     : <N declared — <id (kind)>, … | none — no release guide>
+```
+
+Each signal is reviewed under the surface category it belongs to (an error rate under `tracing` / `metrics`, a health endpoint under `cloud` / `infra`); a target whose signals map to no detected surface is still reviewed in Phase 2's target cross-reference. With no guide, skip this — it is not a gap in the system, only in its documentation.
+
 With the inventory emitted, proceed to review each in-scope detected surface (Phase 2).
 
 ### Phase 2 — Review Each Surface
@@ -129,7 +137,13 @@ Find these paths in the code (handler signatures, job/worker registrations, outb
 - **partial** — some signal exists but a key measurement is missing (e.g. logged but no error-rate alert)
 - **blind** — no observability attaches to this path (the actionable gaps)
 
-Output the per-surface findings and the coverage table, then proceed to score them (Phase 3).
+**Release-target cross-reference (only when the guide declares targets).** For each target, check each declared post-release signal:
+
+- **healthy** — in live mode, the signal reads inside its healthy threshold (report the observed value)
+- **unhealthy** — the signal reads outside its threshold → a 🔴 finding on the surface it belongs to
+- **unobservable** — the signal's source doesn't resolve (endpoint unreachable, dashboard/query missing, no connector and no config for it) → a 🟡 finding: the team declared how to verify this target and cannot
+
+Output the per-surface findings, the coverage table and the target table, then proceed to score them (Phase 3).
 
 ### Phase 3 — Score & Flag
 

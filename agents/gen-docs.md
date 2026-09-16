@@ -62,6 +62,7 @@ Before writing anything, decide where it goes:
 | REST/GraphQL endpoints, SDK methods | `docs/api/<resource>.md` |
 | Business rules, domain logic, workflows | `docs/guides/<feature>-logic.md` |
 | How-to guides, tutorials, walkthroughs | `docs/guides/<topic>.md` |
+| Release targets, ship steps, rollback, post-release checks | `docs/guides/release.md` (Release Guide template) |
 | Component catalogs, CLI reference, config schemas | `docs/reference/<topic>.md` |
 | Dev environment, setup, contributing | `docs/development/<topic>.md` |
 | Architecture decisions | `docs/architecture/adr/NNNN-<title>.md` |
@@ -239,6 +240,69 @@ What success looks like.
 **Fix:** How to resolve it
 ```
 
+#### Release Guide — `docs/guides/release.md`
+
+The per-repo release contract. `/devxp` asks for it when release targets are detected; `/release` executes its ship steps; grooming, `/deliver` and `/monitor` read it. One section per **release target** — a separately shipped artifact (a web app, a service, an iOS app, an Android app, a published library). A monorepo has several.
+
+**Never invent a command, channel or rollback strategy.** Fill a field only from evidence in the repo (CI workflows, build scripts, lane/pipeline configs, manifests) and cite where it came from. Anything detected but not provable is written as `[CONFIRM] <what to confirm>` — `/release` refuses to execute a step still marked `[CONFIRM]`.
+
+````markdown
+# Release Guide
+
+> Consumed by `/release` (executes ship steps), grooming (affected targets), `/deliver` (release readiness) and `/monitor` (post-release checks).
+> Last verified: YYYY-MM-DD against commit `<sha>`
+
+## Targets
+
+| Target | Kind | Path | Channel | Rollback |
+|--------|------|------|---------|----------|
+| web | web | apps/web/ | <hosting/deploy target> | redeploy previous |
+| ios | ios | apps/mobile/ios/ | <beta channel → store> | halt phased release / flag |
+
+Kinds: `library` · `cli` · `web` · `service` · `ios` · `android` · `desktop` · `other`
+
+## Cut (shared by all targets)
+
+- Version source of truth: `<file>` — scheme: semver
+- Tag format: `v<version>` (or `<target>@<version>` in a monorepo with independent versions)
+
+## Target: <id>
+
+- **Kind / path:** <kind> — `<path>` (changes under this path affect this target)
+- **Versioning:** `<file>` — <semver / build number rule, e.g. iOS build number or Android version code increments every upload>
+- **Prerequisites:** credentials/connectors by **name only** (e.g. `<CI secret name>`, `<CLI> auth status`) — never values
+
+### Build
+```bash
+<command>   # source: <file:line>
+```
+Artifact: <what is produced, where>
+
+### Distribute
+Pre-production channel (staging deploy / beta testers / internal track):
+```bash
+<command>   # source: <file:line>
+```
+
+### Promote
+| Stage | How | Gate |
+|-------|-----|------|
+| <staging → production / beta → store review → phased %> | <command or manual step> | <manual approval / external review / none> |
+
+External gates (store review, change-approval boards) put the target in **awaiting-external** — the release is resumable, not failed.
+
+### Rollback
+Strategy: <redeploy previous artifact / halt phased rollout / disable feature flag / hotfix-forward only>
+```bash
+<command or manual steps>
+```
+
+### Post-release verification
+| Signal | Where | Healthy when |
+|--------|-------|--------------|
+| <health endpoint / error rate / crash-free sessions> | <URL, dashboard or query> | <threshold> |
+````
+
 #### Development Doc — `docs/development/<topic>.md`
 
 ```markdown
@@ -410,6 +474,7 @@ Output a summary:
 - Write for the reader who doesn't have context — assume they're new to this part of the codebase
 - Every doc must have at least one concrete example
 - Business logic docs must list invariants explicitly — rules the system always enforces
+- The release guide is executable by `/release` — every command must cite its source in the repo; anything unproven is `[CONFIRM]`, never a plausible guess
 - This agent **creates**; it doesn't edit existing docs to match changed code — that drift-detection work belongs to the `update-docs` agent. If you notice an existing doc is stale while you're here, flag it in the report rather than rewriting it
 - Prefer short paragraphs and tables over long prose
 - Never duplicate content between files — link instead

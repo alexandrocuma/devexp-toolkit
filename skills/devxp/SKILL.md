@@ -1,6 +1,6 @@
 ---
 name: devxp
-description: Entry point for the devexp toolkit — orients on any repo, ensures CLAUDE.md and the docs/ index exist (generating or refreshing as needed), and optionally enriches with graphify. Always start here.
+description: Entry point for the devexp toolkit — orients on any repo, ensures CLAUDE.md, the docs/ index and the release guide (how each release target — service, web, iOS, Android, library — ships) exist, generating or refreshing as needed, and optionally enriches with graphify. Always start here.
 ---
 
 # DevExp Entry Point
@@ -16,6 +16,7 @@ You are the entry point for devexp orientation operations. **You do NOT perform 
 | codebase atlas | `codebase-navigator` agent | `codebase-navigator` agent (rebuild) | skip |
 | `CLAUDE.md` | `gen-indexer` agent | `update-indexer` agent | skip |
 | `docs/` index tree | `gen-docs` agent | `update-docs` agent | skip |
+| release guide (`docs/guides/release.md`) | `gen-docs` agent (Release Guide template) | `update-docs` agent | skip |
 | knowledge graph (`graphify-out/graph.json`) | mention as optional, never auto-install | query for context | query for context |
 
 This table **is** the orchestration logic — every decision below reduces to "which column does this artifact fall in, and what does that column say to do."
@@ -47,10 +48,33 @@ git log -1 --format="%ai" -- docs/README.md 2>/dev/null
 ls graphify-out/graph.json 2>/dev/null && echo "graph: EXISTS" || echo "graph: MISSING"
 command -v graphify >/dev/null 2>&1 && echo "graphify CLI: installed" || echo "graphify CLI: not installed"
 ls ~/.claude/agent-memory/codebase-navigator/MEMORY.md 2>/dev/null && echo "atlas index: EXISTS" || echo "atlas index: MISSING"
+ls docs/guides/release.md 2>/dev/null && echo "release guide: EXISTS" || echo "release guide: MISSING"
+git log -1 --format="%ai" -- docs/guides/release.md 2>/dev/null
 ```
+
+**Detect release targets.** A release target is anything this repo ships separately — and each kind ships differently (a deploy, a store submission, a package publish). Match generic shapes, not brands; resolve the concrete tooling from what you actually find:
+
+| Kind | Repo signals (generic shapes) |
+|------|-------------------------------|
+| `service` / `web` | container definitions (`Dockerfile`, `docker-compose*`), orchestration manifests (Kubernetes, Helm charts), IaC (`*.tf`, `*.bicep`), hosting/platform config files at an app root, CI workflows with deploy jobs |
+| `ios` | `*.xcodeproj` / `*.xcworkspace`, an `ios/` directory, signing or distribution lane/pipeline configs |
+| `android` | `build.gradle*` declaring an application module, an `android/` directory, signing or distribution lane/pipeline configs |
+| cross-platform mobile | a cross-platform mobile framework's app manifest or build config — expands to both an `ios` and an `android` target |
+| `desktop` | desktop packaging config (installer/bundle definitions, code-signing config) |
+| `library` / `cli` | package manifest with publish metadata and no deploy signals |
+
+```bash
+# Example shape — extend per kind, exclude vendored dirs
+find . -maxdepth 4 \( -name "Dockerfile" -o -name "*.tf" -o -name "*.xcodeproj" -o -name "*.xcworkspace" -o -name "build.gradle*" \) \
+  2>/dev/null | grep -vE "node_modules|\.git/|vendor|Pods" | head -20
+grep -rlE "deploy|release|publish" .github/workflows .gitlab-ci.yml 2>/dev/null | head
+```
+
+Record each target as `<kind> — <path> — <signal that proved it>`. A repo with only a `library` target still gets a guide — it is short, and it tells `/release` that tag + publish is the whole release.
 
 Then judge **staleness**, not just existence:
 - Derive the project name from the repo root directory name; check `~/.claude/agent-memory/codebase-navigator/<project-name>.md` for an atlas. Run `git log --since="<atlas Last-updated date>" --oneline | head -5` against the project root — if this returns commits and the atlas is >30 days old, route the atlas row as "stale" → `codebase-navigator` (rebuild); otherwise "found, current" → skip.
+- **Release guide is stale** if a detected target has no section in it, a section names a target no longer detected, or CI/build/lane config files changed after the guide's `Last verified` date (`git log --since="<date>" --oneline -- .github .gitlab-ci.yml <target paths' build configs>`)
 - Compare `CLAUDE.md` / `docs/README.md` last-commit dates against recent code activity (`git log -5 --format="%ai" -- <a likely-active source dir>`) — if substantial code has changed since the doc's last touch, treat it as **stale**, not current
 - A missing `[NOT FOUND]` marker that's now answerable, or a canonical example that's moved, are also staleness signals — but you don't need to do that deep a check here; `gen-indexer`/`update-indexer` and `gen-docs`/`update-docs` do their own thorough drift detection. Your job is just to route correctly, not to pre-diagnose.
 
@@ -66,6 +90,7 @@ Summarize what you found and **map each artifact to the action column from the t
 | codebase-navigator atlas | <missing / found, dated YYYY-MM-DD / found, stale> | <build via codebase-navigator / skip / rebuild> |
 | CLAUDE.md | <missing / found, current / found, stale (last touched YYYY-MM-DD, code changed since)> | <gen-indexer / skip / update-indexer> |
 | docs/ index tree | <missing / complete & current / partial or stale> | <gen-docs / skip / update-docs> |
+| release guide | <missing / current / stale — <reason>> — targets: <kind@path, …> | <gen-docs / skip / update-docs> |
 | graphify knowledge graph | <found / not built — CLI installed / not built — CLI not installed> | <query for context / mention as optional / skip — never auto-install> |
 
 Proceed with this plan? (yes / adjust)
@@ -86,12 +111,18 @@ Delegate for real — each specialist step runs by reading the relevant agent de
    - Read `~/.claude/agents/gen-docs.md` and follow its instructions if docs/ is missing or substantially incomplete
    - Read `~/.claude/agents/update-docs.md` and follow its instructions if docs/ is present but stale
    - skip if current
-4. **`graphify`** (optional, never blocking — detect-and-offer only):
+4. **Release guide** — execute exactly one of, passing the detected targets and their signals:
+   - Read `~/.claude/agents/gen-docs.md` and write `docs/guides/release.md` with its **Release Guide** template if the guide is missing
+   - Read `~/.claude/agents/update-docs.md` and refresh the guide if it is stale
+   - skip if current
+
+   Fill fields only from evidence (CI workflows, build scripts, lane configs); anything detected but unproven — most often promote gates and rollback — is written as `[CONFIRM] …`. List the open `[CONFIRM]` markers in the Phase 3 report so the team can close them before the first `/release`.
+5. **`graphify`** (optional, never blocking — detect-and-offer only):
    - If `graphify-out/graph.json` exists: run `graphify query "What are the architecture, conventions, and known issues for this project?"` and fold the results into your Phase 3 report
    - If the CLI is installed but no graph exists: mention it as an optional enhancement ("this repo could benefit from `/graphify` to build a queryable knowledge graph — want me to run it?") — don't run it unprompted
    - If the CLI isn't installed: mention it's available as an optional toolkit component, then move on — **never auto-install**
 
-Run steps in this order because each later step benefits from the one before it (an atlas makes gen-indexer/update-indexer faster and more accurate; a current `CLAUDE.md` makes gen-docs/update-docs route correctly).
+Run steps in this order because each later step benefits from the one before it (an atlas makes gen-indexer/update-indexer faster and more accurate; a current `CLAUDE.md` makes gen-docs/update-docs route correctly; the release guide is written into the `docs/` tree the previous step ensured).
 
 ### Phase 3 — Report & Hand Off
 
@@ -101,6 +132,7 @@ Run steps in this order because each later step benefits from the one before it 
 - Atlas: <built / refreshed / already current / skipped>
 - CLAUDE.md: <generated via gen-indexer / refreshed via update-indexer / already current>
 - docs/ index: <scaffolded via gen-docs / refreshed via update-docs / already current>
+- Release guide: <written / refreshed / already current> — targets: <kind@path, …> — open [CONFIRM]: <N — list>
 - Knowledge graph: <queried — key findings: ... / available via /graphify, not yet built / graphify not installed>
 
 Now that the repo is oriented:
@@ -145,7 +177,8 @@ If the user asks "what should I use for X" or "what's the right devexp command f
 |------|------------|
 | Build a feature or fix a bug | `/deliver` with a ticket ID |
 | Turn an idea into a ticket | `/refine "description"` |
-| Finish a release you deferred | `/release <ticket>` |
+| Finish a release you deferred, or one awaiting store review / rollout | `/release <ticket>` |
+| Define how this repo ships (deploy, stores, publish) | `/devxp` — writes `docs/guides/release.md` |
 | Health check + debt triage | `/improve` |
 | Expert code review | backend-senior-dev or frontend-senior-dev agent |
 | Architecture decisions (ADR), API design, DB design | tech-lead agent |

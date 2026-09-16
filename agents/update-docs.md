@@ -62,6 +62,7 @@ When you find drifted content, refresh it in the same place `gen-docs` would hav
 | REST/GraphQL endpoints, SDK methods | `docs/api/<resource>.md` |
 | Business rules, domain logic, workflows | `docs/guides/<feature>-logic.md` |
 | How-to guides, tutorials, walkthroughs | `docs/guides/<topic>.md` |
+| Release targets, ship steps, rollback, post-release checks | `docs/guides/release.md` (Release Guide template) |
 | Component catalogs, CLI reference, config schemas | `docs/reference/<topic>.md` |
 | Dev environment, setup, contributing | `docs/development/<topic>.md` |
 | Architecture decisions | `docs/architecture/adr/NNNN-<title>.md` |
@@ -89,6 +90,7 @@ For each candidate doc, compare its claims against the current code:
 - **Workflow steps**: does the documented flow match the current call sequence (handler → service → repository, or equivalent)?
 - **Examples**: do request/response examples reflect the current schema?
 - **Status fields**: are folder-index `status` values (`ready`/`draft`/`reference`/`blocked`) still accurate given what you found?
+- **Release guide** (`docs/guides/release.md`): does every release target detected in the repo have a section, and does every section still map to a real target? Do the cited build/distribute/promote/rollback commands still exist at their `source:` locations (CI workflow, script, lane config)? Are versioning files still where the guide says? A `[CONFIRM]` marker that the code now answers is drift — resolve it with a citation; one it still doesn't answer stays. Bump `Last verified` only after this check passes.
 
 Record each finding as **accurate** (leave alone) or **drifted** (note exactly what's wrong and what the correct value is, with a code citation).
 
@@ -256,6 +258,69 @@ What success looks like.
 **Cause:** Why it happens
 **Fix:** How to resolve it
 ```
+
+#### Release Guide — `docs/guides/release.md`
+
+The per-repo release contract. `/devxp` asks for it when release targets are detected; `/release` executes its ship steps; grooming, `/deliver` and `/monitor` read it. One section per **release target** — a separately shipped artifact (a web app, a service, an iOS app, an Android app, a published library). A monorepo has several.
+
+**Never invent a command, channel or rollback strategy.** Fill a field only from evidence in the repo (CI workflows, build scripts, lane/pipeline configs, manifests) and cite where it came from. Anything detected but not provable is written as `[CONFIRM] <what to confirm>` — `/release` refuses to execute a step still marked `[CONFIRM]`.
+
+````markdown
+# Release Guide
+
+> Consumed by `/release` (executes ship steps), grooming (affected targets), `/deliver` (release readiness) and `/monitor` (post-release checks).
+> Last verified: YYYY-MM-DD against commit `<sha>`
+
+## Targets
+
+| Target | Kind | Path | Channel | Rollback |
+|--------|------|------|---------|----------|
+| web | web | apps/web/ | <hosting/deploy target> | redeploy previous |
+| ios | ios | apps/mobile/ios/ | <beta channel → store> | halt phased release / flag |
+
+Kinds: `library` · `cli` · `web` · `service` · `ios` · `android` · `desktop` · `other`
+
+## Cut (shared by all targets)
+
+- Version source of truth: `<file>` — scheme: semver
+- Tag format: `v<version>` (or `<target>@<version>` in a monorepo with independent versions)
+
+## Target: <id>
+
+- **Kind / path:** <kind> — `<path>` (changes under this path affect this target)
+- **Versioning:** `<file>` — <semver / build number rule, e.g. iOS build number or Android version code increments every upload>
+- **Prerequisites:** credentials/connectors by **name only** (e.g. `<CI secret name>`, `<CLI> auth status`) — never values
+
+### Build
+```bash
+<command>   # source: <file:line>
+```
+Artifact: <what is produced, where>
+
+### Distribute
+Pre-production channel (staging deploy / beta testers / internal track):
+```bash
+<command>   # source: <file:line>
+```
+
+### Promote
+| Stage | How | Gate |
+|-------|-----|------|
+| <staging → production / beta → store review → phased %> | <command or manual step> | <manual approval / external review / none> |
+
+External gates (store review, change-approval boards) put the target in **awaiting-external** — the release is resumable, not failed.
+
+### Rollback
+Strategy: <redeploy previous artifact / halt phased rollout / disable feature flag / hotfix-forward only>
+```bash
+<command or manual steps>
+```
+
+### Post-release verification
+| Signal | Where | Healthy when |
+|--------|-------|--------------|
+| <health endpoint / error rate / crash-free sessions> | <URL, dashboard or query> | <threshold> |
+````
 
 #### Development Doc — `docs/development/<topic>.md`
 

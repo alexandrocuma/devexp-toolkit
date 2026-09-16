@@ -57,6 +57,7 @@ Start at [`docs/README.md`](docs/README.md) for the full index.
 | Install / uninstall | [`docs/guides/install.md`](docs/guides/install.md) |
 | Team distribution + devexp.config.json | [`docs/guides/team-distribution.md`](docs/guides/team-distribution.md) |
 | Worktree-per-ticket delivery convention | [`docs/guides/worktree-per-ticket.md`](docs/guides/worktree-per-ticket.md) |
+| Release targets + release guide (deploy / app stores / publish) | [`docs/guides/release-targets.md`](docs/guides/release-targets.md) |
 | On-demand cleanup of finished worktrees + delivery artifacts (`/cleanup`) | [`docs/reference/skills.md`](docs/reference/skills.md) |
 | Cleanup safety rules (deletion guards) | [`docs/guides/cleanup-safety.md`](docs/guides/cleanup-safety.md) |
 | CLAUDE.md-as-indexer pattern | [`docs/guides/docs-architecture.md`](docs/guides/docs-architecture.md) |

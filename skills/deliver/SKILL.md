@@ -65,6 +65,8 @@ fi
 | **SMALL** — only peripheral paths changed | Proceed, but note the scoped deltas to the user and re-verify any plan step that touches a changed path |
 | **BIG** — a structural section's paths changed | The plan may be built on a stale map — **re-groom before building** (invoke `grooming-agent` as above), then reload the refreshed plan |
 
+**Load the release guide.** Read `docs/guides/release.md` alongside the plan and take the plan's **Affected Release Targets** section as this delivery's target list. A missing guide or section is a note, not a blocker — the delivery proceeds and Phase 4.5 reports readiness as unverified.
+
 If the plan has no anchor (groomed before A3), or the anchor is not an ancestor of HEAD (per the guard above), treat it as drift-unknown: run the classification against the plan's `Groomed` date instead (`git log --since="<Groomed date> 00:00:00" --name-only`), and prefer re-grooming if that date is not same-day.
 
 ---
@@ -89,12 +91,14 @@ Groom plan loaded:
   Files to change:  N
   Steps:            N
   Risk:             low / medium / high
+  Release targets:  <target ids from the plan / unverified — no release guide>
 
 Delivery sequence:
   1. Worktree           → isolate this ticket in its own git worktree
   2. Implement          → dev-agent (or migration agent)
   3. Instrument         → add observability to new code
   4. Test gaps          → test-gen agent
+  4.5 Release readiness → check each affected target's requirements
   5. Code review        → pr-review agent
   6. Release            → merge worktree + changelog + version tag + platform release  [gated]
 
@@ -279,6 +283,24 @@ If a framework exists: offer to generate load test scenarios (smoke / load / str
 
 ---
 
+### Phase 4.5 — Release Readiness
+
+**Do this inline.** For each affected target, check the change against what that target's section of `docs/guides/release.md` requires — a change can pass every test and still be unshippable:
+
+| Check | Ready when |
+|-------|-----------|
+| Versioning | the target's version/build-number rule is satisfiable at release (the file the guide names exists and is the one `/release` will bump) — do not bump it here; the bump belongs to `/release` |
+| Ordering | if the change spans targets (e.g. a schema migration plus the app reading it), the plan records which target must ship first and the change is safe while only one of them is live |
+| Rollback | if the target's rollback is flag-only or hotfix-forward (typical for store-distributed apps), risky new behaviour is behind a flag, or the report says why not |
+| External gate | if the target promotes through an external review, the delivery report states the lead time so nobody expects same-day availability |
+| Unresolved guide | any `[CONFIRM]` marker in a step this target will run is listed — `/release` will refuse to execute it |
+
+In-scope gaps (a missing flag around this ticket's own risky change, an unsafe ordering between targets this ticket touches) are **fixed now**, under the Phase 5 scope rule. Guide gaps (`[CONFIRM]` markers, a target missing from the guide) are reported, not fixed here — they are resolved with `/devxp`.
+
+With no release guide, skip the table and report readiness as `unverified — no release guide (run /devxp)`.
+
+---
+
 ### Phase 5 — Code Review
 
 **Pre-review correctness and quality pass:**
@@ -333,7 +355,7 @@ Wait for the pr-review agent. If it posts findings, address them — either via 
 
 Delivery ends at the release gate. Hand off to the **`/release`** skill, which owns everything from here: merge, changelog, version bump, tag, platform release, and retiring this delivery's artifacts.
 
-> "Release `<ticket-id>`. The branch is `<type>/<ticket-id>`, its worktree is at `<path>`, and code review passed in Phase 5."
+> "Release `<ticket-id>`. The branch is `<type>/<ticket-id>`, its worktree is at `<path>`, and code review passed in Phase 5. Affected release targets: `<ids>` — readiness: `<ready / gaps: …>`."
 
 `/release` re-derives the base branch, runs its own preflight, and asks for the confirmation itself — **never assume the "yes" from Phase 1 covers release.** It is the one irreversible step, so it is the one that has to be agreed to on its own.
 
@@ -341,7 +363,8 @@ Three outcomes come back:
 
 | Outcome | What it means | This run |
 |---------|---------------|----------|
-| **Released** | version tagged and published; worktree, plan and scratch retired | report it in Phase 7 |
+| **Released** | version tagged and every affected target shipped; worktree, plan and scratch retired | report it in Phase 7 |
+| **Awaiting external** | tagged; one or more targets waiting on an external gate (store review, staged rollout) | report it, and say `/release <ticket>` resumes it once the gate clears |
 | **Deferred** | the user declined the gate — a merged branch's tree was removed, an unmerged one kept | report it, and say `/release <ticket>` finishes it later |
 | **Failed** | a step failed; everything is preserved for inspection | report the step that stopped it |
 
@@ -360,9 +383,10 @@ If the `/release` skill is not installed, **do not improvise a release**: report
   Observability:   <N log calls added / skipped — no new entry points>
   SLO candidates:  <list of critical paths with suggested SLI measurement points, or "none identified">
   Tests:           <N unit/integration tests added / already covered>
+  Release ready:   <per target: ready / gaps — … / unverified — no release guide>
   E2E coverage:    <N scenarios added / no E2E suite detected / already covered>
   Review:          <findings addressed / approved>
-  Release:         <v<version> published / deferred — finish with /release <ticket-id> / failed at <step> / skipped>
+  Release:         <v<version> — per target: shipped | awaiting-external | blocked | skipped / deferred — finish with /release <ticket-id> / failed at <step> / skipped>
   Cleanup:         <retired by /release / preserved — release did not complete>
 
 Next:

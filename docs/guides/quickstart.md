@@ -34,6 +34,7 @@ What it does:
 - Reads the project's structure, stack, and conventions
 - Ensures a `CLAUDE.md` exists (creates or refreshes it)
 - Ensures a `docs/` folder exists (scaffolds it if missing)
+- Detects what this repo ships — a service, a web app, an iOS/Android app, a library — and writes `docs/guides/release.md`, the release guide `/release` follows. Anything it can't prove from the repo (usually rollback and store gates) is marked `[CONFIRM]` for you to fill in
 - Hands off to `/refine` when you're ready to start work
 
 Run it once per repo. Future sessions pick up where it left off.
@@ -54,7 +55,7 @@ What it does:
 1. Turns your input into structured user stories and acceptance criteria
 2. Estimates complexity from the actual codebase (files to change, test coverage, risk)
 3. Creates a well-formed ticket on your issue tracker (GitHub Issues, GitLab, Linear, or Jira — auto-detected)
-4. Validates the ticket's claims against the codebase before saving
+4. Validates the ticket's claims against the codebase before saving, and records which release targets it affects
 
 Output: a groomed ticket with an attached execution plan — ready for `/deliver`.
 
@@ -73,8 +74,9 @@ What it does, in order:
 2. Implements the changes — infrastructure files included if the ticket touches them
 3. Adds observability: log calls at entry/error points, SLO candidate notes
 4. Fills test gaps: unit/integration tests first, then E2E scenarios if the project has a suite
-5. Opens a PR and runs a code review
-6. Hands off to `/release` for the gated release
+5. Checks release readiness for each affected target (build numbers, deploy ordering, feature flags when rollback is flag-only)
+6. Opens a PR and runs a code review
+7. Hands off to `/release` for the gated release
 
 The only decision you make is whether to release. Everything else runs automatically.
 
@@ -89,12 +91,12 @@ The only decision you make is whether to release. Everything else runs automatic
 ```
 
 What it does:
-1. Preflight (read-only): branch merge state, commits since the last tag, version file, platform, and the **derived** version bump
-2. Asks for your explicit yes — this is the one irreversible step, so it is never assumed
-3. Merges the ticket branch, writes the changelog, bumps the version, tags and publishes
-4. Retires the worktree, plan and scratch — **only on success**
+1. Preflight (read-only): branch merge state, commits since the last tag, version file, platform, the **derived** version bump, and a per-target inventory from the release guide
+2. Asks for your explicit yes to **cut** — merge, changelog, version bump, tag
+3. **Ships each affected target** exactly as the release guide says — a deploy, a beta upload then store submission, a package publish — with its own yes per target, the rollback plan shown first, and a separate yes for every step that reaches production
+4. Retires the worktree, plan and scratch — **only once every target has shipped**
 
-Said no to the gate last week and never finished? `/release PAY-42` picks it up. Before this command existed, the only options were re-running `/deliver` or releasing by hand — which is how stray worktrees pile up.
+Said no to the gate last week and never finished? Waiting on App Store review or halfway through a staged rollout? `/release PAY-42` picks it up where it stopped. Before this command existed, the only options were re-running `/deliver` or releasing by hand — which is how stray worktrees pile up.
 
 ---
 

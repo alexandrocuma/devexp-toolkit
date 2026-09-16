@@ -6,10 +6,10 @@ The toolkit runs through eight slash commands — six lifecycle orchestrators an
 
 | Command | When to use |
 |---------|-------------|
-| `/devxp` | First time on a repo — orient, ensure CLAUDE.md and docs/ exist, get routing |
+| `/devxp` | First time on a repo — orient, ensure CLAUDE.md, docs/ and the release guide exist, get routing |
 | `/refine` | Turn an idea or request into a groomed, ready-to-build ticket |
 | `/deliver <ticket>` | Implement, test, review, and release a ticket end-to-end |
-| `/release [<ticket>]` | Release phase — gated merge, changelog, version bump, tag, platform release; also finishes a deferred release |
+| `/release [<ticket>]` | Release phase — gated cut (merge, changelog, version, tag) then per-target ship (deploy, beta/store channels, publish) from the release guide; also resumes deferred or store-gated releases |
 | `/improve` | Sprint end or maintenance window — health, cleanup, debt, retro |
 | `/monitor [<surface>]` | Operate phase — review the deployed system's health (telemetry/config), scored, anytime |
 | `/graphify` | Build a persistent knowledge graph from this codebase |
@@ -25,6 +25,8 @@ The toolkit runs through eight slash commands — six lifecycle orchestrators an
 
 The first four orchestrators *build* software and `/release` *ships* it; `/monitor` *operates* what's shipped — a change-independent health read that does not diff commits.
 
+**The release guide ties the cycle together.** `docs/guides/release.md` declares every release target the repo ships (service, web, iOS, Android, library…) and how each is built, distributed, promoted, rolled back and verified. `/devxp` writes it; grooming records which targets a ticket affects; `/deliver` checks release readiness against it; `/release` executes it; `/monitor` reads its verification signals. Rationale: [`docs/guides/release-targets.md`](../guides/release-targets.md).
+
 ---
 
 ## What Each Orchestrator Does
@@ -33,6 +35,7 @@ The first four orchestrators *build* software and `/release` *ships* it; `/monit
 - Reads project structure, stack, and conventions
 - Ensures CLAUDE.md exists (runs `gen-indexer` agent if missing, `update-indexer` if stale)
 - Ensures `docs/` is scaffolded (runs `gen-docs` / `update-docs` agents)
+- Detects release targets by generic file shapes (containers/IaC/deploy CI, Xcode projects, Android application modules, cross-platform mobile manifests, publishable packages) and writes or refreshes `docs/guides/release.md` — unproven fields are `[CONFIRM]` markers, never guesses
 - Handles inline: code explanation ("explain X to a junior"), git archaeology ("why does X exist"), routing recommendations ("what should I use for Y?")
 
 ### `/refine`
@@ -40,6 +43,7 @@ The first four orchestrators *build* software and `/release` *ships* it; `/monit
 - Estimates complexity from the actual codebase
 - Creates a structured ticket on GitHub Issues, GitLab, Linear, or Jira (auto-detected)
 - Validates ticket claims against the codebase (via `grooming-agent`)
+- Records **affected release targets** and release impact (store review lead time, cross-target ordering, flag-only rollback) — multi-target or externally-gated releases raise the estimate
 - **Planification** — produces a verified execution plan attached to the ticket. This is the cycle's planning phase; it has no command of its own because a plan with no ticket to attach to is just a document
 
 ### `/deliver <ticket>`
@@ -47,15 +51,18 @@ The first four orchestrators *build* software and `/release` *ships* it; `/monit
 - Implements changes — infrastructure files handled inline
 - **Phase 3:** Adds observability (structured logs at entry/error points, SLO candidate notes)
 - **Phase 4:** Fills test gaps (unit/integration via `test-gen` agent, E2E if suite exists), runs regression check, offers load test generation for new endpoints
+- **Phase 4.5:** Release readiness per affected target — versioning rule satisfiable, cross-target ordering safe, risky behaviour flagged when rollback is flag-only, open `[CONFIRM]` markers listed
 - **Phase 5:** Correctness pass (null dereferences, error paths, race conditions — fix before review), quality pass (large functions, duplication — document for reviewer), then `pr-review` agent
 - **Phase 6:** Hands off to `/release`, which runs its own gate. Delivery never releases on the "yes" given at Phase 1
 
 ### `/release [<ticket>]`
-- **The release phase, as its own command.** Merge → changelog → version bump → tag → platform release → retire this delivery's artifacts
-- **Gated:** asks for its own explicit confirmation. Consent is never inherited from `/deliver`'s Phase 1 "proceed"
+- **The release phase, as its own command.** **Cut** (merge → changelog → version bump → tag → platform release) → **Ship** each affected target → retire this delivery's artifacts
+- **Gated at three levels:** the cut has its own confirmation (never inherited from `/deliver`'s Phase 1 "proceed"); each target has its own gate showing build/distribute/promote **and the rollback plan**; every production-facing promote stage is confirmed on its own
+- **The release guide is the only source of ship commands** — never improvised; a `[CONFIRM]` step or a missing prerequisite (unauthenticated CLI, absent secret) marks the target `blocked`. No guide → offers `/devxp`, otherwise cut-only
+- **Target states:** `shipped` · `awaiting-external` (store review, staged rollout — resumable with `/release <ticket>`) · `blocked` · `skipped` · `failed at <step>` (rollback offered from the guide, never automatic). State persists to `~/.claude/agent-memory/release/<ticket>.md`
 - **Finishes a deferred release.** Previously, declining `/deliver`'s gate left no way to resume without re-running delivery or releasing by hand — the main source of accumulated worktrees. `/release <ticket>` now closes that loop
 - **Preflight is read-only** and reports branch merge state, commits since the last tag, the detected version file and platform, and the *derived* version bump (breaking → major, feat → minor, else patch)
-- **Failure preserves, success retires** — only a completed release removes the worktree, plan, groom session and scratch; every failure path keeps them for inspection
+- **Failure preserves, completion retires** — only a release whose every target is shipped or skipped removes the worktree, plan, groom session, release state and scratch; every failure or pending path keeps them
 - **Never auto-resolves a merge conflict**, and never re-pushes a tag without first checking `git ls-remote --tags origin`
 - Invoked by `/deliver` Phase 6 and chained to by the `changelog` agent when a version bump is needed
 
@@ -71,6 +78,7 @@ The first four orchestrators *build* software and `/release` *ships* it; `/monit
 - **Phase 2:** Reviews each surface live (read-only connector query) or via config-as-code fallback; labels findings `[live]`/`[config]`; cross-references observability coverage against critical paths (covered/partial/blind)
 - **Phase 3:** Per-surface 🟢/🟡/🔴/N/A + an equal-weighted composite score, plus a ranked, actionable anomaly list with evidence
 - **Phase 5:** Persists the scored report to `.devexp/system-health-review.md`. `/improve`'s Observability Maturity dimension defers to this artifact when present — one home for "is the system healthy?"
+- Reads each release target's declared post-release verification signals from the release guide and reports them healthy / unhealthy / unobservable
 - `/monitor <surface>` scopes the review to a single detected surface
 
 ### `/graphify`
@@ -83,6 +91,7 @@ The first four orchestrators *build* software and `/release` *ships* it; `/monit
 - Discovery → classification (live vs finished) → dry-run report → explicit confirmation (or `--cleanup` pre-confirmed mode with a line-by-line removal log) → scoped removal
 - Safety rules are load-bearing and inlined: validated `[A-Za-z0-9_-]` ids, prefix-anchored globs, never the main checkout / default branch / shared memory, preserve on failure or doubt
 - Primary sources of accumulated trees: failed deliveries, and releases deferred at `/release`'s gate whose branch has since landed
+- A ticket with any target not yet `shipped`/`skipped` in its release state is **live** — merged branch or not — and is never retired
 
 ---
 

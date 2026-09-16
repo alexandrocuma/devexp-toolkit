@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Release targets and the per-repo release guide.** `/release` used to end at
+  tag + GitHub/GitLab release — a full release for a library, but not for a
+  service (deploy), a web app (hosting), or an iOS/Android app (beta channel →
+  store review → staged rollout). Each repo now declares how it ships in
+  `docs/guides/release.md`, and the lifecycle reads it end to end:
+  - `/devxp` detects release targets by generic file shapes and writes or
+    refreshes the guide through `gen-docs`/`update-docs` (new **Release Guide**
+    template). Unproven fields are `[CONFIRM]` markers, never guesses.
+  - `grooming-agent` records **Affected Release Targets** and release impact in
+    the plan; `/refine` shows them and raises the estimate for externally-gated
+    or multi-target releases.
+  - `/deliver` gains **Phase 4.5 — Release Readiness** per affected target.
+  - `/release` splits into **cut** (merge, changelog, version + build numbers,
+    tag) and **ship** (per target, from the guide): a gate per target showing
+    the rollback plan first, a separate confirmation for every production-facing
+    promote stage, verification against the target's declared signals, rollback
+    offered but never automatic. New target states `awaiting-external`,
+    `blocked`, `skipped`, persisted to `~/.claude/agent-memory/release/<ticket>.md`
+    so `/release <ticket>` resumes store-gated and staged releases. No guide →
+    cut-only, as before.
+  - `/monitor` reviews each target's declared post-release signals.
+  - `/cleanup` and `/improve` treat a ticket with a pending target as live.
+  - New maintainer guide: `docs/guides/release-targets.md`.
+
+### Changed
+
+- `/release` phases renumbered: new Phase 7 (Ship Targets); retirement is now
+  Phase 8 and the report Phase 9. Retirement requires every target shipped or
+  skipped, not just a successful tag.
+
 ## [0.7.0] - 2026-09-15
 
 ### Added
