@@ -6,6 +6,7 @@ Architecture documentation and decisions for the devexp framework.
 
 | File | Description | Status |
 |------|-------------|--------|
+| [overview.md](overview.md) | How the system is organised: asset tree + Go installer CLI, layer map, traced install flow for both targets, runtime hook flow, external deps, known gaps, reference implementation | ready |
 | [ADR Index](adr/README.md) | All architecture decision records | ready |
 
 ## Notes

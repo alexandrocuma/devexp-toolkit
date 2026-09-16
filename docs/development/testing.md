@@ -1,0 +1,91 @@
+# Testing
+
+> Kit doc · Last verified: 2026-09-16 against commit `a86d2c3f6a41a6d033d31afd858ff723d5267dd7`
+
+Where tests live, how they're written and run, and what must pass before a commit. Commands for everything else (build, install, env vars) are in [`setup.md`](setup.md); code style in [`conventions.md`](conventions.md).
+
+## Test Types
+
+CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `main`, in two jobs: `test` (Go) and `hooks` (the three script suites). All four suites below were green at this commit.
+
+| Type | Framework | Location | Run |
+|------|-----------|----------|-----|
+| Unit — Go CLI | Go stdlib `testing` only; no assertion or mock library in `cli/go.mod` | `cli/**/<file>_test.go`, next to the code, same package | `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover)` — `ci.yml:17-21` |
+| Hook behaviour — Claude Code | plain bash script, `pass`/`fail` counters | `hooks/claude-code/<hook>.test.sh` | `for f in hooks/claude-code/*.test.sh; do bash "$f" \|\| exit 1; done` — `ci.yml:30-34` |
+| Hook behaviour — opencode | plain `node` ESM script, no framework (Node 22 in CI) | `hooks/opencode/<hook>.test.js` | `for f in hooks/opencode/*.test.js; do node "$f" \|\| exit 1; done` — `ci.yml:35-39` |
+| Installer script | plain bash script | repo root `*.test.sh` (today only `uninstall.test.sh`) | `for f in ./*.test.sh; do bash "$f" \|\| exit 1; done` — `ci.yml:40-45` |
+| Integration | N/A — no separate suite. Go tests already do real file I/O inside `t.TempDir()`, and each hook `.test.sh` executes the real hook script against a real tool-call JSON envelope | — |
+| E2E | N/A — no automated end-to-end install test. `runInstall`, `doInstallClaude`, `doInstallOpencode` and `runWizard` have 0% coverage. Manual check: `./install.sh --dry-run` | — |
+| Agents / skills (Markdown) | N/A — no automated validation. Edit → `./install.sh` → try it in Claude Code or opencode | `docs/development/README.md` (Notes) |
+
+At this commit: 10 Go packages with tests; `dangerous-cmd-guard.test.sh` 25 cases, `fail-closed.test.sh` 10, `secret-guard.test.sh` 37; `dangerous-cmd-guard.test.js` 25, `secret-guard.test.js` 38; `uninstall.test.sh` 8.
+
+Run one test:
+
+```bash
+cd cli && go test ./internal/manifest -run 'TestStale/empty_new'   # one Go subtest (spaces in map keys become _)
+bash hooks/claude-code/secret-guard.test.sh                        # one hook suite — the "Run:" line in its header
+node hooks/opencode/secret-guard.test.js
+```
+
+## Writing a Test
+
+- **New test file path:**
+  - Go: `<same dir>/<file>_test.go` declaring the **same package**, so unexported functions are testable — e.g. `cli/internal/manifest/manifest_test.go` (`package manifest`), `cli/cmd/install_test.go` (`package cmd`).
+  - Hooks: `hooks/claude-code/<hook>.test.sh` **and** a mirrored `hooks/opencode/<hook>.test.js` covering the same cases — e.g. `secret-guard.test.sh` / `secret-guard.test.js`, `dangerous-cmd-guard.test.sh` / `.test.js`. CI picks new files up by glob (`ci.yml:32,37,42`); nothing to register.
+- **Reference test to copy:**
+  - `cli/internal/manifest/manifest_test.go` — smallest complete example: map-keyed table tests, `t.TempDir()`, `reflect.DeepEqual`, the house error-message format.
+  - `cli/internal/hooks/installer_test.go` — the richer one: `t.Helper()` fixture builders (`createScript`, `writeSettingsHooks`, `readHooks`) and comments explaining why each case matters.
+  - `hooks/claude-code/secret-guard.test.sh` + `hooks/opencode/secret-guard.test.js` — the mirrored hook pair.
+- **Go test shape** (each point seen in 2+ files):
+  - Table tests are a **map keyed by a sentence**: `tests := map[string]struct{...}` then `for name, tt := range tests { t.Run(name, ...) }` — see `manifest_test.go`, `hooks/installer_test.go`, `repo/repo_test.go` (`TestIsRepoDir`), `cmd/install_test.go` (`TestCommandExists`). Scenario tests use inline `t.Run("sentence", ...)` — see `cmd/install_test.go` (`TestDetectTargets`), `repo/repo_test.go` (`TestExtractEmbedded`).
+  - Failure messages: `Func() error = %v` and `Func() = %v, want %v` — see `manifest_test.go`, `cmd/install_test.go`.
+  - No test calls `t.Parallel()` (none in `cli/`); `t.Setenv`/`t.Chdir` panic in parallel tests, so keep it that way where they're used.
+- **Fixtures / factories:** built per test by `t.Helper()` functions that write files into a `t.TempDir()` — `createScript`/`writeSettingsHooks` (`internal/hooks/installer_test.go`), `writeAgentFiles` (`internal/agents/installer_test.go`), `writeSkillDir` (`internal/skills/installer_test.go`), `writeRegistry` (`cmd/install_test.go:774`). There is no shared test-helper package: copy the helper you need (`captureStdout` exists in both `cmd/install_test.go:615` and `internal/mcp/mcp_test.go:170`; `captureOutput` in `internal/ui/ui_test.go:131`).
+- **Mocking / fakes:** no mock library. Isolate with real resources the test owns:
+  - Files → `t.TempDir()`; never the real `$HOME` or user cache. Installers take explicit src/target/settings paths, and path builders take `home`/`now` as arguments (`claudeTargetPaths(home, now)` in `cli/cmd/paths.go`) so they can be asserted without touching the machine.
+  - Env, `PATH` and cwd → `t.Setenv` / `t.Chdir`, which restore automatically — see `repo/repo_test.go:12,73`, `cmd/install_test.go:95`. A fake CLI is an executable stub on a `PATH` that contains nothing else: `fakeCLI(t, "claude")` (`cmd/install_test.go:700-710`).
+  - Logic behind a TTY prompt can't be driven by a test — extract it into a pure function and test that: `selectTargets` (`cli/cmd/targets.go:20`, tested by `TestSelectTargets`), `buildMultiSelectDisplay` (tested in `internal/ui/ui_test.go`).
+  - Single-instance seams, reuse when they fit `[verify — inferred from single example]`: static fixture files under `testdata/` (`cli/internal/agents/testdata/`); `testing/fstest.MapFS` standing in for an `fs.FS` (`repo/repo_test.go:98`); a package-level function variable swapped with a `t.Cleanup` restore (`var userCacheDir` in `cli/internal/repo/repo.go:83`, swapped by `withTempCache` in `repo_test.go`); `blockedDir` for forcing a `MkdirAll` failure (`cmd/install_test.go:839`).
+- **External services in tests:** none are called. The `claude mcp add/list/remove` exec paths are untested (only `TestAddClaude_NonExec` covers the non-exec branch, `internal/mcp/mcp_test.go:201`); CLI presence is faked with `fakeCLI`. No test uses the network.
+- **Hook tests** (`secret-guard.test.sh`, `dangerous-cmd-guard.test.sh`, and their `.js` mirrors):
+  - Shell: header `# Run: bash hooks/claude-code/<hook>.test.sh`, `set -uo pipefail`, a `run` helper that builds the real PreToolUse JSON envelope with `python3` and pipes it into the hook, `expect block|allow …` lines (exit 2 = block, exit 0 = allow), then `printf '%d passed, %d failed'` and a non-zero exit on any failure.
+  - JS: header `mirrors hooks/claude-code/<hook>.test.sh`, import the module's exported pure predicate (`isSecretFile`/`secretInCommand` from `secret-guard.js`, `BLOCK_PATTERNS` from `dangerous-cmd-guard.js`), loop over block/allow arrays, print `N passed, M failed`, `process.exit(fail === 0 ? 0 : 1)`.
+  - Failure mode: add every new Claude Code hook to `hooks/claude-code/fail-closed.test.sh` — `check <hook> 2 guard` for security guards (must fail **closed**), `check <hook> 0 advisory` for advisory hooks (may fail open, but must print `internal error`).
+- **Installer script tests:** never run `uninstall.sh` itself — it prompts and deletes real files. `uninstall.test.sh` extracts the embedded python heredoc with `awk` and runs it against fixture `settings.json` content in a `mktemp -d` dir (`uninstall.test.sh:10-12,23-28,46-48`).
+
+Gotchas when running tests:
+
+- `go test` won't compile `internal/assets` until `./scripts/stage-assets.sh` has run (staged dirs are gitignored). `TestEmbeddedFS` reads the staged copy, so re-stage after editing assets.
+- `TestCommandExists` expects `go` on `PATH` (`cmd/install_test.go:115`); hook shell tests need `python3`.
+- On macOS `t.TempDir()` lives under `/var/…` → `/private/var/…`; compare resolved paths with `filepath.EvalSymlinks`, as `repo/repo_test.go:81-87` does.
+
+## Before Every Commit
+
+Mirror CI — it runs all of these on the PR:
+
+- [ ] `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover)`
+- [ ] `for f in hooks/claude-code/*.test.sh; do bash "$f" || exit 1; done`
+- [ ] `for f in hooks/opencode/*.test.js; do node "$f" || exit 1; done`
+- [ ] `for f in ./*.test.sh; do bash "$f" || exit 1; done`
+- [ ] Lint: not enforced — no lint job in `ci.yml`, no linter config. `(cd cli && go vet ./... && gofmt -l .)` is clean at this commit and was run by hand for #97 (`CHANGELOG.md:147`).
+- [ ] Type check: N/A — covered by `go test`/`go vet` for Go; none configured for shell/JS.
+- [ ] Changed an agent, skill or hook? `./install.sh` and exercise it in Claude Code/opencode (see [`setup.md`](setup.md#commands)).
+
+## Coverage & Gaps
+
+No threshold: CI prints per-package coverage (`go test ./... -race -cover`, `ci.yml:21`) and fails only on test failures. For a per-function view:
+
+```bash
+cd cli && go test ./... -coverprofile=/tmp/cover.out && go tool cover -func=/tmp/cover.out
+```
+
+Per package at this commit: `cmd` 35.4% · `config` 48.5% · `ui` 61.5% · `mcp` 64.7% · `repo` 83.0% · `assets` 83.3% · `agents` 85.9% · `skills` 86.0% · `manifest` 87.0% · `hooks` 89.4%.
+
+Untested areas worth knowing:
+
+- **Install orchestration (0%):** `runInstall`, `doInstallClaude`, `installMCPsClaude`, `doInstallOpencode`, `installMCPsOpencode`, `runWizard`. The `doInstall*` functions read `os.Getenv("HOME")` directly (`cli/cmd/install_claude.go:20`, `install_opencode.go:18`) and `runWizard` needs a TTY.
+- **Config (0%):** `config.Load` and `IsAgentDisabled`/`IsSkillDisabled`/`IsHookDisabled` (`cli/internal/config/config.go`); only `dotenv.go` has tests.
+- **Registry and exec paths (0%):** `hooks.LoadRegistry`; `mcp.InstallClaude`, `isInstalledClaude`, `RemoveClaude`; all promptui prompts in `cli/internal/ui/prompts.go`.
+- **Hooks without behaviour tests:** `secret-in-write-guard`, `large-file-guard`, `format-on-save`, `lint-on-save`, `test-on-save` are covered only by `fail-closed.test.sh` (shell side); the three `graphify-*` hooks have no tests at all; on the opencode side only `secret-guard` and `dangerous-cmd-guard` have `.test.js` files.
+- **`uninstall.sh`:** only its hook-removal block is tested.
