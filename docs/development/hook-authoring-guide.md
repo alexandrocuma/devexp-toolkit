@@ -1,6 +1,6 @@
 # Hook Authoring Guide
 
-This guide covers everything you need to write a new devexp hook — from deciding what to guard to deploying it for both Claude Code and opencode.
+This guide covers everything you need to write a new devexp hook — from deciding what to guard to writing both the Claude Code script and the opencode module, and deploying it. (Only the Claude Code script is deployed by the installer today — see [How the System Is Structured](#how-the-system-is-structured).)
 
 ---
 
@@ -30,8 +30,8 @@ hooks/
 ```
 
 The installer reads `registry.json` and:
-- Registers each `.sh` script in `~/.claude/settings.json` with the correct event and matcher
-- Copies `devexp-plugin.js` (and all imported modules) to `~/.config/opencode/plugins/`
+- Registers each enabled `.sh` script in `~/.claude/settings.json` with the correct event and matcher, by absolute path into the install root (`cli/internal/hooks/installer.go`)
+- Does **not** deploy the opencode modules. No code under `cli/` references `devexp-plugin.js`, and the opencode install (`cli/cmd/install_opencode.go`) has no hook step — see [Known gaps](../architecture/overview.md#known-gaps). Still write and register the JS module (below) so the plugin stays correct and tested.
 
 ---
 
@@ -135,13 +135,17 @@ set -euo pipefail
 input=$(cat)
 
 command=$(echo "$input" | python3 -c \
-    "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))" \
-    2>/dev/null || echo "")
+    "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))") || {
+    echo "[devexp my-guard] internal error -- the guard could not read its input, so it did not run. Blocking to be safe; the interpreter's error is above." >&2
+    exit 2
+}
 
 # Guard logic here...
 
 exit 0
 ```
+
+**Failing on bad input.** Never collapse a failed extraction to an empty string (`2>/dev/null || echo ""`): an empty result looks like "nothing to block" and silently allows the operation. Security guards fail **closed** (`exit 2`, as above — see `hooks/claude-code/secret-guard.sh`); advisory hooks fail **open but loud** (print `internal error … skipping` and `exit 0` — see `hooks/claude-code/lint-on-save.sh`). `hooks/claude-code/fail-closed.test.sh` enforces this; rationale in [conventions → Error Handling](conventions.md#error-handling).
 
 ---
 
@@ -215,7 +219,7 @@ Path helpers (`join`, `dirname`, `resolve`, `extname`, `basename`) are re-export
 
 ## Registering in the opencode Entry Point
 
-After creating your module, add it to `hooks/opencode/devexp-plugin.js`:
+After creating your module, add it to `hooks/opencode/devexp-plugin.js` — import it, append it to the `Promise.all([...])` array, and add a line to the file's header comment. Excerpt of the real file with a new module added (the other imports are omitted):
 
 ```js
 import { myGuard } from './my-guard.js';
@@ -228,6 +232,10 @@ export const DevExpPlugin = async (ctx) => {
     largeFileGuard(ctx),
     lintOnSave(ctx),
     formatOnSave(ctx),
+    testOnSave(ctx),
+    graphifyReadGuard(ctx),
+    graphifySessionSentinel(ctx),
+    graphifyGrepNudge(ctx),
     myGuard(ctx),           // ← add here
   ]);
 
@@ -257,12 +265,18 @@ export const DevExpPlugin = async (ctx) => {
 - [ ] `hooks/claude-code/<hook-name>.sh` created with correct header comment
 - [ ] `chmod +x hooks/claude-code/<hook-name>.sh`
 - [ ] `hooks/opencode/<hook-name>.js` created
-- [ ] Module imported and added to `devexp-plugin.js`
+- [ ] Module imported, added to `Promise.all([...])` and listed in the header comment of `devexp-plugin.js`
 - [ ] Entry added to `hooks/registry.json` with correct event, matcher, and paths
+- [ ] Extraction fails closed (guard) or open-but-loud (advisory) — see [Failing on bad input](#boilerplate)
+- [ ] Mirrored tests added: `hooks/claude-code/<hook-name>.test.sh` and `hooks/opencode/<hook-name>.test.js` (pattern: `secret-guard.test.sh` ↔ `secret-guard.test.js`)
+- [ ] `check <hook-name> 2 guard` or `check <hook-name> 0 advisory` line added to `hooks/claude-code/fail-closed.test.sh`
+- [ ] Hook catalog, file tree and counts updated (`docs/reference/hooks.md`, `hooks/README.md`, `README.md`, `CLAUDE.md`)
 - [ ] `bash -n hooks/claude-code/<hook-name>.sh` passes
 - [ ] `node --input-type=module` import test passes
-- [ ] `./install.sh` installs without errors
+- [ ] `./install.sh` installs without errors, and the hook appears in `~/.claude/settings.json`
 - [ ] Tested both the block path and the allow path
+
+Exact steps and the files each touches: [workflows → Add a hook](../guides/workflows.md#add-a-hook).
 
 ---
 

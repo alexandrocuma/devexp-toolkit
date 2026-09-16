@@ -156,6 +156,6 @@ Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
 ## Chaining
 
 After completing the audit, chain into action when appropriate:
-- **Critical or High vulnerabilities found** → invoke `/bugfix` skill to fix the highest severity finding immediately
-- **Structural security issues (auth design, input handling patterns)** → invoke `/refactor` skill for a systematic fix
-- **Code logic enables the vulnerability** → invoke `/logic-review` skill to audit the surrounding logic
+- **Critical or High vulnerabilities found** → suggest invoking `dev-agent` to fix the highest severity finding immediately
+- **Structural security issues (auth design, input handling patterns)** → suggest invoking `dev-agent` for a systematic fix
+- **Code logic enables the vulnerability** → suggest invoking `backend-senior-dev` or `frontend-senior-dev` (based on layer) to audit the surrounding logic

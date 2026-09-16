@@ -262,13 +262,7 @@ Which existing tests cover the affected area? Which will need updating? Which wi
 
 ### Phase 7: Write the Verified Execution Plan
 
-Invoke the `/groom` skill to produce the formatted plan document using all findings:
-
-```
-/groom — write plan only (validation already complete)
-```
-
-Pass all Phase 3–6 findings as context. The plan must:
+Write the formatted plan document yourself, using all Phase 3–6 findings. The plan must:
 - Reflect the actual codebase, not the ticket's assumptions
 - Include a "Validation Notes" section recording what was corrected
 - Have exact file paths and line numbers, verified to exist
@@ -408,6 +402,4 @@ Launch via the `Agent` tool:
 
 ## Available Skills
 
-- `/groom` — write the verified execution plan (invoke after Phase 6)
-- `/ticket` — create corrected tickets in the detected platform if the original needs splitting
-- `/scope` — decompose tickets that are too large to groom in one pass
+- `/graphify` — incremental rebuild of the knowledge graph after persisting the plan (Phase 8)

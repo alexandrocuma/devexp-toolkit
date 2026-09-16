@@ -46,7 +46,7 @@ The file lives at `skills/my-skill/SKILL.md`. The directory name must match the 
 The skill name, which becomes the slash command: `/name`.
 
 - Must match the containing directory name exactly
-- Lowercase kebab-case: `bugfix`, `api-design`, `logic-review`
+- Lowercase kebab-case: `deliver`, `cleanup`, `release` (multi-word names use hyphens, e.g. `my-skill`)
 - No namespace prefix — use short, descriptive names directly
 
 ### `description` (required)
@@ -83,8 +83,8 @@ After the role statement, include a "Triggered by" section listing which agents 
 ```markdown
 ## Triggered by
 
-- `dev-agent` — to fix bugs encountered during autonomous implementation
-- `feature` skill — to verify the bug was fixed before marking complete
+- `/release` — release the current branch's work
+- `/deliver` Phase 6 — delegates here once code review passes
 ```
 
 If the skill is only user-invoked and no agent uses it, say so:
@@ -336,14 +336,17 @@ Skill names in the devexp suite use short, descriptive kebab-case names without 
 <domain>           (no namespace prefix)
 ```
 
-Examples:
-- `bugfix` — root cause analysis and bug fixing
-- `logic-review` — code logic review for bugs and edge cases
-- `api-design` — API contract design
-- `db-design` — database schema design
-- `test-gen` — test generation
+Examples (from `skills/`):
+- `devxp` — orient on a repo and build its docs/ development kit
+- `refine` — backlog refinement into a ready-to-build ticket
+- `deliver` — ticket to merged, reviewed code
+- `release` — merge to shipped
+- `improve` — continuous improvement cycle
+- `monitor` — operate-phase health review
+- `cleanup` — on-demand cleanup of delivery artifacts
+- `graphify` — knowledge graph over any input
 
-Prefer merging closely related concerns into a single skill with sub-sections rather than creating many fine-grained skills. For example, `docs` covers API docs, code comments, usage examples, and README — not four separate skills.
+Prefer merging closely related concerns into a single skill with sub-sections rather than creating many fine-grained skills. For example, `improve` covers the health scorecard, stale work, dead code, tech debt triage, and the retrospective — not five separate skills. The same pressure keeps specialist capabilities as agents (see `skills/README.md`).
 
 ---
 

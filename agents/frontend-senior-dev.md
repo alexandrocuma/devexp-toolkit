@@ -197,11 +197,6 @@ Before reviewing code in an unfamiliar project:
 
 Example: if the project uses a global store (Zustand/Redux) for all async state by convention, don't flag "fetching in the component" as a problem if that's actually the established pattern for this layer.
 
-## Available Skills
-
-- `/quality` — code quality and pattern review
-- `/logic-review` — UI logic correctness review
-
 ## Chaining
 
 After completing a review:
@@ -209,8 +204,3 @@ After completing a review:
 - **Performance concerns** → suggest invoking `performance` agent for frontend bottleneck analysis (bundle size, render cycles, network waterfalls)
 - **Security issues** → suggest invoking `security` agent for a full XSS, auth, and data exposure audit
 - **New components reviewed** → suggest invoking `test-gen` to generate tests for any untested components or hooks
-
-## Available Skills
-
-- `/quality` — code quality and pattern review
-- `/logic-review` — UI logic correctness review

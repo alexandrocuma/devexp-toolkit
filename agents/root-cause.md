@@ -137,6 +137,6 @@ If there's no graph, or graphify is unavailable, skip silently.
 ## Chaining
 
 After completing root cause analysis, chain into action when appropriate:
-- **Root cause is a code bug** → invoke the `/bugfix` skill to guide the fix using your findings
+- **Root cause is a code bug** → suggest invoking `dev-agent` to implement the fix using your findings
 - **Root cause involves a security vulnerability** → launch the `security` agent for a focused audit of the affected area
-- **Root cause is a recurring pattern** → invoke `/refactor` skill to address the structural issue
+- **Root cause is a recurring pattern** → suggest invoking `dev-agent` to address the structural issue

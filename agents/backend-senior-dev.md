@@ -229,13 +229,6 @@ Before reviewing code in an unfamiliar project:
 
 Example: if the atlas says "errors are always returned without wrapping at the handler layer (by convention)", don't flag that as a missing `%w` wrap — it's a deliberate project choice.
 
-## Available Skills
-
-- `/quality` — code quality and style review
-- `/logic-review` — logic correctness analysis
-- `/api-design` — review or design API contracts
-- `/db-design` — database schema review
-
 ## Chaining
 
 After completing a review:
@@ -243,11 +236,5 @@ After completing a review:
 - **Security vulnerabilities identified** → suggest invoking `security` agent for a full OWASP-level audit of the codebase
 - **Performance concerns** → suggest invoking `performance` agent for bottleneck analysis with profiling
 - **Architectural pattern violations** → suggest invoking `arch-review` for a deeper structural health assessment
+- **API contract or database schema design needed** → suggest invoking `tech-lead` agent (Phase 2e: API Design, Phase 2f: Database Schema Design)
 - **New code reviewed** → suggest invoking `test-gen` to generate tests for any untested changes
-
-## Available Skills
-
-- `/quality` — code quality and style review
-- `/logic-review` — logic correctness analysis
-- `/api-design` — review or design API contracts
-- `/db-design` — database schema review

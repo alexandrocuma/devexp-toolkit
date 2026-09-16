@@ -137,6 +137,6 @@ Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
 ## Chaining
 
 After completing the performance analysis, chain into action when appropriate:
-- **Code-level bottleneck identified (N+1, O(n²), unnecessary computation)** → invoke `/refactor` skill to implement the optimization
-- **Database query issues found** → invoke `/db-design` skill to redesign indexes or query patterns
-- **Quick wins available** → invoke `/bugfix` skill for targeted single-location fixes with high impact
+- **Code-level bottleneck identified (N+1, O(n²), unnecessary computation)** → suggest invoking `dev-agent` to implement the optimization
+- **Database query issues found** → suggest invoking `tech-lead` agent (Phase 2f: Database Schema Design) to redesign indexes or query patterns
+- **Quick wins available** → suggest invoking `dev-agent` for targeted single-location fixes with high impact

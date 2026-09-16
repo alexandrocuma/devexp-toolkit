@@ -311,5 +311,5 @@ If there's no graph, or graphify is unavailable, skip silently.
 
 - **PII risks found** → suggest `security` agent for a full data exposure audit
 - **Silent drop risks found** → suggest `root-cause` agent if a bug is suspected
-- **Orphaned writes found** → suggest `dead-code` skill to validate and clean up
+- **Orphaned writes found** → suggest `/improve --cleanup` (dead-code scan) to validate and clean up
 - **Pre-migration context** → hand map to `impact-analysis` agent before the migration begins

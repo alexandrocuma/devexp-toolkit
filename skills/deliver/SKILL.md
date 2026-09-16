@@ -14,7 +14,7 @@ You are running the **delivery phase** of the development cycle. Given a groomed
 
 ## When to Use
 
-When a ticket exists and is ready for implementation. The ticket should have a groom plan (from `/refine` or a prior `/groom` run). If no groom plan exists, this skill runs grooming first. If the ticket doesn't exist yet, run `/refine` first.
+When a ticket exists and is ready for implementation. The ticket should have a groom plan (from `/refine` or a prior `grooming-agent` run). If no groom plan exists, this skill runs grooming first. If the ticket doesn't exist yet, run `/refine` first.
 
 ---
 

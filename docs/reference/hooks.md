@@ -2,7 +2,7 @@
 
 ## How Hooks Work
 
-Hooks are safety and quality guards that intercept tool calls automatically — no user action required. They are implemented differently per CLI but behave identically from the user's perspective.
+Hooks intercept tool calls automatically — no user action required. Some are safety guards that block or ask; others (`lint-on-save`, `format-on-save`, `test-on-save`, `graphify-grep-nudge`) are advisory and never block. Each hook has an implementation per CLI, but only the **Claude Code** scripts are installed today: the installer has no opencode hook step (`cli/cmd/install_opencode.go`; see [Known gaps](../architecture/overview.md#known-gaps)).
 
 **Claude Code** hooks are shell scripts registered in `~/.claude/settings.json` under `PreToolUse` or `PostToolUse` events. Claude Code calls the script with a JSON payload on stdin and reads the response:
 
@@ -10,7 +10,7 @@ Hooks are safety and quality guards that intercept tool calls automatically — 
 - **Soft block (ask)** — output `{"hookSpecificOutput": {"permissionDecision": "ask"}}` to stdout, `exit 0`. Claude pauses and asks the user.
 - **Allow** — `exit 0` with no output.
 
-**opencode** hooks are JS modules composed into a single plugin (`devexp-plugin.js`) registered in `~/.config/opencode/config.json`. Handlers receive `(input, output)` and:
+**opencode** hooks are JS modules composed into a single plugin (`hooks/opencode/devexp-plugin.js`). The installer doesn't deploy or register this plugin; no code under `cli/` references it. Handlers receive `(input, output)` and:
 
 - **Block** — `throw new Error("reason")`. opencode stops the tool call.
 - **Allow** — return without throwing.
@@ -22,14 +22,21 @@ Hooks are safety and quality guards that intercept tool calls automatically — 
 ```
 hooks/
   registry.json               # Source of truth — one entry per hook
-  claude-code/                # One .sh file per hook
+  claude-code/                # One .sh file per hook + tests
   └── secret-guard.sh
   └── secret-in-write-guard.sh
   └── dangerous-cmd-guard.sh
   └── large-file-guard.sh
   └── lint-on-save.sh
   └── format-on-save.sh
-  opencode/                   # One .js module per hook + shared utils + entry point
+  └── test-on-save.sh
+  └── graphify-read-guard.sh
+  └── graphify-session-sentinel.sh
+  └── graphify-grep-nudge.sh
+  └── secret-guard.test.sh     # Hook tests (*.test.sh), run by CI
+  └── dangerous-cmd-guard.test.sh
+  └── fail-closed.test.sh      # Guards fail closed / advisory hooks fail open but loud
+  opencode/                   # One .js module per hook + shared utils + entry point + tests
   └── utils.js                # Shared helpers: findRoot, which, runLinter, countLines
   └── secret-guard.js
   └── secret-in-write-guard.js
@@ -37,6 +44,12 @@ hooks/
   └── large-file-guard.js
   └── lint-on-save.js
   └── format-on-save.js
+  └── test-on-save.js
+  └── graphify-read-guard.js
+  └── graphify-session-sentinel.js
+  └── graphify-grep-nudge.js
+  └── secret-guard.test.js     # Hook tests (*.test.js), run by CI
+  └── dangerous-cmd-guard.test.js
   └── devexp-plugin.js        # Composes all modules into a single plugin export
   └── package.json            # { "type": "module" } — required for ESM
 ```
@@ -74,6 +87,8 @@ hooks/
 | `opencode.plugin` | Always `hooks/opencode/devexp-plugin.js` — the single entry point |
 | `enabled` | Set to `false` to skip this hook for all users |
 
+The Go installer reads only `name`, `claude_code` and `enabled` (the `Hook` struct in `cli/internal/hooks/installer.go`); the `opencode` block is documentation for the plugin modules.
+
 ---
 
 ## Hook Catalog
@@ -82,7 +97,7 @@ hooks/
 |------|-------|---------|--------------|
 | `secret-guard` | PreToolUse | `Read\|Bash` | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
 | `secret-in-write-guard` | PreToolUse | `Write\|Edit` | Hard-blocks writing content that contains secret patterns (API keys, GitHub tokens, private key blocks) |
-| `dangerous-cmd-guard` | PreToolUse | `Bash` | Hard-blocks `rm -rf /`, fork bombs, `DROP DATABASE`, `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
+| `dangerous-cmd-guard` | PreToolUse | `Bash` | Hard-blocks `rm -rf /`, unanchored wildcard deletes in sensitive dirs (`/tmp/*`, `~/.claude/.../*`), fork bombs, `DROP DATABASE`, `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
 | `large-file-guard` | PreToolUse | `Write` | Asks for confirmation before overwriting a file with >500 lines |
 | `lint-on-save` | PostToolUse | `Write\|Edit` | Runs the project linter on edited source files (JS/TS → biome/eslint, Python → ruff/flake8, Go → go vet, Ruby → rubocop) |
 | `format-on-save` | PostToolUse | `Write\|Edit` | Runs the project formatter in-place (JS/TS → biome/prettier, Python → ruff/black, Go → gofmt, Ruby → rubocop) |
@@ -91,7 +106,7 @@ hooks/
 | `graphify-session-sentinel` *(disabled)* | PostToolUse | `Bash` | Tracks `graphify query/path/explain` usage toward `graphify-read-guard`'s tapering gate |
 | `graphify-grep-nudge` *(disabled)* | PreToolUse | `Bash\|Grep` | Soft-nudges toward `graphify query` (via `additionalContext`, never a block) when grep-like commands or the `Grep` tool run |
 
-The three `graphify-*` hooks ship with `enabled: false` — they're an **optional set** for projects that adopt the `graphify` skill and maintain a `graphify-out/` knowledge graph. All three self-gate on `graphify-out/graph.json` existing, so flipping them on is harmless even if a project hasn't built a graph yet (they simply no-op). Enable them in a fork by setting `"enabled": true` in `hooks/registry.json`, or override per-org via `devexp.config.json`.
+The three `graphify-*` hooks ship with `enabled: false` — they're an **optional set** for projects that adopt the `graphify` skill and maintain a `graphify-out/` knowledge graph. All three self-gate on `graphify-out/graph.json` existing, so flipping them on is harmless even if a project hasn't built a graph yet (they simply no-op). Enable them in a fork by setting `"enabled": true` in `hooks/registry.json`. `devexp.config.json` can't enable them: it supports only `hooks.disabled` (`cli/internal/config/config.go`), and the installer skips any hook with `enabled: false` before it looks at config (`cli/internal/hooks/installer.go`). The install wizard lists only enabled hooks (`listHookNames` in `cli/cmd/registry.go`).
 
 **How `graphify-read-guard` paces itself** — rather than a flat "queried in the last N hours" timer (which re-arms mid-session and creates friction, or "gate once" which under-uses the graph), it runs a tapering cadence sourced from a small JSON state file (`graphify-out/.graphify_session`, shared with `graphify-session-sentinel`):
 
@@ -109,7 +124,8 @@ This front-loads grounding when the agent knows least about the codebase, and ea
 | | Claude Code | opencode |
 |---|---|---|
 | Hook scripts | `hooks/claude-code/*.sh` (one per hook) | `hooks/opencode/*.js` (one module per hook) |
-| Entry point | Each script registered separately in `settings.json` | Single `devexp-plugin.js` registered in `config.json` |
+| Entry point | Each script registered separately in `settings.json` | Single `devexp-plugin.js` composing all modules |
+| Installed by `./install.sh` | Yes — enabled hooks, into `~/.claude/settings.json` | No — not deployed ([Known gaps](../architecture/overview.md#known-gaps)) |
 | Block mechanism | `exit 2` + stderr | `throw new Error(...)` |
 | Confirm/ask | `permissionDecision: "ask"` JSON output | Not supported — hard block instead |
 
@@ -142,6 +158,8 @@ This front-loads grounding when the agent knows least about the codebase, and ea
 
 4. Add the entry to `hooks/registry.json`.
 
-5. `chmod +x hooks/claude-code/<hook-name>.sh` and run `./install.sh`.
+5. Add mirrored tests (`<hook-name>.test.sh` / `<hook-name>.test.js`), a `check` line in `hooks/claude-code/fail-closed.test.sh`, and update this catalog, the file tree above and the hook counts — see [workflows → Add a hook](../guides/workflows.md#add-a-hook).
+
+6. `chmod +x hooks/claude-code/<hook-name>.sh` and run `./install.sh`.
 
 Full guide: [`docs/development/hook-authoring-guide.md`](../development/hook-authoring-guide.md)

@@ -51,6 +51,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `update-indexer` detects leaked knowledge and moves it into the owning kit
     doc (re-verified against code) before replacing it with a pointer.
 
+### Fixed
+
+- **Docs and agent sources drifted from the code** — found by the first `/devxp`
+  run with the development kit, fixed by `update-docs` passes verified against code:
+  - opencode hooks were documented as installed; the Go CLI never deploys
+    `devexp-plugin.js` (known gap, `docs/architecture/overview.md`). Corrected in
+    `install.md`, `README.md`, `hooks/README.md`, `reference/hooks.md`,
+    `hook-authoring-guide.md`.
+  - `install.md`/`README.md`: `git pull && ./install.sh` doesn't rebuild the CLI
+    (`rm bin/devexp` first); `--model` doesn't skip the wizard and only rewrites
+    existing `model:` lines; opencode skills go to `commands/`; backups are
+    Claude Code only.
+  - `docker_compose` MCP field and auto-start removed from `mcp-guide.md`,
+    `reference/mcps.md`, `mcps/README.md` (dropped in `61f6c9f`); `headers`,
+    re-install and secrets behaviour documented as implemented.
+  - `agent-authoring-guide.md`: real `modelMap`, opencode tool mapping and
+    `agents/opencode/` handling; `skill-authoring-guide.md`, `templates/README.md`,
+    `adr/README.md`, `coverage.md`, `agent-architecture-reference.md`,
+    `guides/README.md`, `quickstart.md` corrected.
+  - 15 agent sources chained to skills removed in `13f3cf8` (`/refactor`,
+    `/bugfix`, `/quality`, `/logic-review`, `/api-design`, `/db-design`, `/scope`,
+    `/dead-code`, `/dep-map`, `/groom`, …); now point to the agents or
+    orchestrators that absorbed them. `grooming-agent` Phase 7 writes the plan
+    itself instead of invoking the missing `/groom` skill.
+
 ### Changed
 
 - `/release` phases renumbered: new Phase 7 (Ship Targets); retirement is now

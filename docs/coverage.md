@@ -1,6 +1,6 @@
 # DevExp SDLC Coverage Map
 
-Generated: 2026-06-09 (updated: `/monitor` added as operate-phase orchestrator; `/graphify` + `/cleanup` are utility commands alongside the six lifecycle orchestrators; `/promo-campaign` removed — marketing is not a development-lifecycle phase)
+Generated: 2026-06-09 (updated: `/monitor` added as operate-phase orchestrator; `/graphify` + `/cleanup` are utility commands alongside the six lifecycle orchestrators; `/promo-campaign` removed — marketing is not a development-lifecycle phase; refreshed 2026-09-16 against code — see Changelog)
 Agents: 34 · Skills: 8 (6 lifecycle orchestrators + 2 utilities) · Total components: 42  
 All specialist capabilities are inline within orchestrators, invoked as agents, or exposed as one of the two utility commands (`/graphify`, `/cleanup`).
 
@@ -14,13 +14,13 @@ All specialist capabilities are inline within orchestrators, invoked as agents, 
 | 2. Requirements | 🟢 Strong | 7 | Full pipeline from idea → ticket → groomed plan |
 | 3. Architecture & Design | 🟢 Strong | 9 | Most comprehensive phase — design, ADR, RFC, blast radius, data flow |
 | 4. Implementation | 🟢 Strong | 9 | Autonomous, spec-driven, progressive delivery all covered; IaC handled inline in /deliver |
-| 5. Testing | 🟢 Strong | 5 | Unit/integration + load testing + E2E (via /deliver Phase 4 when suite detected) |
-| 6. Code Review | 🟢 Strong | 13 | ⚠️ Over-concentrated — routing guide needed (see below) |
+| 5. Testing | 🟢 Strong | 4 | Unit/integration + load testing + E2E (via /deliver Phase 4 when suite detected) |
+| 6. Code Review | 🟢 Strong | 12 | ⚠️ Over-concentrated — routing guide needed (see below) |
 | 7. CI/CD & Release | 🟢 Strong | 6 | Full commit → PR → pipeline → release workflow; `/release` is its own command, so a deferred release is resumable |
-| 8. Deployment & Infrastructure | 🟢 Strong | 3 | IaC inline in /deliver Phase 2; Infrastructure Health dimension in /improve scorecard |
-| 9. Observability | 🟢 Strong | 2 | SLO candidates surfaced by /deliver; Observability Maturity dimension in /improve scorecard |
-| 10. Incident Management | 🟢 Strong | 4 | root-cause → postmortem → runbook chain is explicit |
-| 11. Continuous Improvement | 🟢 Strong | 7 | Health trends + retro + debt + stale work — full feedback loop |
+| 8. Deployment & Infrastructure | 🟢 Strong | 4 | IaC inline in /deliver Phase 2; per-target build → distribute → promote → rollback in /release Phase 7; Infrastructure Health dimension in /improve scorecard |
+| 9. Observability | 🟢 Strong | 5 | SLO candidates surfaced by /deliver; /monitor reviews the deployed system; Observability Maturity dimension in /improve scorecard |
+| 10. Incident Management | 🟢 Strong | 3 | root-cause → postmortem → runbook chain is explicit |
+| 11. Continuous Improvement | 🟢 Strong | 8 | Health trends + retro + debt + stale work — full feedback loop |
 | 12. Documentation | 🟢 Strong | 8 | Create/refresh for both docs/ and CLAUDE.md; explanation + archaeology |
 
 **Overall: 12 Strong · 0 Solid · 0 Thin · 0 Missing**
@@ -133,7 +133,7 @@ All specialist capabilities are inline within orchestrators, invoked as agents, 
 | `commit` | inline in `deliver` | Conventional commit generation |
 | `pr` | inline in `deliver` | PR/MR description + optional open via CLI |
 | `changelog` | inline in `release` Phase 4 | Changelog entry from conventional commits |
-| `release` | **skill (lifecycle)** | The release phase: gated merge → changelog → version → tag → platform → retire artifacts. Standalone, so a deferred release can be finished later |
+| `release` | **skill (lifecycle)** | The release phase: preflight → cut gate → merge → changelog → version bump → tag → ship each affected release target from `docs/guides/release.md` (gated per target) → retire artifacts. Standalone, so a deferred or externally-gated release can be finished later |
 | `changelog` | agent | Changelog generation agent |
 | `ci-cd` | agent | Debug, create, optimize CI/CD pipelines |
 
@@ -146,9 +146,10 @@ All specialist capabilities are inline within orchestrators, invoked as agents, 
 |-----------|------|-------------|
 | `env-audit` | inline in `improve` Phase 2 | Audits env vars — undocumented reads, leaked secrets, config drift |
 | `feature-flag` | inline in `dev-agent` | Progressive delivery + safe rollout control |
+| `release` | skill (lifecycle) — Phase 7 | Ships each release target from `docs/guides/release.md`: build → distribute → promote stage by stage (every production-reaching stage confirmed) → verify → rollback on failure |
 | `ci-cd` | agent | Pipeline config and deployment workflow |
 
-**Remaining gap:** Environment promotion workflows (dev → staging → prod) are not automated.
+**Promotion:** environment/channel promotion (e.g. staging → production, beta → store) runs from the repo's release guide in `/release` Phase 7c — it executes only the commands the guide documents, and `[CONFIRM]` steps are never run.
 
 ---
 
@@ -157,6 +158,7 @@ All specialist capabilities are inline within orchestrators, invoked as agents, 
 
 | Component | Type | Description |
 |-----------|------|-------------|
+| `monitor` | **skill (lifecycle)** | Operate-phase review of the deployed system — detects cloud/infra, dashboards, logging, alerting and tracing surfaces, scores them, and writes `.devexp/system-health-review.md` for `/improve` |
 | `instrument` | inline in `deliver` Phase 3 | Adds structured logs at entry/error points; surfaces SLO candidates |
 | `health` | inline in `improve` Phase 2 | Health scorecard — 8 dimensions with trend tracking |
 | `performance` | agent | Performance bottleneck analysis (partial overlap with Phase 6) |
@@ -218,7 +220,7 @@ All specialist capabilities are inline within orchestrators, invoked as agents, 
 
 | Component | Type | Description |
 |-----------|------|-------------|
-| `swarm-status` | inline in `devxp` Phase 3 | Recommends which specialists to activate for the current work context |
+| `swarm-status` | inline in `devxp` ("Mode: What Should I Use") | Recommends which specialists to activate for the current work context |
 | `synthesis` | agent | Consolidates multi-agent findings into a single action plan |
 
 ---
@@ -232,7 +234,7 @@ All previously identified gaps have been closed via orchestrator enhancements ra
 **Phase 8 — Deployment & Infrastructure (now Strong)**
 - IaC changes are handled inline in `/deliver` Phase 2 — detect, read conventions, apply same discipline as application code
 - `/improve` Phase 2 now includes an Infrastructure Health dimension in the health scorecard
-- Remaining gap: environment promotion automation (dev → staging → prod) — not yet covered
+- Promotion is covered by `/release` Phase 7 from the per-repo release guide (see Phase 8 above)
 
 **Phase 9 — Observability (now Strong)**
 - `/deliver` Phase 3 now surfaces SLO candidates for each new critical path (latency, error rate, throughput)
@@ -296,3 +298,10 @@ Phase rating changes 2026-06-09:
 - Phase 5 (Testing): gap closed via `/deliver` Phase 4 E2E check → **Strong** (no gap)
 - Phase 8 (Deployment): Solid → **Strong** (IaC inline in `/deliver` + Infrastructure Health in `/improve`)
 - Phase 9 (Observability): Solid → **Strong** (SLO surface in `/deliver` + Observability Maturity in `/improve`)
+
+Refreshed 2026-09-16 (verified against `skills/` and `agents/`):
+- Phase 7: `release` row updated — it now ships each release target from `docs/guides/release.md` (`skills/release/SKILL.md` Phase 7)
+- Phase 8: added `release` Phase 7 row; environment promotion gap closed by `/release` Phase 7c
+- Phase 9: added `monitor` skill row (it was listed in the header but missing from the map)
+- Cross-cutting: `swarm-status` routing lives in `devxp` "Mode: What Should I Use", not Phase 3
+- Phase Coverage Summary component counts corrected to match the component tables

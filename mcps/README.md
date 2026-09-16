@@ -25,7 +25,7 @@ cp mcps/.env.example mcps/.env
 ./install.sh
 ```
 
-`mcps/.env` is gitignored — never commit real secrets. MCPs with a `docker_compose` field are started automatically via `docker compose up -d`.
+`mcps/.env` is gitignored — never commit real secrets. The installer only registers MCPs (a command or a URL); it never starts servers, so an HTTP/SSE MCP's server must already be running. See [`docs/development/mcp-guide.md`](../docs/development/mcp-guide.md).
 
 ---
 

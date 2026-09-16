@@ -37,7 +37,7 @@ What it does:
 - Detects what this repo ships — a service, a web app, an iOS/Android app, a library — and writes `docs/guides/release.md`, the release guide `/release` follows. Anything it can't prove from the repo (usually rollback and store gates) is marked `[CONFIRM]` for you to fill in
 - Hands off to `/refine` when you're ready to start work
 
-Run it once per repo. Future sessions pick up where it left off.
+Run it once per repo, and again whenever the docs drift — a re-run refreshes only what changed.
 
 ---
 
@@ -54,8 +54,8 @@ We need to let users export their data as CSV. The settings page should have an 
 What it does:
 1. Turns your input into structured user stories and acceptance criteria
 2. Estimates complexity from the actual codebase (files to change, test coverage, risk)
-3. Creates a well-formed ticket on your issue tracker (GitHub Issues, GitLab, Linear, or Jira — auto-detected)
-4. Validates the ticket's claims against the codebase before saving, and records which release targets it affects
+3. Creates a well-formed ticket on your issue tracker (GitHub Issues, GitLab, Linear, or Jira — auto-detected), recording which release targets it affects
+4. Grooms the new ticket against the codebase: validates its claims and writes a verified execution plan back to it
 
 Output: a groomed ticket with an attached execution plan — ready for `/deliver`.
 
@@ -71,14 +71,14 @@ Point `/deliver` at a ticket and it handles the rest.
 
 What it does, in order:
 1. Loads the groom plan (or runs grooming if it's missing)
-2. Implements the changes — infrastructure files included if the ticket touches them
+2. Implements the changes in the ticket's own git worktree — infrastructure files included if the ticket touches them
 3. Adds observability: log calls at entry/error points, SLO candidate notes
 4. Fills test gaps: unit/integration tests first, then E2E scenarios if the project has a suite
 5. Checks release readiness for each affected target (build numbers, deploy ordering, feature flags when rollback is flag-only)
 6. Opens a PR and runs a code review
 7. Hands off to `/release` for the gated release
 
-The only decision you make is whether to release. Everything else runs automatically.
+You confirm the delivery plan once up front; after that, the only hard gate is whether to release.
 
 ---
 
@@ -94,7 +94,7 @@ What it does:
 1. Preflight (read-only): branch merge state, commits since the last tag, version file, platform, the **derived** version bump, and a per-target inventory from the release guide
 2. Asks for your explicit yes to **cut** — merge, changelog, version bump, tag
 3. **Ships each affected target** exactly as the release guide says — a deploy, a beta upload then store submission, a package publish — with its own yes per target, the rollback plan shown first, and a separate yes for every step that reaches production
-4. Retires the worktree, plan and scratch — **only once every target has shipped**
+4. Retires the worktree, plan and scratch — **only once every target has shipped** (or been explicitly skipped)
 
 Said no to the gate last week and never finished? Waiting on App Store review or halfway through a staged rollout? `/release PAY-42` picks it up where it stopped. Before this command existed, the only options were re-running `/deliver` or releasing by hand — which is how stray worktrees pile up.
 
@@ -111,10 +111,11 @@ Run at sprint end, after a production incident, or any time things "feel messy."
 What it does:
 1. Health scorecard across 8 dimensions: test coverage, security, dependencies, code quality, CI/CD, infrastructure health, observability maturity, and env var health
 2. Stale work scan: orphaned branches, old PRs, zombie flags, dead code
-3. Tech debt triage: business-prioritized list with carrying cost and fix ROI
-4. Sprint retrospective: evidence-grounded Start/Stop/Continue findings
+3. Toolkit hygiene sweep: orphaned worktrees, stale plans, old groom sessions, stray scratch
+4. Tech debt triage: business-prioritized list with carrying cost and fix ROI
+5. Sprint retrospective: evidence-grounded Start/Stop/Continue findings
 
-All diagnostic steps run inline — nothing is deleted automatically. You get findings and a checklist.
+Only the scorecard always runs; the rest are opt-in. Nothing is deleted automatically — scans produce findings, and the hygiene sweep removes only the candidates you confirm.
 
 ---
 

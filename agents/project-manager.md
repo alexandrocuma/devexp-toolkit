@@ -195,6 +195,5 @@ Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
 ## Chaining
 
 After completing ticket creation, chain into action when appropriate:
-- **Epic decomposed into tickets** → invoke `/scope` skill to review the dependency graph and critical path
 - **Backlog triage complete** → suggest running `project-manager` again to bulk-update labels or close stale issues
 - **Security issue created** → note that the `security` agent should be invoked to investigate

@@ -144,6 +144,6 @@ Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
 ## Chaining
 
 After completing the test run, chain into action when appropriate:
-- **Tests failing due to a bug in production code** → invoke `/bugfix` skill with the failure details as context
-- **Coverage gaps in critical paths** → invoke `/gen-docs` skill to at least document the untested behavior
-- **Flaky tests identified** → invoke `/refactor` skill to stabilize the flaky test(s)
+- **Tests failing due to a bug in production code** → suggest invoking `dev-agent` with the failure details as context
+- **Coverage gaps in critical paths** → suggest invoking `gen-docs` agent to at least document the untested behavior
+- **Flaky tests identified** → suggest invoking `dev-agent` to stabilize the flaky test(s)

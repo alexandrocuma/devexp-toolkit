@@ -207,5 +207,5 @@ Test failures to address:
 
 After implementation:
 - **Tests fail** → suggest invoking `dev-agent` to investigate the specific failing tests
-- **Security-related comments** → suggest invoking `/logic-review` skill to verify the security fix is complete
+- **Security-related comments** → suggest invoking `security` agent to verify the security fix is complete
 - **Many flagged architectural comments** → suggest invoking `tech-lead` agent to decide on the right approach before opening follow-up PRs

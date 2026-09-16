@@ -19,14 +19,16 @@ MCP servers are declared in `mcps/registry.json`. Two transport types are suppor
 }
 ```
 
-**HTTP/SSE MCP (locally-hosted):**
+**HTTP/SSE MCP:**
 ```json
 {
   "name": "my-mcp",
   "description": "Short description",
   "transport": "http",
   "url": "http://localhost:1234/mcp",
-  "docker_compose": "mcps/my-mcp/docker-compose.yml",
+  "headers": {
+    "Authorization": "Bearer ${MY_MCP_API_KEY}"
+  },
   "scope": "user",
   "env": {},
   "required_env": ["MY_MCP_API_KEY"],
@@ -41,12 +43,14 @@ MCP servers are declared in `mcps/registry.json`. Two transport types are suppor
 | `transport` | `"http"` for streamable-HTTP; `"sse"` for legacy SSE-only; omit for stdio (default) |
 | `url` | Server URL — required when `transport` is `"http"` or `"sse"` |
 | `command` | Executable to run — stdio MCPs only |
-| `args` | Arguments passed to the command — stdio MCPs only |
-| `docker_compose` | Path to a Docker Compose file (relative to repo root); installer auto-starts these |
-| `scope` | `"user"` (global) or `"project"` (Claude Code only) |
-| `env` | Static environment variables to pass |
-| `required_env` | Env vars that must be set — installer shows a loud `[REQUIRED]` warning if missing |
-| `setup_instructions` | Human-readable text shown when `required_env` keys are absent |
+| `args` | Arguments passed to the command — stdio MCPs only. `${VAR}` placeholders are substituted at install time |
+| `headers` | HTTP headers — `http`/`sse` MCPs only. `${VAR}` placeholders in values are substituted at install time |
+| `scope` | `"user"` (global, default) or `"project"` (Claude Code only) |
+| `env` | Environment variables passed to a stdio MCP server |
+| `required_env` | Env vars that must be set — if any is missing the MCP is skipped with a loud `[REQUIRED]` warning |
+| `setup_instructions` | Human-readable text printed after the `[REQUIRED]` warning (Claude Code install only) |
+
+Fields are defined by the `MCP` struct in `cli/internal/mcp/types.go`; any other key is ignored. Per-field detail and precedence rules: [MCP Guide](../development/mcp-guide.md).
 
 ---
 
@@ -55,7 +59,7 @@ MCP servers are declared in `mcps/registry.json`. Two transport types are suppor
 | Name | Transport | Description |
 |------|-----------|-------------|
 | context7 | stdio | Up-to-date library documentation and code examples for any package |
-| ui-inspector | stdio | UI/UX inspection via headless Chromium. **Not vendored** — lives at [mcp-ui-inspector](https://github.com/alexandrocuma/mcp-ui-inspector); clone it, run `./setup.sh`, and set `UI_INSPECTOR_DIR`. The installer shows a `[REQUIRED]` warning with setup guidance until it is set. |
+| ui-inspector | stdio | UI/UX inspection via headless Chromium. **Not vendored** — lives at [mcp-ui-inspector](https://github.com/alexandrocuma/mcp-ui-inspector); clone it, run `./setup.sh`, and set `UI_INSPECTOR_DIR` (substituted into `args`). Until it is set the installer skips it with a `[REQUIRED]` warning (plus setup guidance, on Claude Code). |
 
 ---
 
@@ -89,19 +93,15 @@ cp mcps/.env.example mcps/.env
 ./install.sh
 ```
 
-The installer loads `mcps/.env` and passes values as `--env KEY=VALUE` to `claude mcp add` (stored permanently in Claude Code's MCP config) or writes them into opencode's `config.json`. Any MCP whose `required_env` keys are missing is skipped with a loud red `[REQUIRED]` warning until keys are provided.
+The installer reads values from `mcps/.env` and the shell environment (`mcps/.env` wins — `cli/cmd/registry.go` `buildEnv`). For stdio MCPs it passes them as `-e KEY=VALUE` to `claude mcp add` (stored permanently in Claude Code's MCP config) or writes them into the entry's `env` in opencode's `config.json`; for HTTP/SSE MCPs they reach the server only through `${VAR}` placeholders in `headers`. Any MCP whose `required_env` keys are missing is skipped with a loud red `[REQUIRED]` warning until keys are provided.
 
 `mcps/.env.example` is committed and documents what keys are expected. Never commit `mcps/.env`.
 
 ---
 
-## Docker-Backed MCPs
+## Server Lifecycle
 
-MCPs with a `docker_compose` field run as local Docker services. The installer starts them automatically:
-
-```bash
-docker compose -f <docker_compose_path> up -d
-```
+The installer only **registers** MCPs — a command for stdio, a URL for HTTP/SSE. It never starts a server: whatever serves an HTTP/SSE URL must already be running when the CLI connects. There is no `docker_compose` field; installer-managed Docker services were removed with `scripts/docker_services.py` in `61f6c9f`. See [MCP Guide](../development/mcp-guide.md).
 
 ---
 
@@ -109,7 +109,7 @@ docker compose -f <docker_compose_path> up -d
 
 1. Add an entry to `mcps/registry.json`
 2. If it needs secrets, add key names to `required_env`, set `setup_instructions`, document keys in `mcps/.env.example`
-3. If it runs as a local Docker service, add a `docker_compose` field and create `mcps/<name>/docker-compose.yml`
+3. If it is served over HTTP/SSE, set `transport` and `url` (plus `headers` for auth) — and run the server yourself; the installer won't start it
 4. Run `./install.sh --mcps-only` to register it (or `--dry-run` to preview)
 
 ---
@@ -119,4 +119,9 @@ docker compose -f <docker_compose_path> up -d
 | | Claude Code | opencode |
 |---|---|---|
 | Install method | `claude mcp add --scope <scope>` | Written to `~/.config/opencode/config.json` |
+| HTTP/SSE entry | `--transport http\|sse` + `-H "Key: Value"` per header | `"type": "remote"` with `url` (and `headers`) |
+| Re-running install | Already-installed MCPs are skipped | Unchanged entries skipped; changed entries overwritten |
+| Force refresh | `./install.sh --reinstall-mcps` (remove, then re-add) | same |
 | Uninstall method | `claude mcp remove` | Entry removed from config.json |
+
+Sources: `cli/internal/mcp/claude.go`, `cli/internal/mcp/opencode.go`, `cli/cmd/install.go`, `uninstall.sh`.
