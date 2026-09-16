@@ -69,7 +69,7 @@ Full guide: [mcp-guide](../development/mcp-guide.md#adding-a-new-mcp-to-the-fram
    - Asset root resolution or embedded extraction: `cli/internal/repo/`
    - A hook blocking or allowing the wrong thing: **both** `hooks/claude-code/<name>.sh` and `hooks/opencode/<name>.js`
    - Agent or skill behavior: `agents/<name>.md` / `skills/<name>/SKILL.md`
-   - Uninstall: `uninstall.sh` (its tests extract the embedded python, see `uninstall.test.sh`)
+   - Uninstall: `uninstall.sh` (its tests extract the embedded python and run the script in a temp `HOME` with a stub `devexp`, see `uninstall.test.sh`); opencode plugin removal rules: `cli/cmd/uninstall.go` → `hooks.UninstallOpencode`
 2. **Reproduce with a failing test first.**
    - Go: add a case to the package's table test. `f06b67e` added `TestIsForeignDevexpHook` and `TestPruneForeignDevexpHooks` cases alongside the fix. `f41c79f` rewrote an assertion that "encoded the bug's premise" so each case could carry its own expectation.
    - Hooks: add the case to **both** mirrored suites. `f398a82` changed `secret-guard.test.sh` and `secret-guard.test.js` together, and `5e11596` did the same for `dangerous-cmd-guard`. If the hook fails open, add a case to `hooks/claude-code/fail-closed.test.sh` (`2afc3af`).

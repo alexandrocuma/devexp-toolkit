@@ -120,6 +120,12 @@ func LoadRegistry(path string) (Registry, error) {
 	if err != nil {
 		return nil, err
 	}
+	return ParseRegistry(data)
+}
+
+// ParseRegistry decodes hooks/registry.json content, for callers that read it
+// from somewhere other than a file on disk (the binary's embedded assets).
+func ParseRegistry(data []byte) (Registry, error) {
 	var r Registry
 	return r, json.Unmarshal(data, &r)
 }

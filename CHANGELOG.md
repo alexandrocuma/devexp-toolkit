@@ -73,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     is in the legacy set and its content carries the devexp header; a same-named
     user file is kept with a warning. The legacy `config.json` `plugin` entry is
     removed only on an exact match, and the rest of `config.json` keeps its bytes;
-    a symlinked `config.json` is left untouched with a warning.
+    a symlinked or read-only `config.json` is left untouched with a warning.
   - Nothing is written or removed until every check has passed:
     - It refuses a `plugins/devexp/` that is a symlink (it may point at a
       source checkout), and a `plugins/` link that is dangling or doesn't
@@ -87,12 +87,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       recorded in the manifest. A recorded, damaged one is repaired.
   - It never deletes anything outside `devexp.js` and a real `devexp/`
     directory, and never deletes through a symlink. Files are replaced atomically (temp file + rename). Removing
-    the plugin is all-or-nothing: if `devexp.js` has to stay (a symlink, or
-    it can't be deleted), `devexp/` stays too and the output says the hooks
-    remain active.
+    the plugin is all-or-nothing: if `devexp.js` has to stay (a symlink, it
+    can't be deleted, or it isn't recognised as devexp's — neither recorded nor
+    carrying the devexp header, for example after an editor added
+    `// @ts-check`), `devexp/` stays too and the output says why.
   - `--dry-run` lists every file and writes nothing.
   - **Clone users:** run `rm bin/devexp && ./install.sh`. `install.sh` never
     rebuilds an existing binary.
+
+- **opencode: `uninstall.sh` no longer aborts and now removes the hook plugin
+  (#109).** A top-level `local` crashed every opencode uninstall after the agents
+  were gone, and a malformed `config.json` crashed its MCP step; the plugin was
+  left behind. Its plugin cleanup also knew only 6 legacy flat file names.
+  - Plugin removal is delegated to a hidden `devexp uninstall --target opencode`
+    that applies exactly the install's rules, from the same code: only
+    devexp-owned files (recorded, or recognised on disk when the manifest is
+    lost), never through a symlinked `plugins/`, a refusal for a symlinked
+    `devexp/` or a dangling `plugins/` link, all-or-nothing on `devexp.js` +
+    `devexp/` (so an edited, unrecognised `devexp.js` never loses its
+    `hooks.json` and blocks every opencode tool call), and the byte-preserving
+    legacy `config.json` edit. A Go test pins it to the every-hook-disabled
+    install on every fixture. It refuses to run when `HOME` is unset, empty or
+    relative.
+  - It runs before the MCP step rewrites `config.json`. The opencode manifest's
+    `plugins` key is then cut down to what had to stay, only when the manifest
+    is a regular file that loaded cleanly, never through a symlink (a dangling
+    link no longer creates its target) and never on `--dry-run`.
+  - An install with only the plugin (no agents) is now detected.
+  - The opencode MCP step, now reachable, never fails the uninstall: a
+    malformed or oddly shaped `config.json` is skipped with a message, a
+    symlinked one is left untouched (as the plugin step does), and one that
+    can't be written (read-only file or directory) is left as it was with a
+    warning, so the later steps still run. Its save replaces the file
+    atomically, keeping its mode.
+  - `uninstall.sh` finds the binary through `DEVEXP_BIN` (set by the wizard's
+    Remove action), then `bin/devexp`, then `PATH`. Without one that has the
+    command, it warns, leaves the plugin in place, prints the rebuild hint
+    (`rm bin/devexp && ./install.sh`) and still exits 0.
 
 - **An unreadable install manifest crashed `devexp install`.** When
   `.devexp-manifest.json` couldn't be read (for example a directory at that

@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"devexp/internal/ui"
 )
@@ -271,20 +272,22 @@ func InstallOpencode(registry Registry, repoDir, pluginsDir string, disabled, re
 	}
 
 	if len(files) == 0 {
-		// Only removals are left, so devexp.js is among them.
-		if why := entryKeepReason(pluginsDir); why != "" {
-			ui.Warn(fmt.Sprintf("opencode plugin left installed and its hooks remain active: %s is %s, so devexp.js and devexp/ are both kept (removing only devexp/ would block every tool call). Move devexp.js aside and re-run to remove the plugin.",
-				filepath.Join(pluginsDir, opencodeEntry), why))
-			return stale, nil
+		// Only removals are left. Uninstall removes the plugin through the same
+		// helper, so the two cannot drift apart.
+		if entryKeepReason(pluginsDir, stale) == "" {
+			ui.Skipped("opencode plugin", "every hook is disabled — nothing to install")
 		}
-		ui.Skipped("opencode plugin", "every hook is disabled — nothing to install")
+		if kept := removeWholeOpencodePlugin(pluginsDir, stale, "no longer installed", dryRun); len(kept) > 0 {
+			return kept, nil
+		}
+		return nil, nil
 	}
 
 	if dryRun {
 		for _, d := range dests {
 			ui.DryRun("write " + filepath.Join(pluginsDir, filepath.FromSlash(d)))
 		}
-	} else if len(files) > 0 {
+	} else {
 		if err := os.MkdirAll(filepath.Join(pluginsDir, opencodeDir), 0755); err != nil {
 			return nil, err
 		}
@@ -298,17 +301,51 @@ func InstallOpencode(registry Registry, repoDir, pluginsDir string, disabled, re
 		}
 	}
 
-	kept := removePluginFiles(pluginsDir, stale, dryRun)
-	if len(files) == 0 && len(kept) == 0 {
+	kept := removePluginFiles(pluginsDir, stale, "no longer installed", dryRun)
+	ui.Success(fmt.Sprintf("opencode hooks (%d): %s", len(names), strings.Join(names, ", ")))
+	return append(dests, kept...), nil
+}
+
+// removeWholeOpencodePlugin removes stale, the files of a plugin that is no
+// longer installed at all, once the roots have been checked. It is all-or-
+// nothing on the entry: if a devexp.js on disk has to stay, everything stays,
+// because an entry without its hooks.json blocks every opencode tool call.
+// devexp/ is pruned once nothing was kept. It returns the paths it kept, which
+// the manifest should go on recording. reason labels the dry-run lines.
+func removeWholeOpencodePlugin(pluginsDir string, stale []string, reason string, dryRun bool) []string {
+	if why := entryKeepReason(pluginsDir, stale); why != "" {
+		ui.Warn(fmt.Sprintf("opencode plugin left installed and its hooks remain active: %s is %s, so devexp.js and devexp/ are both kept (removing only devexp/ would block every tool call). Move devexp.js aside and re-run to remove the plugin.",
+			filepath.Join(pluginsDir, opencodeEntry), why))
+		return stale
+	}
+	kept := removePluginFiles(pluginsDir, stale, reason, dryRun)
+	if len(kept) == 0 {
 		pruneOpencodeDir(pluginsDir, dryRun)
 	}
-	if len(files) > 0 {
-		ui.Success(fmt.Sprintf("opencode hooks (%d): %s", len(names), strings.Join(names, ", ")))
-	}
-	if len(dests)+len(kept) == 0 {
+	return kept
+}
+
+// UninstallOpencode removes devexp's opencode plugin by install's rules: the
+// recorded paths devexp owns plus the devexp files recognised on disk, never
+// anything through a symlinked plugins/, and all-or-nothing on the entry. It
+// returns the plugin paths still on disk, which the manifest should keep
+// recording. An error means the roots were refused and nothing was removed.
+//
+// registry may be nil: ownership by path needs none, and without it only the
+// modules a registry would name go unrecognised on disk.
+func UninstallOpencode(registry Registry, pluginsDir string, recorded []string, dryRun bool) ([]string, error) {
+	stale := stalePlugins(pluginsDir, registry, recorded, nil)
+	if len(stale) == 0 {
+		ui.Skipped("opencode plugin", "not installed")
 		return nil, nil
 	}
-	return append(dests, kept...), nil
+	if _, err := checkPluginRoots(pluginsDir); err != nil {
+		return stale, err
+	}
+	if kept := removeWholeOpencodePlugin(pluginsDir, stale, "uninstall", dryRun); len(kept) > 0 {
+		return kept, nil
+	}
+	return nil, nil
 }
 
 // checkPluginRoots checks the two directories every plugin write and removal
@@ -526,11 +563,18 @@ func ownedOnDisk(pluginsDir string, registry Registry) []string {
 	return out
 }
 
-// entryKeepReason says why a stale devexp.js must not be removed, or "" when
-// it may. It is only asked about an entry stalePlugins returned, which is
-// recorded in the manifest or carries the devexp header, so what is left to
-// check is its kind: a symlink is someone's own setup and is never removed.
-func entryKeepReason(pluginsDir string) string {
+// entryKeepReason says why the devexp.js on disk must stay, or "" when there
+// is none or it may be removed with the rest of stale. Whenever it must stay,
+// devexp/ stays with it: removing only devexp/ would leave an entry that
+// blocks every opencode tool call.
+//
+//   - a symlink is someone's own setup and is never removed;
+//   - a non-regular or unreadable one can't be removed safely;
+//   - a regular one that isn't in stale is not recognised as devexp's: it is
+//     neither recorded in the manifest nor carrying the devexp header. That is
+//     almost always devexp's own entry, edited (a `// @ts-check` line, a BOM),
+//     and keeping its devexp/ costs at worst some clutter.
+func entryKeepReason(pluginsDir string, stale []string) string {
 	fi, err := os.Lstat(filepath.Join(pluginsDir, opencodeEntry))
 	switch {
 	case os.IsNotExist(err):
@@ -541,6 +585,8 @@ func entryKeepReason(pluginsDir string) string {
 		return "a symlink"
 	case !fi.Mode().IsRegular():
 		return "not a regular file"
+	case !contains(stale, opencodeEntry):
+		return "not recognised as devexp's (not recorded in the manifest, no devexp header)"
 	}
 	return ""
 }
@@ -551,7 +597,7 @@ func entryKeepReason(pluginsDir string) string {
 // are removed. plugins/ and devexp/ are re-checked right before, and nothing
 // is removed through a symlinked plugins/: every file is kept (and stays
 // recorded, so a run after the link is replaced can clean up).
-func removePluginFiles(pluginsDir string, stale []string, dryRun bool) []string {
+func removePluginFiles(pluginsDir string, stale []string, reason string, dryRun bool) []string {
 	if len(stale) == 0 {
 		return nil
 	}
@@ -570,7 +616,7 @@ func removePluginFiles(pluginsDir string, stale []string, dryRun bool) []string 
 	}
 	if dryRun {
 		for _, rel := range stale {
-			ui.DryRun(fmt.Sprintf("remove %s (no longer installed)", filepath.Join(pluginsDir, filepath.FromSlash(rel))))
+			ui.DryRun(fmt.Sprintf("remove %s (%s)", filepath.Join(pluginsDir, filepath.FromSlash(rel)), reason))
 		}
 		return nil
 	}
@@ -698,6 +744,9 @@ func removeLegacy(p, label string, dryRun bool) error {
 	return nil
 }
 
+// accessWriteOK is access(2)'s W_OK: whether the current user may write a path.
+const accessWriteOK = 0x2
+
 // removeLegacyConfigEntry drops every element of config.json's top-level
 // `plugin` array that is exactly the string entry, and the key itself if the
 // array ends up empty. The edit is spliced into the original bytes, so
@@ -753,6 +802,14 @@ func removeLegacyConfigEntry(configPath, entry string, dryRun bool) error {
 	}
 	if !reflect.DeepEqual(before, after) {
 		return fmt.Errorf("legacy plugin entry removal changed more than the entry; %s left untouched", configPath)
+	}
+
+	// A config.json the user made read-only stays read-only. The atomic rename
+	// would succeed in a writable directory and silently replace it; the
+	// uninstall.sh MCP step applies the same rule.
+	if syscall.Access(configPath, accessWriteOK) != nil {
+		ui.Warn(fmt.Sprintf("%s is not writable, so it was left untouched — remove the plugin entry %q from it by hand", configPath, entry))
+		return nil
 	}
 
 	msg := fmt.Sprintf("plugin entry %s from %s", entry, configPath)
