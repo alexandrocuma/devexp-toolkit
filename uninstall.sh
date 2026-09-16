@@ -24,6 +24,13 @@ find_devexp_bin() { for c in "${DEVEXP_BIN:-}" "$REPO_DIR/bin/devexp" "$(command
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ── HOME ──────────────────────────────────────────────────────────────────────
+# Every path below is built from HOME. Unset, empty or relative, it would point
+# at / or at the current directory (a dotfiles checkout, say), so refuse before
+# looking at anything — the same rule `devexp install` / `devexp uninstall`
+# apply (#126).
+[[ "${HOME:-}" == /* ]] || die "HOME is \"${HOME:-}\", not an absolute path — refusing to remove anything; set HOME and re-run"
+
 [[ -d "$REPO_DIR/agents" ]] || die "agents/ directory not found. Is this the devexp repo?"
 [[ -d "$REPO_DIR/skills" ]] || die "skills/ directory not found. Is this the devexp repo?"
 

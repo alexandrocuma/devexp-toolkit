@@ -13,12 +13,12 @@ CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `ma
 | Unit — Go CLI | Go stdlib `testing` only; no assertion or mock library in `cli/go.mod` | `cli/**/<file>_test.go`, next to the code, same package | `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover)` — `ci.yml:17-21` |
 | Hook behaviour — Claude Code | plain bash script, `pass`/`fail` counters | `hooks/claude-code/<hook>.test.sh` | `for f in hooks/claude-code/*.test.sh; do bash "$f" \|\| exit 1; done` — `ci.yml:30-34` |
 | Hook behaviour — opencode | plain `node` ESM script, no framework (Node 22 in CI) | `hooks/opencode/<hook>.test.js` | `for f in hooks/opencode/*.test.js; do node "$f" \|\| exit 1; done` — `ci.yml:35-39` |
-| Installer script | plain bash script | repo root `*.test.sh` (today only `uninstall.test.sh`) | `for f in ./*.test.sh; do bash "$f" \|\| exit 1; done` — `ci.yml:40-45` |
+| Installer script | plain bash script | repo root `*.test.sh` (`uninstall.test.sh`, `remote-install.test.sh`) | `for f in ./*.test.sh; do bash "$f" \|\| exit 1; done` — `ci.yml:40-45` |
 | Integration | N/A — no separate suite. Go tests already do real file I/O inside `t.TempDir()`, and each hook `.test.sh` executes the real hook script against a real tool-call JSON envelope | — |
 | E2E | N/A — no automated end-to-end install test. `runInstall`, `doInstallClaude`, `doInstallOpencode` and `runWizard` have 0% coverage. Manual check: `./install.sh --dry-run` | — |
 | Agents / skills (Markdown) | N/A — no automated validation. Edit → `./install.sh` → try it in Claude Code or opencode | `docs/development/README.md` (Notes) |
 
-At this commit: 10 Go packages with tests; `dangerous-cmd-guard.test.sh` 25 cases, `fail-closed.test.sh` 10, `secret-guard.test.sh` 37; `dangerous-cmd-guard.test.js` 25, `devexp-plugin.test.js` 130, `secret-guard.test.js` 38; `uninstall.test.sh` 77.
+At this commit: 10 Go packages with tests; `dangerous-cmd-guard.test.sh` 25 cases, `fail-closed.test.sh` 10, `secret-guard.test.sh` 37; `dangerous-cmd-guard.test.js` 25, `devexp-plugin.test.js` 130, `secret-guard.test.js` 38; `uninstall.test.sh` 89, `remote-install.test.sh` 24.
 
 Run one test:
 
@@ -55,9 +55,10 @@ node hooks/opencode/secret-guard.test.js
   - Failure mode: add every new Claude Code hook to `hooks/claude-code/fail-closed.test.sh` — `check <hook> 2 guard` for security guards (must fail **closed**), `check <hook> 0 advisory` for advisory hooks (may fail open, but must print `internal error`).
 - **Installer script tests:** never run `uninstall.sh` against your real `HOME` — it deletes real files. `uninstall.test.sh` does three things:
   - extracts the embedded python heredocs with `awk` and runs them against fixture `settings.json` / `config.json` content in a `mktemp -d` dir;
-  - runs `uninstall.sh` itself with `--yes`, stdin closed, `env -i` and a temp `HOME`, with stub `devexp` binaries that log their calls (`make_stub`, `make_old_stub`, `run_uninstall`), to cover detection, binary lookup, step order and the crash regressions;
+  - runs `uninstall.sh` itself with `--yes`, stdin closed, `env -i` and a temp `HOME`, with stub `devexp` binaries that log their calls (`make_stub`, `make_old_stub`, `run_uninstall`), to cover detection, binary lookup, step order, the crash regressions and the HOME refusal (unset, empty and relative `HOME` from a temp cwd holding a dotfiles-style tree, which must stay byte-identical — `tree_sum`);
   - when `go` is on `PATH` and the assets are staged, builds the real binary and does an install → uninstall round trip (otherwise it prints `SKIP`).
   The rules for which plugin files may be removed are tested in Go: `TestUninstallOpencode` and `TestUninstallOpencode_MatchesInstall` (every fixture must leave the same tree as an install with every hook disabled) in `cli/internal/hooks/opencode_test.go`, and `cli/cmd/uninstall_test.go` for the command (manifest, legacy config, registry, asset cache).
+- **`remote-install.test.sh`** covers only `scripts/remote-install.sh`'s install-directory check, offline: every run uses `env -i`, a temp cwd and a stub `curl` first on `PATH` that logs and fails, so "curl was called" means the check passed and "not called" means it refused before downloading. Never run the script itself without a stub `curl` in a test.
 
 Gotchas when running tests:
 

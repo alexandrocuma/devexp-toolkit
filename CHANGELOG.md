@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (`targetHome` in `cli/cmd/paths.go`), and `claudeTargetPaths` /
     `opencodeTargetPaths` go through it, so they can no longer return a relative
     target path. `devexp uninstall` behaves and reports as before.
+  - `uninstall.sh` refuses the same HOME values (exit 1,
+    `refusing to remove anything`) before it looks at anything. Before, an
+    empty HOME pointed it at `/.claude/…` and a relative one at the current
+    directory.
+  - `scripts/remote-install.sh` refuses, before downloading, when
+    `DEVEXP_INSTALL_DIR` is unset and HOME is unset, empty or relative (the
+    default `~/.local/bin` would have been `/.local/bin` or a path under the
+    current directory), and when `DEVEXP_INSTALL_DIR` is relative. An absolute
+    `DEVEXP_INSTALL_DIR` still works without HOME.
 
 ## [0.8.0] - 2026-09-16
 

@@ -413,6 +413,41 @@ check "malformed config.json: no python traceback" out_lacks "Traceback"
 check "malformed config.json: left as it was" test "$(cat "$E/h/.config/opencode/config.json")" = "{not json"
 check "malformed config.json: the run reaches the end" out_has "Uninstall complete."
 
+# ── HOME refusal (#126) ──────────────────────────────────────────────────────
+# With HOME unset, empty or relative, every path would point at / or under the
+# current directory. uninstall.sh refuses before it looks at anything: a
+# dotfiles-style tree in the cwd — with a Claude Code devexp install at the top
+# and under home/ — stays byte for byte as it was, and no binary is called.
+# Claude Code only, so an unguarded run removes without stopping at the menu.
+tree_sum() { # $1=dir -> every path, then every file's checksum
+    (cd "$1" && find . -print | LC_ALL=C sort && find . -type f -exec cksum {} + | LC_ALL=C sort)
+}
+for home_case in unset empty relative; do
+    new_env
+    printf '# agent\n' > "$E/r/agents/some-agent.md"
+    C="$E/cwd"
+    for d in "$C" "$C/home"; do
+        mkdir -p "$d/.claude/agents" "$d/.claude/skills/some-skill" "$d/.config/opencode"
+        printf '# agent\n' > "$d/.claude/agents/some-agent.md"
+        printf '# skill\n' > "$d/.claude/skills/some-skill/SKILL.md"
+        printf '{"hooks":{}}' > "$d/.claude/settings.json"
+        printf '{"mcp":{}}' > "$d/.config/opencode/config.json"
+    done
+    make_stub "$E/stubs/a" A
+    case "$home_case" in
+        unset)    home_env=() ;;
+        empty)    home_env=(HOME=) ;;
+        relative) home_env=(HOME=home) ;;
+    esac
+    before="$(tree_sum "$C")"
+    (cd "$C" && env -i ${home_env[@]+"${home_env[@]}"} PATH="$E/bin:/usr/bin:/bin" CALLS="$E/calls" DEVEXP_BIN="$E/stubs/a" \
+        /bin/bash "$E/r/uninstall.sh" --yes </dev/null > "$E/out" 2>&1; echo $? > "$E/rc")
+    check "HOME $home_case: exits non-zero" test "$(cat "$E/rc")" != 0
+    check "HOME $home_case: says why" out_has "not an absolute path — refusing to remove anything; set HOME and re-run"
+    check "HOME $home_case: the current directory is unchanged" test "$(tree_sum "$C")" = "$before"
+    check "HOME $home_case: the binary is not called" calls_are ""
+done
+
 # ── Round trip with the real binary ──────────────────────────────────────────
 if command -v go >/dev/null 2>&1 && [ -d "$ROOT/cli/internal/assets/hooks" ]; then
     new_env

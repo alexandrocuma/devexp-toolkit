@@ -13,7 +13,10 @@ This detects your OS/architecture, downloads the matching release binary into `~
 ```bash
 DEVEXP_VERSION=v1.2.3 curl -fsSL .../remote-install.sh | bash   # install a specific tag
 DEVEXP_SKIP_RUN=1 curl -fsSL .../remote-install.sh | bash       # download only, don't run install
+curl -fsSL .../remote-install.sh | DEVEXP_INSTALL_DIR=/opt/bin bash  # put the binary somewhere else (absolute path)
 ```
+
+The script refuses to run, before downloading anything, when `DEVEXP_INSTALL_DIR` is unset and `HOME` is unset, empty or not an absolute path (the default `~/.local/bin` would otherwise land in `/` or under the current directory), or when `DEVEXP_INSTALL_DIR` itself is relative. An absolute `DEVEXP_INSTALL_DIR` works without `HOME`, but `devexp install`, which runs next, still needs one — combine it with `DEVEXP_SKIP_RUN=1` in that case.
 
 You can also grab a binary manually from the [Releases page](https://github.com/alexandrocuma/devexp-toolkit/releases) — pick the archive matching your OS/arch (`devexp-toolkit_<os>_<arch>.tar.gz`), extract it, and run `./devexp install`. Run `devexp --version` any time to confirm what's installed.
 
@@ -114,6 +117,7 @@ Shows every add, update, and removal devexp would make — including stale-file 
 ```
 
 **Behavior:**
+- Refuses to run (nothing is read or removed, exit 1) when `HOME` is unset, empty or not an absolute path — every path it removes from is built from `HOME`
 - Detects which CLIs have devexp agents installed; asks which to remove from only when both are found
 - Removes agents from the appropriate directory for each CLI
 - Skills (`~/.claude/skills/`) are only removed if uninstalling from all CLIs that use them

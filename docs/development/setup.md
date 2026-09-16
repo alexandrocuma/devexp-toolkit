@@ -68,13 +68,13 @@ The full list — `CLAUDE.md` shows only the most-used few and links here.
 | Variable | Required | Default | What it controls | Source |
 |----------|----------|---------|------------------|--------|
 | `DEVEXP_DIR` | No | unset | Forces the asset root `devexp install` reads from, skipping the next-to-binary and walk-up-from-cwd lookup. It is also always set to the resolved repo dir in the env used to expand `${VAR}` in MCP entries | `cli/internal/repo/repo.go:46`, `cli/cmd/registry.go:57` |
-| `HOME` | Yes | from shell | Root of every install destination (`~/.claude/…`, `~/.config/opencode/…`). Must be an absolute path: `devexp install` and `devexp uninstall` refuse to run, touching nothing, when it is unset, empty or relative | `cli/cmd/install_claude.go:20`, `cli/cmd/install_opencode.go:19`, `cli/cmd/paths.go` (`targetHome`), `cli/cmd/install.go:78`, `cli/cmd/uninstall.go:80` |
+| `HOME` | Yes | from shell | Root of every install destination (`~/.claude/…`, `~/.config/opencode/…`). Must be an absolute path: `devexp install`, `devexp uninstall` and `uninstall.sh` refuse to run, touching nothing, when it is unset, empty or relative | `cli/cmd/install_claude.go:20`, `cli/cmd/install_opencode.go:19`, `cli/cmd/paths.go` (`targetHome`), `cli/cmd/install.go:78`, `cli/cmd/uninstall.go:80` |
 | `PATH` | Yes | from shell | Which of `claude` / `opencode` is found decides the install targets | `cli/cmd/targets.go:57-72` |
 | `UI_INSPECTOR_DIR` | Only for the `ui-inspector` MCP | empty | Absolute path of a `mcp-ui-inspector` clone, expanded into that MCP's args. Unset → the MCP is skipped with a `[REQUIRED]` notice | `mcps/.env.example`, `mcps/registry.json:15,18` |
 | any var named in an MCP's `required_env` | Per MCP | — | Value substituted for `${VAR}` in MCP args/headers — applies to registry MCPs and to org MCPs added under `mcps` in `devexp.config.json` | `cli/internal/mcp/claude.go:12-19,52`, `cli/internal/config/config.go:33-35` |
-| `DEVEXP_VERSION` | No | latest release | `scripts/remote-install.sh` only — tag to download | `scripts/remote-install.sh:10,39` |
-| `DEVEXP_INSTALL_DIR` | No | `$HOME/.local/bin` | `scripts/remote-install.sh` only — where the binary is placed | `scripts/remote-install.sh:11,16` |
-| `DEVEXP_SKIP_RUN` | No | unset | `scripts/remote-install.sh` only — any value skips running `devexp install` after download | `scripts/remote-install.sh:12,74` |
+| `DEVEXP_VERSION` | No | latest release | `scripts/remote-install.sh` only — tag to download | `scripts/remote-install.sh:10,50` |
+| `DEVEXP_INSTALL_DIR` | No | `$HOME/.local/bin` | `scripts/remote-install.sh` only — where the binary is placed. Must be absolute; when it is unset, `HOME` must be absolute — otherwise the script refuses before downloading | `scripts/remote-install.sh:11,20-30` |
+| `DEVEXP_SKIP_RUN` | No | unset | `scripts/remote-install.sh` only — any value skips running `devexp install` after download | `scripts/remote-install.sh:12,85` |
 
 Where values come from, in precedence order (`cli/cmd/registry.go:51-61`): the process environment, then `DEVEXP_DIR` = resolved repo dir, then `mcps/.env` — **`mcps/.env` wins**. `mcps/.env` is gitignored (`.gitignore:1`) and never embedded in the binary (`scripts/stage-assets.sh:19`); `mcps/.env.example` is the committed template.
 
@@ -86,7 +86,7 @@ Configuration file: `devexp.config.json` at the repo root (model default, disabl
 
 **Problem:** Go changes don't show up after `./install.sh` · **Cause:** `install.sh` builds `bin/devexp` only when it doesn't exist (`install.sh:7`) — it never rebuilds · **Fix:** `rm bin/devexp && ./install.sh`, or `./scripts/stage-assets.sh && (cd cli && go build -o ../bin/devexp .)`. Asset-only edits need no rebuild.
 
-**Problem:** `HOME is "", not an absolute path — refusing to install anything; set HOME and re-run` (or `refusing to remove anything` from `devexp uninstall`) · **Cause:** `HOME` is unset, empty or relative — e.g. under `env -i` or a CI step that clears the environment — and every target path is built from it, so it would resolve under the current directory (`targetHome` in `cli/cmd/paths.go`) · **Fix:** run with an absolute `HOME`, e.g. `HOME=/Users/you ./install.sh`. Nothing was written, registered or backed up.
+**Problem:** `HOME is "", not an absolute path — refusing to install anything; set HOME and re-run` (or `refusing to remove anything` from `devexp uninstall` / `uninstall.sh`, or `refusing to install` from `remote-install.sh`) · **Cause:** `HOME` is unset, empty or relative — e.g. under `env -i` or a CI step that clears the environment — and every target path is built from it, so it would resolve under the current directory (`targetHome` in `cli/cmd/paths.go`) · **Fix:** run with an absolute `HOME`, e.g. `HOME=/Users/you ./install.sh`. Nothing was written, registered or backed up.
 
 **Problem:** `no supported CLI detected (claude or opencode)` · **Cause:** neither CLI is on `PATH` (`cli/cmd/targets.go:31`) · **Fix:** install Claude Code or opencode, or fix `PATH`.
 
