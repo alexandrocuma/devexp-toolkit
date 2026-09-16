@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`internal/repo` coverage: 28.3% → 83.0%** (sub-ticket C of #69). `extractFS`,
+  `extractEmbedded` and `Resolve` were all at 0% despite being genuinely
+  unit-testable — the package's asset-resolution path had no tests at all.
+  - `extractFS` is exercised against an `fstest.MapFS` fixture: recursive copy,
+    parent directories created, contents preserved, and `.sh` files marked
+    executable while everything else stays `0644`.
+  - `extractEmbedded` covers a fresh extraction with its version marker, reuse of
+    a prior extraction at the same version, and a re-extraction when the version
+    changes — the upgrade path that discards a stale copy.
+  - `Resolve` covers both dispatch arms: a live repo found via `DEVEXP_DIR`, and
+    the embedded-extraction fallback when no repo exists up-tree.
+  - **`os.UserCacheDir` is now indirected through a package-level `userCacheDir`
+    variable** so extraction can be redirected into `t.TempDir()`. Without that
+    seam, testing `extractEmbedded` would write to the developer's real cache and
+    make results depend on what was already there. This is the one production
+    change in an otherwise test-only ticket.
+  - Assertion strength was checked by mutation rather than inferred from the
+    coverage number: breaking `extractFS`'s executable-bit logic turns the
+    relevant subtest red and leaves the others green.
+
 - **`/release` — the release phase, as its own command.** Release is a named phase of the development cycle, but it existed only as `/deliver` Phase 6, which made it unreachable on its own. The practical consequence: declining the release gate left **no way to resume** — the only options were re-running `/deliver` (redoing implementation) or releasing by hand, which is the main reason worktrees accumulated and why `/cleanup` had to exist. `/release <ticket>` now closes that loop.
   - **Process:** read-only preflight → gate → merge → changelog → version bump → tag and publish → retire artifacts → report.
   - **The gate is its own decision.** Consent is never inherited from `/deliver`'s Phase 1 "proceed" — release is irreversible and touches shared systems.
