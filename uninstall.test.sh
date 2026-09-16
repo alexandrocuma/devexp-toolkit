@@ -122,6 +122,36 @@ expect "removes both roots' copies of the same hook" \
   "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"$MINE\"}]},{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"$FOREIGN\"}]}]}}" \
   ""
 
+# A relative registration (left by an install from a relative DEVEXP_DIR) is
+# devexp's too; a relative user hook sharing a basename is not (#126).
+expect "removes a relative devexp hook" \
+  "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"hooks/claude-code/secret-guard.sh\"}]}]}}" \
+  ""
+
+expect "removes a ./-relative devexp hook, keeps a relative user hook" \
+  "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Glob\",\"hooks\":[{\"type\":\"command\",\"command\":\"./hooks/claude-code/graphify-read-guard.sh\"},{\"type\":\"command\",\"command\":\"my-hooks/secret-guard.sh\"}]}]}}" \
+  "my-hooks/secret-guard.sh"
+
+# Only a plain path is devexp's: a command that expands a variable, takes an
+# argument or is wrapped is the user's, and so is one under a directory that
+# merely ends in hooks/claude-code/ (#126).
+expect "keeps a \$CLAUDE_PROJECT_DIR hook" \
+  "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"\$CLAUDE_PROJECT_DIR/hooks/claude-code/secret-guard.sh\"}]}]}}" \
+  "\$CLAUDE_PROJECT_DIR/hooks/claude-code/secret-guard.sh"
+
+expect "keeps quoted, ~, \$HOME and wrapped hooks" \
+  "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"\\\"\$CLAUDE_PROJECT_DIR\\\"/hooks/claude-code/secret-guard.sh\"},{\"type\":\"command\",\"command\":\"~/vendor/hooks/claude-code/secret-guard.sh\"},{\"type\":\"command\",\"command\":\"\$HOME/vendor/hooks/claude-code/secret-guard.sh\"},{\"type\":\"command\",\"command\":\"bash $FOREIGN\"},{\"type\":\"command\",\"command\":\"FOO=1 $FOREIGN\"}]}]}}" \
+  "\"\$CLAUDE_PROJECT_DIR\"/hooks/claude-code/secret-guard.sh
+~/vendor/hooks/claude-code/secret-guard.sh
+\$HOME/vendor/hooks/claude-code/secret-guard.sh
+bash $FOREIGN
+FOO=1 $FOREIGN"
+
+expect "keeps a my-hooks/claude-code/ hook, relative and absolute" \
+  "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"my-hooks/claude-code/secret-guard.sh\"},{\"type\":\"command\",\"command\":\"$OTHER/my-hooks/claude-code/secret-guard.sh\"}]}]}}" \
+  "my-hooks/claude-code/secret-guard.sh
+$OTHER/my-hooks/claude-code/secret-guard.sh"
+
 # ── opencode (#109) ──────────────────────────────────────────────────────────
 
 ok() { pass=$((pass+1)); }
@@ -412,6 +442,41 @@ check "malformed config.json: no top-level local error" out_lacks "can only be u
 check "malformed config.json: no python traceback" out_lacks "Traceback"
 check "malformed config.json: left as it was" test "$(cat "$E/h/.config/opencode/config.json")" = "{not json"
 check "malformed config.json: the run reaches the end" out_has "Uninstall complete."
+
+# ── HOME refusal (#126) ──────────────────────────────────────────────────────
+# With HOME unset, empty or relative, every path would point at / or under the
+# current directory. uninstall.sh refuses before it looks at anything: a
+# dotfiles-style tree in the cwd — with a Claude Code devexp install at the top
+# and under home/ — stays byte for byte as it was, and no binary is called.
+# Claude Code only, so an unguarded run removes without stopping at the menu.
+tree_sum() { # $1=dir -> every path, then every file's checksum
+    (cd "$1" && find . -print | LC_ALL=C sort && find . -type f -exec cksum {} + | LC_ALL=C sort)
+}
+for home_case in unset empty relative; do
+    new_env
+    printf '# agent\n' > "$E/r/agents/some-agent.md"
+    C="$E/cwd"
+    for d in "$C" "$C/home"; do
+        mkdir -p "$d/.claude/agents" "$d/.claude/skills/some-skill" "$d/.config/opencode"
+        printf '# agent\n' > "$d/.claude/agents/some-agent.md"
+        printf '# skill\n' > "$d/.claude/skills/some-skill/SKILL.md"
+        printf '{"hooks":{}}' > "$d/.claude/settings.json"
+        printf '{"mcp":{}}' > "$d/.config/opencode/config.json"
+    done
+    make_stub "$E/stubs/a" A
+    case "$home_case" in
+        unset)    home_env=() ;;
+        empty)    home_env=(HOME=) ;;
+        relative) home_env=(HOME=home) ;;
+    esac
+    before="$(tree_sum "$C")"
+    (cd "$C" && env -i ${home_env[@]+"${home_env[@]}"} PATH="$E/bin:/usr/bin:/bin" CALLS="$E/calls" DEVEXP_BIN="$E/stubs/a" \
+        /bin/bash "$E/r/uninstall.sh" --yes </dev/null > "$E/out" 2>&1; echo $? > "$E/rc")
+    check "HOME $home_case: exits non-zero" test "$(cat "$E/rc")" != 0
+    check "HOME $home_case: says why" out_has "not an absolute path — refusing to remove anything; set HOME and re-run"
+    check "HOME $home_case: the current directory is unchanged" test "$(tree_sum "$C")" = "$before"
+    check "HOME $home_case: the binary is not called" calls_are ""
+done
 
 # ── Round trip with the real binary ──────────────────────────────────────────
 if command -v go >/dev/null 2>&1 && [ -d "$ROOT/cli/internal/assets/hooks" ]; then

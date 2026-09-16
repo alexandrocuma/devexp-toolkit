@@ -13,7 +13,7 @@
 
 Kinds: `library` · `cli` · `web` · `service` · `ios` · `android` · `desktop` · `other`
 
-Asset edits reach the two targets at different times. Clone users get them on the next `git pull` (the CLI reads assets live from disk — `cli/internal/repo/repo.go:45-63`). Binary users get them only in the next tagged release, because goreleaser stages and embeds them at build time (`.goreleaser.yaml:5-7`, `scripts/stage-assets.sh:12-22`; `mcps/.env` is never embedded — `scripts/stage-assets.sh:19`).
+Asset edits reach the two targets at different times. Clone users get them on the next `git pull` (the CLI reads assets live from disk — `cli/internal/repo/repo.go:70-98`). Binary users get them only in the next tagged release, because goreleaser stages and embeds them at build time (`.goreleaser.yaml:5-7`, `scripts/stage-assets.sh:12-22`; `mcps/.env` is never embedded — `scripts/stage-assets.sh:19`).
 
 ## Cut (shared by all targets)
 
@@ -48,14 +48,14 @@ N/A — there is no pre-production channel. `.goreleaser.yaml` sets no draft, pr
 
 | Stage | How | Gate |
 |-------|-----|------|
-| tag push → published GitHub Release, marked **Latest** | automatic once the `v*` tag is pushed (`.github/workflows/release.yml`). New `remote-install.sh` installs pick it up at once, because the script resolves `releases/latest` (`scripts/remote-install.sh:40-44`) | manual — the tag push at the cut gate. No automated gate (no branch protection; no tests in `release.yml`) |
+| tag push → published GitHub Release, marked **Latest** | automatic once the `v*` tag is pushed (`.github/workflows/release.yml`). New `remote-install.sh` installs pick it up at once, because the script resolves `releases/latest` (`scripts/remote-install.sh:51-55`) | manual — the tag push at the cut gate. No automated gate (no branch protection; no tests in `release.yml`) |
 
 ### Rollback
 
 Strategy: **hotfix-forward.** A pushed tag and its GitHub Release are never deleted or moved — users may already have installed them, and `remote-install.sh` pins by tag. A bad release is replaced by the next patch release through the normal cut. Until that ships:
 
-1. Mark the bad release as a pre-release. GitHub's `releases/latest` excludes pre-releases, so new `remote-install.sh` installs fall back to the previous release (`scripts/remote-install.sh:41`).
-2. Tell users who already installed it to pin the last good release with `DEVEXP_VERSION` (`scripts/remote-install.sh:38`).
+1. Mark the bad release as a pre-release. GitHub's `releases/latest` excludes pre-releases, so new `remote-install.sh` installs fall back to the previous release (`scripts/remote-install.sh:53`).
+2. Tell users who already installed it to pin the last good release with `DEVEXP_VERSION` (`scripts/remote-install.sh:50`).
 3. Fix on a branch, merge, and cut `v<next patch>`; the new release becomes `latest` again.
 
 ```bash
@@ -74,8 +74,8 @@ Each check was run against v0.7.0 on 2026-09-16.
 |--------|-------|--------------|
 | Release workflow | `gh run list --workflow release.yml --limit 1` | `completed success` for the new tag (`.github/workflows/release.yml:1`) |
 | Release assets | `gh release view v<version> --json assets,isDraft,isPrerelease` | 5 assets — the 4 `devexp-toolkit_<os>_<arch>.tar.gz` + `checksums.txt`; `isDraft` and `isPrerelease` false (`.goreleaser.yaml:16-32`) |
-| Latest resolution | `gh release list --limit 1` | the new tag shows as `Latest` — what `remote-install.sh` installs by default (`scripts/remote-install.sh:42`) |
-| Binary downloads and reports its version | `DEVEXP_VERSION=v<version> DEVEXP_INSTALL_DIR="$(mktemp -d)" DEVEXP_SKIP_RUN=1 bash scripts/remote-install.sh` | exits 0 and prints `devexp version <version>` (`scripts/remote-install.sh:50-72`); a temp install dir and `DEVEXP_SKIP_RUN` keep `~/.local/bin` and `~/.claude` untouched |
+| Latest resolution | `gh release list --limit 1` | the new tag shows as `Latest` — what `remote-install.sh` installs by default (`scripts/remote-install.sh:53`) |
+| Binary downloads and reports its version | `DEVEXP_VERSION=v<version> DEVEXP_INSTALL_DIR="$(mktemp -d)" DEVEXP_SKIP_RUN=1 bash scripts/remote-install.sh` | exits 0 and prints `devexp version <version>` (`scripts/remote-install.sh:61-83`); a temp install dir and `DEVEXP_SKIP_RUN` keep `~/.local/bin` and `~/.claude` untouched |
 
 ## Target: toolkit-clone
 
@@ -87,7 +87,7 @@ Every merge to `main` ships this target; the release cut only adds the changelog
 
 ### Build
 
-N/A — there is nothing to build centrally. In a clone the CLI reads assets live from disk (`cli/internal/repo/repo.go:45-63`). Each user's `./install.sh` builds `bin/devexp` only if it is missing (`install.sh:7-18`), so after Go changes users must `rm bin/devexp` first.
+N/A — there is nothing to build centrally. In a clone the CLI reads assets live from disk (`cli/internal/repo/repo.go:70-98`). Each user's `./install.sh` builds `bin/devexp` only if it is missing (`install.sh:7-18`), so after Go changes users must `rm bin/devexp` first.
 
 ### Distribute
 

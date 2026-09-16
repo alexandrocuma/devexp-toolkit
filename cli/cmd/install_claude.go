@@ -17,7 +17,10 @@ import (
 // ── Claude Code ───────────────────────────────────────────────────────────────
 
 func doInstallClaude(opts *installOpts) error {
-	p := claudeTargetPaths(os.Getenv("HOME"), time.Now())
+	p, err := claudeTargetPaths(os.Getenv("HOME"), time.Now())
+	if err != nil {
+		return err
+	}
 	agentsTarget := p.agents
 	skillsTarget := p.skills
 	settingsPath := p.settings

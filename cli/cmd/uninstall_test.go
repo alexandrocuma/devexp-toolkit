@@ -28,7 +28,7 @@ func installedOpencodeHome(t *testing.T) (home string, p opencodePaths) {
 	if out, err := runOpencode(t, repoDir, &config.Config{}); err != nil {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
-	return home, opencodeTargetPaths(home)
+	return home, testOpencodePaths(t, home)
 }
 
 func uninstallOpencode(t *testing.T, home string, dryRun bool) (string, error) {
@@ -242,7 +242,7 @@ func TestDoUninstallOpencode_Manifest(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
 		t.Setenv("DEVEXP_DIR", writeOpencodeHookRepo(t))
-		p := opencodeTargetPaths(home)
+		p := testOpencodePaths(t, home)
 		os.MkdirAll(p.plugins, 0o755) //nolint:errcheck
 		const entry = "export const Mine = async () => ({})\n"
 		os.WriteFile(filepath.Join(p.plugins, "devexp.js"), []byte(entry), 0o644) //nolint:errcheck
@@ -465,42 +465,10 @@ func TestUninstallCmd(t *testing.T) {
 	})
 }
 
-func TestUninstallHome(t *testing.T) {
-	tests := map[string]struct {
-		home    string
-		wantErr bool
-	}{
-		"absolute":      {home: "/home/me"},
-		"cleaned":       {home: "/home/me/"},
-		"empty":         {home: "", wantErr: true},
-		"relative":      {home: "home/me", wantErr: true},
-		"dot":           {home: ".", wantErr: true},
-		"tilde literal": {home: "~", wantErr: true},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			got, err := uninstallHome(tt.home)
-			if tt.wantErr {
-				if err == nil || !strings.Contains(err.Error(), "refusing to remove anything") {
-					t.Errorf("uninstallHome(%q) = %q, %v; want a refusal", tt.home, got, err)
-				}
-				return
-			}
-			if err != nil || got != "/home/me" {
-				t.Errorf("uninstallHome(%q) = %q, %v; want /home/me", tt.home, got, err)
-			}
-		})
-	}
-}
-
 // TestUninstallCmd_RefusesBadHome: with HOME unset, empty or relative, target
 // paths would resolve under the current directory. Nothing there is touched.
 func TestUninstallCmd_RefusesBadHome(t *testing.T) {
-	for name, set := range map[string]func(t *testing.T){
-		"unset":    func(t *testing.T) { t.Setenv("HOME", ""); os.Unsetenv("HOME") }, //nolint:errcheck
-		"empty":    func(t *testing.T) { t.Setenv("HOME", "") },
-		"relative": func(t *testing.T) { t.Setenv("HOME", "home") },
-	} {
+	for name, set := range badHomes {
 		t.Run(name, func(t *testing.T) {
 			cwd := t.TempDir()
 			t.Chdir(cwd)
@@ -515,7 +483,7 @@ func TestUninstallCmd_RefusesBadHome(t *testing.T) {
 			set(t)
 
 			out, err := executeRoot(t, "uninstall", "--target", "opencode")
-			if err == nil || !strings.Contains(err.Error(), "HOME") {
+			if err == nil || !strings.Contains(err.Error(), "HOME") || !strings.Contains(err.Error(), "refusing to remove anything") {
 				t.Errorf("uninstall error = %v, want a HOME refusal\n%s", err, out)
 			}
 			if after := treeBytes(t, cwd); !reflect.DeepEqual(before, after) {
