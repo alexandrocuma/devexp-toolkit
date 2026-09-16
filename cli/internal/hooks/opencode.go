@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"syscall"
 
 	"devexp/internal/ui"
 )
@@ -743,6 +744,9 @@ func removeLegacy(p, label string, dryRun bool) error {
 	return nil
 }
 
+// accessWriteOK is access(2)'s W_OK: whether the current user may write a path.
+const accessWriteOK = 0x2
+
 // removeLegacyConfigEntry drops every element of config.json's top-level
 // `plugin` array that is exactly the string entry, and the key itself if the
 // array ends up empty. The edit is spliced into the original bytes, so
@@ -798,6 +802,14 @@ func removeLegacyConfigEntry(configPath, entry string, dryRun bool) error {
 	}
 	if !reflect.DeepEqual(before, after) {
 		return fmt.Errorf("legacy plugin entry removal changed more than the entry; %s left untouched", configPath)
+	}
+
+	// A config.json the user made read-only stays read-only. The atomic rename
+	// would succeed in a writable directory and silently replace it; the
+	// uninstall.sh MCP step applies the same rule.
+	if syscall.Access(configPath, accessWriteOK) != nil {
+		ui.Warn(fmt.Sprintf("%s is not writable, so it was left untouched — remove the plugin entry %q from it by hand", configPath, entry))
+		return nil
 	}
 
 	msg := fmt.Sprintf("plugin entry %s from %s", entry, configPath)

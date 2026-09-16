@@ -1470,6 +1470,38 @@ func TestCleanLegacyOpencode_Config(t *testing.T) {
 		})
 	}
 
+	t.Run("a read-only config is left untouched in a writable directory", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root can write a read-only file, so access(2) can't observe the mode")
+		}
+		for _, dryRun := range []bool{false, true} {
+			pluginsDir := t.TempDir()
+			configPath := filepath.Join(t.TempDir(), "config.json")
+			content := `{"plugin":["` + filepath.Join(pluginsDir, legacyEntry) + `","a"]}`
+			if err := os.WriteFile(configPath, []byte(content), 0444); err != nil {
+				t.Fatalf("WriteFile error = %v", err)
+			}
+			var err error
+			out := captureOutput(t, func() { err = CleanLegacyOpencode(pluginsDir, configPath, dryRun) })
+			if err != nil {
+				t.Fatalf("dryRun=%v: CleanLegacyOpencode() error = %v", dryRun, err)
+			}
+			if got, _ := os.ReadFile(configPath); string(got) != content {
+				t.Errorf("dryRun=%v: config.json =\n%s\nwant untouched", dryRun, got)
+			}
+			if fi, _ := os.Stat(configPath); fi.Mode().Perm() != 0444 {
+				t.Errorf("dryRun=%v: config.json mode = %v, want 0444 kept", dryRun, fi.Mode().Perm())
+			}
+			if !strings.Contains(out, "is not writable, so it was left untouched") {
+				t.Errorf("dryRun=%v: output has no not-writable warning:\n%s", dryRun, out)
+			}
+			// only the warning mentions the entry — no removed / would-remove line
+			if n := strings.Count(out, "plugin entry"); n != 1 {
+				t.Errorf("dryRun=%v: output reports a removal it didn't make:\n%s", dryRun, out)
+			}
+		}
+	})
+
 	t.Run("a symlinked config is never rewritten or replaced", func(t *testing.T) {
 		pluginsDir := t.TempDir()
 		real := filepath.Join(t.TempDir(), "dotfiles-config.json")

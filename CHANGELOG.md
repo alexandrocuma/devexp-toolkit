@@ -73,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     is in the legacy set and its content carries the devexp header; a same-named
     user file is kept with a warning. The legacy `config.json` `plugin` entry is
     removed only on an exact match, and the rest of `config.json` keeps its bytes;
-    a symlinked `config.json` is left untouched with a warning.
+    a symlinked or read-only `config.json` is left untouched with a warning.
   - Nothing is written or removed until every check has passed:
     - It refuses a `plugins/devexp/` that is a symlink (it may point at a
       source checkout), and a `plugins/` link that is dangling or doesn't
