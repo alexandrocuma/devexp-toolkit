@@ -1,12 +1,16 @@
 package cmd
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"devexp/internal/config"
 	"devexp/internal/hooks"
 	"devexp/internal/mcp"
 )
@@ -539,4 +543,395 @@ func TestRunRemove(t *testing.T) {
 			t.Error("runRemove() error = nil, want non-nil for nonzero exit")
 		}
 	})
+}
+
+// ── Target selection ──────────────────────────────────────────────────────────
+
+// selectTargets is the rule the flag path and the wizard both resolve targets
+// with. It is pure, so every combination is checkable here — including the
+// both-CLI branch, which no dry-run on a single-CLI machine can reach.
+func TestSelectTargets(t *testing.T) {
+	tests := map[string]struct {
+		hasClaude, hasOpencode bool
+		choice                 string
+		wantClaude, wantOpen   bool
+		wantErr                bool
+	}{
+		"only claude installed": {
+			hasClaude: true, wantClaude: true,
+		},
+		"only opencode installed": {
+			hasOpencode: true, wantOpen: true,
+		},
+		"both installed, user picks Claude Code": {
+			hasClaude: true, hasOpencode: true, choice: "Claude Code",
+			wantClaude: true,
+		},
+		"both installed, user picks opencode": {
+			hasClaude: true, hasOpencode: true, choice: "opencode",
+			wantOpen: true,
+		},
+		"both installed, user picks Both": {
+			hasClaude: true, hasOpencode: true, choice: "Both",
+			wantClaude: true, wantOpen: true,
+		},
+		"both installed, unrecognised choice selects neither": {
+			hasClaude: true, hasOpencode: true, choice: "something else",
+		},
+		"neither installed is an error": {
+			wantErr: true,
+		},
+		// choice only matters when both are present; a stray value must not
+		// override what is actually installed.
+		"choice is ignored when only one CLI is present": {
+			hasClaude: true, choice: "opencode",
+			wantClaude: true,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			claude, open, err := selectTargets(tt.hasClaude, tt.hasOpencode, tt.choice)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if claude != tt.wantClaude || open != tt.wantOpen {
+				t.Errorf("= (claude=%v, opencode=%v), want (claude=%v, opencode=%v)",
+					claude, open, tt.wantClaude, tt.wantOpen)
+			}
+		})
+	}
+}
+
+// captureStdout runs fn with os.Stdout redirected to a pipe and returns what
+// was written. ui.Info goes straight to stdout via fmt.Printf with no
+// injectable writer, so this is the only way to assert what was announced.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	os.Stdout = w
+	done := make(chan string, 1)
+	go func() {
+		var b strings.Builder
+		io.Copy(&b, r) //nolint:errcheck
+		done <- b.String()
+	}()
+
+	fn()
+
+	w.Close()
+	os.Stdout = orig
+	return <-done
+}
+
+// announceTargets is the I/O half: it decides nothing and only reports. The
+// both-CLI arm is unreachable here because it calls ui.SelectPlatform, which
+// needs a TTY.
+//
+// Asserting the announcement text matters: without it every case would assert
+// the same empty choice, and the test would pass unchanged if both arms printed
+// the same thing — or nothing at all.
+func TestAnnounceTargets(t *testing.T) {
+	tests := map[string]struct {
+		hasClaude, hasOpencode bool
+		wantOut                string
+		wantAbsent             string
+	}{
+		"claude only announces Claude Code": {
+			hasClaude: true,
+			wantOut:   "Detected: Claude Code",
+			// must not claim opencode is present
+			wantAbsent: "opencode",
+		},
+		"opencode only announces opencode": {
+			hasOpencode: true,
+			wantOut:     "Detected: opencode",
+			wantAbsent:  "Claude Code",
+		},
+		"neither present announces nothing": {
+			wantOut: "",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var choice string
+			var err error
+			out := captureStdout(t, func() {
+				choice, err = announceTargets(tt.hasClaude, tt.hasOpencode)
+			})
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			// An empty choice means no prompt was shown, which is what separates
+			// these arms from the both-CLI one.
+			if choice != "" {
+				t.Errorf("choice = %q, want empty (no prompt should be shown)", choice)
+			}
+			if tt.wantOut == "" {
+				if strings.TrimSpace(out) != "" {
+					t.Errorf("announced %q, want nothing", out)
+				}
+				return
+			}
+			if !strings.Contains(out, tt.wantOut) {
+				t.Errorf("announced %q, want it to contain %q", out, tt.wantOut)
+			}
+			if tt.wantAbsent != "" && strings.Contains(out, tt.wantAbsent) {
+				t.Errorf("announced %q, must not mention %q", out, tt.wantAbsent)
+			}
+		})
+	}
+}
+
+// fakeCLI puts an executable named bin on a PATH containing only that dir, so
+// commandExists finds exactly what the test intends and no real CLI leaks in.
+func fakeCLI(t *testing.T, names ...string) {
+	t.Helper()
+	dir := t.TempDir()
+	for _, n := range names {
+		p := filepath.Join(dir, n)
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", n, err)
+		}
+	}
+	t.Setenv("PATH", dir)
+}
+
+func TestDetectTargets(t *testing.T) {
+	t.Run("finds claude alone", func(t *testing.T) {
+		fakeCLI(t, "claude")
+		claude, open, err := detectTargets()
+		if err != nil || !claude || open {
+			t.Errorf("= (%v, %v, %v), want (true, false, nil)", claude, open, err)
+		}
+	})
+
+	t.Run("finds opencode alone", func(t *testing.T) {
+		fakeCLI(t, "opencode")
+		claude, open, err := detectTargets()
+		if err != nil || claude || !open {
+			t.Errorf("= (%v, %v, %v), want (false, true, nil)", claude, open, err)
+		}
+	})
+
+	t.Run("errors when neither is on PATH", func(t *testing.T) {
+		fakeCLI(t)
+		if _, _, err := detectTargets(); err == nil {
+			t.Errorf("expected an error when no CLI is installed")
+		}
+	})
+}
+
+// ── Install target paths ──────────────────────────────────────────────────────
+
+func TestClaudeTargetPaths(t *testing.T) {
+	now := time.Date(2026, 9, 16, 4, 5, 6, 0, time.UTC)
+	got := claudeTargetPaths("/home/u", now)
+
+	want := claudePaths{
+		agents:   "/home/u/.claude/agents",
+		skills:   "/home/u/.claude/skills",
+		settings: "/home/u/.claude/settings.json",
+		manifest: "/home/u/.claude/.devexp-manifest.json",
+		// now is a parameter precisely so this is assertable rather than
+		// whatever the clock said when the test ran.
+		backup: "/home/u/.claude/.devexp-backup-20260916T040506",
+	}
+	if got != want {
+		t.Errorf("claudeTargetPaths() = %+v, want %+v", got, want)
+	}
+}
+
+func TestOpencodeTargetPaths(t *testing.T) {
+	got := opencodeTargetPaths("/home/u")
+
+	want := opencodePaths{
+		agents: "/home/u/.config/opencode/agents",
+		// skills land in commands/, which is why the field and directory differ
+		skills:   "/home/u/.config/opencode/commands",
+		config:   "/home/u/.config/opencode/config.json",
+		manifest: "/home/u/.config/opencode/.devexp-manifest.json",
+	}
+	if got != want {
+		t.Errorf("opencodeTargetPaths() = %+v, want %+v", got, want)
+	}
+}
+
+// ── Registry loading ──────────────────────────────────────────────────────────
+
+func writeRegistry(t *testing.T, repoDir, contents string) {
+	t.Helper()
+	dir := filepath.Join(repoDir, "mcps")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "registry.json"), []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+}
+
+func TestLoadFullRegistry(t *testing.T) {
+	t.Run("loads the registry", func(t *testing.T) {
+		repo := t.TempDir()
+		writeRegistry(t, repo, `[{"name":"context7"},{"name":"other"}]`)
+
+		got, err := loadFullRegistry(repo, &config.Config{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 2 || got[0].Name != "context7" {
+			t.Errorf("got %+v, want the two registry entries", got)
+		}
+	})
+
+	t.Run("appends extra MCPs from config", func(t *testing.T) {
+		repo := t.TempDir()
+		writeRegistry(t, repo, `[{"name":"context7"}]`)
+
+		got, err := loadFullRegistry(repo, &config.Config{
+			ExtraMCPs: []byte(`[{"name":"org-internal"}]`),
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 2 || got[1].Name != "org-internal" {
+			t.Errorf("got %+v, want the extra MCP appended", got)
+		}
+	})
+
+	t.Run("malformed extra MCPs warn but do not fail the load", func(t *testing.T) {
+		repo := t.TempDir()
+		writeRegistry(t, repo, `[{"name":"context7"}]`)
+
+		got, err := loadFullRegistry(repo, &config.Config{ExtraMCPs: []byte(`not json`)})
+		if err != nil {
+			t.Fatalf("a bad extra MCP should not fail the whole load: %v", err)
+		}
+		if len(got) != 1 {
+			t.Errorf("got %+v, want just the registry entry", got)
+		}
+	})
+
+	t.Run("a missing registry is an error", func(t *testing.T) {
+		if _, err := loadFullRegistry(t.TempDir(), &config.Config{}); err == nil {
+			t.Errorf("expected an error when mcps/registry.json is absent")
+		}
+	})
+}
+
+// ── Backup and stale-removal error paths ──────────────────────────────────────
+
+// blockedDir returns a path whose parent is a regular file, so MkdirAll on it
+// must fail — the branch both backup helpers take when the backup directory
+// cannot be created.
+func blockedDir(t *testing.T) string {
+	t.Helper()
+	f := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+	return filepath.Join(f, "backup")
+}
+
+func TestBackupExisting_ErrorPaths(t *testing.T) {
+	t.Run("returns quietly when the backup dir cannot be created", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "a.md"), []byte("hi"), 0o644); err != nil {
+			t.Fatalf("WriteFile error = %v", err)
+		}
+		backupExisting(dir, "*.md", blockedDir(t), false)
+	})
+
+	t.Run("skips a match that cannot be read", func(t *testing.T) {
+		dir := t.TempDir()
+		// A directory matching the glob: ReadFile fails, so the loop continues
+		// rather than aborting the whole backup.
+		if err := os.Mkdir(filepath.Join(dir, "dir.md"), 0o755); err != nil {
+			t.Fatalf("Mkdir error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "real.md"), []byte("hi"), 0o644); err != nil {
+			t.Fatalf("WriteFile error = %v", err)
+		}
+		backupDir := filepath.Join(t.TempDir(), "backup")
+
+		backupExisting(dir, "*.md", backupDir, false)
+
+		if _, err := os.Stat(filepath.Join(backupDir, "real.md")); err != nil {
+			t.Errorf("the readable match should still be backed up: %v", err)
+		}
+	})
+}
+
+func TestBackupExistingDirs_ErrorPaths(t *testing.T) {
+	t.Run("returns quietly when the source dir does not exist", func(t *testing.T) {
+		backupExistingDirs(filepath.Join(t.TempDir(), "absent"), t.TempDir(), false)
+	})
+
+	t.Run("ignores plain files alongside skill dirs", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "loose.txt"), []byte("x"), 0o644); err != nil {
+			t.Fatalf("WriteFile error = %v", err)
+		}
+		skill := filepath.Join(dir, "alpha")
+		if err := os.MkdirAll(skill, 0o755); err != nil {
+			t.Fatalf("MkdirAll error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("# a"), 0o644); err != nil {
+			t.Fatalf("WriteFile error = %v", err)
+		}
+		backupDir := filepath.Join(t.TempDir(), "backup")
+
+		backupExistingDirs(dir, backupDir, false)
+
+		if _, err := os.Stat(filepath.Join(backupDir, "alpha", "SKILL.md")); err != nil {
+			t.Errorf("the skill dir should be backed up: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(backupDir, "loose.txt")); !os.IsNotExist(err) {
+			t.Errorf("a loose file should not be backed up, stat err = %v", err)
+		}
+	})
+
+	t.Run("returns quietly when the backup dir cannot be created", func(t *testing.T) {
+		dir := t.TempDir()
+		skill := filepath.Join(dir, "alpha")
+		if err := os.MkdirAll(skill, 0o755); err != nil {
+			t.Fatalf("MkdirAll error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte("# a"), 0o644); err != nil {
+			t.Fatalf("WriteFile error = %v", err)
+		}
+		backupExistingDirs(dir, blockedDir(t), false)
+	})
+}
+
+func TestRemoveStale_RemoveError(t *testing.T) {
+	// A real failure (not "already gone") is warned about and does not stop the
+	// remaining removals.
+	var attempted []string
+	removeFn := func(path string) error {
+		attempted = append(attempted, filepath.Base(path))
+		if strings.HasPrefix(filepath.Base(path), "boom") {
+			return errors.New("permission denied")
+		}
+		return nil
+	}
+
+	removeStale(t.TempDir(), []string{"boom-one", "fine", "boom-two"}, removeFn, false)
+
+	want := []string{"boom-one", "fine", "boom-two"}
+	if !reflect.DeepEqual(attempted, want) {
+		t.Errorf("attempted = %v, want %v — a failure must not abort the rest", attempted, want)
+	}
 }

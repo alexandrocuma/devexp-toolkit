@@ -36,6 +36,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`cmd` coverage: 27.1% → 35.4%** (sub-ticket B of #69), covering every statement
+  reachable without testing the wizard TTY flow or the real exec paths.
+  - `selectTargets` is now fully covered, including the **both-CLI branch** — the
+    one #70 flagged as unverifiable, because a dry-run on a single-CLI machine
+    can never reach it. All four availability combinations plus the choice
+    mapping are table-driven.
+  - `claudeTargetPaths`/`opencodeTargetPaths` assert exact destinations; passing
+    `now` as a parameter is what makes the backup directory's name checkable
+    rather than clock-dependent.
+  - `loadFullRegistry` covers a valid registry, a missing one, extra MCPs merged
+    from config, and malformed extra JSON — which warns without failing the load.
+  - `detectTargets` drives its arms through a `PATH` containing only fake
+    executables, so no real CLI can leak into the result.
+  - The three `backup.go` partials are finished: both `MkdirAll` failure returns,
+    the unreadable-match `continue`, the `ReadDir` failure, the non-directory
+    skip, and `removeStale`'s non-`IsNotExist` error path — which must warn and
+    keep going rather than abort the remaining removals.
+  - **Assertion strength proven by mutation, not inferred from coverage.**
+    Dropping `"Both"` handling fails exactly the `picks_Both` case; dropping the
+    "no CLI detected" error fails both the direct case and `detectTargets`'
+    delegation; making both `announceTargets` arms announce the same text fails
+    exactly `opencode_only_announces_opencode`. No other case moves.
+  - `TestAnnounceTargets` captures stdout to assert each arm's *distinct*
+    announcement. Its first draft asserted the same empty choice three times, so
+    it would have passed unchanged had both arms printed the same thing — or
+    nothing. A weak assertion inside this delivery's own diff, fixed here rather
+    than filed as a follow-up.
+
 - **`internal/repo` coverage: 28.3% → 83.0%** (sub-ticket C of #69). `extractFS`,
   `extractEmbedded` and `Resolve` were all at 0% despite being genuinely
   unit-testable — the package's asset-resolution path had no tests at all.
