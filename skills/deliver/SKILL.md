@@ -145,7 +145,7 @@ All subsequent phases operate from this worktree directory.
 
 **Epic sub-tickets:** each independent sub-ticket gets its own worktree on its own branch. Because the worktrees don't share files, sub-tickets with no dependency between them can be delivered in parallel — that parallelism is a free byproduct, not something to request explicitly.
 
-**Single-stream fallback:** if the environment can't support worktrees (no git, or a shallow/non-worktree-capable checkout) or the user explicitly wants the change applied to the current tree, skip worktree creation and deliver in place on the current branch. The merge step in Phase 6 then becomes a no-op; the same merge discipline still applies to whatever integration happens.
+**Single-stream fallback:** if the environment can't support worktrees (no git, or a shallow/non-worktree-capable checkout) or the user explicitly wants the change applied to the current tree, skip worktree creation and deliver in place on the current branch. The merge step in `/release` then becomes a no-op; the same merge discipline still applies to whatever integration happens.
 
 ---
 
@@ -212,7 +212,7 @@ If no logging library is detected in the project, note it and skip — do not ad
 
 **3d. Surface SLO candidates:**
 
-For each new or modified critical path identified above (API handler, background job, external call, DB write), note the natural SLI attachment point — what would a team measure here (latency, error rate, throughput, queue depth)? List these as candidates in the Phase 8 report. Do not create dashboards, alert configs, or metric code — just surface what exists as observable points so the team can wire them up.
+For each new or modified critical path identified above (API handler, background job, external call, DB write), note the natural SLI attachment point — what would a team measure here (latency, error rate, throughput, queue depth)? List these as candidates in the Phase 7 report. Do not create dashboards, alert configs, or metric code — just surface what exists as observable points so the team can wire them up.
 
 ---
 
@@ -249,7 +249,7 @@ find . -maxdepth 4 -name "*.spec.*" -o -name "*.e2e.*" -o -name "*_test.*" 2>/de
 ```
 
 - If an E2E suite exists: check whether the user flows touched by this ticket have corresponding E2E scenarios. If gaps exist, read 2–3 existing E2E test files to learn the project's conventions, then generate scenarios that cover the changed flows.
-- If no E2E suite exists: note the gap in the Phase 8 report. Do not scaffold an E2E framework unilaterally.
+- If no E2E suite exists: note the gap in the Phase 7 report. Do not scaffold an E2E framework unilaterally.
 
 **Regression check:**
 
@@ -275,7 +275,7 @@ If new or modified endpoints are detected, check whether the project has a load 
 find . -maxdepth 4 \( -name "*.k6.js" -o -name "locustfile*" -o -name "artillery*" -o -name "*.gatling.*" \) 2>/dev/null | grep -v node_modules | head -3
 ```
 
-If a framework exists: offer to generate load test scenarios (smoke / load / stress) for the new endpoints. If the user confirms, read 1-2 existing test files to learn the format, then generate scenarios. If no framework exists: note the gap in the Phase 8 report.
+If a framework exists: offer to generate load test scenarios (smoke / load / stress) for the new endpoints. If the user confirms, read 1-2 existing test files to learn the format, then generate scenarios. If no framework exists: note the gap in the Phase 7 report.
 
 ---
 
@@ -316,150 +316,27 @@ Wait for the pr-review agent. If it posts findings, address them — either via 
 
 ---
 
-### Phase 6 — Release  *(gated — requires explicit confirmation)*
+### Phase 6 — Release  *(delegated to `/release` — gated)*
 
-Before running anything, confirm:
+Delivery ends at the release gate. Hand off to the **`/release`** skill, which owns everything from here: merge, changelog, version bump, tag, platform release, and retiring this delivery's artifacts.
 
-```
-PR is approved and tests pass.
+> "Release `<ticket-id>`. The branch is `<type>/<ticket-id>`, its worktree is at `<path>`, and code review passed in Phase 5."
 
-Ready to release?
-  Step 1: Merge the ticket worktree into the base branch
-  Step 2: Generate changelog entry from commits
-  Step 3: Bump version and create git tag
-  Step 4: Publish release on the detected platform
-  On success: remove the worktree (kept automatically if any step fails)
+`/release` re-derives the base branch, runs its own preflight, and asks for the confirmation itself — **never assume the "yes" from Phase 1 covers release.** It is the one irreversible step, so it is the one that has to be agreed to on its own.
 
-Confirm release? (yes / no — I'll release manually)
-```
+Three outcomes come back:
 
-Wait for explicit **yes**. If the user declines or wants to release manually ("I'll release manually"), don't just stop — check whether the ticket branch is already merged to the base branch, and handle the worktree accordingly:
+| Outcome | What it means | This run |
+|---------|---------------|----------|
+| **Released** | version tagged and published; worktree, plan and scratch retired | report it in Phase 7 |
+| **Deferred** | the user declined the gate — a merged branch's tree was removed, an unmerged one kept | report it, and say `/release <ticket>` finishes it later |
+| **Failed** | a step failed; everything is preserved for inspection | report the step that stopped it |
 
-```bash
-base="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')"; base="${base:-main}"
-git merge-base --is-ancestor "${type}/${ticket}" "$base" 2>/dev/null && echo "MERGED" || echo "NOT MERGED"
-```
-
-- **Merged** — the remaining release steps are bookkeeping on the base branch; the tree itself is finished. Remove the worktree and branch immediately, with the same commands as the success path (run from the main checkout — `git worktree remove` refuses while you are inside the tree):
-  ```bash
-  git worktree remove "/abs/path/to/<repo>-worktrees/<ticket-id>"
-  git branch -d "<type>/<ticket-id>"
-  ```
-  Then skip Phases 6a–6d and go straight to Phase 8.
-- **Not merged** — keep the worktree and say so explicitly: the branch still needs its PR merged, and the tree stays live until then. Tell the user that once the branch lands, `/cleanup <ticket>` (or a plain `/cleanup` sweep) will retire the worktree and branch. Declining the gate must never silently orphan the tree. Skip Phases 6a–6d and go to Phase 8.
-
-**6a. Merge the ticket worktree:**
-
-First **return to the main checkout.** Phases 2–5 ran inside the worktree, but `git worktree remove` refuses to delete a worktree you are currently inside, and the changelog/version/tag steps below operate on the base branch in the main checkout:
-
-```bash
-cd "$(git worktree list --porcelain | head -1 | cut -d' ' -f2)"   # main checkout is always the first worktree listed
-```
-
-Integrate the ticket's branch into the base branch through the project's normal path — merge the open PR, or a direct merge if no PR workflow is used. Merges are **serialized**: if other worktrees are also ready, merge them one at a time so each sees a consistent base. If the merge reports a **conflict, stop and surface it to the user — never auto-resolve.**
-
-On a **successful** merge and release, remove the worktree and its branch — the toolkit cleans up after itself. `git worktree list` prints each worktree's absolute path; remove the ticket's by that path:
-
-```bash
-git worktree list                                          # find the ticket's worktree path
-git worktree remove "/abs/path/to/<repo>-worktrees/<ticket-id>"
-git branch -d "<type>/<ticket-id>"
-```
-
-On **failure** at any release step, **keep the worktree** for inspection — never remove it. (Skip this whole step entirely if delivery ran in the single-stream fallback with no worktree.)
-
-**6b. Generate changelog:**
-
-```bash
-# Get commits since last tag
-git log $(git describe --tags --abbrev=0 2>/dev/null)..HEAD --oneline 2>/dev/null | head -20
-```
-
-Group commits by type (feat, fix, perf, refactor, docs, chore). Write a changelog entry:
-
-```markdown
-## [<new-version>] — <date>
-
-### Features
-- <feat: description from commit message>
-
-### Bug Fixes
-- <fix: description>
-
-### Performance
-- <perf: description>
-```
-
-Prepend this entry to `CHANGELOG.md` (create it if it doesn't exist).
-
-**6c. Bump version:**
-
-Detect the versioning file:
-```bash
-ls package.json go.mod pyproject.toml Cargo.toml version.go VERSION 2>/dev/null | head -3
-```
-
-Apply the appropriate bump (patch for fixes, minor for features, major for breaking changes — infer from commit types). Update the version file.
-
-**6d. Tag and publish:**
-
-```bash
-git add CHANGELOG.md <version-file>
-git commit -m "chore: release v<version>"
-git tag -a "v<version>" -m "Release v<version>"
-git push && git push --tags
-```
-
-Publish the release on the detected platform:
-```bash
-# GitHub
-gh release create "v<version>" --title "v<version>" --notes "<changelog entry>" 2>/dev/null
-
-# GitLab
-glab release create "v<version>" --name "v<version>" --notes "<changelog entry>" 2>/dev/null
-```
+If the `/release` skill is not installed, **do not improvise a release**: report that it is missing, leave the worktree in place, and stop. A half-performed release is worse than none.
 
 ---
 
-### Phase 7 — Retire Delivery Artifacts  *(on successful completion only)*
-
-Once the release succeeds, retire the artifacts **this** delivery created so they don't linger and drift from reality. **Gate strictly on success** — if delivery failed or was aborted at any earlier step, **skip this phase entirely and preserve everything** (worktree, plan, scratch) for inspection. Scope every action to this ticket; the repo-wide sweep of orphaned artifacts belongs to `/improve` (C2), not here.
-
-**Safety gate — bind and verify the ticket id before any deletion.** Every `rm` below is keyed to `$ticket`. An empty id would turn an id-scoped glob into a blanket wipe (`/tmp/*$ticket*` → `/tmp/*`), so **abort cleanup entirely if the id is empty** — never run a delete with an unset id. Use the same `ticket` variable bound in Phase 1.5, and re-assert it here:
-
-```bash
-ticket="<ticket-id>"
-case "$ticket" in
-  ""|*[!A-Za-z0-9_-]*) echo "ticket id missing or unsafe — skipping all artifact cleanup"; return 2>/dev/null || exit 0 ;;
-esac
-```
-
-With `$ticket` verified non-empty and safe, retire each artifact:
-
-1. **Worktree** — already removed in Phase 6a on a successful release; confirm it's gone:
-   ```bash
-   git worktree list   # this ticket's tree should no longer appear (nothing to do if the run was single-stream)
-   ```
-2. **Persisted plan (per A3)** — the plan described pre-merge intent; once delivered it only invites drift. Remove the local copy:
-   ```bash
-   rm -f ~/.claude/agent-memory/grooming-agent/plans/"$ticket".md
-   ```
-   The ticket-platform copy is a tracker action, not a filesystem delete — **ask the user first** (it's shared), then remove it via the platform's API/CLI.
-3. **Groom-session artifacts** — remove transient grooming session/scratch files keyed to `$ticket`. **Prefix-anchor** the glob with the id (`"$ticket"-*`, never `*"$ticket"*`) so it can never match the project's shared `<PROJECT-NAME>.md` memory and an empty id can't widen it:
-   ```bash
-   rm -f ~/.claude/agent-memory/grooming-agent/sessions/"$ticket"-* ~/.claude/agent-memory/grooming-agent/"$ticket".scratch 2>/dev/null
-   ```
-4. **/tmp scratch** — remove only the scratch files **this run** wrote under `/tmp` (heredoc bodies, plan scratch, temp diffs). Match by the toolkit's id-prefixed scratch names — never a leading-wildcard `/tmp/*` glob:
-   ```bash
-   rm -f /tmp/.deliver-"$ticket"-* /tmp/.groom-"$ticket"-* 2>/dev/null
-   ```
-5. **Agent-memory entries** — prune or refresh agent-memory entries tied **to this ticket only**, and **only when drift/staleness warrants it** (the delivered work changed something an entry described): re-date re-verified entries, remove resolved ones, leave the rest. Entries unrelated to this ticket are out of scope — that's C2.
-
-Record what was retired in the Phase 8 report.
-
----
-
-### Phase 8 — Report & Hand Off
+### Phase 7 — Report & Hand Off
 
 ```
 ## Delivered: <ticket-id> — "<title>"
@@ -472,8 +349,8 @@ Record what was retired in the Phase 8 report.
   Tests:           <N unit/integration tests added / already covered>
   E2E coverage:    <N scenarios added / no E2E suite detected / already covered>
   Review:          <findings addressed / approved>
-  Release:         v<version> published / pending manual release
-  Cleanup:         <worktree + plan + groom session + /tmp retired / preserved — delivery failed>
+  Release:         <v<version> published / deferred — finish with /release <ticket-id> / failed at <step> / skipped>
+  Cleanup:         <retired by /release / preserved — release did not complete>
 
 Next:
   /improve   — run a health check now that new code is live
@@ -485,7 +362,7 @@ Next:
 
 - **Groom plan is the blueprint** — pass it to `dev-agent`; the agent should not re-derive what grooming already established
 - **Instrumentation is inline, not delegated** — detecting and adding log calls is straightforward enough to do here; a specialist skill is not required
-- **Release is the only hard gate** — every other step can be skipped; release requires explicit confirmation because it's irreversible and affects shared systems
+- **Release is delegated, and it is the only hard gate** — Phase 6 hands off to `/release`, which asks for its own confirmation. Every other step can be skipped; release is irreversible and affects shared systems, so its consent is never inherited from Phase 1
 - **Architecture check is a suggestion, not a gate** — surface it for high-complexity tickets; never block on it
 - **Test coverage, not test count** — if the implementation agent wrote tests, verify they cover the acceptance criteria, not just that they exist
-- **Worktree isolation is the default, merge is deferred** — each ticket is delivered in its own worktree (rationale: `docs/guides/worktree-per-ticket.md`, maintainer-only in the devexp-toolkit repo, not installed); the branch merges only at the release gate, and conflicts always surface to the user — never auto-resolve them
+- **Worktree isolation is the default, merge is deferred** — each ticket is delivered in its own worktree (rationale: `docs/guides/worktree-per-ticket.md`, maintainer-only in the devexp-toolkit repo, not installed); the branch merges only at the release gate — inside `/release` — and conflicts always surface to the user, never auto-resolved

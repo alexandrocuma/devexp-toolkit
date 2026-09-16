@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`/release` — the release phase, as its own command.** Release is a named phase of the development cycle, but it existed only as `/deliver` Phase 6, which made it unreachable on its own. The practical consequence: declining the release gate left **no way to resume** — the only options were re-running `/deliver` (redoing implementation) or releasing by hand, which is the main reason worktrees accumulated and why `/cleanup` had to exist. `/release <ticket>` now closes that loop.
+  - **Process:** read-only preflight → gate → merge → changelog → version bump → tag and publish → retire artifacts → report.
+  - **The gate is its own decision.** Consent is never inherited from `/deliver`'s Phase 1 "proceed" — release is irreversible and touches shared systems.
+  - **Version bump is derived, not guessed:** breaking → major, `feat:` → minor, else patch. Non-conventional history is reported rather than invented around.
+  - **Failure preserves, success retires.** Only a completed release removes the worktree, plan, groom session and scratch. Every failure path keeps them.
+  - **Tag push is the point of no return** — after a partial push, `git ls-remote --tags origin` is checked before any retry.
+  - Fixes a **dangling reference**: `agents/changelog.md` already chained to "invoke `/release` skill", which did not exist.
+- **`/deliver` Phase 6 now delegates to `/release`** and reports one of three outcomes (released / deferred / failed). Former Phase 7 (retire artifacts) moved into `/release`, where it belongs — it was always gated on release success. Phase 8 became Phase 7. If `/release` is not installed, delivery reports it and stops rather than improvising a half-release.
+- Documentation surface: **seven commands → eight** — six lifecycle orchestrators and two utilities.
+
 ### Removed
 
 - **`/promo-campaign` and the domain-playbook category.** Marketing is not a phase of the development lifecycle. This toolkit covers idea → refinement → grooming → planification → delivery → release → cleanup → improvements/postmortem; promoting an app that already ships sits outside that loop. The skill was also the repo's largest single component (~2,700 lines), the only one requiring ffmpeg, ImageMagick, Maestro and Xcode, and iOS-Simulator-only — so it did not work on the majority of its own author's projects. It moves to **`marketing-toolkit`**, a sibling project, where it gains Android capture, an audio path and a platform-plural contract.

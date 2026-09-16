@@ -1,7 +1,7 @@
 # DevExp SDLC Coverage Map
 
-Generated: 2026-06-09 (updated: `/monitor` added as operate-phase orchestrator; `/graphify` + `/cleanup` are utility commands alongside the five lifecycle orchestrators; `/promo-campaign` removed — marketing is not a development-lifecycle phase)
-Agents: 34 · Skills: 7 (5 lifecycle orchestrators + 2 utilities) · Total components: 41  
+Generated: 2026-06-09 (updated: `/monitor` added as operate-phase orchestrator; `/graphify` + `/cleanup` are utility commands alongside the six lifecycle orchestrators; `/promo-campaign` removed — marketing is not a development-lifecycle phase)
+Agents: 34 · Skills: 8 (6 lifecycle orchestrators + 2 utilities) · Total components: 42  
 All specialist capabilities are inline within orchestrators, invoked as agents, or exposed as one of the two utility commands (`/graphify`, `/cleanup`).
 
 ---
@@ -16,7 +16,7 @@ All specialist capabilities are inline within orchestrators, invoked as agents, 
 | 4. Implementation | 🟢 Strong | 9 | Autonomous, spec-driven, progressive delivery all covered; IaC handled inline in /deliver |
 | 5. Testing | 🟢 Strong | 5 | Unit/integration + load testing + E2E (via /deliver Phase 4 when suite detected) |
 | 6. Code Review | 🟢 Strong | 13 | ⚠️ Over-concentrated — routing guide needed (see below) |
-| 7. CI/CD & Release | 🟢 Strong | 6 | Full commit → PR → pipeline → release workflow |
+| 7. CI/CD & Release | 🟢 Strong | 6 | Full commit → PR → pipeline → release workflow; `/release` is its own command, so a deferred release is resumable |
 | 8. Deployment & Infrastructure | 🟢 Strong | 3 | IaC inline in /deliver Phase 2; Infrastructure Health dimension in /improve scorecard |
 | 9. Observability | 🟢 Strong | 2 | SLO candidates surfaced by /deliver; Observability Maturity dimension in /improve scorecard |
 | 10. Incident Management | 🟢 Strong | 4 | root-cause → postmortem → runbook chain is explicit |
@@ -130,10 +130,10 @@ All specialist capabilities are inline within orchestrators, invoked as agents, 
 
 | Component | Type | Description |
 |-----------|------|-------------|
-| `commit` | inline in `deliver` Phase 6 | Conventional commit generation |
-| `pr` | inline in `deliver` Phase 6 | PR/MR description + optional open via CLI |
-| `changelog` | inline in `deliver` Phase 6 | Changelog entry from conventional commits |
-| `release` | inline in `deliver` Phase 6 | Full release: version bump → changelog → commit → tag → platform |
+| `commit` | inline in `deliver` | Conventional commit generation |
+| `pr` | inline in `deliver` | PR/MR description + optional open via CLI |
+| `changelog` | inline in `release` Phase 4 | Changelog entry from conventional commits |
+| `release` | **skill (lifecycle)** | The release phase: gated merge → changelog → version → tag → platform → retire artifacts. Standalone, so a deferred release can be finished later |
 | `changelog` | agent | Changelog generation agent |
 | `ci-cd` | agent | Debug, create, optimize CI/CD pipelines |
 

@@ -6,26 +6,27 @@ Install them by running `../install.sh` from the repo root. Installed skills lan
 
 ---
 
-## The Seven Commands
+## The Eight Commands
 
-These seven commands are the entire user-facing surface — five lifecycle orchestrators and two utilities (`/graphify`, `/cleanup`). Everything else — ~30 specialist capabilities — runs as agents (`agents/<name>.md`) or inline within these orchestrators.
+These eight commands are the entire user-facing surface — six lifecycle orchestrators and two utilities (`/graphify`, `/cleanup`). Everything else — ~30 specialist capabilities — runs as agents (`agents/<name>.md`) or inline within these orchestrators.
 
 | Directory | Slash Command | When to use |
 |-----------|---------------|------------|
 | `devxp/` | `/devxp` | First time on a repo — orient, set up CLAUDE.md and docs/ |
 | `refine/` | `/refine` | You have an idea or feature request to turn into a groomed ticket |
 | `deliver/` | `/deliver <ticket>` | You have a groomed ticket and want to build and ship it |
+| `release/` | `/release [<ticket>]` | Work is reviewed and approved — merge, changelog, version, tag, publish (gated) |
 | `improve/` | `/improve` | Sprint end or maintenance window — health, cleanup, retrospective |
 | `monitor/` | `/monitor [<surface>]` | Operate phase — review the deployed system's health via telemetry/config, anytime |
 | `graphify/` | `/graphify` | Build a persistent, queryable knowledge graph from this codebase |
 | `cleanup/` | `/cleanup [<ticket>]` | On demand — retire finished/abandoned worktrees, orphaned branches, stale plans, and scratch |
 
 ```
-/devxp  →  /refine  →  /deliver  →  /improve
-  ↑                          │           │
-  └──────── next sprint ─────┴───────────┘
-                             │
-                        /monitor   (operate: review the deployed system, anytime)
+/devxp  →  /refine  →  /deliver  →  /release  →  /improve
+  ↑                                     │            │
+  └──────────── next sprint ────────────┴────────────┘
+                                        │
+                                    /monitor   (operate: review the deployed system, anytime)
 
   /graphify   (utility: knowledge graph)   /cleanup   (utility: retire finished artifacts)
 ```

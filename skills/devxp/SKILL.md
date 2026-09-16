@@ -145,6 +145,7 @@ If the user asks "what should I use for X" or "what's the right devexp command f
 |------|------------|
 | Build a feature or fix a bug | `/deliver` with a ticket ID |
 | Turn an idea into a ticket | `/refine "description"` |
+| Finish a release you deferred | `/release <ticket>` |
 | Health check + debt triage | `/improve` |
 | Expert code review | backend-senior-dev or frontend-senior-dev agent |
 | Architecture decisions (ADR), API design, DB design | tech-lead agent |

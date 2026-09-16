@@ -74,13 +74,31 @@ What it does, in order:
 3. Adds observability: log calls at entry/error points, SLO candidate notes
 4. Fills test gaps: unit/integration tests first, then E2E scenarios if the project has a suite
 5. Opens a PR and runs a code review
-6. Releases: changelog entry, version bump, git tag, GitHub/GitLab release — **gated, requires your explicit yes**
+6. Hands off to `/release` for the gated release
 
 The only decision you make is whether to release. Everything else runs automatically.
 
 ---
 
-## 5. Keep it healthy: `/improve`
+## 5. Ship it: `/release`
+
+`/deliver` hands off here once review passes — but `/release` also stands on its own.
+
+```
+/release PAY-42
+```
+
+What it does:
+1. Preflight (read-only): branch merge state, commits since the last tag, version file, platform, and the **derived** version bump
+2. Asks for your explicit yes — this is the one irreversible step, so it is never assumed
+3. Merges the ticket branch, writes the changelog, bumps the version, tags and publishes
+4. Retires the worktree, plan and scratch — **only on success**
+
+Said no to the gate last week and never finished? `/release PAY-42` picks it up. Before this command existed, the only options were re-running `/deliver` or releasing by hand — which is how stray worktrees pile up.
+
+---
+
+## 6. Keep it healthy: `/improve`
 
 Run at sprint end, after a production incident, or any time things "feel messy."
 
@@ -101,14 +119,14 @@ All diagnostic steps run inline — nothing is deleted automatically. You get fi
 ## The loop
 
 ```
-/devxp  ──→  /refine  ──→  /deliver  ──→  /improve
-  ↑                              │             │
-  └─────────── next sprint ──────┴─────────────┘
-                                 │
-                            /monitor   (operate: review the deployed system, anytime)
+/devxp  ──→  /refine  ──→  /deliver  ──→  /release  ──→  /improve
+  ↑                                           │             │
+  └──────────────── next sprint ──────────────┴─────────────┘
+                                              │
+                                         /monitor   (operate: review the deployed system, anytime)
 ```
 
-This is the full development cycle. The four build commands carry most work; `/monitor` is the operate phase — run it anytime to review the health of what's deployed, independent of any code change.
+This is the full development cycle. The five build-and-ship commands carry most work; `/monitor` is the operate phase — run it anytime to review the health of what's deployed, independent of any code change.
 
 ---
 
