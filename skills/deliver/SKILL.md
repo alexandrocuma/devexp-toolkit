@@ -299,7 +299,20 @@ Fix any issues found before proceeding — these are correctness bugs, not style
 - Magic numbers or strings that should be named constants
 - Missing input validation at public function boundaries
 
-Document any quality findings in the PR description for the reviewer. Fix only what's clearly wrong; note the rest as follow-up debt.
+**Apply the scope test to every finding.** A finding inside this ticket's own change belongs to this delivery and is fixed now. A finding elsewhere in the codebase is a different ticket.
+
+| Finding | Action | Owner |
+|---------|--------|-------|
+| Defect in code this ticket wrote or touched | **Fix before the release gate** | this delivery |
+| Incomplete part of this ticket's own change | **Finish before the release gate** | this delivery |
+| Pre-existing debt elsewhere in the codebase | File a ticket | `/improve` Phase 4, `tech-debt` agent |
+| Adjacent improvement this ticket revealed | File a ticket | `/improve` Phase 4 |
+
+Severity does not decide this — **scope** does. A "minor" finding inside the diff is still this delivery's to fix; a serious one outside it is still someone else's ticket.
+
+Filing a follow-up for something in scope ships a known gap with a ticket attached to it, inflates the backlog with work that should simply have been finished, and makes "done" mean "done except the parts we wrote down."
+
+Document the **out-of-scope** findings in the PR description for the reviewer. The in-scope ones should already be gone by the time they read it.
 
 Create a PR if one doesn't exist:
 
@@ -363,6 +376,7 @@ Next:
 - **Groom plan is the blueprint** — pass it to `dev-agent`; the agent should not re-derive what grooming already established
 - **Instrumentation is inline, not delegated** — detecting and adding log calls is straightforward enough to do here; a specialist skill is not required
 - **Release is delegated, and it is the only hard gate** — Phase 6 hands off to `/release`, which asks for its own confirmation. Every other step can be skipped; release is irreversible and affects shared systems, so its consent is never inherited from Phase 1
+- **In scope is fixed, out of scope is filed** — a defect inside the change being delivered is folded into that delivery before the release gate; only work outside its scope becomes a ticket. A follow-up filed for something in scope is a quality gap wearing a ticket
 - **Architecture check is a suggestion, not a gate** — surface it for high-complexity tickets; never block on it
 - **Test coverage, not test count** — if the implementation agent wrote tests, verify they cover the acceptance criteria, not just that they exist
 - **Worktree isolation is the default, merge is deferred** — each ticket is delivered in its own worktree (rationale: `docs/guides/worktree-per-ticket.md`, maintainer-only in the devexp-toolkit repo, not installed); the branch merges only at the release gate — inside `/release` — and conflicts always surface to the user, never auto-resolved

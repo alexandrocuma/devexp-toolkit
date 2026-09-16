@@ -49,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`/deliver` and `pr-review` no longer defer in-scope defects.** Both told the delivery cycle to ship a known defect with a ticket attached: `deliver` Phase 5 said *"Fix only what's clearly wrong; note the rest as follow-up debt"*, and `pr-review` offered *"Approve with minor comments — merge is fine, but address comments in follow-up."* Neither applied a scope test, and no fold-vs-file policy existed anywhere in the toolkit.
+  - **The rule, stated once:** a defect **inside the change being delivered** is folded into that delivery before the release gate; only work **outside its scope** becomes a ticket. Pre-existing debt elsewhere remains `/improve` Phase 4's job — the gap was that nothing routed findings between the two paths.
+  - **Severity does not decide it, scope does.** A "minor" finding inside the diff is still this delivery's to fix; `pr-review`'s "Approve with minor comments" is now valid only when every comment falls outside the PR's own diff.
+  - Filing a follow-up for something in scope ships a known gap, inflates the backlog with work that should have been finished, and makes "done" mean "done except the parts we wrote down."
+
 - **`ui-inspector` now ships as its own repo** — [mcp-ui-inspector](https://github.com/alexandrocuma/mcp-ui-inspector). It was vendored here as a Node project with its own `setup.sh` and a committed `dist/`, which quietly turned a distribution repo into a monorepo. The registry locates it via `UI_INSPECTOR_DIR`, documented in the MCP env template, reusing the installer's existing `[REQUIRED]` warning and `setup_instructions` path — **no Go changes were needed**, because the CLI never special-cased it (it generically injects `DEVEXP_DIR` and renders `setup_instructions`). The extracted repo gitignores `dist/` instead of committing it; the vendored copy had gone stale, with `src/tools/interact.ts` having no built counterpart.
 
 ### Removed

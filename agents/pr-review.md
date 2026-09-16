@@ -131,7 +131,7 @@ Evaluate the PR across these dimensions in order of severity:
 - **Pattern violations**: code that doesn't follow the established conventions in this codebase (naming, structure, error style, logging approach)
 - **Performance**: N+1 queries, missing indexes for new query patterns, unbounded loops on large datasets
 
-#### 🔵 Minor (consider fixing)
+#### 🔵 Minor (consider fixing — but fix it if it is inside this diff)
 - **Code clarity**: confusing variable names, functions doing too much, complex conditionals that could be simplified
 - **Documentation**: public functions/methods missing docs, complex logic missing explanation
 - **Dead code**: unused imports, unreachable branches, leftover debug statements
@@ -150,7 +150,7 @@ Evaluate the PR across these dimensions in order of severity:
 
 Determine an overall recommendation:
 - **Approve** — looks good, no blockers
-- **Approve with minor comments** — merge is fine, but address comments in follow-up
+- **Approve with minor comments** — merge is fine. Valid **only** when every comment is outside the PR's own diff: adjacent observations, or pre-existing debt the PR happened to reveal. A finding inside the diff is **Request changes**, however small — "minor" describes severity, not scope
 - **Request changes** — specific issues must be addressed before merge
 - **Needs discussion** — architectural or design questions that need human input before proceeding
 
