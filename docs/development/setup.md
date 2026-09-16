@@ -33,7 +33,7 @@ Expected result: the dry run prints `DRY RUN MODE — no files will be written`,
 
 `./install.sh` on its own would have built `bin/devexp` for you (it runs staging + `go build` when the binary is missing — `install.sh:7-18`); the explicit steps above make each stage visible. To install for real, run `./install.sh` — see [`../guides/install.md`](../guides/install.md).
 
-Because a binary run from the clone reads `agents/`, `skills/`, `hooks/` and `mcps/` **live from disk** (`cli/internal/repo/repo.go:45-63`), editing an asset needs only `./install.sh` again — no rebuild. Changing Go code under `cli/` does need a rebuild (see Troubleshooting).
+Because a binary run from the clone reads `agents/`, `skills/`, `hooks/` and `mcps/` **live from disk** (`cli/internal/repo/repo.go:70-98`), editing an asset needs only `./install.sh` again — no rebuild. Changing Go code under `cli/` does need a rebuild (see Troubleshooting).
 
 ## Commands
 
@@ -45,7 +45,7 @@ The full list — `CLAUDE.md` shows only the most-used few and links here.
 | Stage embedded assets | `./scripts/stage-assets.sh` | `scripts/stage-assets.sh` (wipes and recopies into `cli/internal/assets/`, excluding `mcps/.env`) |
 | Build | `./scripts/stage-assets.sh && (cd cli && go build -o ../bin/devexp .)` | `install.sh:11-12` |
 | Rebuild via the installer | `rm bin/devexp && ./install.sh` | `install.sh:7` (builds only when `bin/devexp` is missing) |
-| Run locally (from source) | `cd cli && go run . install --dry-run` | `cli/main.go`; repo found by walking up from cwd — `cli/internal/repo/repo.go:54-63` |
+| Run locally (from source) | `cd cli && go run . install --dry-run` | `cli/main.go`; repo found by walking up from cwd — `cli/internal/repo/repo.go:86-97` |
 | Show version | `bin/devexp --version` → `devexp version dev` for local builds | `cli/cmd/root.go:15` |
 | Preview an install | `./install.sh --dry-run` (or `-n`) | `cli/cmd/install.go:32` |
 | Install — interactive wizard | `./install.sh` (no flags; needs a TTY) | `cli/cmd/install.go:117-153` |
@@ -67,7 +67,7 @@ The full list — `CLAUDE.md` shows only the most-used few and links here.
 
 | Variable | Required | Default | What it controls | Source |
 |----------|----------|---------|------------------|--------|
-| `DEVEXP_DIR` | No | unset | Forces the asset root `devexp install` reads from, skipping the next-to-binary and walk-up-from-cwd lookup. It is also always set to the resolved repo dir in the env used to expand `${VAR}` in MCP entries | `cli/internal/repo/repo.go:46`, `cli/cmd/registry.go:57` |
+| `DEVEXP_DIR` | No | unset | Forces the asset root `devexp install` reads from, skipping the next-to-binary and walk-up-from-cwd lookup. A relative value is resolved to an absolute path (hook commands in `settings.json` are built from it and are always absolute), and it must be a devexp repo (`agents/`, `skills/`, `mcps/`) — otherwise install stops with an error rather than falling back to another lookup. It is also always set to the resolved repo dir in the env used to expand `${VAR}` in MCP entries | `cli/internal/repo/repo.go:71-80`, `cli/cmd/registry.go:57` |
 | `HOME` | Yes | from shell | Root of every install destination (`~/.claude/…`, `~/.config/opencode/…`). Must be an absolute path: `devexp install`, `devexp uninstall` and `uninstall.sh` refuse to run, touching nothing, when it is unset, empty or relative | `cli/cmd/install_claude.go:20`, `cli/cmd/install_opencode.go:19`, `cli/cmd/paths.go` (`targetHome`), `cli/cmd/install.go:78`, `cli/cmd/uninstall.go:80` |
 | `PATH` | Yes | from shell | Which of `claude` / `opencode` is found decides the install targets | `cli/cmd/targets.go:57-72` |
 | `UI_INSPECTOR_DIR` | Only for the `ui-inspector` MCP | empty | Absolute path of a `mcp-ui-inspector` clone, expanded into that MCP's args. Unset → the MCP is skipped with a `[REQUIRED]` notice | `mcps/.env.example`, `mcps/registry.json:15,18` |
@@ -94,6 +94,6 @@ Configuration file: `devexp.config.json` at the repo root (model default, disabl
 
 **Problem:** `[REQUIRED] ui-inspector — missing required env vars: UI_INSPECTOR_DIR` · **Cause:** the MCP's `required_env` isn't set (`mcps/registry.json:18`) · **Fix:** set it in `mcps/.env` and re-run `./install.sh --mcps-only`; add `--reinstall-mcps` if the MCP was already registered with an old value.
 
-**Problem:** a downloaded release binary uses your clone's files, or a test binary picks up the wrong assets · **Cause:** asset lookup order is `$DEVEXP_DIR` → the directory above the executable → walk up from cwd for a dir containing `agents/`, `skills/` and `mcps/`; only if none match does it extract embedded assets to `<user cache dir>/devexp/assets` (`cli/internal/repo/repo.go:45-63,103`); with no absolute user cache dir it refuses instead of using a temp directory (`repo.go:96-102`) · **Fix:** set `DEVEXP_DIR` explicitly, or run from outside the clone. A standalone run prints `Running standalone — using assets bundled in this binary.` (`cli/cmd/install.go:93`).
+**Problem:** a downloaded release binary uses your clone's files, or a test binary picks up the wrong assets · **Cause:** asset lookup order is `$DEVEXP_DIR` → the directory above the executable → walk up from cwd for a dir containing `agents/`, `skills/` and `mcps/`; only if none match does it extract embedded assets to `<user cache dir>/devexp/assets` (`cli/internal/repo/repo.go:70-98,135`); with no absolute user cache dir it refuses instead of using a temp directory (`repo.go:128-134`) · **Fix:** set `DEVEXP_DIR` explicitly, or run from outside the clone. A standalone run prints `Running standalone — using assets bundled in this binary.` (`cli/cmd/install.go:93`).
 
 **Problem:** `TestCommandExists` or the hook tests fail on a new machine · **Cause:** `TestCommandExists` expects `go` on `PATH` (`cli/cmd/install_test.go:115`); hook `.test.sh` files need `python3` · **Fix:** put `go` and `python3` on `PATH`. More in [`testing.md`](testing.md).

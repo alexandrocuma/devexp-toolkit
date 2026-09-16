@@ -4,6 +4,7 @@
 package repo
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -28,23 +29,54 @@ type Source struct {
 // found — e.g. a standalone binary downloaded outside of a clone — it
 // extracts the assets embedded in the binary at build time to a per-version
 // cache directory and uses that instead.
+//
+// A DEVEXP_DIR that isn't a devexp repo is an error, not a reason to look
+// elsewhere: the user named a directory, and silently installing from another
+// one would hide the mistake.
+//
+// RepoDir is always absolute. Installers build paths that outlive this process
+// from it — Claude Code hook commands are repoDir/<script> — and a relative one
+// would resolve against whatever directory those are later run from (#126).
 func Resolve(version string) (Source, error) {
-	if dir, err := findRepoDir(); err == nil {
-		return Source{RepoDir: dir}, nil
+	dir, err := findRepoDir()
+	switch {
+	case err == nil:
+		return absoluteSource(Source{RepoDir: dir})
+	case !errors.Is(err, errRepoNotFound):
+		return Source{}, err
 	}
 
-	dir, err := extractEmbedded(version)
+	dir, err = extractEmbedded(version)
 	if err != nil {
 		return Source{}, fmt.Errorf("no devexp repo found on disk and failed to extract embedded assets: %w", err)
 	}
-	return Source{RepoDir: dir, Embedded: true}, nil
+	return absoluteSource(Source{RepoDir: dir, Embedded: true})
+}
+
+// absoluteSource refuses a Source whose RepoDir is not absolute.
+func absoluteSource(src Source) (Source, error) {
+	if !filepath.IsAbs(src.RepoDir) {
+		return Source{}, fmt.Errorf("devexp asset dir %q is not an absolute path", src.RepoDir)
+	}
+	return src, nil
 }
 
 // ── Live repo detection ───────────────────────────────────────────────────────
 
+// errRepoNotFound means no live repo was found, so Resolve may fall back to the
+// embedded assets. Any other findRepoDir error stops Resolve.
+var errRepoNotFound = errors.New("no devexp repo found")
+
 func findRepoDir() (string, error) {
 	if d := os.Getenv("DEVEXP_DIR"); d != "" {
-		return d, nil
+		abs, err := filepath.Abs(d)
+		if err != nil {
+			return "", fmt.Errorf("DEVEXP_DIR %q: %w", d, err)
+		}
+		if !isRepoDir(abs) {
+			return "", fmt.Errorf("DEVEXP_DIR is %q (%s), which is not a devexp repo (it needs agents/, skills/ and mcps/) — point it at a devexp-toolkit clone or unset it", d, abs)
+		}
+		return abs, nil
 	}
 	if exe, err := os.Executable(); err == nil {
 		if candidate := filepath.Dir(filepath.Dir(exe)); isRepoDir(candidate) {
@@ -62,7 +94,7 @@ func findRepoDir() (string, error) {
 		}
 		dir = parent
 	}
-	return "", fmt.Errorf("not found")
+	return "", errRepoNotFound
 }
 
 func isRepoDir(dir string) bool {
@@ -88,10 +120,10 @@ var userCacheDir = os.UserCacheDir
 //
 // With no usable cache directory it refuses rather than fall back (#126). The
 // old fallback, os.TempDir(), was either a relative $TMPDIR — a directory under
-// wherever devexp runs, wiped and re-extracted — or the shared /tmp, where
-// another local user could plant a matching extraction whose hook scripts
-// would then be registered and run. A relative cache dir (a relative HOME, or
-// XDG_CACHE_HOME on Linux) is refused for the same reason.
+// wherever devexp runs, wiped and re-extracted — or the shared /tmp, which is
+// not private to the user yet was reused whenever its version marker matched.
+// A relative cache dir (a relative HOME, or XDG_CACHE_HOME on Linux) is
+// refused for the same reason.
 func extractEmbedded(version string) (string, error) {
 	base, err := userCacheDir()
 	if err != nil {

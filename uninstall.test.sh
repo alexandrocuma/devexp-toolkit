@@ -122,6 +122,16 @@ expect "removes both roots' copies of the same hook" \
   "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"$MINE\"}]},{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"$FOREIGN\"}]}]}}" \
   ""
 
+# A relative registration (left by an install from a relative DEVEXP_DIR) is
+# devexp's too; a relative user hook sharing a basename is not (#126).
+expect "removes a relative devexp hook" \
+  "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"hooks/claude-code/secret-guard.sh\"}]}]}}" \
+  ""
+
+expect "removes a ./-relative devexp hook, keeps a relative user hook" \
+  "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Glob\",\"hooks\":[{\"type\":\"command\",\"command\":\"./hooks/claude-code/graphify-read-guard.sh\"},{\"type\":\"command\",\"command\":\"my-hooks/secret-guard.sh\"}]}]}}" \
+  "my-hooks/secret-guard.sh"
+
 # ── opencode (#109) ──────────────────────────────────────────────────────────
 
 ok() { pass=$((pass+1)); }

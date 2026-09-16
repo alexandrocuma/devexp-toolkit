@@ -38,10 +38,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#126).** With no usable user cache dir (the lookup failed, or it was relative,
   e.g. a relative `XDG_CACHE_HOME` on Linux), `devexp` fell back to
   `os.TempDir()`. That was either a relative `$TMPDIR` under the current
-  directory, wiped and re-extracted, or the shared `/tmp/devexp/assets`, reused
-  when its version marker matched, so another local user could plant agents and
-  hook scripts that the install then copied and registered. It now refuses with
-  a message asking for an absolute `HOME` (or `XDG_CACHE_HOME`).
+  directory, wiped and re-extracted, or the shared `/tmp/devexp/assets`, which
+  is not private to the user but was reused whenever its version marker
+  matched. It now refuses with a message asking for an absolute `HOME` (or
+  `XDG_CACHE_HOME`).
+- **Hook commands are always absolute (#126).** A relative `DEVEXP_DIR` produced
+  relative hook command paths in `~/.claude/settings.json`, which resolve
+  against whatever directory Claude Code runs in rather than the devexp repo.
+  - `DEVEXP_DIR` is now resolved to an absolute path and must be a devexp repo
+    (`agents/`, `skills/`, `mcps/`); otherwise `devexp install` stops with an
+    error instead of falling back to another lookup. Every resolved asset dir
+    is checked to be absolute.
+  - `hooks.InstallClaude` refuses a non-absolute repo dir.
+  - Relative devexp hook entries left by an earlier install are removed on the
+    next install and replaced by the absolute registration; relative hooks that
+    aren't devexp's are left alone. `uninstall.sh` already removed them; it now
+    has tests for it.
 
 ## [0.8.0] - 2026-09-16
 

@@ -9,15 +9,57 @@ import (
 	"testing/fstest"
 )
 
-func TestFindRepoDir_DevexpDirEnv(t *testing.T) {
-	t.Setenv("DEVEXP_DIR", "/some/path")
-
-	got, err := findRepoDir()
-	if err != nil {
-		t.Fatalf("findRepoDir() error = %v", err)
+// makeRepoDir creates dir with the subdirectories isRepoDir looks for.
+func makeRepoDir(t *testing.T, dir string) {
+	t.Helper()
+	for _, sub := range []string{"agents", "skills", "mcps"} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", sub, err)
+		}
 	}
-	if got != "/some/path" {
-		t.Errorf("findRepoDir() = %q, want %q", got, "/some/path")
+}
+
+// TestFindRepoDir_DevexpDirEnv: DEVEXP_DIR is resolved to a clean absolute
+// path, relative forms included, and must be a devexp repo (#126).
+func TestFindRepoDir_DevexpDirEnv(t *testing.T) {
+	tests := map[string]struct {
+		devexpDir string // relative values are relative to the test's cwd
+		wantRepo  string // relative to the cwd; "" = want an error
+	}{
+		"absolute":             {devexpDir: "<cwd>/repo", wantRepo: "repo"},
+		"absolute, uncleaned":  {devexpDir: "<cwd>/repo/../repo/", wantRepo: "repo"},
+		"dot":                  {devexpDir: ".", wantRepo: "."},
+		"relative":             {devexpDir: "repo", wantRepo: "repo"},
+		"relative through ..":  {devexpDir: "sub/../repo", wantRepo: "repo"},
+		"not a repo":           {devexpDir: "sub"},
+		"does not exist":       {devexpDir: "missing"},
+		"absolute, not a repo": {devexpDir: "<cwd>/sub"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			cwd, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.wantRepo == "." {
+				makeRepoDir(t, cwd)
+			}
+			makeRepoDir(t, filepath.Join(cwd, "repo"))
+			os.MkdirAll(filepath.Join(cwd, "sub"), 0o755) //nolint:errcheck
+			t.Chdir(cwd)
+			t.Setenv("DEVEXP_DIR", strings.ReplaceAll(tt.devexpDir, "<cwd>", cwd))
+
+			got, err := findRepoDir()
+			if tt.wantRepo == "" {
+				if err == nil || got != "" || errors.Is(err, errRepoNotFound) || !strings.Contains(err.Error(), "not a devexp repo") {
+					t.Errorf("findRepoDir() = %q, %v; want a not-a-repo error", got, err)
+				}
+				return
+			}
+			if want := filepath.Join(cwd, tt.wantRepo); err != nil || got != want {
+				t.Errorf("findRepoDir() = %q, %v; want %q", got, err, want)
+			}
+		})
 	}
 }
 
@@ -243,7 +285,7 @@ func TestExtractEmbedded(t *testing.T) {
 
 // TestExtractEmbedded_NoUsableCacheDir: with no cache dir, or a relative one,
 // extraction is refused — never redirected to os.TempDir() (a relative $TMPDIR,
-// or the shared /tmp another user can plant) and never under the cwd (#126).
+// or the shared /tmp) and never under the cwd (#126).
 func TestExtractEmbedded_NoUsableCacheDir(t *testing.T) {
 	tests := map[string]struct {
 		cacheDir func() (string, error)
@@ -310,6 +352,44 @@ func TestResolve(t *testing.T) {
 		}
 		if got.RepoDir != root {
 			t.Errorf("RepoDir = %q, want %q", got.RepoDir, root)
+		}
+	})
+
+	t.Run("a DEVEXP_DIR that isn't a repo is an error, with no fallback", func(t *testing.T) {
+		base := withTempCache(t)
+		t.Setenv("DEVEXP_DIR", t.TempDir())
+		t.Chdir(t.TempDir())
+
+		got, err := Resolve("v3.0.0")
+		if err == nil || got != (Source{}) || !strings.Contains(err.Error(), "not a devexp repo") {
+			t.Errorf("Resolve() = %+v, %v; want a not-a-repo error", got, err)
+		}
+		if entries, _ := os.ReadDir(base); len(entries) != 0 {
+			t.Errorf("extracted the embedded assets anyway: %v", entries)
+		}
+	})
+
+	t.Run("a relative DEVEXP_DIR resolves to an absolute RepoDir", func(t *testing.T) {
+		cwd, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		makeRepoDir(t, filepath.Join(cwd, "repo"))
+		t.Chdir(cwd)
+		t.Setenv("DEVEXP_DIR", "sub/../repo")
+
+		got, err := Resolve("v1.0.0")
+		if want := filepath.Join(cwd, "repo"); err != nil || got.RepoDir != want || got.Embedded {
+			t.Errorf("Resolve() = %+v, %v; want RepoDir %q", got, err, want)
+		}
+	})
+
+	t.Run("a relative RepoDir is refused", func(t *testing.T) {
+		if got, err := absoluteSource(Source{RepoDir: "repo"}); err == nil || got != (Source{}) {
+			t.Errorf("absoluteSource(repo) = %+v, %v; want an error", got, err)
+		}
+		if got, err := absoluteSource(Source{RepoDir: "/repo", Embedded: true}); err != nil || got.RepoDir != "/repo" || !got.Embedded {
+			t.Errorf("absoluteSource(/repo) = %+v, %v; want it unchanged", got, err)
 		}
 	})
 

@@ -1765,3 +1765,92 @@ func TestDoInstall_RefusesBadHome(t *testing.T) {
 		}
 	}
 }
+
+// ── DEVEXP_DIR resolution (#126) ──────────────────────────────────────────────
+
+// TestInstallCmd_RelativeDevexpDir: a relative DEVEXP_DIR is resolved to an
+// absolute path, so every hook command written to settings.json is absolute.
+func TestInstallCmd_RelativeDevexpDir(t *testing.T) {
+	for name, devexpDir := range map[string]func(repoDir string) (cwd, dir string){
+		"dot": func(repoDir string) (string, string) { return repoDir, "." },
+		"relative through ..": func(repoDir string) (string, string) {
+			return filepath.Dir(repoDir), "sub/../" + filepath.Base(repoDir)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			repoDir := writeOpencodeHookRepo(t)
+			if err := os.MkdirAll(filepath.Join(repoDir, "hooks", "claude-code"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			os.WriteFile(filepath.Join(repoDir, "hooks", "claude-code", "secret-guard.sh"), []byte("#!/bin/sh\n"), 0o755) //nolint:errcheck
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			loggingCLI(t, "claude")
+			cwd, dir := devexpDir(repoDir)
+			t.Chdir(cwd)
+			t.Setenv("DEVEXP_DIR", dir)
+
+			out, err := executeRoot(t, "install", "--reinstall-mcps")
+			if err != nil {
+				t.Fatalf("install error = %v\n%s", err, out)
+			}
+			data, err := os.ReadFile(testClaudePaths(t, home).settings)
+			if err != nil {
+				t.Fatalf("settings.json not written: %v\n%s", err, out)
+			}
+			var settings struct {
+				Hooks map[string][]struct {
+					Hooks []struct{ Command string } `json:"hooks"`
+				} `json:"hooks"`
+			}
+			if err := json.Unmarshal(data, &settings); err != nil {
+				t.Fatal(err)
+			}
+			var commands []string
+			for _, entries := range settings.Hooks {
+				for _, e := range entries {
+					for _, h := range e.Hooks {
+						commands = append(commands, h.Command)
+					}
+				}
+			}
+			if len(commands) != 1 {
+				t.Fatalf("hook commands = %v, want the one secret-guard registration", commands)
+			}
+			for _, c := range commands {
+				if !filepath.IsAbs(c) || !strings.HasSuffix(c, "/hooks/claude-code/secret-guard.sh") {
+					t.Errorf("hook command %q, want an absolute path to secret-guard.sh", c)
+				}
+				if _, err := os.Stat(c); err != nil {
+					t.Errorf("hook command %q does not point at the script: %v", c, err)
+				}
+			}
+		})
+	}
+}
+
+// TestInstallCmd_DevexpDirNotARepo: a DEVEXP_DIR that isn't a devexp repo is an
+// error before anything is installed — no fallback to another repo or to the
+// embedded assets, no CLI call, nothing under HOME.
+func TestInstallCmd_DevexpDirNotARepo(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CACHE_HOME", "")
+	calls := loggingCLI(t, "claude")
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	os.MkdirAll(filepath.Join(cwd, "not-a-repo", "agents"), 0o755) //nolint:errcheck
+	t.Setenv("DEVEXP_DIR", "not-a-repo")
+
+	out, err := executeRoot(t, "install", "--reinstall-mcps")
+	if err == nil || !strings.Contains(err.Error(), "not a devexp repo") {
+		t.Errorf("install error = %v, want a not-a-repo error\n%s", err, out)
+	}
+	if got := treeState(t, home); len(got) != 1 {
+		t.Errorf("wrote under HOME: %v", got)
+	}
+	if got := treeState(t, cwd); len(got) != 3 {
+		t.Errorf("wrote under the cwd: %v", got)
+	}
+	noCalls(t, calls)
+}

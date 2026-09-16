@@ -379,6 +379,70 @@ func TestInstallClaude(t *testing.T) {
 	}
 }
 
+// TestInstallClaude_RelativeHookCommands: every registered command is absolute.
+// An earlier install from a relative repo dir left relative devexp commands;
+// they are replaced by the absolute registration, and a relative command that
+// isn't devexp's is left alone (#126).
+func TestInstallClaude_RelativeHookCommands(t *testing.T) {
+	repoDir := t.TempDir()
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	scriptAbs := createScript(t, repoDir, "hooks/claude-code/secret-guard.sh")
+	const userRel = "my-hooks/format-check.sh"
+	writeSettingsHooks(t, settingsPath, hooksMapT{
+		"PreToolUse": {
+			{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: "hooks/claude-code/secret-guard.sh"}}},
+			{Matcher: "Read|Glob", Hooks: []hookCmd{{Type: "command", Command: "./hooks/claude-code/graphify-read-guard.sh"}}},
+			{Matcher: "Write", Hooks: []hookCmd{{Type: "command", Command: userRel}}},
+		},
+	})
+
+	var err error
+	out := captureOutput(t, func() { err = InstallClaude(testRegistry(), repoDir, settingsPath, nil, false) })
+	if err != nil {
+		t.Fatalf("InstallClaude() error = %v\n%s", err, out)
+	}
+	want := hooksMapT{"PreToolUse": {
+		{Matcher: "Write", Hooks: []hookCmd{{Type: "command", Command: userRel}}},
+		{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: scriptAbs}}},
+		{Matcher: "Bash", Hooks: []hookCmd{{Type: "command", Command: filepath.Join(repoDir, "hooks/claude-code/dangerous-cmd-guard.sh")}}},
+	}}
+	if got := readHooks(t, settingsPath); !reflect.DeepEqual(got, want) {
+		t.Errorf("hooks = %+v, want %+v", got, want)
+	}
+	for _, entries := range readHooks(t, settingsPath) {
+		for _, e := range entries {
+			for _, h := range e.Hooks {
+				if h.Command != userRel && !filepath.IsAbs(h.Command) {
+					t.Errorf("registered a relative devexp command %q", h.Command)
+				}
+			}
+		}
+	}
+}
+
+// TestInstallClaude_RelativeRepoDir: a relative repo dir would register
+// relative commands, so InstallClaude refuses before touching settings.json.
+func TestInstallClaude_RelativeRepoDir(t *testing.T) {
+	for _, repoDir := range []string{"", ".", "repo", "sub/../repo"} {
+		t.Run(repoDir, func(t *testing.T) {
+			cwd := t.TempDir()
+			t.Chdir(cwd)
+			createScript(t, cwd, "repo/hooks/claude-code/secret-guard.sh")
+			settingsPath := filepath.Join(t.TempDir(), "settings.json")
+			writeSettingsHooks(t, settingsPath, hooksMapT{})
+			before, _ := os.ReadFile(settingsPath)
+
+			err := InstallClaude(testRegistry(), repoDir, settingsPath, nil, false)
+			if err == nil || !strings.Contains(err.Error(), "not an absolute path") {
+				t.Errorf("InstallClaude(repoDir=%q) error = %v, want a refusal", repoDir, err)
+			}
+			if after, _ := os.ReadFile(settingsPath); string(after) != string(before) {
+				t.Errorf("settings.json changed:\n%s", after)
+			}
+		})
+	}
+}
+
 func testRegistry() Registry {
 	return Registry{
 		ccHook("secret-guard", true, "PreToolUse", "Read|Bash", "hooks/claude-code/secret-guard.sh"),
@@ -439,6 +503,31 @@ func TestIsForeignDevexpHook(t *testing.T) {
 	}
 }
 
+func TestIsRelativeDevexpHook(t *testing.T) {
+	managed := managedScriptNames(testRegistry())
+	tests := map[string]struct {
+		cmd  string
+		want bool
+	}{
+		"relative devexp hook":                      {cmd: "hooks/claude-code/secret-guard.sh", want: true},
+		"relative devexp hook with ./":              {cmd: "./hooks/claude-code/secret-guard.sh", want: true},
+		"relative devexp hook under a subdir":       {cmd: "repo/hooks/claude-code/secret-guard.sh", want: true},
+		"relative copy of a disabled hook":          {cmd: "hooks/claude-code/graphify-read-guard.sh", want: true},
+		"absolute devexp hook":                      {cmd: "/opt/devexp/hooks/claude-code/secret-guard.sh", want: false},
+		"relative user hook sharing a basename":     {cmd: "my-hooks/secret-guard.sh", want: false},
+		"relative unknown script in the script dir": {cmd: "hooks/claude-code/my-own-hook.sh", want: false},
+		"bare basename":                             {cmd: "secret-guard.sh", want: false},
+		"empty":                                     {cmd: "", want: false},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := isRelativeDevexpHook(tt.cmd, managed); got != tt.want {
+				t.Errorf("isRelativeDevexpHook(%q) = %v, want %v", tt.cmd, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPruneForeignDevexpHooks(t *testing.T) {
 	repoDir := t.TempDir()
 	otherRoot := t.TempDir()
@@ -491,6 +580,25 @@ func TestPruneForeignDevexpHooks(t *testing.T) {
 				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: userHook}}},
 			}},
 			wantPruned: true,
+		},
+		"prunes a relative devexp hook": {
+			hooksMap: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: "hooks/claude-code/secret-guard.sh"}}},
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: mine}}},
+			}},
+			wantHooks: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: mine}}},
+			}},
+			wantPruned: true,
+		},
+		"keeps a relative user hook": {
+			hooksMap: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: "my-hooks/secret-guard.sh"}}},
+			}},
+			wantHooks: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: "my-hooks/secret-guard.sh"}}},
+			}},
+			wantPruned: false,
 		},
 		"nothing foreign means nothing pruned": {
 			hooksMap: hooksMapT{"PreToolUse": {
