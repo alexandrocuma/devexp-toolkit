@@ -76,11 +76,17 @@ func isRepoDir(dir string) bool {
 
 // ── Embedded asset extraction ─────────────────────────────────────────────────
 
+// userCacheDir is indirected so tests can redirect extraction into a temp
+// directory. Writing to the real user cache from a test would leave artifacts
+// on the developer's machine and make the result depend on what was already
+// cached there.
+var userCacheDir = os.UserCacheDir
+
 // extractEmbedded materializes assets.FS onto disk under the user's cache
 // directory, keyed by binary version so an upgrade gets a fresh copy. Returns
 // the destination directory, reusing a prior extraction when present.
 func extractEmbedded(version string) (string, error) {
-	base, err := os.UserCacheDir()
+	base, err := userCacheDir()
 	if err != nil {
 		base = os.TempDir()
 	}
