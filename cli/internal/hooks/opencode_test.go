@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -755,15 +756,17 @@ func TestOwnedOnDisk_SymlinkedDevexpDir(t *testing.T) {
 
 func TestPruneOpencodeDir(t *testing.T) {
 	tests := map[string]struct {
-		file     bool
-		symlink  bool
-		dryRun   bool
-		wantKept bool
+		file        bool
+		symlink     bool
+		pluginsLink bool
+		dryRun      bool
+		wantKept    bool
 	}{
-		"empty directory is removed":       {wantKept: false},
-		"non-empty directory is kept":      {file: true, wantKept: true},
-		"dry-run keeps an empty directory": {dryRun: true, wantKept: true},
-		"a symlink is never removed":       {symlink: true, wantKept: true},
+		"empty directory is removed":                         {wantKept: false},
+		"non-empty directory is kept":                        {file: true, wantKept: true},
+		"dry-run keeps an empty directory":                   {dryRun: true, wantKept: true},
+		"a symlink is never removed":                         {symlink: true, wantKept: true},
+		"nothing is removed through a symlinked plugins dir": {pluginsLink: true, wantKept: true},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -776,6 +779,11 @@ func TestPruneOpencodeDir(t *testing.T) {
 			}
 			if tt.file {
 				os.WriteFile(filepath.Join(dir, "mine.txt"), []byte("x"), 0644) //nolint:errcheck
+			}
+			if tt.pluginsLink {
+				real := pluginsDir
+				pluginsDir = filepath.Join(t.TempDir(), "plugins")
+				os.Symlink(real, pluginsDir) //nolint:errcheck
 			}
 			pruneOpencodeDir(pluginsDir, tt.dryRun)
 			_, err := os.Lstat(dir)
@@ -801,52 +809,166 @@ func installFull(t *testing.T, repoDir, pluginsDir string) []string {
 
 var allThree = []string{"secret-guard", "lint-on-save", "graphify-read-guard"}
 
-// TestInstallOpencode_SymlinkedRoots: a symlinked plugins/ or devexp/ is never
-// written or removed through — with hooks enabled, with every hook disabled,
-// and in dry-run — so a link to a source checkout keeps every file.
-func TestInstallOpencode_SymlinkedRoots(t *testing.T) {
-	for _, linked := range []string{"devexp", "plugins"} {
-		for _, disabled := range [][]string{nil, allThree} {
-			for _, dryRun := range []bool{false, true} {
-				t.Run(linked+" disabled="+strings.Join(disabled, ",")+" dryRun="+map[bool]string{true: "y", false: "n"}[dryRun], func(t *testing.T) {
-					repoDir := t.TempDir()
-					writeOpencodeRepo(t, repoDir, allThree...)
-					home := t.TempDir()
-					pluginsDir := filepath.Join(home, "plugins")
-					recorded := installFull(t, repoDir, pluginsDir)
+// linkDir moves dir to a fresh location and leaves a symlink to it in its
+// place, as a dotfiles setup or a maintainer live-linking a checkout would.
+// It returns the link target.
+func linkDir(t *testing.T, dir string) string {
+	t.Helper()
+	target := filepath.Join(t.TempDir(), "target")
+	if err := os.Rename(dir, target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, dir); err != nil {
+		t.Fatal(err)
+	}
+	return target
+}
 
-					// Move the real directory away and link to it, as a
-					// maintainer live-linking a checkout would.
-					checkout := filepath.Join(t.TempDir(), "checkout")
-					from := filepath.Join(pluginsDir, "devexp")
-					if linked == "plugins" {
-						from = pluginsDir
-					}
-					if err := os.Rename(from, checkout); err != nil {
-						t.Fatal(err)
-					}
-					if err := os.Symlink(checkout, from); err != nil {
-						t.Fatal(err)
-					}
-					before := snapshot(t, checkout)
+func dryRunName(dryRun bool) string { return map[bool]string{true: "dry-run", false: "real"}[dryRun] }
 
-					var err error
-					captureOutput(t, func() {
-						_, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, disabled, recorded, dryRun)
-					})
-					if err == nil || !strings.Contains(err.Error(), "is a symlink") {
-						t.Errorf("InstallOpencode() error = %v, want a symlink refusal", err)
-					}
-					if after := snapshot(t, checkout); !reflect.DeepEqual(before, after) {
-						t.Errorf("files behind the %s symlink changed: before %v, after %v", linked, before, after)
-					}
-					if fi, err := os.Lstat(from); err != nil || fi.Mode()&os.ModeSymlink == 0 {
-						t.Errorf("the %s symlink itself was removed or replaced", linked)
-					}
+// TestInstallOpencode_SymlinkedDevexpDir: a symlinked devexp/ may point at a
+// source checkout, so it is refused in every case — hooks enabled or all
+// disabled, dry-run or not — and nothing behind it changes.
+func TestInstallOpencode_SymlinkedDevexpDir(t *testing.T) {
+	for _, disabled := range [][]string{nil, allThree} {
+		for _, dryRun := range []bool{false, true} {
+			t.Run(fmt.Sprintf("disabled=%d %s", len(disabled), dryRunName(dryRun)), func(t *testing.T) {
+				repoDir := t.TempDir()
+				writeOpencodeRepo(t, repoDir, allThree...)
+				pluginsDir := filepath.Join(t.TempDir(), "plugins")
+				recorded := installFull(t, repoDir, pluginsDir)
+				checkout := linkDir(t, filepath.Join(pluginsDir, "devexp"))
+				before := snapshot(t, checkout)
+
+				var err error
+				captureOutput(t, func() {
+					_, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, disabled, recorded, dryRun)
 				})
-			}
+				if err == nil || !strings.Contains(err.Error(), "is a symlink") {
+					t.Errorf("InstallOpencode() error = %v, want a symlink refusal", err)
+				}
+				if after := snapshot(t, checkout); !reflect.DeepEqual(before, after) {
+					t.Errorf("files behind the devexp symlink changed")
+				}
+				if fi, err := os.Lstat(filepath.Join(pluginsDir, "devexp")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+					t.Errorf("the devexp symlink itself was removed or replaced")
+				}
+			})
 		}
 	}
+}
+
+// TestInstallOpencode_SymlinkedPluginsDir: devexp writes through a symlinked
+// plugins/ but never removes anything through it. Files it would have removed
+// are listed in a warning and stay recorded.
+func TestInstallOpencode_SymlinkedPluginsDir(t *testing.T) {
+	setup := func(t *testing.T) (repoDir, pluginsDir, target string, recorded []string) {
+		repoDir = t.TempDir()
+		writeOpencodeRepo(t, repoDir, allThree...)
+		pluginsDir = filepath.Join(t.TempDir(), "plugins")
+		recorded = installFull(t, repoDir, pluginsDir)
+		target = linkDir(t, pluginsDir)
+		// A module from an earlier release, still recorded: stale on this run.
+		os.WriteFile(filepath.Join(target, "devexp", "old-hook.js"), []byte("old"), 0644) //nolint:errcheck
+		return repoDir, pluginsDir, target, append(recorded, "devexp/old-hook.js")
+	}
+	linkKept := func(t *testing.T, pluginsDir string) {
+		t.Helper()
+		if fi, err := os.Lstat(pluginsDir); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			t.Errorf("the plugins symlink itself was removed or replaced")
+		}
+	}
+
+	t.Run("hooks enabled: installs inside the link target and removes nothing", func(t *testing.T) {
+		repoDir, pluginsDir, target, recorded := setup(t)
+		os.WriteFile(filepath.Join(repoDir, "hooks", "opencode", "secret-guard.js"), []byte("// v2\n"), 0644) //nolint:errcheck
+		var got []string
+		var err error
+		out := captureOutput(t, func() { got, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, recorded, false) })
+		if err != nil {
+			t.Fatalf("InstallOpencode() error = %v", err)
+		}
+		if b, _ := os.ReadFile(filepath.Join(target, "devexp", "secret-guard.js")); string(b) != "// v2\n" {
+			t.Errorf("devexp/secret-guard.js in the link target = %q, want the updated module", b)
+		}
+		if _, err := os.Stat(filepath.Join(target, "devexp", "old-hook.js")); err != nil {
+			t.Errorf("stale devexp/old-hook.js removed through the symlink")
+		}
+		if !contains(got, "devexp/old-hook.js") || !contains(got, "devexp.js") {
+			t.Errorf("InstallOpencode() = %v, want the written files plus the kept stale file", got)
+		}
+		if !strings.Contains(out, "never removes files through it") || !strings.Contains(out, "old-hook.js") {
+			t.Errorf("no warning listing the file left behind:\n%s", out)
+		}
+		for _, e := range listTree(t, target) {
+			if strings.Contains(e, ".tmp-") {
+				t.Errorf("temp file %s left in the link target", e)
+			}
+		}
+		linkKept(t, pluginsDir)
+	})
+
+	t.Run("hooks enabled, dry-run: writes nothing", func(t *testing.T) {
+		repoDir, pluginsDir, target, recorded := setup(t)
+		before := snapshot(t, target)
+		captureOutput(t, func() {
+			if _, err := InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, recorded, true); err != nil {
+				t.Fatalf("InstallOpencode() error = %v", err)
+			}
+		})
+		if after := snapshot(t, target); !reflect.DeepEqual(before, after) {
+			t.Errorf("dry-run changed the link target")
+		}
+	})
+
+	for _, dryRun := range []bool{false, true} {
+		t.Run("every hook disabled: nothing removed, "+dryRunName(dryRun), func(t *testing.T) {
+			repoDir, pluginsDir, target, recorded := setup(t)
+			before := snapshot(t, target)
+			var got []string
+			var err error
+			out := captureOutput(t, func() {
+				got, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, allThree, recorded, dryRun)
+			})
+			if err != nil {
+				t.Fatalf("InstallOpencode() error = %v", err)
+			}
+			if after := snapshot(t, target); !reflect.DeepEqual(before, after) {
+				t.Errorf("files removed through the plugins symlink")
+			}
+			if len(got) != len(recorded) || got[0] != "devexp.js" {
+				t.Errorf("InstallOpencode() = %v, want every file left behind still recorded", got)
+			}
+			if !strings.Contains(out, "never removes files through it; remove these by hand") || !strings.Contains(out, "devexp.js") {
+				t.Errorf("no warning listing what was left behind:\n%s", out)
+			}
+			linkKept(t, pluginsDir)
+		})
+	}
+
+	t.Run("a dangling or non-directory link is refused", func(t *testing.T) {
+		for name, target := range map[string]func(t *testing.T) string{
+			"dangling": func(t *testing.T) string { return filepath.Join(t.TempDir(), "gone") },
+			"to a file": func(t *testing.T) string {
+				f := filepath.Join(t.TempDir(), "file")
+				os.WriteFile(f, []byte("x"), 0644) //nolint:errcheck
+				return f
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				repoDir := t.TempDir()
+				writeOpencodeRepo(t, repoDir, allThree...)
+				pluginsDir := filepath.Join(t.TempDir(), "plugins")
+				tgt := target(t)
+				os.Symlink(tgt, pluginsDir) //nolint:errcheck
+				var err error
+				captureOutput(t, func() { _, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, nil, false) })
+				if err == nil || !strings.Contains(err.Error(), "doesn't point at a directory") {
+					t.Errorf("InstallOpencode() error = %v, want a refusal", err)
+				}
+			})
+		}
+	})
 }
 
 // TestInstallOpencode_EntryOwnership: a devexp.js the manifest records is
@@ -1296,19 +1418,39 @@ func TestCleanLegacyOpencode_Config(t *testing.T) {
 		}
 	})
 
-	t.Run("a symlinked plugins dir is refused", func(t *testing.T) {
+	t.Run("a symlinked plugins dir keeps its legacy files and lists them", func(t *testing.T) {
 		checkout := t.TempDir()
 		copyLegacyFixtures(t, checkout)
 		before := snapshot(t, checkout)
 		pluginsDir := filepath.Join(t.TempDir(), "plugins")
 		os.Symlink(checkout, pluginsDir) //nolint:errcheck
+		// The config entry is not a file removal through the link: its rules apply.
+		configPath := filepath.Join(t.TempDir(), "config.json")
+		os.WriteFile(configPath, []byte(`{"plugin":["`+filepath.Join(pluginsDir, legacyEntry)+`","a"]}`), 0644) //nolint:errcheck
+		var err error
+		out := captureOutput(t, func() { err = CleanLegacyOpencode(pluginsDir, configPath, false) })
+		if err != nil {
+			t.Errorf("CleanLegacyOpencode() error = %v", err)
+		}
+		if after := snapshot(t, checkout); !reflect.DeepEqual(before, after) {
+			t.Errorf("legacy-named files behind the symlink were removed")
+		}
+		if !strings.Contains(out, "remove these by hand") || !strings.Contains(out, "package.json") {
+			t.Errorf("no warning listing the legacy files left behind:\n%s", out)
+		}
+		if got, _ := os.ReadFile(configPath); string(got) != `{"plugin":["a"]}` {
+			t.Errorf("config.json = %s, want the legacy entry removed as usual", got)
+		}
+	})
+
+	t.Run("a symlinked devexp dir is refused", func(t *testing.T) {
+		pluginsDir := t.TempDir()
+		copyLegacyFixtures(t, pluginsDir)
+		os.Symlink(t.TempDir(), filepath.Join(pluginsDir, "devexp")) //nolint:errcheck
 		var err error
 		captureOutput(t, func() { err = CleanLegacyOpencode(pluginsDir, filepath.Join(t.TempDir(), "config.json"), false) })
 		if err == nil {
 			t.Errorf("CleanLegacyOpencode() error = nil, want a symlink refusal")
-		}
-		if after := snapshot(t, checkout); !reflect.DeepEqual(before, after) {
-			t.Errorf("legacy-named files behind the symlink were removed")
 		}
 	})
 
@@ -1418,4 +1560,25 @@ func TestRemovePluginFiles_RechecksRoots(t *testing.T) {
 	if !reflect.DeepEqual(kept, stale) || !strings.Contains(out, "is a symlink") {
 		t.Errorf("removePluginFiles() kept %v, output %q; want all kept with a symlink warning", kept, out)
 	}
+
+	t.Run("a plugins dir swapped for a symlink", func(t *testing.T) {
+		real := t.TempDir()
+		os.MkdirAll(filepath.Join(real, "devexp"), 0755) //nolint:errcheck
+		stale := []string{"devexp.js", "devexp/utils.js"}
+		for _, rel := range stale {
+			os.WriteFile(filepath.Join(real, filepath.FromSlash(rel)), []byte(rel), 0644) //nolint:errcheck
+		}
+		pluginsDir := filepath.Join(t.TempDir(), "plugins")
+		os.Symlink(real, pluginsDir) //nolint:errcheck
+		for _, dryRun := range []bool{false, true} {
+			var kept []string
+			out := captureOutput(t, func() { kept = removePluginFiles(pluginsDir, stale, dryRun) })
+			if len(listTree(t, real)) != 2 || !reflect.DeepEqual(kept, stale) {
+				t.Errorf("dryRun=%v: removed through the plugins symlink (kept %v, left %v)", dryRun, kept, listTree(t, real))
+			}
+			if !strings.Contains(out, "never removes files through it") || strings.Contains(out, "[dry-run] remove") {
+				t.Errorf("dryRun=%v: output %q, want the left-behind warning and no removal lines", dryRun, out)
+			}
+		}
+	})
 }

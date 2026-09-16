@@ -81,7 +81,7 @@ No threshold: CI prints per-package coverage (`go test ./... -race -cover`, `ci.
 cd cli && go test ./... -coverprofile=/tmp/cover.out && go tool cover -func=/tmp/cover.out
 ```
 
-Per package at this commit: `config` 48.5% · `ui` 61.5% · `mcp` 64.7% · `cmd` 65.0% · `repo` 83.0% · `assets` 83.3% · `agents` 85.9% · `skills` 86.0% · `hooks` 90.7% · `manifest` 91.3%.
+Per package at this commit: `config` 48.5% · `ui` 61.5% · `mcp` 64.7% · `cmd` 65.0% · `repo` 83.0% · `assets` 83.3% · `agents` 85.9% · `skills` 86.0% · `hooks` 90.9% · `manifest` 91.3%.
 
 Untested areas worth knowing:
 

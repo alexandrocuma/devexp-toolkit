@@ -261,7 +261,7 @@ func InstallOpencode(registry Registry, repoDir, pluginsDir string, disabled, re
 		ui.Skipped("opencode plugin", "every hook is disabled — nothing to install")
 		return nil, nil
 	}
-	if err := checkPluginRoots(pluginsDir); err != nil {
+	if _, err := checkPluginRoots(pluginsDir); err != nil {
 		return nil, err
 	}
 	for _, f := range files {
@@ -311,26 +311,53 @@ func InstallOpencode(registry Registry, repoDir, pluginsDir string, disabled, re
 	return append(dests, kept...), nil
 }
 
-// checkPluginRoots refuses a plugins/ or plugins/devexp/ that exists but is a
-// symlink or not a directory. Every write and removal happens inside them, so
-// following a link would reach whatever it points at.
-func checkPluginRoots(pluginsDir string) error {
-	for _, d := range []string{pluginsDir, filepath.Join(pluginsDir, opencodeDir)} {
-		fi, err := os.Lstat(d)
-		if os.IsNotExist(err) {
-			continue
+// checkPluginRoots checks the two directories every plugin write and removal
+// happens in, and reports whether plugins/ is a symlink.
+//
+//   - plugins/ may be a symlink to a directory (a dotfiles setup). devexp
+//     writes through it, but never removes anything through it (linked=true;
+//     the removal paths check this).
+//   - plugins/ that is a dangling link, a link to a non-directory, or not a
+//     directory at all is refused.
+//   - plugins/devexp/ must be a real directory when it exists. A symlink is
+//     refused outright: it may point at a source checkout, and even writing
+//     there would overwrite its files.
+func checkPluginRoots(pluginsDir string) (linked bool, err error) {
+	fi, err := os.Lstat(pluginsDir)
+	switch {
+	case os.IsNotExist(err):
+		return false, nil
+	case err != nil:
+		return false, err
+	case fi.Mode()&os.ModeSymlink != 0:
+		target, err := os.Stat(pluginsDir)
+		if err != nil || !target.IsDir() {
+			return false, fmt.Errorf("%s is a symlink that doesn't point at a directory — fix or remove the link and re-run", pluginsDir)
 		}
-		if err != nil {
-			return err
-		}
-		if fi.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("%s is a symlink — devexp writes and removes opencode plugin files only in a real directory; replace the link with a directory and re-run", d)
-		}
-		if !fi.IsDir() {
-			return fmt.Errorf("%s exists and is not a directory — move it aside and re-run", d)
-		}
+		linked = true
+	case !fi.IsDir():
+		return false, fmt.Errorf("%s exists and is not a directory — move it aside and re-run", pluginsDir)
 	}
-	return nil
+
+	dir := filepath.Join(pluginsDir, opencodeDir)
+	fi, err = os.Lstat(dir)
+	switch {
+	case os.IsNotExist(err):
+		return linked, nil
+	case err != nil:
+		return false, err
+	case fi.Mode()&os.ModeSymlink != 0:
+		return false, fmt.Errorf("%s is a symlink — devexp writes and removes opencode plugin files only in a real directory; replace the link with a directory and re-run", dir)
+	case !fi.IsDir():
+		return false, fmt.Errorf("%s exists and is not a directory — move it aside and re-run", dir)
+	}
+	return linked, nil
+}
+
+// warnLeftBehind reports files devexp would have removed but didn't, because
+// plugins/ is a symlink and nothing is ever removed through one.
+func warnLeftBehind(pluginsDir string, paths []string) {
+	ui.Warn(fmt.Sprintf("%s is a symlink — devexp never removes files through it; remove these by hand: %s", pluginsDir, strings.Join(paths, ", ")))
 }
 
 // checkPluginDest refuses destinations that are not plain files devexp may
@@ -521,20 +548,31 @@ func entryKeepReason(pluginsDir string) string {
 // removePluginFiles removes stale plugin files, entry first, and returns the
 // ones it had to keep. If the entry can't be removed nothing else is, so the
 // plugin never ends up as an entry without its hooks.json. Only regular files
-// are removed; plugins/ and devexp/ are re-checked right before.
+// are removed. plugins/ and devexp/ are re-checked right before, and nothing
+// is removed through a symlinked plugins/: every file is kept (and stays
+// recorded, so a run after the link is replaced can clean up).
 func removePluginFiles(pluginsDir string, stale []string, dryRun bool) []string {
 	if len(stale) == 0 {
 		return nil
+	}
+	linked, err := checkPluginRoots(pluginsDir)
+	if err != nil {
+		ui.Warn(fmt.Sprintf("opencode plugin files left untouched: %v", err))
+		return stale
+	}
+	if linked {
+		paths := make([]string, len(stale))
+		for i, rel := range stale {
+			paths[i] = filepath.Join(pluginsDir, filepath.FromSlash(rel))
+		}
+		warnLeftBehind(pluginsDir, paths)
+		return stale
 	}
 	if dryRun {
 		for _, rel := range stale {
 			ui.DryRun(fmt.Sprintf("remove %s (no longer installed)", filepath.Join(pluginsDir, filepath.FromSlash(rel))))
 		}
 		return nil
-	}
-	if err := checkPluginRoots(pluginsDir); err != nil {
-		ui.Warn(fmt.Sprintf("opencode plugin files left untouched: %v", err))
-		return stale
 	}
 	var kept []string
 	for i, rel := range stale {
@@ -567,6 +605,9 @@ func removePluginFiles(pluginsDir string, stale []string, dryRun bool) []string 
 // it is a real directory: os.Remove on a symlink deletes the link whatever it
 // points at, while on a directory it refuses unless the directory is empty.
 func pruneOpencodeDir(pluginsDir string, dryRun bool) {
+	if fi, err := os.Lstat(pluginsDir); err != nil || fi.Mode()&os.ModeSymlink != 0 {
+		return // never remove through a symlinked plugins/
+	}
 	dir := filepath.Join(pluginsDir, opencodeDir)
 	if fi, err := os.Lstat(dir); dryRun || err != nil || !fi.IsDir() {
 		return
@@ -596,11 +637,14 @@ func contains(list []string, s string) bool {
 // and only with the exact legacy content. The config entry is removed only on
 // an exact string match, and every other byte of config.json is preserved.
 func CleanLegacyOpencode(pluginsDir, configPath string, dryRun bool) error {
-	// A symlinked plugins/ can point at a source checkout whose hooks/opencode
-	// files carry exactly the legacy names and headers.
-	if err := checkPluginRoots(pluginsDir); err != nil {
+	// Nothing is removed through a symlinked plugins/: it can point at a source
+	// checkout whose hooks/opencode files carry exactly the legacy names and
+	// headers. Matches are reported instead.
+	linked, err := checkPluginRoots(pluginsDir)
+	if err != nil {
 		return fmt.Errorf("legacy flat install not cleaned up: %w", err)
 	}
+	var legacy []string
 	matched := 0
 	for _, name := range legacyNames {
 		p := filepath.Join(pluginsDir, name)
@@ -617,18 +661,24 @@ func CleanLegacyOpencode(pluginsDir, configPath string, dryRun bool) error {
 			continue
 		}
 		matched++
-		if err := removeLegacy(p, name+" (legacy flat install)", dryRun); err != nil {
-			return err
-		}
+		legacy = append(legacy, p)
 	}
 
 	if matched > 0 {
 		p := filepath.Join(pluginsDir, "package.json")
 		if fi, err := os.Lstat(p); err == nil && fi.Mode().IsRegular() {
 			if content, err := os.ReadFile(p); err == nil && strings.TrimSpace(string(content)) == legacyPackageJSON {
-				if err := removeLegacy(p, "package.json (legacy flat install)", dryRun); err != nil {
-					return err
-				}
+				legacy = append(legacy, p)
+			}
+		}
+	}
+
+	if linked && len(legacy) > 0 {
+		warnLeftBehind(pluginsDir, legacy)
+	} else {
+		for _, p := range legacy {
+			if err := removeLegacy(p, filepath.Base(p)+" (legacy flat install)", dryRun); err != nil {
+				return err
 			}
 		}
 	}

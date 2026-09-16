@@ -75,12 +75,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     removed only on an exact match, and the rest of `config.json` keeps its bytes;
     a symlinked `config.json` is left untouched with a warning.
   - Nothing is written or removed until every check has passed:
-    - It refuses a `plugins/` or `plugins/devexp/` that is a symlink, so it never
-      writes or deletes through one.
+    - It refuses a `plugins/devexp/` that is a symlink (it may point at a
+      source checkout), and a `plugins/` link that is dangling or doesn't
+      point at a directory.
+    - A `plugins/` symlinked to a directory (for example from dotfiles) is
+      written through but never removed through. Stale plugin files, the
+      every-hook-disabled uninstall and legacy flat files are left in place.
+      The output lists them to remove by hand, and they stay recorded in the
+      manifest so a run after the link is replaced can clean them up.
     - It never overwrites a `devexp.js` that is neither a devexp entry nor
       recorded in the manifest. A recorded, damaged one is repaired.
   - It never deletes anything outside `devexp.js` and a real `devexp/`
-    directory. Files are replaced atomically (temp file + rename). Removing
+    directory, and never deletes through a symlink. Files are replaced atomically (temp file + rename). Removing
     the plugin is all-or-nothing: if `devexp.js` has to stay (a symlink, or
     it can't be deleted), `devexp/` stays too and the output says the hooks
     remain active.

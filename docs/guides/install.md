@@ -74,10 +74,14 @@ Re-running the installer is how you update devexp — there's no separate "upgra
 - **opencode plugin files**: the opencode manifest's `plugins` key lists every plugin file installed (`devexp.js` first, then `devexp/…`).
   - A plugin file this run doesn't install is removed, and `devexp/` is removed once empty. That covers files from the previous list, plus the devexp files recognised on disk if the manifest was lost.
   - Only `devexp.js` and file names devexp installs directly in `devexp/` are ever removed. Any other path in the manifest is kept with a warning.
-  - If `plugins/` or `plugins/devexp/` is a symlink, the install stops with an error before writing or removing anything. Replace the link with a real directory.
+  - **`plugins/` is a symlink to a directory** (for example managed from dotfiles):
+    - devexp installs through it, writing files atomically inside the link target.
+    - It never removes anything through it: not stale plugin files, not the plugin when every hook is disabled, not legacy flat files, not an empty `devexp/`.
+    - The output says `plugins/ is a symlink — devexp never removes files through it; remove these by hand: …`. Those files stay recorded in the manifest, so a run after the link is replaced with a directory cleans them up.
+  - **`plugins/devexp/` is a symlink**, or `plugins/` is a dangling link or doesn't point at a directory: the install stops with an error before writing or removing anything. A `devexp/` link may point at a source checkout. Replace the link with a real directory.
   - Removing the whole plugin is all-or-nothing. If `devexp.js` has to stay (it is a symlink, or can't be deleted), `devexp/` stays too, and the output says the hooks remain active.
   - Files are written atomically. A `devexp.js` recorded in the manifest is repaired on re-install even if it was damaged; one that isn't recorded and isn't a devexp entry is never replaced.
-- **Legacy opencode flat install** (clones from before v0.1.0 copied every hook file flat into `plugins/` and registered `plugins/devexp-plugin.js` in `config.json`). Cleaned up only after the new plugin installed successfully, so a refused install leaves the old one working:
+- **Legacy opencode flat install** (clones from before v0.1.0 copied every hook file flat into `plugins/` and registered `plugins/devexp-plugin.js` in `config.json`). Cleaned up only after the new plugin installed successfully, so a refused install leaves the old one working. Through a symlinked `plugins/` the matching files are listed to remove by hand instead:
   - A file in `plugins/` is removed only when its name is one of the 9 legacy file names **and** its content starts with that file's devexp header. A same-named file without the header is kept, with a warning.
   - `plugins/package.json` is removed only alongside such a match and only if it is exactly `{ "type": "module" }`.
   - The `config.json` `plugin` entry is removed only when it is exactly `<HOME>/.config/opencode/plugins/devexp-plugin.js`. The key goes when the array ends up empty, and every other byte of `config.json` is kept. A symlinked `config.json` is left untouched, with a warning to remove the entry by hand (`CleanLegacyOpencode` in `cli/internal/hooks/opencode.go`).

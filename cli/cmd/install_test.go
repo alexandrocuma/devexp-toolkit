@@ -1448,3 +1448,52 @@ func TestDoInstallOpencode_SymlinkedDevexpAllDisabled(t *testing.T) {
 		t.Errorf("the devexp symlink was removed")
 	}
 }
+
+// TestDoInstallOpencode_SymlinkedPluginsDir: owner decision "write, never
+// remove". Through a symlinked plugins/ the plugin is installed, but neither
+// the legacy flat files nor a later all-disabled run removes anything; the
+// files left behind are listed and stay recorded.
+func TestDoInstallOpencode_SymlinkedPluginsDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	fakeCLI(t)
+	repoDir := writeOpencodeHookRepo(t)
+	p := opencodeTargetPaths(home)
+	dotfiles := filepath.Join(t.TempDir(), "dotfiles-plugins")
+	os.MkdirAll(dotfiles, 0o755)                //nolint:errcheck
+	os.MkdirAll(filepath.Dir(p.plugins), 0o755) //nolint:errcheck
+	if err := os.Symlink(dotfiles, p.plugins); err != nil {
+		t.Fatal(err)
+	}
+	legacy := "/**\n * secret-guard.js — blocks accidental reads of .env and private key files\n */\n"
+	os.WriteFile(filepath.Join(dotfiles, "secret-guard.js"), []byte(legacy), 0o644) //nolint:errcheck
+
+	out, err := runOpencode(t, repoDir, &config.Config{})
+	if err != nil {
+		t.Fatalf("install through a symlinked plugins/: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(dotfiles, "devexp", "hooks.json")); err != nil {
+		t.Errorf("plugin not installed inside the link target: %v", err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dotfiles, "secret-guard.js")); string(got) != legacy {
+		t.Errorf("legacy file removed through the symlink")
+	}
+	if !strings.Contains(out, "never removes files through it; remove these by hand") {
+		t.Errorf("no warning listing the legacy file left behind:\n%s", out)
+	}
+
+	before := treeBytes(t, dotfiles)
+	out, err = runOpencode(t, repoDir, allHooksDisabled())
+	if err != nil {
+		t.Fatalf("all-disabled run: %v\n%s", err, out)
+	}
+	if after := treeBytes(t, dotfiles); !reflect.DeepEqual(before, after) {
+		t.Errorf("files removed through the plugins symlink on an all-disabled run")
+	}
+	if got := loadManifestPlugins(t, home); len(got) != 7 || got[0] != "devexp.js" {
+		t.Errorf("manifest plugins = %v, want the 7 files left behind still recorded", got)
+	}
+	if fi, err := os.Lstat(p.plugins); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("plugins symlink removed or replaced")
+	}
+}

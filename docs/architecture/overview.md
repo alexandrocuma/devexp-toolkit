@@ -94,7 +94,7 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
 5. Hooks (skipped by `--agents-only`/`--skills-only`), in `cli/internal/hooks/opencode.go`:
    - `InstallOpencode` selects hooks with an `opencode.module` that are `EnabledFor(opencode)` and not in `resolveHookDisabled`.
    - It validates before touching anything:
-     - `plugins/` and `plugins/devexp/` are refused if they are symlinks;
+     - `plugins/devexp/` is refused if it is a symlink, and `plugins/` if it is a dangling link or doesn't point at a directory. A `plugins/` symlinked to a directory is written through, but every removal through it is skipped and listed in a warning;
      - every source must be readable;
      - no destination may be a symlink or a directory;
      - `devexp.js` must be a devexp entry or recorded in the manifest.
