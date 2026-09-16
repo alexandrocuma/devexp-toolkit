@@ -24,7 +24,7 @@ set -euo pipefail
 
 input=$(cat)
 
-result=$(echo "$input" | python3 -c "
+result=$(echo "$input" | python3 -I -c "
 import sys, json, os, re, shlex
 
 d = json.load(sys.stdin)
