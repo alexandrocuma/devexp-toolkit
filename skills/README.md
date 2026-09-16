@@ -6,9 +6,9 @@ Install them by running `../install.sh` from the repo root. Installed skills lan
 
 ---
 
-## The Eight Commands
+## The Seven Commands
 
-These eight commands are the entire user-facing surface — five lifecycle orchestrators, two utilities (`/graphify`, `/cleanup`) and one domain playbook (`/promo-campaign`). Everything else — ~30 specialist capabilities — runs as agents (`agents/<name>.md`) or inline within these orchestrators.
+These seven commands are the entire user-facing surface — five lifecycle orchestrators and two utilities (`/graphify`, `/cleanup`). Everything else — ~30 specialist capabilities — runs as agents (`agents/<name>.md`) or inline within these orchestrators.
 
 | Directory | Slash Command | When to use |
 |-----------|---------------|------------|
@@ -19,7 +19,6 @@ These eight commands are the entire user-facing surface — five lifecycle orche
 | `monitor/` | `/monitor [<surface>]` | Operate phase — review the deployed system's health via telemetry/config, anytime |
 | `graphify/` | `/graphify` | Build a persistent, queryable knowledge graph from this codebase |
 | `cleanup/` | `/cleanup [<ticket>]` | On demand — retire finished/abandoned worktrees, orphaned branches, stale plans, and scratch |
-| `promo-campaign/` | `/promo-campaign [<platform>] [<locale>]` | Domain playbook — plan an app's promo reel and carousel from its listing's real claims |
 
 ```
 /devxp  →  /refine  →  /deliver  →  /improve
@@ -29,7 +28,6 @@ These eight commands are the entire user-facing surface — five lifecycle orche
                         /monitor   (operate: review the deployed system, anytime)
 
   /graphify   (utility: knowledge graph)   /cleanup   (utility: retire finished artifacts)
-  /promo-campaign   (playbook: app promo from real footage)
 ```
 
 ---

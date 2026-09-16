@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **`/promo-campaign` and the domain-playbook category.** Marketing is not a phase of the development lifecycle. This toolkit covers idea → refinement → grooming → planification → delivery → release → cleanup → improvements/postmortem; promoting an app that already ships sits outside that loop. The skill was also the repo's largest single component (~2,700 lines), the only one requiring ffmpeg, ImageMagick, Maestro and Xcode, and iOS-Simulator-only — so it did not work on the majority of its own author's projects. It moves to **`marketing-toolkit`**, a sibling project, where it gains Android capture, an audio path and a platform-plural contract.
+  - **The category goes with it.** It had exactly one member, and its four-part entry test (app-agnostic, user-invoked, interactive, not absorbable by an orchestrator) admitted a capability that the lifecycle test rejects.
+  - **Documentation surface: eight commands → seven** — five lifecycle orchestrators and two utilities (`/graphify`, `/cleanup`) — across `README.md`, `skills/README.md`, `docs/reference/skills.md`, `docs/coverage.md`, `docs/README.md` and `CLAUDE.md`.
+  - **Corrected a stale count** found while rewriting those lines: the skills reference claimed "~40 specialist capabilities" where every other document says ~30.
+  - **Installed copies retire themselves** — `manifest.Stale()` removes vanished skills on the next `install.sh`.
+
 ## [0.6.0] - 2026-09-14
 
 Epic #77 — promo-campaign: the toolkit's first domain playbook, with its iOS Simulator capture and segment reel composer (#76). Android capture and the carousel composer (#78) follow.
