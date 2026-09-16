@@ -108,7 +108,7 @@ Comma-separated list of tools the agent can use. Only include tools the agent ac
 
 **Do not give agents tools they don't need.** An agent with `Write` access that only reviews code is a security risk and a source of unexpected behavior.
 
-**CLI compatibility note:** The `Agent`, `Skill`, and `Task*` tools are Claude Code-only. When installed for opencode via `install.sh`, these are automatically stripped from the tools list during frontmatter transformation. If your agent relies on these tools, it will work in Claude Code but have reduced capability in opencode — document this in the agent description.
+**CLI compatibility note:** The `Agent`, `Skill`, and `Task*` tools are Claude Code-only. When installed for opencode via `install.sh`, they are not carried into the opencode frontmatter — the transformation only writes `false` entries for opencode's eight file/shell/web tools the agent doesn't declare (see [CLI Compatibility](#cli-compatibility)). If your agent relies on these tools, it will work in Claude Code but have reduced capability in opencode — document this in the agent description.
 
 ### `model`
 
@@ -117,7 +117,7 @@ Comma-separated list of tools the agent can use. Only include tools the agent ac
 
 ### `color`
 
-Terminal color for visual identification in Claude Code output: `cyan`, `green`, `yellow`, `red`, `purple`, `blue`.
+Terminal color for visual identification in Claude Code output: `cyan`, `green`, `yellow`, `red`, `purple`, `blue`, `orange` (used by `agents/root-cause.md`).
 
 ### `memory`
 
@@ -175,7 +175,7 @@ Before doing any discovery work:
    If yes: run `graphify query "<describe what this agent needs>"` and use the results to supplement the atlas. If the graph doesn't exist, or graphify is unavailable, or the query returns nothing, continue.
 ```
 
-This pattern is used by all agents in the devexp framework. Follow it. See [graphify Integration Patterns](#graphify-integration-patterns) for full guidance on querying and triggering updates.
+This pattern is used by the devexp agents that read code (exemptions: [When to skip Phase 0](agent-architecture-reference.md#when-to-skip-phase-0)). Follow it. See [graphify Integration Patterns](#graphify-integration-patterns) for full guidance on querying and triggering updates.
 
 ### Define a Clear Process
 
@@ -245,10 +245,11 @@ If the agent uses the `Skill` tool, include a section listing the skills it can 
 ```markdown
 ## Available Skills
 
-- `/bugfix` — focused bug investigation and fixing
-- `/refactor` — targeted refactoring work
-- `/quality` — code quality assessment
+- `/graphify` — query or incrementally update the project's knowledge graph
+- `/release` — finish a release: changelog, version bump, tag, ship targets
 ```
+
+Only list skills that exist in `skills/` — `ls skills` is the source of truth. An agent cannot invoke a skill that isn't installed.
 
 ### Delegation Rules (for agents that spawn sub-agents)
 
@@ -334,15 +335,15 @@ After completing work, record:
 
 ### The Chaining Pattern
 
-Agents can invoke skills at the end of their workflow to chain into follow-up actions:
+Agents end their workflow by chaining into follow-up agents or skills (format: [Chaining Convention](agent-architecture-reference.md#chaining-convention)). Adapted from `agents/changelog.md` and `agents/dep-audit.md`:
 
 ```markdown
 ## Chaining
 
-After completing analysis, chain into action when appropriate:
-- **Code-level bottleneck identified** → invoke `/refactor` skill
-- **Database issues found** → invoke `/db-design` skill
-- **Quick wins available** → invoke `/bugfix` skill
+After completing the task:
+- **Version bump needed** → invoke `/release` skill to handle the full release workflow
+- **Critical or High CVEs found** → suggest invoking `security` agent to assess code-level impact
+- **No issues found** → no further action needed
 ```
 
 ---
@@ -430,15 +431,30 @@ One exception: the codebase-navigator atlas that graphify results are often cros
 
 ## CLI Compatibility
 
-Agents in `agents/` are written in Claude Code format and automatically transformed for opencode at install time. The transformation:
+Agents in `agents/` are written in Claude Code format and automatically transformed for opencode at install time (`transformForOpencode` in `cli/internal/agents/installer.go`). The transformation only touches the frontmatter:
 
-- Maps model aliases (`sonnet` → `anthropic/claude-sonnet-4-5`)
-- Converts the tools list to an opencode YAML object (disabling tools not in the list)
-- Strips fields not supported by opencode: `name`, `color`, `memory`
-- Strips tools not supported by opencode: `Agent`, `Skill`, `Task*`
-- Adds `mode: subagent`
+- Drops the `name`, `color` and `memory` lines
+- Rewrites an existing `model:` line to a full model ID via `modelMap` (see table below); an alias not in the map is written through unchanged. No `model:` line is added if the agent has none
+- Replaces the `tools:` line with an explicit disable list: for each of opencode's `read`, `write`, `edit`, `bash`, `glob`, `grep`, `webfetch`, `websearch` that the agent does **not** declare, it writes `<tool>: false`. Tools outside those eight (`Agent`, `Skill`, `Task*`) are simply not carried over — nothing is written for them. If the agent declares all eight, no `tools:` block is written
+- Keeps every other line (e.g. `description`) as-is and appends `mode: subagent`
 
-Agents placed in `agents/opencode/` are opencode-exclusive and installed as-is (no transformation). Use this for agents that require opencode-only capabilities like the `Task` tool for true parallel subagent spawning.
+| Alias | Model ID written |
+|-------|------------------|
+| `sonnet` | `anthropic/claude-sonnet-4-6` |
+| `opus` | `anthropic/claude-opus-4-6` |
+| `haiku` | `anthropic/claude-haiku-4-5-20251001` |
+| `gpt4` | `openai/gpt-4.1-2025-04-14` |
+| `gpt4o` | `openai/gpt-4o` |
+| `o3` | `openai/o3-2025-04-16` |
+| `o4mini` | `openai/o4-mini-2025-04-16` |
+| `deepseek` | `deepseek/deepseek-chat` |
+| `deepseek-r1` | `deepseek/deepseek-reasoner` |
+| `kimi` | `moonshot/kimi-k2.5` |
+| `kimi-turbo` | `moonshot/kimi-k2-turbo-preview` |
+
+Agents placed in `agents/opencode/` are opencode-exclusive. They are copied without the frontmatter transformation, but still get model-line substitution when a model override is set (`InstallOpencodeExclusive` → `transformForOpencode(..., true)`). Use this for agents written directly in opencode format — e.g. `agents/opencode/orchestrator.md`, which uses `mode: primary` and `permission.task` to dispatch subagents.
+
+**Model override (`--model` / `model` in `devexp.config.json`):** the value is resolved through the same `modelMap` and substituted into every line matching `^model:` — for opencode agents (frontmatter only) **and** for Claude Code agents (`InstallClaude`, whole file). Two consequences: agents without a `model:` line are unaffected (currently only `dep-audit`, `docs-sync` and `runbook` declare one), and Claude Code agents receive the opencode-style ID (e.g. `model: anthropic/claude-sonnet-4-6`), not the alias.
 
 If your agent is meaningfully degraded by the transformation (e.g., it relies heavily on spawning sub-agents), note this in the description so users know what to expect.
 

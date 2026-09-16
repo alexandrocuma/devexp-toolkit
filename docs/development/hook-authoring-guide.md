@@ -1,6 +1,6 @@
 # Hook Authoring Guide
 
-This guide covers everything you need to write a new devexp hook — from deciding what to guard to deploying it for both Claude Code and opencode.
+This guide covers everything you need to write a new devexp hook — from deciding what to guard to writing both the Claude Code script and the opencode module, and deploying it. The installer deploys both — see [How the System Is Structured](#how-the-system-is-structured).
 
 ---
 
@@ -25,13 +25,13 @@ hooks/
   registry.json                   # source of truth
   claude-code/<hook-name>.sh      # Claude Code implementation
   opencode/<hook-name>.js         # opencode implementation
-  opencode/devexp-plugin.js       # entry point — composes all opencode modules
+  opencode/devexp-plugin.js       # entry point — composes the modules listed in devexp/hooks.json
   opencode/utils.js               # shared helpers
 ```
 
 The installer reads `registry.json` and:
-- Registers each `.sh` script in `~/.claude/settings.json` with the correct event and matcher
-- Copies `devexp-plugin.js` (and all imported modules) to `~/.config/opencode/plugins/`
+- Registers each enabled `.sh` script in `~/.claude/settings.json` with the correct event and matcher, by absolute path into the install root (`cli/internal/hooks/installer.go`)
+- Installs the opencode plugin: copies `opencode/devexp-plugin.js` to `~/.config/opencode/plugins/devexp.js`, copies each selected hook's `opencode.module` plus `utils.js` and `package.json` into `plugins/devexp/`, and writes `plugins/devexp/hooks.json` (`cli/internal/hooks/opencode.go`). It copies by the registry list, so a module without an `opencode` mapping is never installed and `*.test.js` never ships.
 
 ---
 
@@ -49,8 +49,10 @@ Every hook must have an entry in `hooks/registry.json`:
     "script":  "hooks/claude-code/my-guard.sh"
   },
   "opencode": {
-    "event":  "tool.execute.before",
-    "plugin": "hooks/opencode/devexp-plugin.js"
+    "event":       "tool.execute.before",
+    "module":      "hooks/opencode/my-guard.js",
+    "export":      "myGuard",
+    "fail_closed": true
   },
   "enabled": true
 }
@@ -170,6 +172,8 @@ If the interpreter fails, never swallow it (`2>/dev/null || echo ""` turns a cra
 
 Add every new hook to `fail-closed.test.sh` with its kind.
 
+Examples: `hooks/claude-code/secret-guard.sh` (guard) and `hooks/claude-code/lint-on-save.sh` (advisory); rationale in [conventions → Error Handling](conventions.md#error-handling).
+
 ---
 
 ## Writing the opencode JS Module
@@ -209,7 +213,7 @@ export async function myGuard(_ctx) {
 | Event | Signature | Notes |
 |-------|-----------|-------|
 | `tool.execute.before` | `async (input, output) => {}` | `input.tool` = tool name (lowercase), `output.args` = mutable args |
-| `file.edited` | `async (event) => {}` | `event.path` = file path; must never throw |
+| `file.edited` | `async (event) => {}` | `event.file` = absolute file path (delivered by the entry's `event` adapter); must never throw |
 
 ### Tool names in opencode (lowercase)
 
@@ -224,17 +228,21 @@ export async function myGuard(_ctx) {
 
 ```js
 import {
-  findRoot, which, runLinter, countLines,
+  findRoot, which, runLinter, runCommand, countLines,
   existsSync, join, dirname, resolve, extname, basename,
   LINT_EXTS,
 } from './utils.js';
 
 findRoot(filePath)         // walks up to find package.json / go.mod / .git
-which('ruff')              // returns binary path or null
-runLinter(cmd, args, cwd)  // runs linter, prints output, swallows non-zero exit, 10s timeout
+await which('ruff')                     // resolves binary path or null
+await runLinter(cmd, args, cwd)         // runs linter, prints output, swallows non-zero exit, 10s timeout
+await runCommand(cmd, args, { cwd, timeout, output })
+                                        // async spawn; never rejects; resolves { code, signal, stdout, stderr, error }
 countLines(filePath)       // returns line count, 0 on error
 LINT_EXTS                  // Set of lintable extensions: .js, .ts, .py, .go, .rb, etc.
 ```
+
+**Never spawn synchronously** (`execFileSync`, `spawnSync`, `execSync`) in an opencode module. opencode runs plugins inside its server process, so a synchronous spawn freezes every session until the tool exits. Use `runCommand` (or `which` / `runLinter`) and `await` it.
 
 Path helpers (`join`, `dirname`, `resolve`, `extname`, `basename`) are re-exported from Node's `path` module for convenience. `existsSync` is re-exported from `fs`.
 
@@ -242,40 +250,59 @@ Path helpers (`join`, `dirname`, `resolve`, `extname`, `basename`) are re-export
 
 ## Registering in the opencode Entry Point
 
-After creating your module, add it to `hooks/opencode/devexp-plugin.js`:
+You never edit `hooks/opencode/devexp-plugin.js` to add a hook. The entry composes only the modules listed in the installed selection file, and that selection comes from the registry. Register the module by giving the hook its `opencode` mapping in `hooks/registry.json`:
 
-```js
-import { myGuard } from './my-guard.js';
-
-export const DevExpPlugin = async (ctx) => {
-  const modules = await Promise.all([
-    secretGuard(ctx),
-    secretInWriteGuard(ctx),
-    dangerousCmdGuard(ctx),
-    largeFileGuard(ctx),
-    lintOnSave(ctx),
-    formatOnSave(ctx),
-    myGuard(ctx),           // ← add here
-  ]);
-
-  return {
-    'tool.execute.before': async (input, output) => {
-      for (const mod of modules) {
-        if (mod['tool.execute.before']) {
-          await mod['tool.execute.before'](input, output);
-        }
-      }
-    },
-    'file.edited': async (event) => {
-      for (const mod of modules) {
-        if (mod['file.edited']) {
-          await mod['file.edited'](event);
-        }
-      }
-    },
-  };
-};
+```json
+"opencode": {
+  "event":       "tool.execute.before",
+  "module":      "hooks/opencode/my-guard.js",
+  "export":      "myGuard",
+  "fail_closed": true
+}
 ```
+
+| Field | Meaning |
+|-------|---------|
+| `module` | The module file, relative to repo root, directly under `hooks/opencode/` |
+| `export` | The factory's export name — the lowerCamel hook name |
+| `fail_closed` | `true` for security guards. If the module fails to import or initialise, every tool call is blocked instead of running without the guard. Omit it for advisory hooks |
+| `enabled` | Optional opencode-only override of the top-level `enabled` (the `graphify-*` hooks set `true`). Absent = follow `enabled` |
+
+A module may import only `./utils.js` relatively — the installed plugin directory holds the hook modules, `utils.js` and `package.json`, nothing else (`hooks/opencode/devexp-plugin.test.js` checks this for every registry entry).
+
+### The `devexp/hooks.json` contract
+
+The installed plugin is `<plugins>/devexp.js` (the entry) next to `<plugins>/devexp/`, which holds `hooks.json`, `utils.js`, `package.json` and the selected modules. `hooks.json` is a **non-empty** JSON array in registry order, one object per selected hook with exactly the keys `name`, `module`, `export` and `failClosed` (note: camelCase here, `fail_closed` in the registry):
+
+```json
+[
+  { "name": "secret-guard", "module": "secret-guard.js", "export": "secretGuard", "failClosed": true },
+  { "name": "lint-on-save", "module": "lint-on-save.js", "export": "lintOnSave", "failClosed": false }
+]
+```
+
+- `module` must match `^[A-Za-z0-9][A-Za-z0-9._-]*\.js$` and resolve to a `file:` URL inside `devexp/`. Anything else — a path, a `node:` builtin, encoded dot segments — is refused as a load failure.
+- An empty array is **not** a valid selection. With every hook disabled the installer installs no plugin at all, so `[]` can only be an installer bug and is treated like an unreadable file.
+- `hooks/opencode/devexp-plugin.test.js` parses the example above and asserts these exact key names, so it is the target the installer must write.
+
+Writing this file is the installer's job (`opencodeSelectionJSON` in `cli/internal/hooks/opencode.go`); `TestOpencodeSelectionJSON_Contract` checks its output against the example above.
+
+### Failure behaviour
+
+- **`hooks.json` missing, invalid, not an array or empty** → every tool call is blocked with `[devexp] opencode plugin is misconfigured (devexp/hooks.json unreadable) — re-run devexp install. Blocking to be safe.`
+- **An entry that is not an object with a non-empty string `name`** → every tool call is blocked (`… (devexp/hooks.json entry <i> is not a hook entry) …`); it is never skipped.
+- **A module fails to import or initialise** (or its export is not a function, or `module` is refused):
+  - if the entry is fail-closed → a stub blocks every tool call with `[devexp <name>] internal error — the guard failed to load, so it did not run. Blocking to be safe: <error>`. An entry is fail-closed when `failClosed: true`, when it carries the registry spelling `fail_closed: true`, **or** when its name is one of the security guards (`secret-guard`, `secret-in-write-guard`, `dangerous-cmd-guard`) — the entry hard-codes that set so a guard can't fail open because one flag was dropped or misspelled
+  - without → `[devexp <name>] failed to load; skipped: <error>` is logged and the other hooks keep running
+- **At runtime** `tool.execute.before` handlers run one after another in selection order; the first throw blocks the call.
+
+### File events
+
+opencode has no `file.edited` plugin hook: file events reach plugins only through the `event` hook. The entry adapts every `event` of type `file.edited` into a call to each module's `file.edited` handler with `{ file }` (the absolute path).
+
+- The handlers are **queued, not awaited**: `event` returns at once, and the queue runs one edit at a time, calling the modules in selection order. opencode's event publisher is never held while a linter, formatter or test runner works.
+- Errors from those handlers are logged, never rethrown.
+- `format-on-save` rewrites the file in place **after** opencode's edit tool has already computed the diff it reports (and after opencode's own formatter ran), so the diff shown for that edit can differ from what ends up on disk.
 
 ---
 
@@ -284,12 +311,18 @@ export const DevExpPlugin = async (ctx) => {
 - [ ] `hooks/claude-code/<hook-name>.sh` created with correct header comment
 - [ ] `chmod +x hooks/claude-code/<hook-name>.sh`
 - [ ] `hooks/opencode/<hook-name>.js` created
-- [ ] Module imported and added to `devexp-plugin.js`
+- [ ] Registry `opencode.module`/`export` set (`fail_closed` for guards)
 - [ ] Entry added to `hooks/registry.json` with correct event, matcher, and paths
+- [ ] Extraction fails closed (guard) or open-but-loud (advisory) — see [Failing on bad input](#boilerplate)
+- [ ] Mirrored tests added: `hooks/claude-code/<hook-name>.test.sh` and `hooks/opencode/<hook-name>.test.js` (pattern: `secret-guard.test.sh` ↔ `secret-guard.test.js`)
+- [ ] `check <hook-name> 2 guard` or `check <hook-name> 0 advisory` line added to `hooks/claude-code/fail-closed.test.sh`
+- [ ] Hook catalog, file tree and counts updated (`docs/reference/hooks.md`, `hooks/README.md`, `README.md`, `CLAUDE.md`)
 - [ ] `bash -n hooks/claude-code/<hook-name>.sh` passes
 - [ ] `node --input-type=module` import test passes
-- [ ] `./install.sh` installs without errors
+- [ ] `./install.sh` installs without errors, and the hook appears in `~/.claude/settings.json` and in `~/.config/opencode/plugins/devexp/hooks.json`
 - [ ] Tested both the block path and the allow path
+
+Exact steps and the files each touches: [workflows → Add a hook](../guides/workflows.md#add-a-hook).
 
 ---
 

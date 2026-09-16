@@ -7,6 +7,213 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Release targets and the per-repo release guide.** `/release` used to end at
+  tag + GitHub/GitLab release — a full release for a library, but not for a
+  service (deploy), a web app (hosting), or an iOS/Android app (beta channel →
+  store review → staged rollout). Each repo now declares how it ships in
+  `docs/guides/release.md`, and the lifecycle reads it end to end:
+  - `/devxp` detects release targets by generic file shapes and writes or
+    refreshes the guide through `gen-docs`/`update-docs` (new **Release Guide**
+    template). Unproven fields are `[CONFIRM]` markers, never guesses.
+  - `grooming-agent` records **Affected Release Targets** and release impact in
+    the plan; `/refine` shows them and raises the estimate for externally-gated
+    or multi-target releases.
+  - `/deliver` gains **Phase 4.5 — Release Readiness** per affected target.
+  - `/release` splits into **cut** (merge, changelog, version + build numbers,
+    tag) and **ship** (per target, from the guide): a gate per target showing
+    the rollback plan first, a separate confirmation for every production-facing
+    promote stage, verification against the target's declared signals, rollback
+    offered but never automatic. New target states `awaiting-external`,
+    `blocked`, `skipped`, persisted to `~/.claude/agent-memory/release/<ticket>.md`
+    so `/release <ticket>` resumes store-gated and staged releases. No guide →
+    cut-only, as before.
+  - `/monitor` reviews each target's declared post-release signals.
+  - `/cleanup` and `/improve` treat a ticket with a pending target as live.
+  - New maintainer guide: `docs/guides/release-targets.md`.
+
+- **Development Kit + CLAUDE.md as a strict index.** `/devxp` wrote CLAUDE.md
+  *before* docs/, and `gen-indexer`'s template inlined dev commands, conventions,
+  testing, env vars and playbooks whenever a doc was missing — so new repos got
+  the fat CLAUDE.md the docs-architecture guide warns against.
+  - `gen-docs`/`update-docs` define a required **Development Kit** —
+    `development/setup.md`, `development/conventions.md`, `development/testing.md`,
+    `architecture/overview.md`, `guides/workflows.md`, `guides/release.md` — with
+    templates, evidence rules, visible gap markers and `ready`/`draft` status.
+  - `/devxp` now builds atlas → kit → CLAUDE.md, judges each kit doc
+    individually, and lists every doc with its status and open markers in the
+    plan and report.
+  - `gen-indexer` rewritten to produce only an index: what the project is,
+    Start Here, Rules, Gotchas, ≤6 commands, Where Things Are. Hard limits —
+    ≤150 lines, no code blocks, every pointer verified. Missing docs become
+    `[NOT FOUND]` pointers, never inlined content.
+  - `update-indexer` detects leaked knowledge and moves it into the owning kit
+    doc (re-verified against code) before replacing it with a pointer.
+
+### Fixed
+
+- **opencode: `devexp install` now installs the hook plugin (#106, #107, #108).**
+  The Go CLI never deployed the opencode hooks, so opencode users got no guards
+  while the installer reported success.
+  - It installs `~/.config/opencode/plugins/devexp.js` (the single entry opencode
+    loads) plus `devexp/` with only the selected modules, `utils.js`,
+    `package.json` and `hooks.json`. Files are copied by the registry list, so
+    `*.test.js` never ships, and `plugins/package.json` is never written.
+  - It honours `hooks.disabled` and the wizard selection, the same way the Claude
+    Code path does. A hook disabled or removed since the last install is deleted
+    on re-install, tracked through the new `plugins` key in
+    `~/.config/opencode/.devexp-manifest.json`. With every hook disabled it
+    installs no plugin and says why. A lost or unreadable manifest doesn't stop
+    that: devexp also recognises its own plugin files on disk.
+  - It turns on lint/format/test-on-save for opencode. The `graphify-*` hooks are
+    on for opencode (turn them off with `hooks.disabled`).
+  - It cleans up the pre-v0.1.0 flat install, but only after the new plugin is in
+    place, so a refused install keeps the old one. A file is removed only when its name
+    is in the legacy set and its content carries the devexp header; a same-named
+    user file is kept with a warning. The legacy `config.json` `plugin` entry is
+    removed only on an exact match, and the rest of `config.json` keeps its bytes;
+    a symlinked or read-only `config.json` is left untouched with a warning.
+  - Nothing is written or removed until every check has passed:
+    - It refuses a `plugins/devexp/` that is a symlink (it may point at a
+      source checkout), and a `plugins/` link that is dangling or doesn't
+      point at a directory.
+    - A `plugins/` symlinked to a directory (for example from dotfiles) is
+      written through but never removed through. Stale plugin files, the
+      every-hook-disabled uninstall and legacy flat files are left in place.
+      The output lists them to remove by hand, and they stay recorded in the
+      manifest so a run after the link is replaced can clean them up.
+    - It never overwrites a `devexp.js` that is neither a devexp entry nor
+      recorded in the manifest. A recorded, damaged one is repaired.
+  - It never deletes anything outside `devexp.js` and a real `devexp/`
+    directory, and never deletes through a symlink. Files are replaced atomically (temp file + rename). Removing
+    the plugin is all-or-nothing: if `devexp.js` has to stay (a symlink, it
+    can't be deleted, or it isn't recognised as devexp's — neither recorded nor
+    carrying the devexp header, for example after an editor added
+    `// @ts-check`), `devexp/` stays too and the output says why.
+  - `--dry-run` lists every file and writes nothing.
+  - **Clone users:** run `rm bin/devexp && ./install.sh`. `install.sh` never
+    rebuilds an existing binary.
+
+- **opencode: `uninstall.sh` no longer aborts and now removes the hook plugin
+  (#109).** A top-level `local` crashed every opencode uninstall after the agents
+  were gone, and a malformed `config.json` crashed its MCP step; the plugin was
+  left behind. Its plugin cleanup also knew only 6 legacy flat file names.
+  - Plugin removal is delegated to a hidden `devexp uninstall --target opencode`
+    that applies exactly the install's rules, from the same code: only
+    devexp-owned files (recorded, or recognised on disk when the manifest is
+    lost), never through a symlinked `plugins/`, a refusal for a symlinked
+    `devexp/` or a dangling `plugins/` link, all-or-nothing on `devexp.js` +
+    `devexp/` (so an edited, unrecognised `devexp.js` never loses its
+    `hooks.json` and blocks every opencode tool call), and the byte-preserving
+    legacy `config.json` edit. A Go test pins it to the every-hook-disabled
+    install on every fixture. It refuses to run when `HOME` is unset, empty or
+    relative.
+  - It runs before the MCP step rewrites `config.json`. The opencode manifest's
+    `plugins` key is then cut down to what had to stay, only when the manifest
+    is a regular file that loaded cleanly, never through a symlink (a dangling
+    link no longer creates its target) and never on `--dry-run`.
+  - An install with only the plugin (no agents) is now detected.
+  - The opencode MCP step, now reachable, never fails the uninstall: a
+    malformed or oddly shaped `config.json` is skipped with a message, a
+    symlinked one is left untouched (as the plugin step does), and one that
+    can't be written (read-only file or directory) is left as it was with a
+    warning, so the later steps still run. Its save replaces the file
+    atomically, keeping its mode.
+  - `uninstall.sh` finds the binary through `DEVEXP_BIN` (set by the wizard's
+    Remove action), then `bin/devexp`, then `PATH`. Without one that has the
+    command, it warns, leaves the plugin in place, prints the rebuild hint
+    (`rm bin/devexp && ./install.sh`) and still exits 0.
+
+- **An unreadable install manifest crashed `devexp install`.** When
+  `.devexp-manifest.json` couldn't be read (for example a directory at that
+  path), `manifest.Load` returned no manifest and both install targets panicked.
+  It now returns an empty manifest with the error. The install warns, removes
+  no stale agents or skills on that run, and rewrites the manifest at the end. A
+  malformed manifest gets the same warning; before, it was silently treated as
+  empty. Partly decoded data is discarded, so it can never mark files stale.
+  `--agents-only`/`--skills-only` runs no longer print the opencode `Hooks :`
+  line.
+
+- **opencode plugin: data-driven entry, explicit registry mapping, parity fixes
+  (#107).** Groundwork for installing the plugin (#108); no user-visible change
+  until then.
+  - `hooks/opencode/devexp-plugin.js` no longer statically imports all 10 modules
+    through one `Promise.all`, where a single broken module rejected the whole
+    plugin and left opencode running with no guard. It now exports exactly one
+    function and composes only the modules listed in the installed selection
+    `devexp/hooks.json`. A module that fails to import or initialise is skipped
+    and logged; if it is a fail-closed guard every tool call is blocked with an
+    internal-error message instead. Fail-closed can't hinge on one key: an entry
+    blocks on `failClosed: true`, the registry spelling `fail_closed: true`, or a
+    security-guard name (`secret-guard`, `secret-in-write-guard`,
+    `dangerous-cmd-guard`, hard-coded in the entry). A missing, malformed or
+    empty `hooks.json`, or an entry that isn't an object with a `name`, blocks
+    too. `module` must be a bare `.js` file name (allowlist) that resolves inside
+    `devexp/` — `node:` builtins, `%2e%2e` and `\`-separated paths are refused.
+  - lint/format/test-on-save never ran in opencode: `file.edited` is not a plugin
+    hook key, so file events only reach plugins through `event`. The entry now
+    adapts `event` → `file.edited` and hands each module `{ file }`. Because
+    opencode runs plugins in its server process, the handlers are queued so
+    `event` returns at once, and the three modules (plus `utils.js` `which` /
+    `runLinter`) now spawn asynchronously through a new `runCommand` helper with
+    the same tools, cwd, output and 10s/15s/20s timeouts — a slow linter no
+    longer freezes every session. `format-on-save` stays on for opencode; its
+    rewrite lands after the edit tool computed its diff (documented).
+  - opencode `test-on-save` threw `ReferenceError: path is not defined` on every
+    source-file edit (`isTestFile` called `path.basename` without importing
+    `path`), so it could never run a test even once file events arrived. It now
+    uses the `basename` it already imports from `utils.js`.
+  - The opencode `secret-guard` message now matches Claude Code's:
+    `Blocked access to "…"` (was `Blocked read of` / `Blocked bash access to`).
+  - `hooks/registry.json` maps each hook explicitly per install target: every
+    `opencode` block has `module`, `export`, `fail_closed` (security guards) and
+    `enabled` (the `graphify-*` hooks stay on for opencode). The Go registry type
+    is target-generic — `hooks.Hook.Targets` is a `map[string]hooks.TargetSpec`
+    filled from every sibling block, with `EnabledFor(target)` — so a new target
+    is a new registry block, not a new Go type. The Claude Code install is
+    unchanged (identical `settings.json` before and after).
+  - "Add a hook" docs no longer tell authors to edit `devexp-plugin.js`; the
+    `opencode` registry mapping is the touch point (`CLAUDE.md`, `conventions.md`,
+    `workflows.md`, `hooks/README.md`, `reference/hooks.md`,
+    `hook-authoring-guide.md`, `architecture/overview.md`, `docs-sync` agent).
+    New `hooks/opencode/devexp-plugin.test.js`, recorded in `testing.md`.
+
+- **Docs and agent sources drifted from the code** — found by the first `/devxp`
+  run with the development kit, fixed by `update-docs` passes verified against code:
+  - opencode hooks were documented as installed; the Go CLI never deploys
+    `devexp-plugin.js` (known gap, `docs/architecture/overview.md`). Corrected in
+    `install.md`, `README.md`, `hooks/README.md`, `reference/hooks.md`,
+    `hook-authoring-guide.md`.
+  - `install.md`/`README.md`: `git pull && ./install.sh` doesn't rebuild the CLI
+    (`rm bin/devexp` first); `--model` doesn't skip the wizard and only rewrites
+    existing `model:` lines; opencode skills go to `commands/`; backups are
+    Claude Code only.
+  - `docker_compose` MCP field and auto-start removed from `mcp-guide.md`,
+    `reference/mcps.md`, `mcps/README.md` (dropped in `61f6c9f`); `headers`,
+    re-install and secrets behaviour documented as implemented.
+  - `agent-authoring-guide.md`: real `modelMap`, opencode tool mapping and
+    `agents/opencode/` handling; `skill-authoring-guide.md`, `templates/README.md`,
+    `adr/README.md`, `coverage.md`, `agent-architecture-reference.md`,
+    `guides/README.md`, `quickstart.md` corrected.
+  - 15 agent sources chained to skills removed in `13f3cf8` (`/refactor`,
+    `/bugfix`, `/quality`, `/logic-review`, `/api-design`, `/db-design`, `/scope`,
+    `/dead-code`, `/dep-map`, `/groom`, …); now point to the agents or
+    orchestrators that absorbed them. `grooming-agent` Phase 7 writes the plan
+    itself instead of invoking the missing `/groom` skill.
+
+### Changed
+
+- **Release guide: rollback defined.** `docs/guides/release.md` now defines rollback
+  for both targets, so `/release` no longer blocks on `[CONFIRM]`: `cli` is
+  hotfix-forward (mark the bad release pre-release so `latest` falls back, users
+  pin `DEVEXP_VERSION`, cut the next patch); `toolkit-clone` reverts on `main`
+  through a PR. The GitHub Release is created by `/release` with the CHANGELOG
+  section as notes, goreleaser uploads the assets.
+- `/release` phases renumbered: new Phase 7 (Ship Targets); retirement is now
+  Phase 8 and the report Phase 9. Retirement requires every target shipped or
+  skipped, not just a successful tag.
+
 ## [0.7.1] - 2026-09-16
 
 ### Security

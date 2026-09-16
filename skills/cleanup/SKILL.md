@@ -53,6 +53,7 @@ glab mr list --state opened 2>/dev/null
 # Persisted plans, groom sessions, /tmp scratch (toolkit prefix patterns only)
 ls ~/.claude/agent-memory/grooming-agent/plans/ 2>/dev/null
 ls ~/.claude/agent-memory/grooming-agent/sessions/ 2>/dev/null
+ls ~/.claude/agent-memory/release/ 2>/dev/null        # per-target release state — a pending line keeps its ticket live
 ls -1 /tmp/.deliver-* /tmp/.improve-* /tmp/.groom-* 2>/dev/null
 ```
 
@@ -64,11 +65,12 @@ Classify every discovered candidate before proposing any action:
 
 | Candidate | Classification | Evidence to check |
 |-----------|---------------|-------------------|
-| Worktree | **live** | Uncommitted/untracked work (`git -C <path> status --porcelain`), an open PR/MR on its branch, an open ticket, or its branch is not merged to the base |
+| Worktree | **live** | Uncommitted/untracked work (`git -C <path> status --porcelain`), an open PR/MR on its branch, an open ticket, its branch is not merged to the base, or `release/<id>.md` has a target that is not `shipped`/`skipped` (awaiting store review or a staged rollout — `/release <id>` still needs it) |
 | Worktree | **finished** | Branch is merged to the base, **or** delivery abandoned: no open PR, no uncommitted work, ticket closed/cancelled |
 | Branch (not default) | candidate | `git branch --merged <base>` lists it, or the delivery it belonged to is provably abandoned |
 | Persisted plan | candidate | Its ticket is closed/delivered; keep plans for open tickets |
 | Groom session | candidate | Its ticket is closed; keep sessions for open tickets |
+| Release state (`release/<id>.md`) | candidate | Every target line is `shipped` or `skipped`; any `awaiting-external`, `blocked` or `failed` line makes the whole ticket **live** — its plan and worktree stay too |
 | /tmp scratch | candidate | Matches a toolkit prefix (`.deliver-`, `.improve-`, `.groom-`) and the owning run is finished |
 
 When the evidence is mixed or incomplete, classify as **live** — preserve on doubt.
@@ -118,6 +120,7 @@ git worktree prune
 # Scoped artifact removal — prefix-anchored globs, validated ids only
 id="<finished-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/grooming-agent/plans/"$id".md
 id="<finished-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/grooming-agent/sessions/"$id"-* 2>/dev/null
+id="<finished-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/release/"$id".md
 id="<finished-ticket-id>"; safe_id "$id" && rm -f /tmp/.deliver-"$id"-* /tmp/.improve-"$id"-* /tmp/.groom-"$id"-* 2>/dev/null
 ```
 

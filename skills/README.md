@@ -12,7 +12,7 @@ These eight commands are the entire user-facing surface — six lifecycle orches
 
 | Directory | Slash Command | When to use |
 |-----------|---------------|------------|
-| `devxp/` | `/devxp` | First time on a repo — orient, set up CLAUDE.md and docs/ |
+| `devxp/` | `/devxp` | First time on a repo — build the docs/ development kit, then a CLAUDE.md that indexes it |
 | `refine/` | `/refine` | You have an idea or feature request to turn into a groomed ticket |
 | `deliver/` | `/deliver <ticket>` | You have a groomed ticket and want to build and ship it |
 | `release/` | `/release [<ticket>]` | Work is reviewed and approved — merge, changelog, version, tag, publish (gated) |

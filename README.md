@@ -63,7 +63,7 @@ The orchestrators handle everything internally — implementation, testing, code
 
 ### Hooks
 
-Hooks are safety and quality guards that run automatically on every tool call — no configuration needed. They work identically in Claude Code (shell scripts) and opencode (JS plugin modules). 10 hooks cover secret protection, destructive command blocking, large-file confirmation, and lint/format/test-on-save.
+Hooks run automatically on matching tool calls — no configuration needed. 10 hooks ship in `hooks/registry.json`: 7 enabled by default — safety guards for secret protection, destructive command blocking and large-file confirmation, plus advisory lint/format/test-on-save — and 3 opt-in `graphify-*` hooks. The installer registers them for **Claude Code** (shell scripts) and installs the **opencode** plugin (JS modules).
 
 → Browse the catalog: [`hooks/`](hooks/) · Full reference: [`docs/reference/hooks.md`](docs/reference/hooks.md)
 
@@ -85,19 +85,21 @@ cd devexp-toolkit
 ./install.sh
 ```
 
-`install.sh` builds the `devexp` Go CLI from `cli/` and execs `devexp install`. Because `devexp` reads agents, skills, hooks, and MCPs live from disk when run inside a clone, local edits take effect immediately — no rebuild needed.
+`install.sh` builds the `devexp` Go CLI from `cli/` (only when `bin/devexp` doesn't exist yet) and execs `devexp install`. Because `devexp` reads agents, skills, hooks, and MCPs live from disk when run inside a clone, editing them needs no rebuild — just re-run `./install.sh`. After pulling Go changes under `cli/`, rebuild with `rm bin/devexp && ./install.sh` ([Updating](docs/guides/install.md#updating)).
 
-The installer detects which AI coding CLI(s) you have installed and asks which to target — **Claude Code**, **opencode**, or both.
+The installer detects which AI coding CLI(s) you have installed — when both are present it asks which to target: **Claude Code**, **opencode**, or both.
 
 ### Common flags
 
+Any of these flags except `--model` skips the interactive wizard.
+
 ```bash
 ./install.sh --dry-run               # preview what would be installed, no changes made
-./install.sh --model sonnet          # skip the model prompt
 ./install.sh --reinstall-mcps        # remove registry MCPs then re-add them (forces a config refresh)
 ./install.sh --agents-only           # only install agents
 ./install.sh --skills-only           # only install skills
 ./install.sh --mcps-only             # only register MCP servers
+./install.sh --agents-only --model sonnet   # also rewrite the model: line of agents that declare one
 ```
 
 ### What gets installed where
@@ -106,10 +108,10 @@ The installer detects which AI coding CLI(s) you have installed and asks which t
 |-----------|-------------|----------|
 | Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (frontmatter transformed) |
 | Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) |
-| Hooks | `~/.claude/settings.json` (shell scripts, per-tool matchers) | `~/.config/opencode/plugins/devexp-plugin.js` (JS modules) |
+| Hooks | `~/.claude/settings.json` (shell scripts, per-tool matchers) | `~/.config/opencode/plugins/devexp.js` + `devexp/` |
 | MCPs | via `claude mcp add` | `~/.config/opencode/config.json` |
 
-Existing files are backed up automatically before any overwrite. `install.sh` is idempotent.
+For Claude Code, existing agents and skills are backed up before any overwrite (the opencode install has no backup step). `install.sh` is idempotent.
 
 ### Uninstall
 
@@ -118,7 +120,7 @@ Existing files are backed up automatically before any overwrite. `install.sh` is
 ./uninstall.sh --yes    # non-interactive
 ```
 
-Removes only devexp's agents, skills, hooks, and MCPs. Your own custom agents and skills are untouched.
+Removes only devexp's agents, skills, hooks, and MCPs. Your own custom agents and skills are untouched. (It doesn't yet remove opencode skills from `~/.config/opencode/commands/` — see [Known gaps](docs/architecture/overview.md#known-gaps).)
 
 → Full installation guide: [docs/guides/install.md](docs/guides/install.md)
 
@@ -189,17 +191,14 @@ The orchestrator spawns backend-senior-dev, security, and performance agents in 
 ### Use a skill directly
 
 ```
-/bugfix
+/refine
 
 There's a null pointer exception in the order service when the shipping
 address is missing a country code.
 ```
 
 ```
-/commit
-
-I fixed the encoding bug in the payment processor — special characters in
-names no longer cause payment failures.
+/deliver PAY-123
 ```
 
 ---
@@ -226,7 +225,7 @@ devexp-toolkit/
 │       ├── skills/                # Skill install logic
 │       └── ui/                    # Interactive prompts
 ├── agents/                       # 34 agent markdown files (Claude Code format)
-│   └── opencode/                 # opencode-exclusive agents (installed as-is)
+│   └── opencode/                 # opencode-exclusive agents (installed with model-line substitution only)
 │       └── orchestrator.md
 ├── skills/                       # 8 user-facing slash commands, each with SKILL.md
 │   ├── devxp/
@@ -240,7 +239,7 @@ devexp-toolkit/
 ├── hooks/                         # Safety and quality hooks
 │   ├── registry.json              # Source of truth for all hooks
 │   ├── claude-code/                # Shell scripts registered in ~/.claude/settings.json
-│   └── opencode/                   # JS modules composed into a single plugin
+│   └── opencode/                   # JS modules composed into a single opencode plugin
 ├── mcps/                          # MCP server registry and secrets
 │   ├── registry.json              # Curated MCP server list (context7, ui-inspector)
 │   └── .env.example                # Template for API keys (copy to .env)

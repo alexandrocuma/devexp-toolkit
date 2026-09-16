@@ -25,11 +25,11 @@ The single reference for how the toolkit deletes artifacts safely. All cleanup p
 
 5. **Memory needs a staleness reason.** Never delete or rewrite an agent-memory entry without a drift/staleness justification from the canonical A1 Drift Classification (codebase-navigator's Memory Protocol). Re-date re-verified entries; remove only resolved/contradicted ones.
 
-6. **Preserve on failure or doubt.** If a delivery failed, or it is unclear whether an artifact is still live (a worktree with uncommitted work, a plan for an open ticket), **keep it and report it** rather than removing it. Cleanup is reversible only by not having run it.
+6. **Preserve on failure or doubt.** If a delivery failed, or it is unclear whether an artifact is still live (a worktree with uncommitted work, a plan for an open ticket, a release state with a target not yet `shipped`/`skipped` — see [release-targets.md](release-targets.md)), **keep it and report it** rather than removing it. Cleanup is reversible only by not having run it.
 
 ## Who follows this
 
-- **`/release` Phase 7 (C1)** — retires *this ticket's* artifacts on a successful release, keyed to the verified ticket id.
+- **`/release` Phase 8 (C1)** — retires *this ticket's* artifacts once the release is complete (every target shipped or skipped), keyed to the verified ticket id.
 - **`/improve` hygiene sweep (C2)** — finds and retires *repo-wide* orphans (abandoned worktrees, stale plans, old groom sessions, stray `/tmp` scratch, drift-stale memory), dry-run then confirmed.
 - **`/cleanup` (on demand)** — retires finished/abandoned worktrees, orphaned merged branches, and stale plans/sessions/scratch whenever the user asks — same rules, dry-run then confirmed (or a line-by-line log under `--cleanup`). The only path that does *not* prune agent memory: memory entries need codebase-navigator's drift classification, which only C2 performs.
 

@@ -35,11 +35,11 @@ create  →  grant  →  work  →  merge (at release gate)  →  remove
 2. **Grant** — the worktree lives at `../<repo>-worktrees/<ticket>`, outside the project root, so without a grant every write there triggers an out-of-project permission prompt. Right after creation: Claude Code — merge the worktrees parent directory (absolute path) into the project's `.claude/settings.json` `additionalDirectories` (idempotent, preserve existing content); runtimes without a path-scoped grant (e.g. opencode, whose permission model is tool-scoped) — tell the user the first write will prompt and to approve it with "always allow" for the worktrees directory.
 3. **Work** — implementation, instrumentation, test-gap filling, and code review all run *inside* the worktree. The main checkout is never touched during this phase.
 4. **Merge** — deferred to the **release gate**. Only when the ticket is approved and ready to release is the branch merged back. Merges are never performed mid-delivery.
-5. **Remove** — on a **successful** release, the worktree and its branch are removed automatically; the toolkit cleans up after itself so finished trees don't accumulate. When the release is deferred ("I'll release manually") the tree is kept; once the branch has landed, `/cleanup` retires the tree and branch on demand — declining the gate no longer orphans the tree.
+5. **Remove** — on a **completed** release (every affected target shipped or skipped — see [release-targets.md](release-targets.md)), the worktree and its branch are removed automatically; the toolkit cleans up after itself so finished trees don't accumulate. When the release is deferred ("I'll release manually") the tree is kept; once the branch has landed, `/cleanup` retires the tree and branch on demand — declining the gate no longer orphans the tree.
 
 ## Failure handling
 
-If delivery fails at any step — failing tests, an unresolved review finding, an aborted release — the worktree is **kept, not removed**. The isolated tree preserves the exact state where work stopped so it can be inspected, resumed, or diagnosed. Cleanup of a failed worktree is a deliberate, separate action, never automatic.
+If delivery fails at any step — failing tests, an unresolved review finding, an aborted release — the worktree is **kept, not removed**. The isolated tree preserves the exact state where work stopped so it can be inspected, resumed, or diagnosed. Cleanup of a failed worktree is a deliberate, separate action, never automatic. The same holds while a release target is `awaiting-external` (store review, staged rollout): the delivery isn't finished, so its tree stays.
 
 ## Merge discipline
 

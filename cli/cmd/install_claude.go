@@ -39,7 +39,7 @@ func doInstallClaude(opts *installOpts) error {
 	}
 
 	manifestPath := p.manifest
-	old, _ := manifest.Load(manifestPath)
+	old := loadOldManifest(manifestPath)
 	newManifest := &manifest.Manifest{Agents: old.Agents, Skills: old.Skills}
 
 	if !opts.skillsOnly {

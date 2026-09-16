@@ -38,6 +38,7 @@ func claudeTargetPaths(home string, now time.Time) claudePaths {
 type opencodePaths struct {
 	agents   string
 	skills   string
+	plugins  string
 	config   string
 	manifest string
 }
@@ -48,6 +49,7 @@ func opencodeTargetPaths(home string) opencodePaths {
 	return opencodePaths{
 		agents:   filepath.Join(home, ".config", "opencode", "agents"),
 		skills:   filepath.Join(home, ".config", "opencode", "commands"),
+		plugins:  filepath.Join(home, ".config", "opencode", "plugins"),
 		config:   filepath.Join(home, ".config", "opencode", "config.json"),
 		manifest: filepath.Join(home, ".config", "opencode", ".devexp-manifest.json"),
 	}

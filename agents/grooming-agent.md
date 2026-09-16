@@ -41,6 +41,14 @@ The atlas gives you the layer map, module structure, and conventions. If no atla
 
 Store the atlas location for use in later phases.
 
+Also read the project's **release guide** if it exists — it lists every release target (web, service, iOS, Android, library…), the path each one ships from, and how it is promoted and rolled back:
+
+```bash
+cat docs/guides/release.md 2>/dev/null || echo "release guide: MISSING"
+```
+
+A missing guide is not a blocker — note it, and in Phase 7 infer affected targets from the repo layout, marked as unverified.
+
 ---
 
 ### Phase 1: Fetch & Parse the Ticket
@@ -189,6 +197,10 @@ Collect all agent findings. Produce a **Ticket Health Report**:
 ### Security Notes
 - [Any security finding from the security agent, if launched]
 
+### Release Impact
+- Affected targets: [target ids from the release guide whose paths this ticket touches — or "unverified: no release guide"]
+- [Release constraint the ticket ignores — e.g. native change needs a store build + review lead time; schema migration must deploy before the app that reads it; change needs a feature flag because the target's rollback is flag-only]
+
 ---
 
 ### Verdict
@@ -250,18 +262,13 @@ Which existing tests cover the affected area? Which will need updating? Which wi
 
 ### Phase 7: Write the Verified Execution Plan
 
-Invoke the `/groom` skill to produce the formatted plan document using all findings:
-
-```
-/groom — write plan only (validation already complete)
-```
-
-Pass all Phase 3–6 findings as context. The plan must:
+Write the formatted plan document yourself, using all Phase 3–6 findings. The plan must:
 - Reflect the actual codebase, not the ticket's assumptions
 - Include a "Validation Notes" section recording what was corrected
 - Have exact file paths and line numbers, verified to exist
 - Have ordered steps — each step unblocked by the previous
 - Have a specific verification section (not "run tests" — specific commands and what to check)
+- Have an **Affected Release Targets** section: each target id whose release-guide path overlaps a changed file, and the release-impact notes per target (version/build-number bump required, deploy ordering between targets, feature flag required, external review lead time). `deliver` checks readiness against it and `/release` ships only these targets
 
 **Stamp the plan with a validation anchor.** Every line/path in the plan was verified against a specific commit; record which one so consumers can detect drift later. Capture it:
 
@@ -395,6 +402,4 @@ Launch via the `Agent` tool:
 
 ## Available Skills
 
-- `/groom` — write the verified execution plan (invoke after Phase 6)
-- `/ticket` — create corrected tickets in the detected platform if the original needs splitting
-- `/scope` — decompose tickets that are too large to groom in one pass
+- `/graphify` — incremental rebuild of the knowledge graph after persisting the plan (Phase 8)

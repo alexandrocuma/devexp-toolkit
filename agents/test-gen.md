@@ -1,6 +1,6 @@
 ---
 name: test-gen
-description: "Use this agent to generate comprehensive test suites for existing untested or undertested code. Goes beyond the /test-gen skill by autonomously discovering all untested code across the project, prioritizing by risk, and producing a full coverage plan with tests.
+description: "Use this agent to generate comprehensive test suites for existing untested or undertested code. Autonomously discovers all untested code across the project, prioritizes by risk, and produces a full coverage plan with tests.
 
 <example>
 Context: A module was shipped without tests and now needs coverage before a refactor.

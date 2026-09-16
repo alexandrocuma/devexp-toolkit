@@ -1,10 +1,20 @@
 # DevExp Framework — CLAUDE.md
 
+> Index refreshed by devexp `update-indexer` on 2026-09-16. Knowledge lives in `docs/`.
+
 A curated collection of Claude Code agents, skills, hooks, and MCP servers that brings a consistent, expert-level development experience to any project. Install once, distribute to your team.
 
-**Components**: `agents/` (34 agents) · `skills/` (8 user commands) · `hooks/` (10 safety guards) · `mcps/` (MCP registry)
+**Components**: `agents/` (34 agents) · `skills/` (8 user commands) · `hooks/` (10 hooks — 7 enabled by default, 3 opt-in `graphify-*`) · `mcps/` (MCP registry) · `cli/` (Go installer CLI `devexp`)
+
+**Stack:** Markdown assets · bash + python3 (Claude Code hooks) · ESM JS on Node builtins (opencode hooks) · Go 1.25 CLI (cobra, viper, promptui) · **Entry point:** `install.sh` → `cli/main.go`
 
 > New to a repo? Run `/devxp` first — it orients on the codebase, ensures `CLAUDE.md` and `docs/` exist or are current, and routes you to the right skill next.
+
+---
+
+## Start Here
+
+New to this repo? Read in order: [architecture overview](docs/architecture/overview.md) → [setup](docs/development/setup.md) → [conventions](docs/development/conventions.md) → [workflows](docs/guides/workflows.md)
 
 ---
 
@@ -12,11 +22,36 @@ A curated collection of Claude Code agents, skills, hooks, and MCP servers that 
 
 | Task | Command |
 |------|---------|
-| Install everything | `./install.sh` |
-| Dry-run (preview) | `./install.sh --dry-run` |
+| Install (interactive wizard) | `./install.sh` |
+| Dry-run (preview, non-interactive) | `./install.sh --dry-run` |
 | Uninstall | `./uninstall.sh` |
+| Test — Go (as CI) | `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover)` |
+| Test — Claude Code hooks (as CI) | `for f in hooks/claude-code/*.test.sh; do bash "$f" \|\| exit 1; done` |
+| Rebuild local CLI after Go changes | `rm bin/devexp && ./install.sh --dry-run` |
 
-After editing any file in `agents/`, `skills/`, or `hooks/` — run `./install.sh` to deploy. The script is idempotent.
+Sources: `install.sh`, `cli/cmd/install.go`, `.github/workflows/ci.yml`. Full list, opencode and installer-script suites, env vars: [setup](docs/development/setup.md#commands)
+
+---
+
+## Rules
+
+- **Always** re-run `./install.sh` after editing `agents/`, `skills/` or `hooks/` — it is idempotent — see [workflows](docs/guides/workflows.md#ground-rules-every-change)
+- **Never** edit deployed copies (`~/.claude/agents/`, `~/.claude/skills/`, `~/.config/opencode/`) — edit source here; the next install overwrites them — see [conventions](docs/development/conventions.md#module-structure)
+- **Never** call the `Agent` tool with a custom agent name as `subagent_type` — read `agents/<name>.md` and follow it in the current context — see `agents/README.md`, [conventions](docs/development/conventions.md#module-structure)
+- **Always** give a new hook an `opencode.module` + `opencode.export` (and `fail_closed` for security guards) in `hooks/registry.json` — see [workflows](docs/guides/workflows.md#add-a-hook)
+- **Always** add a `CHANGELOG.md` entry under `[Unreleased]` in the same commit — see [conventions](docs/development/conventions.md#commits--branches)
+- **Never** put knowledge in `CLAUDE.md` — directives and pointers only; content goes in `docs/` — see [docs-architecture](docs/guides/docs-architecture.md)
+- **Before marking work done:** all four CI suites pass — see [testing](docs/development/testing.md#before-every-commit)
+
+---
+
+## Must-Know Gotchas
+
+- **`go build`/`go test` fail in a fresh clone or worktree** (`pattern all:agents: no matching files found`) — staged assets under `cli/internal/assets/` are gitignored; run `./scripts/stage-assets.sh` first — see `.gitignore`, [setup](docs/development/setup.md#troubleshooting)
+- **Go changes don't reach `bin/devexp`** — `install.sh` builds only when the binary is missing; `rm bin/devexp` first — see `install.sh`
+- **`./install.sh` with no flags opens an interactive wizard** (needs a TTY) — only `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, `--skills-only` take the non-interactive path; `--model` alone does not — see `cli/cmd/install.go:108-112`
+- **graphify hooks are on for opencode** (`opencode.enabled` in the registry), though off for Claude Code — turn them off with `hooks.disabled` — see [reference/hooks](docs/reference/hooks.md)
+- **Adding or removing an agent, skill or hook leaves counts stale** in `CLAUDE.md`, `README.md`, `docs/README.md` and more — see [workflows](docs/guides/workflows.md#add-a-feature)
 
 ---
 
@@ -24,27 +59,30 @@ After editing any file in `agents/`, `skills/`, or `hooks/` — run `./install.s
 
 | Directory | What goes here |
 |-----------|---------------|
-| `agents/<name>.md` | One file per agent — frontmatter + system prompt |
+| `agents/<name>.md` | One file per agent — frontmatter + system prompt (`agents/opencode/` for opencode-only) |
 | `skills/<name>/SKILL.md` | One subdirectory per skill |
-| `hooks/claude-code/<name>.sh` | Shell hook for Claude Code |
-| `hooks/opencode/<name>.js` | JS hook module for opencode |
-| `hooks/registry.json` | Source of truth for all hooks |
+| `hooks/` | `registry.json` (source of truth) · `claude-code/<name>.sh` · `opencode/<name>.js` |
 | `mcps/registry.json` | Source of truth for all MCP servers |
 | `templates/` | Starting points for new agents and skills |
+| `cli/cmd/` · `cli/internal/` | Go CLI: commands + install orchestration · one package per asset kind or concern |
+| `scripts/` | `stage-assets.sh` (stage embedded assets) · `remote-install.sh` |
 | `docs/` | All documentation — start at `docs/README.md` |
 
 ---
 
-## Must-Know Gotchas
+## Where Things Are
 
-- **Never call `Agent` tool with a custom agent name as `subagent_type`** — custom agents are role definitions, not spawnable types. Read `agents/<name>.md` and execute its instructions in the current context.
-- **Never edit deployed files directly** — always edit source in this repo and re-run `./install.sh`. Deployed files at `~/.claude/agents/` etc. will be overwritten on next install.
-- **`devexp-plugin.js` must be updated when adding a hook** — import the new JS module and add it to the `Promise.all([...])` array in `hooks/opencode/devexp-plugin.js`.
-- **CLAUDE.md is an indexer only** — directives and navigation pointers only. Content belongs in `docs/`. See [`docs/guides/docs-architecture.md`](docs/guides/docs-architecture.md).
+| I need to… | Go to |
+|------------|-------|
+| Set up, build from source, find a command or env var | [`docs/development/setup.md`](docs/development/setup.md) |
+| Follow code conventions (Go CLI, cross-asset rules, commits) | [`docs/development/conventions.md`](docs/development/conventions.md) |
+| Write or run tests (Go, hook, installer-script suites) | [`docs/development/testing.md`](docs/development/testing.md) |
+| Understand structure, install flow, runtime hook flow, known gaps | [`docs/architecture/overview.md`](docs/architecture/overview.md) |
+| Add an agent/skill/hook/MCP, change the Go CLI, fix a bug, change a schema | [`docs/guides/workflows.md`](docs/guides/workflows.md) |
+| Cut a release, ship the `cli` / `toolkit-clone` targets | [`docs/guides/release.md`](docs/guides/release.md) |
+| Understand why something was decided | [`docs/architecture/adr/README.md`](docs/architecture/adr/README.md) |
 
----
-
-## Documentation
+### Toolkit reference
 
 Start at [`docs/README.md`](docs/README.md) for the full index.
 

@@ -85,7 +85,7 @@ After producing an artifact that represents project knowledge, trigger an increm
 | Agent | What changed | Action |
 |-------|-------------|--------|
 | `codebase-navigator` | Atlas file + `docs/` folder | `/graphify --update` |
-| `gen-indexer` skill | Generated `CLAUDE.md` | `/graphify --update` |
+| `gen-indexer` | Generated `CLAUDE.md` | `/graphify --update` |
 | `docs-sync` | Updated `CLAUDE.md` and/or `README.md` | `/graphify --update` |
 
 `--update` re-extracts only new/changed files — cheap to run after every write. Only run it if `graphify-out/graph.json` already exists; never bootstrap a graph (`/graphify` with no `--update`) on an agent's own initiative — that's an expensive, user-directed operation.
@@ -180,7 +180,7 @@ The `tools:` field in agent frontmatter lists Claude's **built-in tools only** �
 | `WebFetch` | Fetching URLs |
 | `WebSearch` | Web search |
 | `Skill` | Invoking skills |
-| `TaskCreate/Get/List/Update` | Task tracking (dev-agent only) |
+| `TaskCreate/Get/List/Update` | Task tracking (currently `dev-agent` and `grooming-agent`) |
 
 Declare only the tools the agent actually uses. Do not add `Agent` unless the agent's body contains an explicit `Agent` tool call.
 

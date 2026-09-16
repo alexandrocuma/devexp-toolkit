@@ -126,6 +126,7 @@ After completing a trace:
 - **Bug or failure found in the traced path** → chain to `root-cause` agent to investigate why the failure occurs at that point. Pass the trace as context — root-cause skips rediscovery and starts directly from the identified failure site.
 - **About to modify the traced code** → chain to `impact-analysis` agent with the specific function or symbol at the modification point as the target. The trace already gives you the exact callers to map.
 - **Trace reveals complex or opaque logic** → chain to `backend-senior-dev` or `frontend-senior-dev` (based on layer) for a quality review of that specific section. Pass the trace excerpt.
+- **Dependency relationships around the traced path are unclear** → chain to `dep-map` agent to map the module and package dependencies involved.
 - **Tracing to understand before implementing** → hand the full trace summary to `dev-agent` as pre-loaded context. dev-agent reads it in Phase 0 and skips re-tracing the same path.
 
 # Persistent Agent Memory
@@ -172,7 +173,3 @@ Use narrow search terms (error messages, file paths, function names) rather than
 ## MEMORY.md
 
 `MEMORY.md` is the index of traced projects — one line per project linking to `<project-name>.md`. When you complete a trace in a new project, add or update its entry here.
-
-## Available Skills
-
-- `/dep-map` — invoke to understand dependency relationships when tracing flows

@@ -12,28 +12,25 @@
  */
 
 import { existsSync, join, dirname, resolve, extname, basename } from './utils.js';
-import { findRoot, which } from './utils.js';
-import { spawnSync } from 'child_process';
+import { findRoot, which, runCommand } from './utils.js';
 import { relative } from 'path';
 
 const SOURCE_EXTS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py', '.go', '.rb']);
 const TEST_MARKERS = ['.test.', '.spec.', '_test.', 'test_'];
 
 function isTestFile(filePath) {
-  const name = path.basename(filePath);
+  const name = basename(filePath);
   return TEST_MARKERS.some(m => name.includes(m));
 }
 
-function runTests(cmd, args, cwd) {
-  try {
-    const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', timeout: 20000 });
-    const output = ((r.stdout ?? '') + (r.stderr ?? '')).trim();
-    const status = r.status === 0 ? 'PASS' : 'FAIL';
-    console.log(`[devexp test-on-save] ${basename(cmd)} [${status}]`);
-    if (output) console.log(output);
-  } catch {
-    // Advisory — swallow
-  }
+export const TEST_TIMEOUT_MS = 20000;
+
+async function runTests(cmd, args, cwd) {
+  const r = await runCommand(cmd, args, { cwd, timeout: TEST_TIMEOUT_MS });
+  const output = (r.stdout + r.stderr).trim();
+  const status = r.code === 0 ? 'PASS' : 'FAIL';
+  console.log(`[devexp test-on-save] ${basename(cmd)} [${status}]`);
+  if (output) console.log(output);
 }
 
 export async function testOnSave(_ctx) {
@@ -67,26 +64,26 @@ export async function testOnSave(_ctx) {
           const relTest     = relative(root, testFile);
 
           if (existsSync(localVitest)) {
-            runTests(localVitest, ['run', testFile], root);
+            await runTests(localVitest, ['run', testFile], root);
           } else if (existsSync(localJest)) {
-            runTests(localJest, ['--testPathPattern', relTest, '--passWithNoTests', '--no-coverage'], root);
-          } else if (which('vitest')) {
-            runTests('vitest', ['run', testFile], root);
-          } else if (which('jest')) {
-            runTests('jest', ['--testPathPattern', relTest, '--passWithNoTests', '--no-coverage'], root);
+            await runTests(localJest, ['--testPathPattern', relTest, '--passWithNoTests', '--no-coverage'], root);
+          } else if (await which('vitest')) {
+            await runTests('vitest', ['run', testFile], root);
+          } else if (await which('jest')) {
+            await runTests('jest', ['--testPathPattern', relTest, '--passWithNoTests', '--no-coverage'], root);
           }
 
         // ── Go ───────────────────────────────────────────────────────────────
         } else if (ext === '.go') {
-          const go = which('go');
+          const go = await which('go');
           if (!go) return;
           const relDir = relative(root, fileDir);
           const pkg    = relDir === '' ? './...' : `./${relDir}`;
-          runTests(go, ['test', '-timeout', '20s', pkg], root);
+          await runTests(go, ['test', '-timeout', '20s', pkg], root);
 
         // ── Python ───────────────────────────────────────────────────────────
         } else if (ext === '.py') {
-          const pytest = which('pytest');
+          const pytest = await which('pytest');
           if (!pytest) return;
           const candidates = [
             join(fileDir, `test_${base}.py`),
@@ -96,17 +93,17 @@ export async function testOnSave(_ctx) {
           ];
           const testFile = candidates.find(c => existsSync(c));
           if (!testFile) return;
-          runTests(pytest, [testFile, '-x', '-q'], root);
+          await runTests(pytest, [testFile, '-x', '-q'], root);
 
         // ── Ruby ─────────────────────────────────────────────────────────────
         } else if (ext === '.rb') {
-          const rspec = which('rspec');
+          const rspec = await which('rspec');
           if (!rspec) return;
           const rel      = relative(root, filePath);
           const specRel  = rel.replace(/^lib\//, 'spec/').replace(/\.rb$/, '_spec.rb');
           const specPath = join(root, specRel);
           if (!existsSync(specPath)) return;
-          runTests(rspec, [specPath, '--format', 'progress'], root);
+          await runTests(rspec, [specPath, '--format', 'progress'], root);
         }
       } catch {
         // Advisory — never propagate errors from file.edited

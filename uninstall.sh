@@ -15,6 +15,12 @@ success() { echo -e "${GREEN}[devexp]${RESET} $*"; }
 warn()    { echo -e "${YELLOW}[devexp]${RESET} $*"; }
 error()   { echo -e "${RED}[devexp] ERROR:${RESET} $*" >&2; }
 die()     { error "$*"; exit 1; }
+# Prints the first devexp binary whose `uninstall --help` lists target $1:
+# DEVEXP_BIN (set by `devexp install` → Remove), then bin/devexp, then PATH.
+# The help text is captured, not piped into `grep -q`: under pipefail an early
+# grep exit can SIGPIPE the binary and reject a good one. A binary without the
+# command (built before it existed) fails the probe and the next one is tried.
+find_devexp_bin() { for c in "${DEVEXP_BIN:-}" "$REPO_DIR/bin/devexp" "$(command -v devexp 2>/dev/null || true)"; do [[ -n "$c" && -x "$c" && "$("$c" uninstall --help 2>/dev/null </dev/null || true)" == *"supported: "*"$1"* ]] && { echo "$c"; return 0; }; done; return 1; }
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -24,6 +30,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ── Paths ─────────────────────────────────────────────────────────────────────
 CLAUDE_AGENTS="$HOME/.claude/agents"
 OPENCODE_AGENTS="$HOME/.config/opencode/agents"
+OPENCODE_PLUGINS="$HOME/.config/opencode/plugins"
 SKILLS_DIR="$HOME/.claude/skills"   # shared between both CLIs
 
 # ── Detect what's installed ───────────────────────────────────────────────────
@@ -35,6 +42,11 @@ for f in "$REPO_DIR/agents/"*.md; do
     [[ -f "$CLAUDE_AGENTS/$(basename "$f")"   ]] && HAS_CLAUDE_INSTALL=true
     [[ -f "$OPENCODE_AGENTS/$(basename "$f")" ]] && HAS_OPENCODE_INSTALL=true
 done
+# The hook plugin alone is an install too: every agent can be deselected.
+# devexp-plugin.js is the legacy flat entry.
+for p in "$OPENCODE_PLUGINS/devexp.js" "$OPENCODE_PLUGINS/devexp" "$OPENCODE_PLUGINS/devexp-plugin.js"; do
+    [[ -e "$p" || -L "$p" ]] && HAS_OPENCODE_INSTALL=true
+done
 
 echo ""
 echo -e "${BOLD}devexp Framework Uninstaller${RESET}"
@@ -42,7 +54,7 @@ echo "────────────────────────�
 echo ""
 
 if ! $HAS_CLAUDE_INSTALL && ! $HAS_OPENCODE_INSTALL; then
-    info "Nothing to remove — no devexp agents found in Claude Code or opencode directories."
+    info "Nothing to remove — no devexp agents or hook plugin found in Claude Code or opencode directories."
     exit 0
 fi
 
@@ -150,6 +162,21 @@ elif $REMOVE_CLAUDE || $REMOVE_OPENCODE; then
     echo ""
 fi
 
+# The opencode hook plugin is removed by the devexp binary, by the installer's
+# own rules; this script never deletes plugin files itself.
+OPENCODE_BIN=""
+if $REMOVE_OPENCODE; then
+    if OPENCODE_BIN="$(find_devexp_bin opencode)"; then
+        info "opencode hook plugin (preview):"
+        DEVEXP_DIR="$REPO_DIR" "$OPENCODE_BIN" uninstall --target opencode --dry-run </dev/null \
+            || warn "could not preview the opencode plugin removal"
+        echo ""
+    else
+        warn "opencode hook plugin: no devexp binary with 'uninstall' found (set DEVEXP_BIN, or rebuild: rm bin/devexp && ./install.sh). The plugin will be left in place."
+        echo ""
+    fi
+fi
+
 # ── Confirm ───────────────────────────────────────────────────────────────────
 if [[ "${1:-}" != "--yes" && "${1:-}" != "-y" ]]; then
     read -r -p "Proceed with removal? [y/N] " confirm
@@ -190,6 +217,15 @@ if [[ ${#SKILL_DIRS[@]} -gt 0 ]]; then
     echo ""
 fi
 
+# ── Remove hooks (opencode plugin) ────────────────────────────────────────────
+# Before the MCP block below: it rewrites config.json, and the legacy plugin
+# entry is spliced out of config.json's original bytes.
+if $REMOVE_OPENCODE && [[ -n "$OPENCODE_BIN" ]]; then
+    DEVEXP_DIR="$REPO_DIR" "$OPENCODE_BIN" uninstall --target opencode --yes </dev/null \
+        || warn "opencode plugin left in place (see above) — re-run: $OPENCODE_BIN uninstall --target opencode"
+    echo ""
+fi
+
 # ── Remove MCPs ───────────────────────────────────────────────────────────────
 if $REMOVE_CLAUDE && command -v claude &>/dev/null && [[ -f "$REPO_DIR/mcps/registry.json" ]]; then
     info "Removing MCP servers (Claude Code)..."
@@ -213,29 +249,68 @@ PYEOF
 fi
 
 if $REMOVE_OPENCODE && [[ -f "$REPO_DIR/mcps/registry.json" ]]; then
-    local config_path="$HOME/.config/opencode/config.json"
+    config_path="$HOME/.config/opencode/config.json"
     if [[ -f "$config_path" ]]; then
         info "Removing MCP servers (opencode)..."
         python3 - "$REPO_DIR/mcps/registry.json" "$config_path" <<'PYEOF'
-import json, sys, os
-with open(sys.argv[1]) as f:
-    mcps = json.load(f)
+import json, sys, os, tempfile
 config_path = sys.argv[2]
-with open(config_path) as f:
-    config = json.load(f)
+# Like the plugin step (removeLegacyConfigEntry), a symlinked config.json is
+# someone's dotfiles setup: never written through, never replaced.
+if os.path.islink(config_path):
+    print(f"  [skip] {config_path} is a symlink, so it was left untouched — remove the devexp MCP servers from it by hand")
+    sys.exit(0)
+try:
+    with open(sys.argv[1]) as f:
+        mcps = json.load(f)
+    with open(config_path) as f:
+        config = json.load(f)
+except (OSError, ValueError) as e:
+    print(f"  [skip] {config_path}: {e}")
+    sys.exit(0)
+if not isinstance(config, dict) or not isinstance(config.get('mcp', {}), dict) or not isinstance(mcps, list):
+    print(f"  [skip] {config_path}: unexpected shape")
+    sys.exit(0)
 changed = False
 for mcp in mcps:
-    name = mcp['name']
+    name = mcp.get('name') if isinstance(mcp, dict) else None
+    if not isinstance(name, str):
+        continue
     if name in config.get('mcp', {}):
         del config['mcp'][name]
         changed = True
         print(f"  \033[0;31m-\033[0m {name}")
     else:
         print(f"  [skip] {name} — not configured")
-if changed:
-    with open(config_path, 'w') as f:
+if not changed:
+    sys.exit(0)
+if not os.access(config_path, os.W_OK):
+    print(f"  [warn] {config_path} is not writable, so it was left untouched — remove the devexp MCP servers from it by hand")
+    sys.exit(0)
+# Replace atomically: a temp file in the same directory, fsync'd, given the
+# old file's mode, then renamed over it. An interrupted save leaves the old
+# file or the new one, never a truncated one, and no temp file.
+tmp = None
+try:
+    mode = os.stat(config_path).st_mode & 0o7777
+    fd, tmp = tempfile.mkstemp(prefix='.config.json.tmp-', dir=os.path.dirname(config_path))
+    with os.fdopen(fd, 'w') as f:
         json.dump(config, f, indent=2)
-    print(f"  Saved: {config_path}")
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(tmp, mode)
+    os.replace(tmp, config_path)
+    tmp = None
+except OSError as e:
+    print(f"  [warn] could not save {config_path}, so it was left untouched: {e}")
+    sys.exit(0)
+finally:
+    if tmp is not None:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+print(f"  Saved: {config_path}")
 PYEOF
         echo ""
     fi
@@ -315,51 +390,6 @@ if changed:
 else:
     print("  [skip] no devexp hooks found in settings.json")
 PYEOF
-        echo ""
-    fi
-fi
-
-# ── Remove hooks (opencode) ───────────────────────────────────────────────────
-if $REMOVE_OPENCODE; then
-    plugin_dest="$HOME/.config/opencode/plugins/devexp-plugin.js"
-    config_path="$HOME/.config/opencode/config.json"
-
-    if [[ -f "$plugin_dest" || -f "$config_path" ]]; then
-        info "Removing hooks (opencode plugin)..."
-
-        # Remove all devexp plugin modules (devexp-plugin.js + imported modules)
-        local plugin_dir="$HOME/.config/opencode/plugins"
-        for js_file in devexp-plugin.js utils.js secret-guard.js dangerous-cmd-guard.js large-file-guard.js lint-on-save.js; do
-            if [[ -f "$plugin_dir/$js_file" ]]; then
-                rm -f "$plugin_dir/$js_file"
-                echo -e "  ${RED}-${RESET} $js_file"
-            fi
-        done
-        [[ -f "$plugin_dir/package.json" ]] && rm -f "$plugin_dir/package.json" && echo -e "  ${RED}-${RESET} package.json"
-
-        if [[ -f "$config_path" ]]; then
-            python3 - "$config_path" "$plugin_dest" <<'PYEOF'
-import json, sys, os
-
-config_path = sys.argv[1]
-plugin_path = sys.argv[2]
-
-with open(config_path) as f:
-    try:
-        config = json.load(f)
-    except json.JSONDecodeError:
-        sys.exit(0)
-
-plugins = config.get('plugin', [])
-if plugin_path in plugins:
-    config['plugin'] = [p for p in plugins if p != plugin_path]
-    with open(config_path, 'w') as f:
-        json.dump(config, f, indent=2)
-    print(f"  - unregistered plugin from {config_path}")
-else:
-    print(f"  [skip] plugin not registered in {config_path}")
-PYEOF
-        fi
         echo ""
     fi
 fi

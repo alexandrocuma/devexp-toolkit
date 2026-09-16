@@ -61,7 +61,7 @@ This framework has fixed documentation surfaces. Know which changes affect which
 | `skills/<name>/SKILL.md` (deleted) | Remove row from CLAUDE.md and README.md |
 | `hooks/registry.json` | CLAUDE.md hooks table, README.md hooks table |
 | `hooks/claude-code/<name>.sh` | CLAUDE.md hooks table (behavior description) |
-| `hooks/opencode/devexp-plugin.js` | `docs/development/hook-authoring-guide.md` plugin example |
+| `hooks/opencode/devexp-plugin.js`, or the `opencode` blocks in `hooks/registry.json` | `docs/development/hook-authoring-guide.md` "Registering in the opencode Entry Point" (registry `opencode` mapping, `devexp/hooks.json` contract, failure behaviour, file events); `docs/reference/hooks.md` Registry Format |
 | `hooks/opencode/utils.js` | `docs/development/hook-authoring-guide.md` utils reference |
 | `mcps/registry.json` | CLAUDE.md MCPs section, README.md MCPs section |
 | `install.sh` | CLAUDE.md install section (if flags or behavior changed) |
@@ -104,7 +104,7 @@ Key reads per change type:
 
 **Modified hook behavior**: Read the hook's `.sh` and `.js` files to understand the new behavior.
 
-**devexp-plugin.js changed**: Read the current import list and `Promise.all([...])` array.
+**devexp-plugin.js changed**: Read the registry `opencode` mappings and the `hooks.json` loader in `devexp-plugin.js`.
 
 **utils.js changed**: Read the current exports.
 
@@ -115,7 +115,7 @@ For each affected doc surface, identify exactly what needs to change:
 - **New row in a table** — identify the correct table, draft the new row with correct columns
 - **Updated description** — find the existing row by name, draft the new cell value
 - **Deleted row** — find the row and mark it for removal
-- **Code block update** (e.g., devexp-plugin.js example in authoring guide) — identify the stale block and the correct replacement
+- **Code block update** (e.g., the registry `opencode` mapping or `devexp/hooks.json` example in the authoring guide) — identify the stale block and the correct replacement
 
 Do not plan changes to docs that are not affected. Do not rewrite sections that are accurate.
 
@@ -182,7 +182,7 @@ After all edits are applied, produce a concise report:
 ### Edits made
 - CLAUDE.md: added row for `<name>` to hooks table
 - README.md: added row for `<name>` to hooks table
-- docs/development/hook-authoring-guide.md: updated devexp-plugin.js example
+- docs/development/hook-authoring-guide.md: updated the registry `opencode` mapping / `hooks.json` contract
 
 ### graphify update
 - Triggered `/graphify --update` (or "no graph present — skipped" / "graphify unavailable — skipped")

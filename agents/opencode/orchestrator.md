@@ -152,7 +152,7 @@ Batch 4 (sequential):  test-runner        → run suite, verify coverage
 Batch 5 (sequential):  pr-review          → final review before merge
 ```
 
-Before dispatching `dev-agent` in Batch 2, route the idea through the `/feature` skill's discover → plan → verify chain rather than handing it raw context: graphify discovery for relevant files/conventions, an actionable plan with an explicit "External Dependencies" list, and a **mandatory context7 lookup** for every dependency on that list before any code is written. Hand `dev-agent` the verified plan, not the raw idea — it implements against facts, not assumptions about library APIs that may have drifted since training.
+When dispatching `dev-agent` in Batch 2, require a discover → plan → verify chain in its prompt rather than handing it the raw idea: graphify discovery for relevant files/conventions, an actionable plan with an explicit "External Dependencies" list, and a **mandatory context7 lookup** for every dependency on that list before any code is written — so it implements against facts, not assumptions about library APIs that may have drifted since training.
 
 ### `bugfix` — Find and fix a bug
 ```

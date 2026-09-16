@@ -86,7 +86,7 @@ export async function secretGuard(_ctx) {
         const filePath = output.args?.filePath ?? '';
         if (filePath && isSecretFile(filePath)) {
           throw new Error(
-            `[devexp secret-guard] Blocked read of "${basename(filePath)}". ` +
+            `[devexp secret-guard] Blocked access to "${basename(filePath)}". ` +
             `This file may contain secrets. If intentional, confirm with the user first.`
           );
         }
@@ -94,7 +94,7 @@ export async function secretGuard(_ctx) {
         const hit = secretInCommand(output.args?.command ?? '');
         if (hit) {
           throw new Error(
-            `[devexp secret-guard] Blocked bash access to "${hit}". ` +
+            `[devexp secret-guard] Blocked access to "${hit}". ` +
             `This file may contain secrets. If intentional, confirm with the user first.`
           );
         }

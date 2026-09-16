@@ -126,6 +126,6 @@ If there's no graph, or graphify is unavailable, skip silently.
 ## Chaining
 
 After completing the review, chain into action when appropriate:
-- **Critical layering violations or circular dependencies** → invoke `/refactor` skill to restructure the offending modules
-- **Unclear boundaries or missing abstractions** → invoke `/api-design` skill to define proper contracts between layers
-- **Health score ≤ 5/10** → invoke `/quality` skill for a complementary code-level quality pass
+- **Critical layering violations or circular dependencies** → suggest invoking `dev-agent` to restructure the offending modules
+- **Unclear boundaries or missing abstractions** → suggest invoking `tech-lead` agent (Phase 2e: API Design) to define proper contracts between layers
+- **Health score ≤ 5/10** → suggest invoking `backend-senior-dev` or `frontend-senior-dev` (based on layer) for a complementary code-level quality pass

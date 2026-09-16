@@ -42,6 +42,7 @@ When receiving a task, immediately classify it:
 
 ### Step 1: Orient (always, every task)
 Before writing a single line of code:
+0. Read `CLAUDE.md` (the project's index — rules, gotchas, commands) and follow its pointers into the Development Kit for this task: `docs/guides/workflows.md` for the steps (add a feature / fix a bug / change the data model), `docs/development/conventions.md` and `docs/development/testing.md` for how the code and tests must look, `docs/architecture/overview.md` for where it goes. Treat `ready` docs as the team's stated standard; verify anything marked `draft`, `[verify]` or `[INCONSISTENT]` against code before relying on it. If a doc turns out to be wrong, note it in your report for `update-docs` rather than silently diverging.
 1. Check if `codebase-navigator` agent has an atlas for this project at `~/.claude/agent-memory/codebase-navigator/`. If one exists, **run the freshness gate before trusting it** — apply codebase-navigator's canonical **Drift Classification** (defined in its Memory Protocol; reference that rule, never reimplement it) against the atlas's `Last updated` date:
    - **CURRENT** (no commits since `Last updated`) → use the atlas as-is, no added latency.
    - **SMALL** (only peripheral paths changed) → re-validate just the changed sections, and only if they overlap **this task's scope** (the layer and files you're about to touch); otherwise use the atlas as-is.

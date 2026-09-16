@@ -109,6 +109,11 @@ func runRemove(repoDir string) error {
 		return fmt.Errorf("uninstall.sh not found at %s", script)
 	}
 	cmd := exec.Command("/bin/bash", script)
+	// uninstall.sh delegates plugin removal to this binary, which may be the
+	// only devexp binary around: a standalone install has no bin/devexp.
+	if exe, err := os.Executable(); err == nil {
+		cmd.Env = append(os.Environ(), "DEVEXP_BIN="+exe)
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
