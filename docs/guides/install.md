@@ -11,8 +11,8 @@ curl -fsSL https://raw.githubusercontent.com/alexandrocuma/devexp-toolkit/main/s
 This detects your OS/architecture, downloads the matching release binary into `~/.local/bin/devexp`, and runs `devexp install`. Useful overrides:
 
 ```bash
-DEVEXP_VERSION=v1.2.3 curl -fsSL .../remote-install.sh | bash   # install a specific tag
-DEVEXP_SKIP_RUN=1 curl -fsSL .../remote-install.sh | bash       # download only, don't run install
+curl -fsSL .../remote-install.sh | DEVEXP_VERSION=v1.2.3 bash   # install a specific tag
+curl -fsSL .../remote-install.sh | DEVEXP_SKIP_RUN=1 bash       # download only, don't run install
 curl -fsSL .../remote-install.sh | DEVEXP_INSTALL_DIR=/opt/bin bash  # put the binary somewhere else (absolute path)
 ```
 
