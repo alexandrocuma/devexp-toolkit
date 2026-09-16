@@ -61,7 +61,7 @@ func backupExistingDirs(dir, backupDir string, dryRun bool) {
 func loadOldManifest(path string) *manifest.Manifest {
 	old, err := manifest.Load(path)
 	if err != nil {
-		ui.Warn(fmt.Sprintf("manifest %s is unreadable, so no stale files are removed this run: %v", path, err))
+		ui.Warn(fmt.Sprintf("manifest %s is unreadable, so no stale agents or skills are removed this run: %v", path, err))
 	}
 	return old
 }

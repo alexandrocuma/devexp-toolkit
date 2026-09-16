@@ -92,9 +92,15 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
 3. `agents.InstallOpencode` → `transformForOpencode` drops `name`/`color`/`memory`, turns `tools` into an explicit `false` deny list over the 8 opencode tools, resolves model aliases and appends `mode: subagent`. `agents.InstallOpencodeExclusive` then installs `agents/opencode/*.md`, changing only the model.
 4. `skills.InstallOpencode` writes `~/.config/opencode/commands/<name>.md` from `SKILL.md` alone, with the top-level `name:` stripped.
 5. Hooks (skipped by `--agents-only`/`--skills-only`), in `cli/internal/hooks/opencode.go`:
-   - `CleanLegacyOpencode` removes pre-v0.1.0 flat-install files (legacy name **and** header signature) and the exact legacy `config.json` `plugin` entry.
-   - `InstallOpencode` selects hooks with an `opencode.module` that are `EnabledFor(opencode)` and not in `resolveHookDisabled`. It copies the entry to `plugins/devexp.js` and the selected modules, `utils.js` and `package.json` to `plugins/devexp/`, and writes `devexp/hooks.json`. The entry is written last. With nothing selected it installs nothing.
-   - `OwnedStalePlugins` + `removeStale` remove plugin files the previous manifest's `plugins` list has and this run doesn't; `PruneOpencodeDir` removes an empty `devexp/`.
+   - `InstallOpencode` selects hooks with an `opencode.module` that are `EnabledFor(opencode)` and not in `resolveHookDisabled`.
+   - It validates before touching anything:
+     - `plugins/` and `plugins/devexp/` are refused if they are symlinks;
+     - every source must be readable;
+     - no destination may be a symlink or a directory;
+     - `devexp.js` must be a devexp entry or recorded in the manifest.
+   - It then writes the selected modules, `utils.js`, `package.json` and `devexp/hooks.json` atomically, the entry `plugins/devexp.js` last.
+   - It removes plugin files it no longer installs, entry first. Those are the previous manifest's `plugins` plus the devexp files it recognises on disk. Removal is all-or-nothing when the entry must stay, and an empty real `devexp/` is removed. With nothing selected it installs nothing.
+   - Only after that succeeds, `CleanLegacyOpencode` removes pre-v0.1.0 flat-install files (legacy name **and** header signature) and the exact legacy `config.json` `plugin` entry.
 6. Stale entries are removed, then `manifest.Save` writes `~/.config/opencode/.devexp-manifest.json`.
 
 Unlike the Claude Code target, there's **no backup step**.

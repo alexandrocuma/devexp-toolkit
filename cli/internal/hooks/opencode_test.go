@@ -374,7 +374,7 @@ func TestInstallOpencode(t *testing.T) {
 		var got []string
 		var err error
 		out := captureOutput(t, func() {
-			got, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, false)
+			got, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, nil, false)
 		})
 		if err != nil {
 			t.Fatalf("InstallOpencode() error = %v", err)
@@ -411,7 +411,7 @@ func TestInstallOpencode(t *testing.T) {
 	t.Run("a disabled hook is neither copied nor selected", func(t *testing.T) {
 		repoDir, pluginsDir := setup(t)
 		out := captureOutput(t, func() {
-			if _, err := InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, []string{"lint-on-save"}, false); err != nil {
+			if _, err := InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, []string{"lint-on-save"}, nil, false); err != nil {
 				t.Fatalf("InstallOpencode() error = %v", err)
 			}
 		})
@@ -430,7 +430,7 @@ func TestInstallOpencode(t *testing.T) {
 	t.Run("dry-run lists every file and writes nothing", func(t *testing.T) {
 		repoDir, pluginsDir := setup(t)
 		out := captureOutput(t, func() {
-			if _, err := InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, true); err != nil {
+			if _, err := InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, nil, true); err != nil {
 				t.Fatalf("InstallOpencode() error = %v", err)
 			}
 		})
@@ -450,10 +450,10 @@ func TestInstallOpencode(t *testing.T) {
 
 	t.Run("a second run changes nothing and prints no file lines", func(t *testing.T) {
 		repoDir, pluginsDir := setup(t)
-		captureOutput(t, func() { InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, false) }) //nolint:errcheck
+		captureOutput(t, func() { InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, nil, false) }) //nolint:errcheck
 		before := snapshot(t, pluginsDir)
 		out := stripANSI(captureOutput(t, func() {
-			if _, err := InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, false); err != nil {
+			if _, err := InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, nil, false); err != nil {
 				t.Fatalf("InstallOpencode() error = %v", err)
 			}
 		}))
@@ -467,10 +467,10 @@ func TestInstallOpencode(t *testing.T) {
 
 	t.Run("a changed source module is updated", func(t *testing.T) {
 		repoDir, pluginsDir := setup(t)
-		captureOutput(t, func() { InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, false) })     //nolint:errcheck
-		os.WriteFile(filepath.Join(repoDir, "hooks", "opencode", "secret-guard.js"), []byte("// v2\n"), 0644) //nolint:errcheck
+		captureOutput(t, func() { InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, nil, false) }) //nolint:errcheck
+		os.WriteFile(filepath.Join(repoDir, "hooks", "opencode", "secret-guard.js"), []byte("// v2\n"), 0644)  //nolint:errcheck
 		out := stripANSI(captureOutput(t, func() {
-			if _, err := InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, false); err != nil {
+			if _, err := InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, nil, false); err != nil {
 				t.Fatalf("InstallOpencode() error = %v", err)
 			}
 		}))
@@ -487,7 +487,7 @@ func TestInstallOpencode(t *testing.T) {
 		var got []string
 		var err error
 		out := captureOutput(t, func() {
-			got, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, []string{"secret-guard", "lint-on-save", "graphify-read-guard"}, false)
+			got, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, []string{"secret-guard", "lint-on-save", "graphify-read-guard"}, nil, false)
 		})
 		if err != nil || got != nil {
 			t.Errorf("InstallOpencode() = (%v, %v), want (nil, nil)", got, err)
@@ -506,7 +506,7 @@ func TestInstallOpencode(t *testing.T) {
 		os.WriteFile(filepath.Join(pluginsDir, "other.js"), []byte("export const x = 1\n"), 0644) //nolint:errcheck
 		os.WriteFile(filepath.Join(pluginsDir, "package.json"), []byte(`{"main":"x.js"}`), 0644)  //nolint:errcheck
 		captureOutput(t, func() {
-			if _, err := InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, false); err != nil {
+			if _, err := InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, nil, false); err != nil {
 				t.Fatalf("InstallOpencode() error = %v", err)
 			}
 		})
@@ -572,7 +572,7 @@ func TestInstallOpencode_Refuses(t *testing.T) {
 				tt.prepare(t, pluginsDir, outside)
 				var err error
 				captureOutput(t, func() {
-					_, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, dryRun)
+					_, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, nil, dryRun)
 				})
 				if err == nil {
 					t.Errorf("InstallOpencode(dryRun=%v) error = nil, want a refusal", dryRun)
@@ -592,7 +592,7 @@ func TestInstallOpencode_MissingSourceWritesNothing(t *testing.T) {
 	pluginsDir := filepath.Join(t.TempDir(), "plugins")
 	var err error
 	captureOutput(t, func() {
-		_, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, false)
+		_, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, nil, false)
 	})
 	if err == nil {
 		t.Fatalf("InstallOpencode() error = nil, want a missing-source error")
@@ -620,7 +620,7 @@ func TestInstallOpencode_NodeLoadsInstalledPlugin(t *testing.T) {
 	tmp := t.TempDir()
 	pluginsDir := filepath.Join(tmp, "plugins")
 	captureOutput(t, func() {
-		if _, err = InstallOpencode(registry, root, pluginsDir, nil, false); err != nil {
+		if _, err = InstallOpencode(registry, root, pluginsDir, nil, nil, false); err != nil {
 			t.Fatalf("InstallOpencode() error = %v", err)
 		}
 	})
@@ -678,74 +678,343 @@ process.stdout.write(JSON.stringify({ plugins: plugins.length, chains: chains.le
 
 // ── Stale files and the devexp/ directory ─────────────────────────────────────
 
-func TestOwnedStalePlugins(t *testing.T) {
-	entry := "/**\n * devexp-plugin.js — entry point for devexp opencode hooks\n */\n"
+const devexpEntryHeader = "/**\n * devexp-plugin.js — entry point for devexp opencode hooks\n */\n"
+
+func TestStalePlugins(t *testing.T) {
 	tests := map[string]struct {
-		entryContent *string // nil = no devexp.js on disk
-		stale        []string
-		want         []string
+		onDisk   map[string]string // relative path -> content
+		recorded []string
+		keep     []string
+		want     []string
+		warns    int
 	}{
-		"devexp files are kept for removal": {
-			stale: []string{"devexp.js", "devexp/lint-on-save.js", "devexp/hooks.json", "devexp/package.json", "devexp/utils.js"},
-			want:  []string{"devexp.js", "devexp/lint-on-save.js", "devexp/hooks.json", "devexp/package.json", "devexp/utils.js"},
+		"recorded devexp files not kept are stale, entry first": {
+			recorded: []string{"devexp/lint-on-save.js", "devexp.js", "devexp/hooks.json"},
+			keep:     []string{"devexp/hooks.json"},
+			want:     []string{"devexp.js", "devexp/lint-on-save.js"},
 		},
-		"a devexp.js that is still a devexp entry may be removed": {
-			entryContent: &entry,
-			stale:        []string{"devexp.js"},
-			want:         []string{"devexp.js"},
+		"paths devexp never installs are reported and never stale": {
+			recorded: []string{"../config.json", "devexp/../other.js", "other.js", "devexp/sub/x.js", "devexp/", "devexp/.hidden.js", "devexp", "package.json", "/etc/passwd"},
+			want:     nil,
+			warns:    9,
 		},
-		"a devexp.js replaced by the user is never removed": {
-			entryContent: func() *string { s := "export const mine = 1\n"; return &s }(),
-			stale:        []string{"devexp.js"},
-			want:         nil,
+		"without a manifest, devexp files on disk are found": {
+			onDisk: map[string]string{
+				"devexp.js":              devexpEntryHeader,
+				"devexp/hooks.json":      "[]",
+				"devexp/utils.js":        "x",
+				"devexp/package.json":    "{}",
+				"devexp/secret-guard.js": "x",
+				"devexp/mine.txt":        "user file",
+				"devexp/unknown.js":      "not a registry module",
+				"my-plugin.js":           "user plugin",
+			},
+			want: []string{"devexp.js", "devexp/utils.js", "devexp/package.json", "devexp/secret-guard.js", "devexp/hooks.json"},
 		},
-		"paths devexp never installs are never removed": {
-			stale: []string{"../config.json", "devexp/../other.js", "other.js", "devexp/sub/x.js", "devexp/", "devexp/.hidden.js", "devexp", "package.json", "/etc/passwd"},
-			want:  nil,
+		"a devexp.js without the entry header is not found on disk": {
+			onDisk: map[string]string{"devexp.js": "export const mine = 1\n"},
+			want:   nil,
+		},
+		"recorded and on-disk paths are listed once": {
+			onDisk:   map[string]string{"devexp/utils.js": "x"},
+			recorded: []string{"devexp/utils.js"},
+			want:     []string{"devexp/utils.js"},
 		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			pluginsDir := t.TempDir()
-			if tt.entryContent != nil {
-				os.WriteFile(filepath.Join(pluginsDir, "devexp.js"), []byte(*tt.entryContent), 0644) //nolint:errcheck
+			for rel, content := range tt.onDisk {
+				p := filepath.Join(pluginsDir, filepath.FromSlash(rel))
+				os.MkdirAll(filepath.Dir(p), 0755)     //nolint:errcheck
+				os.WriteFile(p, []byte(content), 0644) //nolint:errcheck
 			}
 			var got []string
-			out := captureOutput(t, func() { got = OwnedStalePlugins(pluginsDir, tt.stale) })
+			out := captureOutput(t, func() { got = stalePlugins(pluginsDir, opencodeRegistry(), tt.recorded, tt.keep) })
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("OwnedStalePlugins() = %v, want %v", got, tt.want)
+				t.Errorf("stalePlugins() = %v, want %v", got, tt.want)
 			}
-			if refused := len(tt.stale) - len(tt.want); strings.Count(out, "left untouched") != refused {
-				t.Errorf("warned %d times, want %d:\n%s", strings.Count(out, "left untouched"), refused, out)
+			if n := strings.Count(out, "left untouched"); n != tt.warns {
+				t.Errorf("warned %d times, want %d:\n%s", n, tt.warns, out)
 			}
 		})
+	}
+}
+
+func TestOwnedOnDisk_SymlinkedDevexpDir(t *testing.T) {
+	pluginsDir := t.TempDir()
+	target := t.TempDir()
+	os.WriteFile(filepath.Join(target, "utils.js"), []byte("x"), 0644) //nolint:errcheck
+	if err := os.Symlink(target, filepath.Join(pluginsDir, "devexp")); err != nil {
+		t.Fatal(err)
+	}
+	if got := ownedOnDisk(pluginsDir, opencodeRegistry()); got != nil {
+		t.Errorf("ownedOnDisk() = %v, want nothing inside a symlinked devexp/", got)
 	}
 }
 
 func TestPruneOpencodeDir(t *testing.T) {
 	tests := map[string]struct {
 		file     bool
+		symlink  bool
 		dryRun   bool
 		wantKept bool
 	}{
 		"empty directory is removed":       {wantKept: false},
 		"non-empty directory is kept":      {file: true, wantKept: true},
 		"dry-run keeps an empty directory": {dryRun: true, wantKept: true},
+		"a symlink is never removed":       {symlink: true, wantKept: true},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			pluginsDir := t.TempDir()
 			dir := filepath.Join(pluginsDir, "devexp")
-			os.MkdirAll(dir, 0755) //nolint:errcheck
+			if tt.symlink {
+				os.Symlink(t.TempDir(), dir) //nolint:errcheck
+			} else {
+				os.MkdirAll(dir, 0755) //nolint:errcheck
+			}
 			if tt.file {
 				os.WriteFile(filepath.Join(dir, "mine.txt"), []byte("x"), 0644) //nolint:errcheck
 			}
-			PruneOpencodeDir(pluginsDir, tt.dryRun)
-			_, err := os.Stat(dir)
+			pruneOpencodeDir(pluginsDir, tt.dryRun)
+			_, err := os.Lstat(dir)
 			if kept := err == nil; kept != tt.wantKept {
 				t.Errorf("devexp/ kept = %v, want %v", kept, tt.wantKept)
 			}
 		})
+	}
+}
+
+// installFull installs the three-hook test plugin and returns what the
+// manifest would record.
+func installFull(t *testing.T, repoDir, pluginsDir string) []string {
+	t.Helper()
+	var got []string
+	var err error
+	captureOutput(t, func() { got, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, nil, false) })
+	if err != nil {
+		t.Fatalf("InstallOpencode() error = %v", err)
+	}
+	return got
+}
+
+var allThree = []string{"secret-guard", "lint-on-save", "graphify-read-guard"}
+
+// TestInstallOpencode_SymlinkedRoots: a symlinked plugins/ or devexp/ is never
+// written or removed through — with hooks enabled, with every hook disabled,
+// and in dry-run — so a link to a source checkout keeps every file.
+func TestInstallOpencode_SymlinkedRoots(t *testing.T) {
+	for _, linked := range []string{"devexp", "plugins"} {
+		for _, disabled := range [][]string{nil, allThree} {
+			for _, dryRun := range []bool{false, true} {
+				t.Run(linked+" disabled="+strings.Join(disabled, ",")+" dryRun="+map[bool]string{true: "y", false: "n"}[dryRun], func(t *testing.T) {
+					repoDir := t.TempDir()
+					writeOpencodeRepo(t, repoDir, allThree...)
+					home := t.TempDir()
+					pluginsDir := filepath.Join(home, "plugins")
+					recorded := installFull(t, repoDir, pluginsDir)
+
+					// Move the real directory away and link to it, as a
+					// maintainer live-linking a checkout would.
+					checkout := filepath.Join(t.TempDir(), "checkout")
+					from := filepath.Join(pluginsDir, "devexp")
+					if linked == "plugins" {
+						from = pluginsDir
+					}
+					if err := os.Rename(from, checkout); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(checkout, from); err != nil {
+						t.Fatal(err)
+					}
+					before := snapshot(t, checkout)
+
+					var err error
+					captureOutput(t, func() {
+						_, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, disabled, recorded, dryRun)
+					})
+					if err == nil || !strings.Contains(err.Error(), "is a symlink") {
+						t.Errorf("InstallOpencode() error = %v, want a symlink refusal", err)
+					}
+					if after := snapshot(t, checkout); !reflect.DeepEqual(before, after) {
+						t.Errorf("files behind the %s symlink changed: before %v, after %v", linked, before, after)
+					}
+					if fi, err := os.Lstat(from); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+						t.Errorf("the %s symlink itself was removed or replaced", linked)
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestInstallOpencode_EntryOwnership: a devexp.js the manifest records is
+// repaired even when damaged; one it doesn't record and that isn't a devexp
+// entry is never replaced.
+func TestInstallOpencode_EntryOwnership(t *testing.T) {
+	tests := map[string]struct {
+		recorded bool
+		wantErr  bool
+	}{
+		"a truncated devexp.js recorded in the manifest is repaired":   {recorded: true},
+		"a truncated devexp.js the manifest doesn't record is refused": {recorded: false, wantErr: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			repoDir := t.TempDir()
+			writeOpencodeRepo(t, repoDir, allThree...)
+			pluginsDir := filepath.Join(t.TempDir(), "plugins")
+			recorded := installFull(t, repoDir, pluginsDir)
+			entry := filepath.Join(pluginsDir, "devexp.js")
+			os.WriteFile(entry, []byte("/*"), 0644) //nolint:errcheck — what an interrupted write used to leave
+			if !tt.recorded {
+				recorded = nil
+			}
+			var err error
+			captureOutput(t, func() {
+				_, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, nil, recorded, false)
+			})
+			got, _ := os.ReadFile(entry)
+			if tt.wantErr {
+				if err == nil || string(got) != "/*" {
+					t.Errorf("InstallOpencode() error = %v, devexp.js = %q; want a refusal and the file kept", err, got)
+				}
+				return
+			}
+			src, _ := os.ReadFile(filepath.Join(repoDir, "hooks", "opencode", "devexp-plugin.js"))
+			if err != nil || string(got) != string(src) {
+				t.Errorf("InstallOpencode() error = %v, devexp.js = %q; want it repaired", err, got)
+			}
+		})
+	}
+}
+
+func TestWriteFileAtomic(t *testing.T) {
+	noTemps := func(t *testing.T, dir string) {
+		t.Helper()
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			if strings.Contains(e.Name(), ".tmp-") {
+				t.Errorf("temp file %s left behind", e.Name())
+			}
+		}
+	}
+
+	t.Run("writes the bytes with the given mode and leaves no temp file", func(t *testing.T) {
+		dir := t.TempDir()
+		p := filepath.Join(dir, "devexp.js")
+		os.WriteFile(p, []byte("old"), 0600) //nolint:errcheck
+		if err := writeFileAtomic(p, []byte("new"), 0644); err != nil {
+			t.Fatalf("writeFileAtomic() error = %v", err)
+		}
+		fi, _ := os.Stat(p)
+		if got, _ := os.ReadFile(p); string(got) != "new" || fi.Mode().Perm() != 0644 {
+			t.Errorf("file = %q mode %v, want \"new\" 0644", got, fi.Mode().Perm())
+		}
+		noTemps(t, dir)
+	})
+
+	t.Run("a failed rename leaves the target and no temp file", func(t *testing.T) {
+		dir := t.TempDir()
+		p := filepath.Join(dir, "hooks.json")
+		os.MkdirAll(filepath.Join(p, "child"), 0755) //nolint:errcheck — a non-empty directory can't be renamed over
+		if err := writeFileAtomic(p, []byte("new"), 0644); err == nil {
+			t.Errorf("writeFileAtomic() error = nil, want the rename to fail")
+		}
+		if fi, err := os.Stat(filepath.Join(p, "child")); err != nil || !fi.IsDir() {
+			t.Errorf("target directory changed")
+		}
+		noTemps(t, dir)
+	})
+
+	t.Run("a symlink at the path is replaced, never written through", func(t *testing.T) {
+		dir := t.TempDir()
+		outside := filepath.Join(t.TempDir(), "precious")
+		os.WriteFile(outside, []byte("precious"), 0644) //nolint:errcheck
+		p := filepath.Join(dir, "utils.js")
+		os.Symlink(outside, p) //nolint:errcheck
+		if err := writeFileAtomic(p, []byte("new"), 0644); err != nil {
+			t.Fatalf("writeFileAtomic() error = %v", err)
+		}
+		if got, _ := os.ReadFile(outside); string(got) != "precious" {
+			t.Errorf("symlink target = %q, written through", got)
+		}
+		noTemps(t, dir)
+	})
+
+	t.Run("an unwritable directory fails without a partial file", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "missing")
+		if err := writeFileAtomic(filepath.Join(dir, "x.js"), []byte("new"), 0644); err == nil {
+			t.Errorf("writeFileAtomic() error = nil, want a temp-file error")
+		}
+	})
+}
+
+// TestInstallOpencode_LostManifest: with no recorded list, the plugin files
+// devexp recognises on disk are still removed when every hook is disabled, and
+// a normal install reports the full list again.
+func TestInstallOpencode_LostManifest(t *testing.T) {
+	t.Run("every hook disabled removes the plugin", func(t *testing.T) {
+		repoDir := t.TempDir()
+		writeOpencodeRepo(t, repoDir, allThree...)
+		pluginsDir := filepath.Join(t.TempDir(), "plugins")
+		installFull(t, repoDir, pluginsDir)
+		os.WriteFile(filepath.Join(pluginsDir, "my-plugin.js"), []byte("mine"), 0644) //nolint:errcheck
+
+		var got []string
+		var err error
+		captureOutput(t, func() { got, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, allThree, nil, false) })
+		if err != nil || got != nil {
+			t.Errorf("InstallOpencode() = (%v, %v), want (nil, nil)", got, err)
+		}
+		if tree := listTree(t, pluginsDir); !reflect.DeepEqual(tree, []string{"my-plugin.js"}) {
+			t.Errorf("plugins tree = %v, want only my-plugin.js", tree)
+		}
+	})
+
+	t.Run("a normal install returns the full list", func(t *testing.T) {
+		repoDir := t.TempDir()
+		writeOpencodeRepo(t, repoDir, allThree...)
+		pluginsDir := filepath.Join(t.TempDir(), "plugins")
+		want := installFull(t, repoDir, pluginsDir)
+		if got := installFull(t, repoDir, pluginsDir); !reflect.DeepEqual(got, want) || len(got) != 7 {
+			t.Errorf("InstallOpencode() = %v, want %v", got, want)
+		}
+	})
+}
+
+// TestInstallOpencode_KeptEntryKeepsPlugin: when devexp.js must stay (here a
+// symlink into dotfiles), devexp/ stays with it and the files remain recorded,
+// because an entry without hooks.json blocks every opencode tool call.
+func TestInstallOpencode_KeptEntryKeepsPlugin(t *testing.T) {
+	repoDir := t.TempDir()
+	writeOpencodeRepo(t, repoDir, allThree...)
+	pluginsDir := filepath.Join(t.TempDir(), "plugins")
+	recorded := installFull(t, repoDir, pluginsDir)
+	dotfiles := filepath.Join(t.TempDir(), "devexp.js")
+	entry := filepath.Join(pluginsDir, "devexp.js")
+	os.Rename(entry, dotfiles)  //nolint:errcheck
+	os.Symlink(dotfiles, entry) //nolint:errcheck
+	before := snapshot(t, filepath.Join(pluginsDir, "devexp"))
+
+	var got []string
+	var err error
+	out := captureOutput(t, func() { got, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, allThree, recorded, false) })
+	if err != nil {
+		t.Fatalf("InstallOpencode() error = %v", err)
+	}
+	if after := snapshot(t, filepath.Join(pluginsDir, "devexp")); !reflect.DeepEqual(before, after) {
+		t.Errorf("devexp/ changed while devexp.js was kept")
+	}
+	if fi, err := os.Lstat(entry); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the devexp.js symlink was removed")
+	}
+	if len(got) != len(recorded) || got[0] != "devexp.js" {
+		t.Errorf("InstallOpencode() = %v, want the kept files %v recorded", got, recorded)
+	}
+	if !strings.Contains(out, "hooks remain active") || !strings.Contains(out, "a symlink") {
+		t.Errorf("output does not explain that the plugin stays active and why:\n%s", out)
 	}
 }
 
@@ -772,15 +1041,6 @@ func copyLegacyFixtures(t *testing.T, dir string, only ...string) {
 			t.Fatalf("WriteFile error = %v", err)
 		}
 	}
-}
-
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
 
 // TestLegacyFixtures pins the fixtures to the closed legacy set: every legacy
@@ -1013,6 +1273,45 @@ func TestCleanLegacyOpencode_Config(t *testing.T) {
 		})
 	}
 
+	t.Run("a symlinked config is never rewritten or replaced", func(t *testing.T) {
+		pluginsDir := t.TempDir()
+		real := filepath.Join(t.TempDir(), "dotfiles-config.json")
+		content := `{"plugin":["` + filepath.Join(pluginsDir, legacyEntry) + `","a"]}`
+		os.WriteFile(real, []byte(content), 0644) //nolint:errcheck
+		configPath := filepath.Join(t.TempDir(), "config.json")
+		os.Symlink(real, configPath) //nolint:errcheck
+		var err error
+		out := captureOutput(t, func() { err = CleanLegacyOpencode(pluginsDir, configPath, false) })
+		if err != nil {
+			t.Fatalf("CleanLegacyOpencode() error = %v", err)
+		}
+		if got, _ := os.ReadFile(real); string(got) != content {
+			t.Errorf("symlink target = %q, rewritten", got)
+		}
+		if fi, _ := os.Lstat(configPath); fi.Mode()&os.ModeSymlink == 0 {
+			t.Errorf("config.json symlink replaced by a file")
+		}
+		if !strings.Contains(out, "remove the plugin entry") {
+			t.Errorf("no warning telling the user to remove the entry by hand:\n%s", out)
+		}
+	})
+
+	t.Run("a symlinked plugins dir is refused", func(t *testing.T) {
+		checkout := t.TempDir()
+		copyLegacyFixtures(t, checkout)
+		before := snapshot(t, checkout)
+		pluginsDir := filepath.Join(t.TempDir(), "plugins")
+		os.Symlink(checkout, pluginsDir) //nolint:errcheck
+		var err error
+		captureOutput(t, func() { err = CleanLegacyOpencode(pluginsDir, filepath.Join(t.TempDir(), "config.json"), false) })
+		if err == nil {
+			t.Errorf("CleanLegacyOpencode() error = nil, want a symlink refusal")
+		}
+		if after := snapshot(t, checkout); !reflect.DeepEqual(before, after) {
+			t.Errorf("legacy-named files behind the symlink were removed")
+		}
+	})
+
 	t.Run("a missing config is not created", func(t *testing.T) {
 		configPath := filepath.Join(t.TempDir(), "config.json")
 		if err := CleanLegacyOpencode(t.TempDir(), configPath, false); err != nil {
@@ -1022,4 +1321,101 @@ func TestCleanLegacyOpencode_Config(t *testing.T) {
 			t.Errorf("config.json created")
 		}
 	})
+}
+
+// readOnlyDir makes dir unwritable for the rest of the test: files in it can
+// still be rewritten in place, but no temp file can be created next to them.
+func readOnlyDir(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0755) }) //nolint:errcheck
+	if f, err := os.CreateTemp(dir, "probe"); err == nil {
+		f.Close()
+		os.Remove(f.Name()) //nolint:errcheck
+		t.Skip("directory permissions are not enforced (running as root?)")
+	}
+}
+
+// TestWrites_NeverInPlace: plugin files and config.json are only ever replaced
+// through a temp file and a rename. Where no temp file can be created, the
+// write fails and the old bytes stay — an in-place write would have succeeded
+// and could have been cut short.
+func TestWrites_NeverInPlace(t *testing.T) {
+	t.Run("plugin file", func(t *testing.T) {
+		pluginsDir := t.TempDir()
+		dir := filepath.Join(pluginsDir, "devexp")
+		os.MkdirAll(dir, 0755)                                            //nolint:errcheck
+		os.WriteFile(filepath.Join(dir, "utils.js"), []byte("old"), 0644) //nolint:errcheck
+		readOnlyDir(t, dir)
+		var err error
+		captureOutput(t, func() { err = writeIfChanged(pluginsDir, "devexp/utils.js", []byte("new")) })
+		if got, _ := os.ReadFile(filepath.Join(dir, "utils.js")); err == nil || string(got) != "old" {
+			t.Errorf("writeIfChanged() error = %v, file = %q; want an error and the old bytes", err, got)
+		}
+	})
+
+	t.Run("config.json", func(t *testing.T) {
+		pluginsDir := t.TempDir()
+		dir := t.TempDir()
+		configPath := filepath.Join(dir, "config.json")
+		content := `{"plugin":["` + filepath.Join(pluginsDir, legacyEntry) + `"]}`
+		os.WriteFile(configPath, []byte(content), 0644) //nolint:errcheck
+		readOnlyDir(t, dir)
+		var err error
+		captureOutput(t, func() { err = CleanLegacyOpencode(pluginsDir, configPath, false) })
+		if got, _ := os.ReadFile(configPath); err == nil || string(got) != content {
+			t.Errorf("CleanLegacyOpencode() error = %v, config = %q; want an error and the old bytes", err, got)
+		}
+	})
+}
+
+// TestInstallOpencode_EntryRemovalFailureKeepsPlugin: if devexp.js can't be
+// deleted, devexp/ must not be emptied either.
+func TestInstallOpencode_EntryRemovalFailureKeepsPlugin(t *testing.T) {
+	repoDir := t.TempDir()
+	writeOpencodeRepo(t, repoDir, allThree...)
+	pluginsDir := filepath.Join(t.TempDir(), "plugins")
+	recorded := installFull(t, repoDir, pluginsDir)
+	before := snapshot(t, filepath.Join(pluginsDir, "devexp"))
+	readOnlyDir(t, pluginsDir) // devexp.js can't be unlinked; devexp/ stays writable
+
+	var got []string
+	var err error
+	out := captureOutput(t, func() { got, err = InstallOpencode(opencodeRegistry(), repoDir, pluginsDir, allThree, recorded, false) })
+	if err != nil {
+		t.Fatalf("InstallOpencode() error = %v", err)
+	}
+	if after := snapshot(t, filepath.Join(pluginsDir, "devexp")); !reflect.DeepEqual(before, after) {
+		t.Errorf("devexp/ emptied although devexp.js could not be removed")
+	}
+	if len(got) != len(recorded) {
+		t.Errorf("InstallOpencode() = %v, want every kept file %v recorded", got, recorded)
+	}
+	if !strings.Contains(out, "hooks remain active") {
+		t.Errorf("no warning that the plugin stays active:\n%s", out)
+	}
+}
+
+// TestRemovePluginFiles_RechecksRoots: removal re-checks plugins/ and devexp/
+// itself, so a directory swapped for a symlink after InstallOpencode's checks
+// is still never removed through.
+func TestRemovePluginFiles_RechecksRoots(t *testing.T) {
+	pluginsDir := t.TempDir()
+	checkout := t.TempDir()
+	for _, n := range []string{"utils.js", "hooks.json", "secret-guard.js"} {
+		os.WriteFile(filepath.Join(checkout, n), []byte(n), 0644) //nolint:errcheck
+	}
+	os.Symlink(checkout, filepath.Join(pluginsDir, "devexp")) //nolint:errcheck
+	stale := []string{"devexp/utils.js", "devexp/hooks.json", "devexp/secret-guard.js"}
+
+	var kept []string
+	out := captureOutput(t, func() { kept = removePluginFiles(pluginsDir, stale, false) })
+	if len(listTree(t, checkout)) != 3 {
+		t.Errorf("files removed through the symlinked devexp/: %v left", listTree(t, checkout))
+	}
+	if !reflect.DeepEqual(kept, stale) || !strings.Contains(out, "is a symlink") {
+		t.Errorf("removePluginFiles() kept %v, output %q; want all kept with a symlink warning", kept, out)
+	}
 }

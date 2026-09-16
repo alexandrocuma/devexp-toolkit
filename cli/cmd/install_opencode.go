@@ -101,18 +101,19 @@ func doInstallOpencode(opts *installOpts) error {
 			ui.Warn(fmt.Sprintf("hooks registry: %v", err))
 		} else {
 			ui.Info(fmt.Sprintf("Installing hooks (opencode plugin → %s)...", p.plugins))
-			if err := hooks.CleanLegacyOpencode(p.plugins, configPath, opts.dryRun); err != nil {
-				ui.Warn(fmt.Sprintf("legacy opencode plugin cleanup: %v", err))
-			}
 			disabled := resolveHookDisabled(registry, opts.selectedHooks, opts.cfg.DisabledHooks)
-			installedPlugins, err := hooks.InstallOpencode(registry, opts.repoDir, p.plugins, disabled, opts.dryRun)
+			// InstallOpencode validates before it changes anything and removes
+			// the plugin files it no longer installs itself.
+			installedPlugins, err := hooks.InstallOpencode(registry, opts.repoDir, p.plugins, disabled, old.Plugins, opts.dryRun)
 			if err != nil {
 				return err
 			}
 			newManifest.Plugins = installedPlugins
-			stalePlugins := hooks.OwnedStalePlugins(p.plugins, manifest.Stale(old.Plugins, installedPlugins))
-			removeStale(p.plugins, stalePlugins, os.Remove, opts.dryRun)
-			hooks.PruneOpencodeDir(p.plugins, opts.dryRun)
+			// Only once the new plugin is in place: a refused install must not
+			// take away a working legacy one.
+			if err := hooks.CleanLegacyOpencode(p.plugins, configPath, opts.dryRun); err != nil {
+				ui.Warn(fmt.Sprintf("legacy opencode plugin cleanup: %v", err))
+			}
 			fmt.Println()
 		}
 	}

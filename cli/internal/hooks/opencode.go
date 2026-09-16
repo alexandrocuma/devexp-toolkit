@@ -200,14 +200,27 @@ func isDevexpEntry(content []byte) bool {
 	return hasDevexpHeader(opencodeEntrySrc, content)
 }
 
-// InstallOpencode installs the devexp plugin for the hooks selected from
-// registry into pluginsDir and returns the installed paths (relative to
-// pluginsDir, entry first) for the manifest. With nothing selected it installs
-// nothing and returns nil, so the caller's stale-file pass removes a previous
-// plugin. It never writes outside devexp.js and devexp/, refuses to write
-// through a symlink, and refuses to replace a devexp.js that is not a devexp
-// entry.
-func InstallOpencode(registry Registry, repoDir, pluginsDir string, disabled []string, dryRun bool) ([]string, error) {
+// InstallOpencode brings pluginsDir in line with the hooks selected from
+// registry: it writes the plugin for the selection, removes the plugin files
+// devexp no longer installs, and returns the paths (relative to pluginsDir,
+// entry first) the manifest should record. recorded is the previous manifest's
+// plugins list — nil on a first install or when the manifest was unreadable.
+//
+// Nothing changes on disk until every check has passed:
+//   - plugins/ and plugins/devexp/ must be real directories when they exist.
+//     Writing or removing through a symlinked one would reach files outside
+//     plugins/, such as a source checkout.
+//   - every source must be readable, and no destination may be a symlink or a
+//     directory, or a devexp.js devexp doesn't own.
+//
+// Files are written atomically (temp file + rename).
+//
+// The files devexp may remove are the recorded list plus the devexp files it
+// recognises on disk (ownedOnDisk), so a lost manifest can't leave a plugin
+// installed for good. Removing the whole plugin is all-or-nothing: when
+// devexp.js has to stay, devexp/ stays with it, because an entry without its
+// hooks.json blocks every opencode tool call.
+func InstallOpencode(registry Registry, repoDir, pluginsDir string, disabled, recorded []string, dryRun bool) ([]string, error) {
 	selected := SelectOpencode(registry, disabled)
 	chosen := make(map[string]bool, len(selected))
 	var names []string
@@ -220,41 +233,58 @@ func InstallOpencode(registry Registry, repoDir, pluginsDir string, disabled []s
 			ui.Skipped(h.Name, "disabled")
 		}
 	}
-	if len(selected) == 0 {
+
+	var files []pluginFile
+	var contents [][]byte
+	if len(selected) > 0 {
+		selection, err := opencodeSelectionJSON(selected)
+		if err != nil {
+			return nil, err
+		}
+		files = opencodePluginFiles(selected)
+		contents = make([][]byte, len(files))
+		for i, f := range files {
+			if f.Src == "" {
+				contents[i] = selection
+			} else if contents[i], err = os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(f.Src))); err != nil {
+				return nil, fmt.Errorf("opencode plugin source: %w", err)
+			}
+		}
+	}
+	dests := make([]string, len(files))
+	for i, f := range files {
+		dests[i] = f.Dest
+	}
+	stale := stalePlugins(pluginsDir, registry, recorded, dests)
+
+	if len(files) == 0 && len(stale) == 0 {
 		ui.Skipped("opencode plugin", "every hook is disabled — nothing to install")
 		return nil, nil
 	}
-
-	selection, err := opencodeSelectionJSON(selected)
-	if err != nil {
+	if err := checkPluginRoots(pluginsDir); err != nil {
 		return nil, err
 	}
-
-	// Read every source and check every destination before writing anything,
-	// so a missing source or a conflict leaves the existing plugin as it was.
-	files := opencodePluginFiles(selected)
-	contents := make([][]byte, len(files))
-	for i, f := range files {
-		if f.Src == "" {
-			contents[i] = selection
-		} else if contents[i], err = os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(f.Src))); err != nil {
-			return nil, fmt.Errorf("opencode plugin source: %w", err)
-		}
-		if err := checkPluginDest(pluginsDir, f.Dest); err != nil {
+	for _, f := range files {
+		if err := checkPluginDest(pluginsDir, f.Dest, recorded); err != nil {
 			return nil, err
 		}
 	}
 
-	dests := make([]string, len(files))
-	for i, f := range files {
-		dests[i] = f.Dest
+	if len(files) == 0 {
+		// Only removals are left, so devexp.js is among them.
+		if why := entryKeepReason(pluginsDir); why != "" {
+			ui.Warn(fmt.Sprintf("opencode plugin left installed and its hooks remain active: %s is %s, so devexp.js and devexp/ are both kept (removing only devexp/ would block every tool call). Move devexp.js aside and re-run to remove the plugin.",
+				filepath.Join(pluginsDir, opencodeEntry), why))
+			return stale, nil
+		}
+		ui.Skipped("opencode plugin", "every hook is disabled — nothing to install")
 	}
 
 	if dryRun {
 		for _, d := range dests {
 			ui.DryRun("write " + filepath.Join(pluginsDir, filepath.FromSlash(d)))
 		}
-	} else {
+	} else if len(files) > 0 {
 		if err := os.MkdirAll(filepath.Join(pluginsDir, opencodeDir), 0755); err != nil {
 			return nil, err
 		}
@@ -268,18 +298,47 @@ func InstallOpencode(registry Registry, repoDir, pluginsDir string, disabled []s
 		}
 	}
 
-	ui.Success(fmt.Sprintf("opencode hooks (%d): %s", len(names), strings.Join(names, ", ")))
-	return dests, nil
+	kept := removePluginFiles(pluginsDir, stale, dryRun)
+	if len(files) == 0 && len(kept) == 0 {
+		pruneOpencodeDir(pluginsDir, dryRun)
+	}
+	if len(files) > 0 {
+		ui.Success(fmt.Sprintf("opencode hooks (%d): %s", len(names), strings.Join(names, ", ")))
+	}
+	if len(dests)+len(kept) == 0 {
+		return nil, nil
+	}
+	return append(dests, kept...), nil
+}
+
+// checkPluginRoots refuses a plugins/ or plugins/devexp/ that exists but is a
+// symlink or not a directory. Every write and removal happens inside them, so
+// following a link would reach whatever it points at.
+func checkPluginRoots(pluginsDir string) error {
+	for _, d := range []string{pluginsDir, filepath.Join(pluginsDir, opencodeDir)} {
+		fi, err := os.Lstat(d)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s is a symlink — devexp writes and removes opencode plugin files only in a real directory; replace the link with a directory and re-run", d)
+		}
+		if !fi.IsDir() {
+			return fmt.Errorf("%s exists and is not a directory — move it aside and re-run", d)
+		}
+	}
+	return nil
 }
 
 // checkPluginDest refuses destinations that are not plain files devexp may
-// own: a symlink (writing would follow it out of plugins/), a directory, or a
-// devexp.js that is not a devexp entry (it is someone else's plugin).
-func checkPluginDest(pluginsDir, dest string) error {
-	dir := filepath.Join(pluginsDir, opencodeDir)
-	if fi, err := os.Lstat(dir); err == nil && !fi.IsDir() {
-		return fmt.Errorf("%s exists and is not a directory — move it aside and re-run", dir)
-	}
+// own: a symlink, a directory, or a devexp.js that is neither a devexp entry
+// nor recorded in the manifest (then it is someone else's plugin). A recorded
+// devexp.js is replaced even when its header is gone, so a damaged entry can
+// be repaired by re-installing.
+func checkPluginDest(pluginsDir, dest string, recorded []string) error {
 	p := filepath.Join(pluginsDir, filepath.FromSlash(dest))
 	fi, err := os.Lstat(p)
 	if os.IsNotExist(err) {
@@ -291,7 +350,7 @@ func checkPluginDest(pluginsDir, dest string) error {
 	if !fi.Mode().IsRegular() {
 		return fmt.Errorf("%s exists and is not a regular file — move it aside and re-run", p)
 	}
-	if dest == opencodeEntry {
+	if dest == opencodeEntry && !contains(recorded, opencodeEntry) {
 		content, err := os.ReadFile(p)
 		if err != nil {
 			return err
@@ -303,8 +362,8 @@ func checkPluginDest(pluginsDir, dest string) error {
 	return nil
 }
 
-// writeIfChanged writes content to pluginsDir/dest unless it already holds
-// exactly those bytes, reporting added or updated files.
+// writeIfChanged atomically writes content to pluginsDir/dest unless it
+// already holds exactly those bytes, reporting added or updated files.
 func writeIfChanged(pluginsDir, dest string, content []byte) error {
 	p := filepath.Join(pluginsDir, filepath.FromSlash(dest))
 	existing, err := os.ReadFile(p)
@@ -312,12 +371,12 @@ func writeIfChanged(pluginsDir, dest string, content []byte) error {
 	case err == nil && bytes.Equal(existing, content):
 		return nil
 	case err == nil:
-		if err := os.WriteFile(p, content, 0644); err != nil {
+		if err := writeFileAtomic(p, content, 0644); err != nil {
 			return err
 		}
 		ui.Updated(dest)
 	case os.IsNotExist(err):
-		if err := os.WriteFile(p, content, 0644); err != nil {
+		if err := writeFileAtomic(p, content, 0644); err != nil {
 			return err
 		}
 		ui.Added(dest)
@@ -327,21 +386,73 @@ func writeIfChanged(pluginsDir, dest string, content []byte) error {
 	return nil
 }
 
-// OwnedStalePlugins filters manifest-recorded stale plugin paths down to the
-// ones devexp may delete: devexp.js (only while it still is a devexp entry) or
-// a file directly in devexp/ with a name devexp installs. Anything else — a
-// hand-edited manifest with ../, a nested path, a replaced entry — is kept and
-// reported, never removed.
-func OwnedStalePlugins(pluginsDir string, stale []string) []string {
-	var owned []string
-	for _, rel := range stale {
-		if isOwnedPluginPath(rel) && (rel != opencodeEntry || entryStillDevexp(pluginsDir)) {
-			owned = append(owned, rel)
+// writeFileAtomic replaces path with data through a temp file in the same
+// directory and a rename. An interrupted write leaves the old file or the new
+// one, never a truncated one, and the rename replaces whatever is at path
+// instead of writing through it. The temp file is removed on any failure.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) (err error) {
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer func() {
+		if err != nil {
+			f.Close()      //nolint:errcheck
+			os.Remove(tmp) //nolint:errcheck
+		}
+	}()
+	if _, err = f.Write(data); err != nil {
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		return err
+	}
+	if err = f.Chmod(perm); err != nil {
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// stalePlugins lists the plugin files devexp may remove because this run
+// doesn't install them: recorded paths plus ownedOnDisk, minus keep, entry
+// first. A recorded path devexp never installs — a hand-edited manifest with
+// ../, a nested path, a foreign name — is reported and never returned.
+func stalePlugins(pluginsDir string, registry Registry, recorded, keep []string) []string {
+	skip := make(map[string]bool, len(keep))
+	for _, k := range keep {
+		skip[k] = true
+	}
+	var out []string
+	add := func(rel string) {
+		if skip[rel] {
+			return
+		}
+		skip[rel] = true
+		if rel == opencodeEntry {
+			out = append([]string{rel}, out...)
+		} else {
+			out = append(out, rel)
+		}
+	}
+	for _, rel := range recorded {
+		if skip[rel] {
 			continue
 		}
-		ui.Warn(fmt.Sprintf("%s left untouched: listed in the manifest but not a devexp plugin file", filepath.Join(pluginsDir, filepath.FromSlash(rel))))
+		if !isOwnedPluginPath(rel) {
+			skip[rel] = true
+			ui.Warn(fmt.Sprintf("%s left untouched: listed in the manifest but not a devexp plugin file", filepath.Join(pluginsDir, filepath.FromSlash(rel))))
+			continue
+		}
+		add(rel)
 	}
-	return owned
+	for _, rel := range ownedOnDisk(pluginsDir, registry) {
+		add(rel)
+	}
+	return out
 }
 
 func isOwnedPluginPath(rel string) bool {
@@ -355,28 +466,121 @@ func isOwnedPluginPath(rel string) bool {
 	return base == opencodeSelection || base == "package.json" || moduleFile.MatchString(base)
 }
 
-// entryStillDevexp reports whether devexp.js may be removed: it is absent
-// (removal is a no-op) or still a devexp entry.
-func entryStillDevexp(pluginsDir string) bool {
-	p := filepath.Join(pluginsDir, opencodeEntry)
-	fi, err := os.Lstat(p)
-	if os.IsNotExist(err) {
-		return true
+// ownedOnDisk finds the devexp plugin files present in pluginsDir without the
+// manifest: devexp.js while it is a devexp entry, and — only inside a real
+// devexp/ directory — hooks.json, package.json, utils.js and every registry
+// module name. It lets a run whose manifest was lost still remove the plugin.
+func ownedOnDisk(pluginsDir string, registry Registry) []string {
+	var out []string
+	entry := filepath.Join(pluginsDir, opencodeEntry)
+	if fi, err := os.Lstat(entry); err == nil && fi.Mode().IsRegular() {
+		if content, err := os.ReadFile(entry); err == nil && isDevexpEntry(content) {
+			out = append(out, opencodeEntry)
+		}
 	}
-	if err != nil || !fi.Mode().IsRegular() {
-		return false
+	dir := filepath.Join(pluginsDir, opencodeDir)
+	if fi, err := os.Lstat(dir); err != nil || !fi.IsDir() {
+		return out
 	}
-	content, err := os.ReadFile(p)
-	return err == nil && isDevexpEntry(content)
+	names := []string{"utils.js", "package.json"}
+	for _, h := range registry {
+		if spec, ok := h.Target(TargetOpencode); ok && spec.Module != "" {
+			if base, err := opencodeModuleBase(h); err == nil {
+				names = append(names, base)
+			}
+		}
+	}
+	names = append(names, opencodeSelection)
+	for _, n := range names {
+		if fi, err := os.Lstat(filepath.Join(dir, n)); err == nil && fi.Mode().IsRegular() {
+			out = append(out, path.Join(opencodeDir, n))
+		}
+	}
+	return out
 }
 
-// PruneOpencodeDir removes pluginsDir/devexp once it is empty. os.Remove
-// refuses a non-empty directory, so anything left in it survives.
-func PruneOpencodeDir(pluginsDir string, dryRun bool) {
+// entryKeepReason says why a stale devexp.js must not be removed, or "" when
+// it may. It is only asked about an entry stalePlugins returned, which is
+// recorded in the manifest or carries the devexp header, so what is left to
+// check is its kind: a symlink is someone's own setup and is never removed.
+func entryKeepReason(pluginsDir string) string {
+	fi, err := os.Lstat(filepath.Join(pluginsDir, opencodeEntry))
+	switch {
+	case os.IsNotExist(err):
+		return ""
+	case err != nil:
+		return "unreadable"
+	case fi.Mode()&os.ModeSymlink != 0:
+		return "a symlink"
+	case !fi.Mode().IsRegular():
+		return "not a regular file"
+	}
+	return ""
+}
+
+// removePluginFiles removes stale plugin files, entry first, and returns the
+// ones it had to keep. If the entry can't be removed nothing else is, so the
+// plugin never ends up as an entry without its hooks.json. Only regular files
+// are removed; plugins/ and devexp/ are re-checked right before.
+func removePluginFiles(pluginsDir string, stale []string, dryRun bool) []string {
+	if len(stale) == 0 {
+		return nil
+	}
 	if dryRun {
+		for _, rel := range stale {
+			ui.DryRun(fmt.Sprintf("remove %s (no longer installed)", filepath.Join(pluginsDir, filepath.FromSlash(rel))))
+		}
+		return nil
+	}
+	if err := checkPluginRoots(pluginsDir); err != nil {
+		ui.Warn(fmt.Sprintf("opencode plugin files left untouched: %v", err))
+		return stale
+	}
+	var kept []string
+	for i, rel := range stale {
+		p := filepath.Join(pluginsDir, filepath.FromSlash(rel))
+		fi, err := os.Lstat(p)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err == nil && !fi.Mode().IsRegular() {
+			err = errors.New("not a regular file")
+		}
+		if err == nil {
+			err = os.Remove(p)
+		}
+		if err != nil && !os.IsNotExist(err) {
+			if rel == opencodeEntry {
+				ui.Warn(fmt.Sprintf("opencode plugin left installed and its hooks remain active: could not remove %s (%v)", p, err))
+				return stale[i:]
+			}
+			ui.Warn(fmt.Sprintf("%s left untouched: %v", p, err))
+			kept = append(kept, rel)
+			continue
+		}
+		ui.Removed(rel)
+	}
+	return kept
+}
+
+// pruneOpencodeDir removes pluginsDir/devexp once it is empty, and only when
+// it is a real directory: os.Remove on a symlink deletes the link whatever it
+// points at, while on a directory it refuses unless the directory is empty.
+func pruneOpencodeDir(pluginsDir string, dryRun bool) {
+	dir := filepath.Join(pluginsDir, opencodeDir)
+	if fi, err := os.Lstat(dir); dryRun || err != nil || !fi.IsDir() {
 		return
 	}
-	os.Remove(filepath.Join(pluginsDir, opencodeDir)) //nolint:errcheck
+	os.Remove(dir) //nolint:errcheck
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 // ── Legacy flat install cleanup ───────────────────────────────────────────────
@@ -392,6 +596,11 @@ func PruneOpencodeDir(pluginsDir string, dryRun bool) {
 // and only with the exact legacy content. The config entry is removed only on
 // an exact string match, and every other byte of config.json is preserved.
 func CleanLegacyOpencode(pluginsDir, configPath string, dryRun bool) error {
+	// A symlinked plugins/ can point at a source checkout whose hooks/opencode
+	// files carry exactly the legacy names and headers.
+	if err := checkPluginRoots(pluginsDir); err != nil {
+		return fmt.Errorf("legacy flat install not cleaned up: %w", err)
+	}
 	matched := 0
 	for _, name := range legacyNames {
 		p := filepath.Join(pluginsDir, name)
@@ -445,6 +654,23 @@ func removeLegacy(p, label string, dryRun bool) error {
 // formatting, key order and every other value stay as they were. A missing,
 // malformed or unexpected config is left untouched.
 func removeLegacyConfigEntry(configPath, entry string, dryRun bool) error {
+	fi, err := os.Lstat(configPath)
+	if err != nil {
+		return nil
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		// Rewriting would either follow the link or replace it with a plain
+		// file; both change someone's dotfiles setup behind their back.
+		if data, err := os.ReadFile(configPath); err == nil {
+			if _, removed, err := spliceOutPluginEntry(data, entry); err == nil && removed > 0 {
+				ui.Warn(fmt.Sprintf("%s is a symlink, so it was left untouched — remove the plugin entry %q from it by hand", configPath, entry))
+			}
+		}
+		return nil
+	}
+	if !fi.Mode().IsRegular() {
+		return nil
+	}
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil
@@ -484,11 +710,7 @@ func removeLegacyConfigEntry(configPath, entry string, dryRun bool) error {
 		ui.DryRun("remove " + msg)
 		return nil
 	}
-	fi, err := os.Stat(configPath)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(configPath, out, fi.Mode().Perm()); err != nil {
+	if err := writeFileAtomic(configPath, out, fi.Mode().Perm()); err != nil {
 		return err
 	}
 	ui.Removed(msg)
