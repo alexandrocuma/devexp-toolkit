@@ -25,7 +25,7 @@ hooks/
   registry.json                   # source of truth
   claude-code/<hook-name>.sh      # Claude Code implementation
   opencode/<hook-name>.js         # opencode implementation
-  opencode/devexp-plugin.js       # entry point — composes all opencode modules
+  opencode/devexp-plugin.js       # entry point — composes the modules listed in devexp/hooks.json
   opencode/utils.js               # shared helpers
 ```
 
@@ -49,8 +49,10 @@ Every hook must have an entry in `hooks/registry.json`:
     "script":  "hooks/claude-code/my-guard.sh"
   },
   "opencode": {
-    "event":  "tool.execute.before",
-    "plugin": "hooks/opencode/devexp-plugin.js"
+    "event":       "tool.execute.before",
+    "module":      "hooks/opencode/my-guard.js",
+    "export":      "myGuard",
+    "fail_closed": true
   },
   "enabled": true
 }
@@ -186,7 +188,7 @@ export async function myGuard(_ctx) {
 | Event | Signature | Notes |
 |-------|-----------|-------|
 | `tool.execute.before` | `async (input, output) => {}` | `input.tool` = tool name (lowercase), `output.args` = mutable args |
-| `file.edited` | `async (event) => {}` | `event.path` = file path; must never throw |
+| `file.edited` | `async (event) => {}` | `event.file` = absolute file path (delivered by the entry's `event` adapter); must never throw |
 
 ### Tool names in opencode (lowercase)
 
@@ -219,44 +221,50 @@ Path helpers (`join`, `dirname`, `resolve`, `extname`, `basename`) are re-export
 
 ## Registering in the opencode Entry Point
 
-After creating your module, add it to `hooks/opencode/devexp-plugin.js` — import it, append it to the `Promise.all([...])` array, and add a line to the file's header comment. Excerpt of the real file with a new module added (the other imports are omitted):
+You never edit `hooks/opencode/devexp-plugin.js` to add a hook. The entry composes only the modules listed in the installed selection file, and that selection comes from the registry. Register the module by giving the hook its `opencode` mapping in `hooks/registry.json`:
 
-```js
-import { myGuard } from './my-guard.js';
-
-export const DevExpPlugin = async (ctx) => {
-  const modules = await Promise.all([
-    secretGuard(ctx),
-    secretInWriteGuard(ctx),
-    dangerousCmdGuard(ctx),
-    largeFileGuard(ctx),
-    lintOnSave(ctx),
-    formatOnSave(ctx),
-    testOnSave(ctx),
-    graphifyReadGuard(ctx),
-    graphifySessionSentinel(ctx),
-    graphifyGrepNudge(ctx),
-    myGuard(ctx),           // ← add here
-  ]);
-
-  return {
-    'tool.execute.before': async (input, output) => {
-      for (const mod of modules) {
-        if (mod['tool.execute.before']) {
-          await mod['tool.execute.before'](input, output);
-        }
-      }
-    },
-    'file.edited': async (event) => {
-      for (const mod of modules) {
-        if (mod['file.edited']) {
-          await mod['file.edited'](event);
-        }
-      }
-    },
-  };
-};
+```json
+"opencode": {
+  "event":       "tool.execute.before",
+  "module":      "hooks/opencode/my-guard.js",
+  "export":      "myGuard",
+  "fail_closed": true
+}
 ```
+
+| Field | Meaning |
+|-------|---------|
+| `module` | The module file, relative to repo root, directly under `hooks/opencode/` |
+| `export` | The factory's export name — the lowerCamel hook name |
+| `fail_closed` | `true` for security guards. If the module fails to import or initialise, every tool call is blocked instead of running without the guard. Omit it for advisory hooks |
+| `enabled` | Optional opencode-only override of the top-level `enabled` (the `graphify-*` hooks set `true`). Absent = follow `enabled` |
+
+A module may import only `./utils.js` relatively — the installed plugin directory holds the hook modules, `utils.js` and `package.json`, nothing else (`hooks/opencode/devexp-plugin.test.js` checks this for every registry entry).
+
+### The `devexp/hooks.json` contract
+
+The installed plugin is `<plugins>/devexp.js` (the entry) next to `<plugins>/devexp/`, which holds `hooks.json`, `utils.js`, `package.json` and the selected modules. `hooks.json` is a JSON array in registry order:
+
+```json
+[
+  { "name": "secret-guard", "module": "secret-guard.js", "export": "secretGuard", "failClosed": true },
+  { "name": "lint-on-save", "module": "lint-on-save.js", "export": "lintOnSave", "failClosed": false }
+]
+```
+
+`module` is a bare file name inside `devexp/`; the entry refuses any value containing `/` or `..`. Writing this file is the installer's job (not done yet — see [Known gaps](../architecture/overview.md#known-gaps)).
+
+### Failure behaviour
+
+- **`hooks.json` missing, invalid or not an array** → every tool call is blocked with `[devexp] opencode plugin is misconfigured (devexp/hooks.json unreadable) — re-run devexp install. Blocking to be safe.`
+- **A module fails to import or initialise** (or its export is not a function):
+  - with `failClosed` → a stub blocks every tool call with `[devexp <name>] internal error — the guard failed to load, so it did not run. Blocking to be safe: <error>`
+  - without → `[devexp <name>] failed to load; skipped: <error>` is logged and the other hooks keep running
+- **At runtime** `tool.execute.before` handlers run one after another in selection order; the first throw blocks the call.
+
+### File events
+
+opencode has no `file.edited` plugin hook: file events reach plugins only through the `event` hook. The entry adapts every `event` of type `file.edited` into a call to each module's `file.edited` handler with `{ file }` (the absolute path). Errors from those handlers are logged, never rethrown — opencode dispatches `event` without awaiting a result.
 
 ---
 
@@ -265,7 +273,7 @@ export const DevExpPlugin = async (ctx) => {
 - [ ] `hooks/claude-code/<hook-name>.sh` created with correct header comment
 - [ ] `chmod +x hooks/claude-code/<hook-name>.sh`
 - [ ] `hooks/opencode/<hook-name>.js` created
-- [ ] Module imported, added to `Promise.all([...])` and listed in the header comment of `devexp-plugin.js`
+- [ ] Registry `opencode.module`/`export` set (`fail_closed` for guards)
 - [ ] Entry added to `hooks/registry.json` with correct event, matcher, and paths
 - [ ] Extraction fails closed (guard) or open-but-loud (advisory) — see [Failing on bad input](#boilerplate)
 - [ ] Mirrored tests added: `hooks/claude-code/<hook-name>.test.sh` and `hooks/opencode/<hook-name>.test.js` (pattern: `secret-guard.test.sh` ↔ `secret-guard.test.js`)

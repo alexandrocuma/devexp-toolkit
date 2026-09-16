@@ -9,7 +9,9 @@
     },
     "opencode": {
       "event": "tool.execute.before",
-      "plugin": "hooks/opencode/devexp-plugin.js"
+      "module": "hooks/opencode/secret-guard.js",
+      "export": "secretGuard",
+      "fail_closed": true
     },
     "enabled": true
   },
@@ -23,7 +25,9 @@
     },
     "opencode": {
       "event": "tool.execute.before",
-      "plugin": "hooks/opencode/devexp-plugin.js"
+      "module": "hooks/opencode/dangerous-cmd-guard.js",
+      "export": "dangerousCmdGuard",
+      "fail_closed": true
     },
     "enabled": true
   },
@@ -37,7 +41,8 @@
     },
     "opencode": {
       "event": "tool.execute.before",
-      "plugin": "hooks/opencode/devexp-plugin.js"
+      "module": "hooks/opencode/large-file-guard.js",
+      "export": "largeFileGuard"
     },
     "enabled": true
   },
@@ -51,7 +56,8 @@
     },
     "opencode": {
       "event": "file.edited",
-      "plugin": "hooks/opencode/devexp-plugin.js"
+      "module": "hooks/opencode/lint-on-save.js",
+      "export": "lintOnSave"
     },
     "enabled": true
   },
@@ -65,7 +71,9 @@
     },
     "opencode": {
       "event": "tool.execute.before",
-      "plugin": "hooks/opencode/devexp-plugin.js"
+      "module": "hooks/opencode/secret-in-write-guard.js",
+      "export": "secretInWriteGuard",
+      "fail_closed": true
     },
     "enabled": true
   },
@@ -79,7 +87,8 @@
     },
     "opencode": {
       "event": "file.edited",
-      "plugin": "hooks/opencode/devexp-plugin.js"
+      "module": "hooks/opencode/format-on-save.js",
+      "export": "formatOnSave"
     },
     "enabled": true
   },
@@ -93,7 +102,8 @@
     },
     "opencode": {
       "event": "file.edited",
-      "plugin": "hooks/opencode/devexp-plugin.js"
+      "module": "hooks/opencode/test-on-save.js",
+      "export": "testOnSave"
     },
     "enabled": true
   },
@@ -107,7 +117,9 @@
     },
     "opencode": {
       "event": "tool.execute.before",
-      "plugin": "hooks/opencode/devexp-plugin.js"
+      "module": "hooks/opencode/graphify-read-guard.js",
+      "export": "graphifyReadGuard",
+      "enabled": true
     },
     "enabled": false
   },
@@ -121,7 +133,9 @@
     },
     "opencode": {
       "event": "tool.execute.before",
-      "plugin": "hooks/opencode/devexp-plugin.js"
+      "module": "hooks/opencode/graphify-session-sentinel.js",
+      "export": "graphifySessionSentinel",
+      "enabled": true
     },
     "enabled": false
   },
@@ -135,7 +149,9 @@
     },
     "opencode": {
       "event": "tool.execute.before",
-      "plugin": "hooks/opencode/devexp-plugin.js"
+      "module": "hooks/opencode/graphify-grep-nudge.js",
+      "export": "graphifyGrepNudge",
+      "enabled": true
     },
     "enabled": false
   }

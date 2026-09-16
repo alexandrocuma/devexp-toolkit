@@ -104,7 +104,7 @@ Key reads per change type:
 
 **Modified hook behavior**: Read the hook's `.sh` and `.js` files to understand the new behavior.
 
-**devexp-plugin.js changed**: Read the current import list and `Promise.all([...])` array.
+**devexp-plugin.js changed**: Read the registry `opencode` mappings and the `hooks.json` loader in `devexp-plugin.js`.
 
 **utils.js changed**: Read the current exports.
 

@@ -12,17 +12,97 @@ import (
 
 type Registry []Hook
 
-type Hook struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	ClaudeCode  HookCC `json:"claude_code"`
-	Enabled     bool   `json:"enabled"`
+// Target ids — the sibling block keys in hooks/registry.json.
+const (
+	TargetClaudeCode = "claude_code"
+	TargetOpencode   = "opencode"
+)
+
+// TargetSpec is one install target's view of a hook. Each target uses the
+// fields it needs (Claude Code: Event/Matcher/Script; opencode: Event/Module/
+// Export/FailClosed). A new target adds a registry block, not a new Go type.
+type TargetSpec struct {
+	Event      string `json:"event,omitempty"`
+	Matcher    string `json:"matcher,omitempty"`
+	Script     string `json:"script,omitempty"`
+	Module     string `json:"module,omitempty"`
+	Export     string `json:"export,omitempty"`
+	FailClosed bool   `json:"fail_closed,omitempty"`
+	Enabled    *bool  `json:"enabled,omitempty"` // nil = follow Hook.Enabled
 }
 
-type HookCC struct {
-	Event   string `json:"event"`
-	Matcher string `json:"matcher"`
-	Script  string `json:"script"`
+type Hook struct {
+	Name        string
+	Description string
+	Enabled     bool
+	Targets     map[string]TargetSpec // keyed by target id
+}
+
+// UnmarshalJSON reads the common fields (name, description, enabled) and
+// decodes every other key whose value is a JSON object as a per-target block,
+// so adding a target to the registry needs no change to this type.
+func (h *Hook) UnmarshalJSON(b []byte) error {
+	var common struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Enabled     bool   `json:"enabled"`
+	}
+	if err := json.Unmarshal(b, &common); err != nil {
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+
+	out := Hook{Name: common.Name, Description: common.Description, Enabled: common.Enabled}
+	for key, val := range raw {
+		if key == "name" || key == "description" || key == "enabled" || !isJSONObject(val) {
+			continue
+		}
+		var spec TargetSpec
+		if err := json.Unmarshal(val, &spec); err != nil {
+			return fmt.Errorf("hook %q: target %q: %w", out.Name, key, err)
+		}
+		if out.Targets == nil {
+			out.Targets = map[string]TargetSpec{}
+		}
+		out.Targets[key] = spec
+	}
+	*h = out
+	return nil
+}
+
+// isJSONObject reports whether raw holds a JSON object, ignoring leading
+// whitespace. Non-object extras in a registry entry are not target blocks.
+func isJSONObject(raw json.RawMessage) bool {
+	for _, c := range raw {
+		switch c {
+		case ' ', '\t', '\n', '\r':
+			continue
+		}
+		return c == '{'
+	}
+	return false
+}
+
+// Target returns the hook's block for target id, and whether it has one.
+func (h Hook) Target(id string) (TargetSpec, bool) {
+	spec, ok := h.Targets[id]
+	return spec, ok
+}
+
+// EnabledFor reports whether the hook is enabled for target id: false without
+// a block for it, else the block's own enabled override, else Hook.Enabled.
+func (h Hook) EnabledFor(id string) bool {
+	spec, ok := h.Targets[id]
+	if !ok {
+		return false
+	}
+	if spec.Enabled != nil {
+		return *spec.Enabled
+	}
+	return h.Enabled
 }
 
 type hookEntry struct {
@@ -77,7 +157,7 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 			ui.Skipped(hook.Name, "disabled in devexp.config.json")
 			continue
 		}
-		cc := hook.ClaudeCode
+		cc := hook.Targets[TargetClaudeCode]
 		if cc.Event == "" || cc.Script == "" {
 			continue
 		}
@@ -197,7 +277,7 @@ const scriptDir = "hooks/claude-code/"
 func managedScriptNames(registry Registry) map[string]bool {
 	names := map[string]bool{}
 	for _, h := range registry {
-		if s := h.ClaudeCode.Script; s != "" {
+		if s := h.Targets[TargetClaudeCode].Script; s != "" {
 			names[filepath.Base(s)] = true
 		}
 	}

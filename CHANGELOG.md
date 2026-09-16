@@ -53,6 +53,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **opencode plugin: data-driven entry, explicit registry mapping, parity fixes
+  (#107).** Groundwork for installing the plugin (#108); no user-visible change
+  until then.
+  - `hooks/opencode/devexp-plugin.js` no longer statically imports all 10 modules
+    through one `Promise.all`, where a single broken module rejected the whole
+    plugin and left opencode running with no guard. It now exports exactly one
+    function and composes only the modules listed in the installed selection
+    `devexp/hooks.json`. A module that fails to import or initialise is skipped
+    and logged; if it is a fail-closed guard (`secret-guard`,
+    `secret-in-write-guard`, `dangerous-cmd-guard`) every tool call is blocked
+    with an internal-error message instead. A missing or malformed `hooks.json`
+    blocks too.
+  - lint/format/test-on-save never ran in opencode: `file.edited` is not a plugin
+    hook key, so file events only reach plugins through `event`. The entry now
+    adapts `event` → `file.edited` and hands each module `{ file }`.
+  - The opencode `secret-guard` message now matches Claude Code's:
+    `Blocked access to "…"` (was `Blocked read of` / `Blocked bash access to`).
+  - `hooks/registry.json` maps each hook explicitly per install target: every
+    `opencode` block has `module`, `export`, `fail_closed` (security guards) and
+    `enabled` (the `graphify-*` hooks stay on for opencode). The Go registry type
+    is target-generic — `hooks.Hook.Targets` is a `map[string]hooks.TargetSpec`
+    filled from every sibling block, with `EnabledFor(target)` — so a new target
+    is a new registry block, not a new Go type. The Claude Code install is
+    unchanged (identical `settings.json` before and after).
+  - "Add a hook" docs no longer tell authors to edit `devexp-plugin.js`; the
+    `opencode` registry mapping is the touch point (`CLAUDE.md`, `conventions.md`,
+    `workflows.md`, `hooks/README.md`, `reference/hooks.md`,
+    `hook-authoring-guide.md`, `architecture/overview.md`, `docs-sync` agent).
+    New `hooks/opencode/devexp-plugin.test.js`.
+
 - **Docs and agent sources drifted from the code** — found by the first `/devxp`
   run with the development kit, fixed by `update-docs` passes verified against code:
   - opencode hooks were documented as installed; the Go CLI never deploys

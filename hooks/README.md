@@ -17,9 +17,8 @@ Full catalog with triggers and behavior: [`docs/reference/hooks.md`](../docs/ref
 ## Adding a New Hook
 
 1. Create `hooks/claude-code/<hook-name>.sh` and `hooks/opencode/<hook-name>.js`
-2. Register the JS module in `hooks/opencode/devexp-plugin.js`
-3. Add an entry to `hooks/registry.json`
-4. Add mirrored `<hook-name>.test.sh` / `<hook-name>.test.js` tests (and a `check` line in `claude-code/fail-closed.test.sh`), then update the hook catalog and counts
-5. `chmod +x hooks/claude-code/<hook-name>.sh` and run `./install.sh`
+2. Add an entry to `hooks/registry.json`, including the opencode mapping (`module`, `export`, `fail_closed` for guards)
+3. Add mirrored `<hook-name>.test.sh` / `<hook-name>.test.js` tests (and a `check` line in `claude-code/fail-closed.test.sh`), then update the hook catalog and counts
+4. `chmod +x hooks/claude-code/<hook-name>.sh` and run `./install.sh`
 
 Step-by-step recipe: [`docs/guides/workflows.md#add-a-hook`](../docs/guides/workflows.md#add-a-hook) · Full guide: [`docs/development/hook-authoring-guide.md`](../docs/development/hook-authoring-guide.md)

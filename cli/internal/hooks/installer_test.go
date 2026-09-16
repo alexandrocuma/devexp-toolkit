@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -38,6 +39,16 @@ func writeSettingsHooks(t *testing.T, settingsPath string, hooks hooksMapT) {
 	}
 	if err := os.WriteFile(settingsPath, data, 0644); err != nil {
 		t.Fatalf("WriteFile error = %v", err)
+	}
+}
+
+// ccHook builds a registry hook that has only a claude_code target block.
+func ccHook(name string, enabled bool, event, matcher, script string) Hook {
+	return Hook{
+		Name: name, Enabled: enabled,
+		Targets: map[string]TargetSpec{
+			TargetClaudeCode: {Event: event, Matcher: matcher, Script: script},
+		},
 	}
 }
 
@@ -194,10 +205,7 @@ func TestInstallClaude(t *testing.T) {
 		"adds a new hook not yet registered": {
 			setup: func(t *testing.T, repoDir, settingsPath string) (Registry, []string) {
 				createScript(t, repoDir, "hooks/claude-code/foo.sh")
-				return Registry{{
-					Name: "foo", Enabled: true,
-					ClaudeCode: HookCC{Event: "PreToolUse", Matcher: "Bash", Script: "hooks/claude-code/foo.sh"},
-				}}, nil
+				return Registry{ccHook("foo", true, "PreToolUse", "Bash", "hooks/claude-code/foo.sh")}, nil
 			},
 			check: func(t *testing.T, repoDir, settingsPath string) {
 				got := readHooks(t, settingsPath)
@@ -223,10 +231,7 @@ func TestInstallClaude(t *testing.T) {
 						}},
 					},
 				})
-				return Registry{{
-					Name: "foo", Enabled: true,
-					ClaudeCode: HookCC{Event: "PreToolUse", Matcher: "Bash", Script: "hooks/claude-code/foo.sh"},
-				}}, nil
+				return Registry{ccHook("foo", true, "PreToolUse", "Bash", "hooks/claude-code/foo.sh")}, nil
 			},
 			check: func(t *testing.T, repoDir, settingsPath string) {
 				got := readHooks(t, settingsPath)
@@ -245,10 +250,7 @@ func TestInstallClaude(t *testing.T) {
 		"skips a disabled hook, leaving settings.json unwritten": {
 			setup: func(t *testing.T, repoDir, settingsPath string) (Registry, []string) {
 				createScript(t, repoDir, "hooks/claude-code/foo.sh")
-				return Registry{{
-					Name: "foo", Enabled: true,
-					ClaudeCode: HookCC{Event: "PreToolUse", Matcher: "Bash", Script: "hooks/claude-code/foo.sh"},
-				}}, []string{"foo"}
+				return Registry{ccHook("foo", true, "PreToolUse", "Bash", "hooks/claude-code/foo.sh")}, []string{"foo"}
 			},
 			check: func(t *testing.T, repoDir, settingsPath string) {
 				if got := readHooks(t, settingsPath); got != nil {
@@ -269,10 +271,7 @@ func TestInstallClaude(t *testing.T) {
 						{Matcher: "Bash", Hooks: []hookCmd{{Type: "command", Command: scriptAbs}}},
 					},
 				})
-				return Registry{{
-					Name: "foo", Enabled: true,
-					ClaudeCode: HookCC{Event: "PreToolUse", Matcher: "Bash", Script: "hooks/claude-code/foo.sh"},
-				}}, nil
+				return Registry{ccHook("foo", true, "PreToolUse", "Bash", "hooks/claude-code/foo.sh")}, nil
 			},
 			check: func(t *testing.T, repoDir, settingsPath string) {
 				got := readHooks(t, settingsPath)
@@ -300,10 +299,7 @@ func TestInstallClaude(t *testing.T) {
 						{Matcher: "Bash", Hooks: []hookCmd{{Type: "command", Command: foreign}}},
 					},
 				})
-				return Registry{{
-					Name: "foo", Enabled: true,
-					ClaudeCode: HookCC{Event: "PreToolUse", Matcher: "Bash", Script: "hooks/claude-code/foo.sh"},
-				}}, nil
+				return Registry{ccHook("foo", true, "PreToolUse", "Bash", "hooks/claude-code/foo.sh")}, nil
 			},
 			check: func(t *testing.T, repoDir, settingsPath string) {
 				got := readHooks(t, settingsPath)
@@ -348,10 +344,7 @@ func TestInstallClaude(t *testing.T) {
 						}},
 					},
 				})
-				return Registry{{
-					Name: "foo", Enabled: true,
-					ClaudeCode: HookCC{Event: "PreToolUse", Matcher: "Bash", Script: "hooks/claude-code/foo.sh"},
-				}}, nil
+				return Registry{ccHook("foo", true, "PreToolUse", "Bash", "hooks/claude-code/foo.sh")}, nil
 			},
 			dryRun: true,
 			check: func(t *testing.T, repoDir, settingsPath string) {
@@ -388,14 +381,11 @@ func TestInstallClaude(t *testing.T) {
 
 func testRegistry() Registry {
 	return Registry{
-		{Name: "secret-guard", Enabled: true, ClaudeCode: HookCC{
-			Event: "PreToolUse", Matcher: "Read|Bash", Script: "hooks/claude-code/secret-guard.sh"}},
-		{Name: "dangerous-cmd-guard", Enabled: true, ClaudeCode: HookCC{
-			Event: "PreToolUse", Matcher: "Bash", Script: "hooks/claude-code/dangerous-cmd-guard.sh"}},
+		ccHook("secret-guard", true, "PreToolUse", "Read|Bash", "hooks/claude-code/secret-guard.sh"),
+		ccHook("dangerous-cmd-guard", true, "PreToolUse", "Bash", "hooks/claude-code/dangerous-cmd-guard.sh"),
 		// Disabled on purpose: a foreign copy of a disabled hook still runs,
 		// so it must still be pruned.
-		{Name: "graphify-read-guard", Enabled: false, ClaudeCode: HookCC{
-			Event: "PreToolUse", Matcher: "Read|Glob", Script: "hooks/claude-code/graphify-read-guard.sh"}},
+		ccHook("graphify-read-guard", false, "PreToolUse", "Read|Glob", "hooks/claude-code/graphify-read-guard.sh"),
 	}
 }
 
@@ -523,5 +513,185 @@ func TestPruneForeignDevexpHooks(t *testing.T) {
 				t.Errorf("hooksMap = %+v, want %+v", tt.hooksMap, tt.wantHooks)
 			}
 		})
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+func TestHookUnmarshalJSON(t *testing.T) {
+	tests := map[string]struct {
+		json        string
+		wantHook    Hook
+		wantMissing []string
+		wantErr     string
+	}{
+		"claude_code block lands in Targets": {
+			json: `{
+				"name": "secret-guard",
+				"description": "d",
+				"claude_code": {"event": "PreToolUse", "matcher": "Read|Bash", "script": "hooks/claude-code/secret-guard.sh"},
+				"enabled": true
+			}`,
+			wantHook: Hook{
+				Name: "secret-guard", Description: "d", Enabled: true,
+				Targets: map[string]TargetSpec{
+					TargetClaudeCode: {Event: "PreToolUse", Matcher: "Read|Bash", Script: "hooks/claude-code/secret-guard.sh"},
+				},
+			},
+			wantMissing: []string{TargetOpencode},
+		},
+		"opencode block parses module, export, fail_closed and enabled": {
+			json: `{
+				"name": "graphify-read-guard",
+				"claude_code": {"event": "PreToolUse", "matcher": "Read|Glob", "script": "hooks/claude-code/graphify-read-guard.sh"},
+				"opencode": {"event": "tool.execute.before", "module": "hooks/opencode/graphify-read-guard.js", "export": "graphifyReadGuard", "fail_closed": true, "enabled": true},
+				"enabled": false
+			}`,
+			wantHook: Hook{
+				Name: "graphify-read-guard", Enabled: false,
+				Targets: map[string]TargetSpec{
+					TargetClaudeCode: {Event: "PreToolUse", Matcher: "Read|Glob", Script: "hooks/claude-code/graphify-read-guard.sh"},
+					TargetOpencode: {
+						Event: "tool.execute.before", Module: "hooks/opencode/graphify-read-guard.js",
+						Export: "graphifyReadGuard", FailClosed: true, Enabled: boolPtr(true),
+					},
+				},
+			},
+		},
+		// The target-generic criterion: a block under a key the code has never
+		// heard of parses with no change to the type or the decoder.
+		"an arbitrary new sibling block parses without code changes": {
+			json: `{
+				"name": "foo",
+				"claude_code": {"event": "PreToolUse", "script": "hooks/claude-code/foo.sh"},
+				"example_target": {"event": "X", "script": "s.sh"},
+				"enabled": true
+			}`,
+			wantHook: Hook{
+				Name: "foo", Enabled: true,
+				Targets: map[string]TargetSpec{
+					TargetClaudeCode: {Event: "PreToolUse", Script: "hooks/claude-code/foo.sh"},
+					"example_target": {Event: "X", Script: "s.sh"},
+				},
+			},
+		},
+		"non-object extras are not targets": {
+			json: `{"name": "foo", "tags": ["a"], "note": "x", "claude_code": {"script": "s.sh"}, "enabled": true}`,
+			wantHook: Hook{
+				Name: "foo", Enabled: true,
+				Targets: map[string]TargetSpec{TargetClaudeCode: {Script: "s.sh"}},
+			},
+		},
+		"no target blocks means no targets": {
+			json:        `{"name": "foo", "enabled": true}`,
+			wantHook:    Hook{Name: "foo", Enabled: true},
+			wantMissing: []string{TargetClaudeCode, TargetOpencode},
+		},
+		"a malformed target block is an error naming the hook and target": {
+			json:    `{"name": "broken-hook", "opencode": {"fail_closed": "yes"}, "enabled": true}`,
+			wantErr: `hook "broken-hook": target "opencode"`,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var got Hook
+			err := json.Unmarshal([]byte(tt.json), &got)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Unmarshal() error = %v, want it to contain %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unmarshal() error = %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.wantHook) {
+				t.Errorf("Unmarshal() = %+v, want %+v", got, tt.wantHook)
+			}
+			for id, want := range tt.wantHook.Targets {
+				if spec, ok := got.Target(id); !ok || !reflect.DeepEqual(spec, want) {
+					t.Errorf("Target(%q) = %+v, %v, want %+v, true", id, spec, ok, want)
+				}
+			}
+			for _, id := range tt.wantMissing {
+				if _, ok := got.Target(id); ok {
+					t.Errorf("Target(%q) ok = true, want false", id)
+				}
+			}
+		})
+	}
+}
+
+func TestHookEnabledFor(t *testing.T) {
+	tests := map[string]struct {
+		hook Hook
+		want bool
+	}{
+		"missing block is not enabled": {
+			hook: Hook{Enabled: true, Targets: map[string]TargetSpec{TargetClaudeCode: {}}},
+			want: false,
+		},
+		"nil override follows top-level true": {
+			hook: Hook{Enabled: true, Targets: map[string]TargetSpec{TargetOpencode: {}}},
+			want: true,
+		},
+		"nil override follows top-level false": {
+			hook: Hook{Enabled: false, Targets: map[string]TargetSpec{TargetOpencode: {}}},
+			want: false,
+		},
+		// The graphify case: off for Claude Code, on for opencode.
+		"explicit true overrides top-level false": {
+			hook: Hook{Enabled: false, Targets: map[string]TargetSpec{TargetOpencode: {Enabled: boolPtr(true)}}},
+			want: true,
+		},
+		"explicit false overrides top-level true": {
+			hook: Hook{Enabled: true, Targets: map[string]TargetSpec{TargetOpencode: {Enabled: boolPtr(false)}}},
+			want: false,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := tt.hook.EnabledFor(TargetOpencode); got != tt.want {
+				t.Errorf("EnabledFor(%q) = %v, want %v", TargetOpencode, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestLoadRegistry_RepoRegistry checks the real hooks/registry.json: every
+// hook maps to both targets, and graphify stays on for opencode only.
+func TestLoadRegistry_RepoRegistry(t *testing.T) {
+	registry, err := LoadRegistry(filepath.Join("..", "..", "..", "hooks", "registry.json"))
+	if err != nil {
+		t.Fatalf("LoadRegistry() error = %v", err)
+	}
+	if len(registry) != 10 {
+		t.Fatalf("LoadRegistry() = %d hooks, want 10", len(registry))
+	}
+
+	graphify := map[string]bool{
+		"graphify-read-guard":       true,
+		"graphify-session-sentinel": true,
+		"graphify-grep-nudge":       true,
+	}
+	for _, h := range registry {
+		cc, ok := h.Target(TargetClaudeCode)
+		if !ok || cc.Script == "" {
+			t.Errorf("%s: claude_code.script missing (block present = %v)", h.Name, ok)
+		}
+		oc, ok := h.Target(TargetOpencode)
+		if !ok || oc.Module == "" || oc.Export == "" {
+			t.Errorf("%s: opencode.module/export missing, got %+v (block present = %v)", h.Name, oc, ok)
+		}
+		if graphify[h.Name] {
+			if h.Enabled {
+				t.Errorf("%s: Enabled = true, want false (Claude Code ships it off)", h.Name)
+			}
+			if !h.EnabledFor(TargetOpencode) {
+				t.Errorf("%s: EnabledFor(%q) = false, want true", h.Name, TargetOpencode)
+			}
+		}
 	}
 }

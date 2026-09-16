@@ -50,7 +50,8 @@ hooks/
   └── graphify-grep-nudge.js
   └── secret-guard.test.js     # Hook tests (*.test.js), run by CI
   └── dangerous-cmd-guard.test.js
-  └── devexp-plugin.js        # Composes all modules into a single plugin export
+  └── devexp-plugin.js        # Entry point — composes the modules listed in devexp/hooks.json
+  └── devexp-plugin.test.js   # Entry tests: selection, failure isolation, fail-closed stubs, event adapter
   └── package.json            # { "type": "module" } — required for ESM
 ```
 
@@ -70,8 +71,10 @@ hooks/
     "script":  "hooks/claude-code/hook-name.sh"
   },
   "opencode": {
-    "event":  "tool.execute.before",
-    "plugin": "hooks/opencode/devexp-plugin.js"
+    "event":       "tool.execute.before",
+    "module":      "hooks/opencode/hook-name.js",
+    "export":      "hookName",
+    "fail_closed": true
   },
   "enabled": true
 }
@@ -84,10 +87,13 @@ hooks/
 | `claude_code.matcher` | Regex matched against tool name (e.g. `"Bash"`, `"Write\|Edit"`) |
 | `claude_code.script` | Path to the shell script, relative to repo root |
 | `opencode.event` | `tool.execute.before` or `file.edited` |
-| `opencode.plugin` | Always `hooks/opencode/devexp-plugin.js` — the single entry point |
-| `enabled` | Set to `false` to skip this hook for all users |
+| `opencode.module` | Path to the JS module, relative to repo root (`hooks/opencode/<hook-name>.js`) |
+| `opencode.export` | Name of the module's factory export — the lowerCamel hook name (`hookName`) |
+| `opencode.fail_closed` | `true` for security guards: if the module fails to import or initialise, the plugin blocks every tool call instead of running without it. Omit for advisory hooks |
+| `opencode.enabled` | Optional opencode-only override of `enabled`; absent (nil) = follow `enabled`. The `graphify-*` hooks set `true` |
+| `enabled` | Set to `false` to skip this hook for all users (targets without their own `enabled` override) |
 
-The Go installer reads only `name`, `claude_code` and `enabled` (the `Hook` struct in `cli/internal/hooks/installer.go`); the `opencode` block is documentation for the plugin modules.
+Every key other than `name`, `description` and `enabled` whose value is an object is an **install-target block**, keyed by target id: `claude_code` for Claude Code, `opencode` for opencode. The Go installer parses them all into `Hook.Targets` (`map[string]hooks.TargetSpec` in `cli/internal/hooks/installer.go`), so a new target is a new sibling block, not a new Go type. Target blocks share one field vocabulary: `event`, `matcher` (Claude Code), `script` (command-based targets), `module` + `export` (JS-plugin targets), `fail_closed`, and the optional per-target `enabled`. The Claude Code install reads `claude_code` and the top-level `enabled`.
 
 ---
 
@@ -124,7 +130,7 @@ This front-loads grounding when the agent knows least about the codebase, and ea
 | | Claude Code | opencode |
 |---|---|---|
 | Hook scripts | `hooks/claude-code/*.sh` (one per hook) | `hooks/opencode/*.js` (one module per hook) |
-| Entry point | Each script registered separately in `settings.json` | Single `devexp-plugin.js` composing all modules |
+| Entry point | Each script registered separately in `settings.json` | `devexp-plugin.js` composes the modules listed in `devexp/hooks.json`; file events arrive through `event` → `file.edited` |
 | Installed by `./install.sh` | Yes — enabled hooks, into `~/.claude/settings.json` | No — not deployed ([Known gaps](../architecture/overview.md#known-gaps)) |
 | Block mechanism | `exit 2` + stderr | `throw new Error(...)` |
 | Confirm/ask | `permissionDecision: "ask"` JSON output | Not supported — hard block instead |
@@ -154,12 +160,10 @@ This front-loads grounding when the agent knows least about the codebase, and ea
    }
    ```
 
-3. Register the module in `hooks/opencode/devexp-plugin.js` — import and add to `Promise.all([...])`.
+3. Add the entry to `hooks/registry.json`, including the opencode mapping — `opencode.module`, `opencode.export`, and `opencode.fail_closed: true` for security guards. `devexp-plugin.js` is never edited per hook.
 
-4. Add the entry to `hooks/registry.json`.
+4. Add mirrored tests (`<hook-name>.test.sh` / `<hook-name>.test.js`), a `check` line in `hooks/claude-code/fail-closed.test.sh`, and update this catalog, the file tree above and the hook counts — see [workflows → Add a hook](../guides/workflows.md#add-a-hook).
 
-5. Add mirrored tests (`<hook-name>.test.sh` / `<hook-name>.test.js`), a `check` line in `hooks/claude-code/fail-closed.test.sh`, and update this catalog, the file tree above and the hook counts — see [workflows → Add a hook](../guides/workflows.md#add-a-hook).
-
-6. `chmod +x hooks/claude-code/<hook-name>.sh` and run `./install.sh`.
+5. `chmod +x hooks/claude-code/<hook-name>.sh` and run `./install.sh`.
 
 Full guide: [`docs/development/hook-authoring-guide.md`](../development/hook-authoring-guide.md)
