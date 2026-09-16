@@ -60,6 +60,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     segment boundary. This applies to install-time pruning and to
     `uninstall.sh`. Before, commands such as `$CLAUDE_PROJECT_DIR/hooks/claude-code/…`
     or `…/my-hooks/claude-code/…` could be removed.
+- **Stale agent and skill removal no longer trusts manifest names (#117).**
+  `devexp install` joined each stale entry of the previous manifest onto the
+  agents/skills directory unchecked, so a corrupted or hand-edited
+  `.devexp-manifest.json` could delete files outside it. Claude Code skills are
+  removed recursively: an entry of `""`, `.` or `..` removed the whole
+  `~/.claude/skills` or `~/.claude` directory.
+  - An entry is removed only when it is a bare name devexp installs: no `/` or
+    `\`, no `..`, no control characters, not empty or `.`, and ending in `.md` for agent files (opencode
+    commands are recorded as `<name>` for a `<name>.md` file). Any other entry is
+    kept and a warning names it exactly as the manifest records it. This covers
+    both Claude Code and opencode, in real runs and `--dry-run`.
+  - A valid entry is removed only when it is still what devexp installs: a
+    regular file for agents and commands, a real directory for Claude Code
+    skills. A symlink is never removed (as for opencode plugin files since
+    #108); it is kept with a warning. So is an entry that can't be checked
+    (for example, permission denied).
+  - A stale entry is never removed when it names something this run installed:
+    the same name apart from case (a case-only rename between releases), or
+    the same file on disk. On a case-insensitive filesystem (the macOS default)
+    `DEV-AGENT.md` in the old manifest used to delete the `dev-agent.md` just
+    installed. It is kept with a warning. A variant that differs only in
+    Unicode normalization is caught once the install is on disk, so
+    `--dry-run` may still preview removing it.
+  - Names and paths in these warnings, previews and removal lines are printed
+    quoted, so a manifest entry can't write control sequences to the terminal.
+    An entry that is already gone is no longer reported as removed.
+  - Stale removal of valid entries is otherwise unchanged. The manifest format
+    is unchanged.
 
 ## [0.8.0] - 2026-09-16
 
