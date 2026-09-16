@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`cmd/install.go` split from 762 to 193 lines** (sub-ticket A of #69). One file
+  held the entry point, the interactive wizard, both install paths, registry and
+  target resolution, and backup/stale handling — which is why its install-flow
+  functions sat at 0% coverage: the testable logic was fused into I/O- and
+  TTY-bound monoliths.
+  - Split along cohesive seams: `install_claude.go`, `install_opencode.go`,
+    `wizard.go`, `targets.go`, `registry.go`, `backup.go`, `paths.go`.
+  - **Behaviour held identical by diff, not by assertion.** A
+    `devexp install --dry-run` baseline was captured from merged `main` before any
+    edit and verified deterministic across repeat runs; the output after every
+    step is byte-identical to it.
+  - **Pure logic extracted so it can be tested** (#72's enabler):
+    `selectTargets` maps CLI availability onto the install flags with no PATH
+    lookup, printing or prompting, and `announceTargets` holds the I/O half —
+    the flag path and the wizard previously carried separate copies of the same
+    switch. `claudeTargetPaths`/`opencodeTargetPaths` replace destinations
+    assembled inline from `$HOME`, taking `now` as a parameter so the backup
+    directory's name is assertable.
+  - Exported `cmd` API unchanged (`go doc` diff against `main`); `go test -race`
+    green across 10 packages; `go vet` and `gofmt` clean.
+  - **Gate limitation, recorded honestly:** with `opencode` absent from PATH, the
+    dry-run exercises only the single-CLI arm and never enters
+    `doInstallOpencode`. The Claude path extraction *is* exercised; the both-CLI
+    branch and the opencode path rest on review until #72's unit tests land.
+
 ### Added
 
 - **`internal/repo` coverage: 28.3% → 83.0%** (sub-ticket C of #69). `extractFS`,
