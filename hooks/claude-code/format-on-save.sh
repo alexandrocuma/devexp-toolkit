@@ -15,9 +15,19 @@ set -euo pipefail
 
 input=$(cat)
 
+# A relative path is resolved against the directory Claude Code works in (the
+# input's cwd, else the hook's own) and normalised, as opencode does. Tools run from the project root, so they
+# get the absolute path, which no tool reads as an option (#121). An absolute
+# path passes unchanged.
 # The trailing "x" keeps $(...) from trimming newlines that belong to the path.
-file_path=$(echo "$input" | python3 -I -c \
-    "import sys,json; d=json.load(sys.stdin); sys.stdout.write(str(d.get('tool_input',{}).get('file_path','')) + 'x')") || {
+file_path=$(echo "$input" | python3 -I -c '
+import sys, json, os
+d = json.load(sys.stdin)
+p = str(d.get("tool_input", {}).get("file_path", ""))
+c = d.get("cwd")
+if p and not os.path.isabs(p):
+    p = os.path.normpath(os.path.join(c if isinstance(c, str) and os.path.isabs(c) else os.getcwd(), p))
+sys.stdout.write(p + "x")') || {
     echo "[devexp format-on-save] internal error -- could not read hook input, skipping. The interpreter's error is above." >&2
     exit 0
 }

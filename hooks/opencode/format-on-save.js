@@ -14,7 +14,7 @@
  * that diff can differ from the file on disk.
  */
 
-import { existsSync, extname, join, findRoot, which, runCommand } from './utils.js';
+import { existsSync, extname, join, findRoot, which, runCommand, editedPath } from './utils.js';
 
 const FORMAT_EXTS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py', '.go', '.rb']);
 
@@ -26,10 +26,10 @@ async function runFormatter(cmd, args, cwd) {
   await runCommand(cmd, args, { cwd, timeout: FORMAT_TIMEOUT_MS, output: 'ignore' });
 }
 
-export async function formatOnSave(_ctx) {
+export async function formatOnSave(ctx) {
   return {
     'file.edited': async (event) => {
-      const filePath = event.file ?? event.path ?? '';
+      const filePath = editedPath(event.file ?? event.path ?? '', ctx?.directory);
       if (!filePath || !existsSync(filePath)) return;
 
       const ext = extname(filePath).toLowerCase();

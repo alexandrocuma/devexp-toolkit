@@ -4,7 +4,7 @@
 
 import { spawn } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
-import { join, dirname, resolve, extname, basename } from 'path';
+import { join, dirname, resolve, extname, basename, isAbsolute } from 'path';
 
 export const LINT_EXTS = new Set([
   '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
@@ -22,6 +22,21 @@ export function findRoot(filePath) {
     if (parent === dir) return dir;
     dir = parent;
   }
+}
+
+/**
+ * editedPath — the edited file as an absolute path.
+ *
+ * opencode sends an absolute path. A relative one is resolved the way
+ * opencode's edit tool resolves it: against the session directory
+ * (ctx.directory), else the process cwd, normalised by path.join as the
+ * Claude Code hooks do. Tools run from the project root, so they get the
+ * absolute path, which no tool reads as an option (#121). An
+ * absolute path passes unchanged.
+ */
+export function editedPath(file, directory) {
+  if (!file || isAbsolute(file)) return file;
+  return join(typeof directory === 'string' && isAbsolute(directory) ? directory : process.cwd(), file);
 }
 
 /**

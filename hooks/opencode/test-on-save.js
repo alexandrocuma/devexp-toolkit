@@ -12,7 +12,7 @@
  */
 
 import { existsSync, join, dirname, resolve, extname, basename } from './utils.js';
-import { findRoot, which, runCommand } from './utils.js';
+import { findRoot, which, runCommand, editedPath } from './utils.js';
 import { relative } from 'path';
 
 const SOURCE_EXTS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py', '.go', '.rb']);
@@ -33,10 +33,10 @@ async function runTests(cmd, args, cwd) {
   if (output) console.log(output);
 }
 
-export async function testOnSave(_ctx) {
+export async function testOnSave(ctx) {
   return {
     'file.edited': async (event) => {
-      const filePath = event.file ?? '';
+      const filePath = editedPath(event.file ?? '', ctx?.directory);
       if (!filePath) return;
 
       const ext = extname(filePath).toLowerCase();
@@ -61,16 +61,22 @@ export async function testOnSave(_ctx) {
 
           const localVitest = join(root, 'node_modules', '.bin', 'vitest');
           const localJest   = join(root, 'node_modules', '.bin', 'jest');
-          const relTest     = relative(root, testFile);
+          // --runTestsByPath runs exactly this file: a plain pattern is a regex that
+          // can match other tests or none. It works on jest 29 and 30 (30 renamed
+          // --testPathPattern). After '--' a path starting with '-' is never read as
+          // options, and it stays relative to root: an absolute path through a
+          // symlinked root finds no tests (#121). vitest gets no '--': it would drop
+          // the file filter.
+          const jestArgs    = ['--passWithNoTests', '--no-coverage', '--runTestsByPath', '--', relative(root, testFile)];
 
           if (existsSync(localVitest)) {
             await runTests(localVitest, ['run', testFile], root);
           } else if (existsSync(localJest)) {
-            await runTests(localJest, ['--testPathPattern', relTest, '--passWithNoTests', '--no-coverage'], root);
+            await runTests(localJest, jestArgs, root);
           } else if (await which('vitest')) {
             await runTests('vitest', ['run', testFile], root);
           } else if (await which('jest')) {
-            await runTests('jest', ['--testPathPattern', relTest, '--passWithNoTests', '--no-coverage'], root);
+            await runTests('jest', jestArgs, root);
           }
 
         // ── Go ───────────────────────────────────────────────────────────────

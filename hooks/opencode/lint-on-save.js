@@ -12,13 +12,13 @@
  */
 
 import { existsSync, join, dirname, resolve, extname } from './utils.js';
-import { LINT_EXTS, findRoot, which, runLinter } from './utils.js';
+import { LINT_EXTS, findRoot, which, runLinter, editedPath } from './utils.js';
 
-export async function lintOnSave(_ctx) {
+export async function lintOnSave(ctx) {
   return {
     'file.edited': async (event) => {
       // opencode fires file.edited with { file: absolutePath }
-      const filePath = event.file ?? '';
+      const filePath = editedPath(event.file ?? '', ctx?.directory);
       if (!filePath) return;
 
       const ext = extname(filePath).toLowerCase();

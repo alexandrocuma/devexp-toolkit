@@ -15,9 +15,19 @@ set -euo pipefail
 
 input=$(cat)
 
+# A relative path is resolved against the directory Claude Code works in (the
+# input's cwd, else the hook's own) and normalised, as opencode does. Tools run from the project root, so they
+# get the absolute path, which no tool reads as an option (#121). An absolute
+# path passes unchanged.
 # The trailing "x" keeps $(...) from trimming newlines that belong to the path.
-file_path=$(echo "$input" | python3 -I -c \
-    "import sys,json; d=json.load(sys.stdin); sys.stdout.write(str(d.get('tool_input',{}).get('file_path','')) + 'x')") || {
+file_path=$(echo "$input" | python3 -I -c '
+import sys, json, os
+d = json.load(sys.stdin)
+p = str(d.get("tool_input", {}).get("file_path", ""))
+c = d.get("cwd")
+if p and not os.path.isabs(p):
+    p = os.path.normpath(os.path.join(c if isinstance(c, str) and os.path.isabs(c) else os.getcwd(), p))
+sys.stdout.write(p + "x")') || {
     echo "[devexp test-on-save] internal error -- could not read hook input, skipping. The interpreter's error is above." >&2
     exit 0
 }
@@ -90,17 +100,22 @@ if ext in ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'):
 
     local_jest    = os.path.join(root, 'node_modules', '.bin', 'jest')
     local_vitest  = os.path.join(root, 'node_modules', '.bin', 'vitest')
+    # --runTestsByPath runs exactly this file: a plain pattern is a regex that
+    # can match other tests or none. It works on jest 29 and 30 (30 renamed
+    # --testPathPattern). After '--' a path starting with '-' is never read as
+    # options, and it stays relative to root: an absolute path through a
+    # symlinked root finds no tests (#121). vitest gets no '--': it would drop
+    # the file filter.
+    jest_args     = ['--passWithNoTests', '--no-coverage', '--runTestsByPath', '--', os.path.relpath(test_file, root)]
 
     if os.path.exists(local_vitest):
         run_tests([local_vitest, 'run', test_file], cwd=root)
     elif os.path.exists(local_jest):
-        run_tests([local_jest, '--testPathPattern', os.path.relpath(test_file, root),
-                   '--passWithNoTests', '--no-coverage'], cwd=root)
+        run_tests([local_jest] + jest_args, cwd=root)
     elif cmd_exists('vitest'):
         run_tests(['vitest', 'run', test_file], cwd=root)
     elif cmd_exists('jest'):
-        run_tests(['jest', '--testPathPattern', os.path.relpath(test_file, root),
-                   '--passWithNoTests', '--no-coverage'], cwd=root)
+        run_tests(['jest'] + jest_args, cwd=root)
 
 # ── Go ───────────────────────────────────────────────────────────────────────
 elif ext == '.go':

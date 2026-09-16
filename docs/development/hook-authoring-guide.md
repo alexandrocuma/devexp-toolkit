@@ -94,7 +94,9 @@ For `Bash`: `tool_input.command`
 
 ### Treat tool input as data, never as code
 
-Every value in `tool_input` — paths, commands, content — is untrusted. Never expand one into program text: not inside a `python3 -c "..."` string, not through `eval`, `bash -c` or an unquoted expansion. Pass it as data instead — on stdin, as an argument (`python3 -I - "$value" <<'PY'` with a **quoted** heredoc delimiter, then `sys.argv[1]`), or through the environment — and always quote shell expansions (`"$value"`). In opencode modules, use `execFileSync`/`spawnSync` with an argument array, never a shell string.
+Every value in `tool_input` — paths, commands, content — is untrusted. Never expand one into program text: not inside a `python3 -c "..."` string, not through `eval`, `bash -c` or an unquoted expansion. Pass it as data instead — on stdin, as an argument (`python3 -I - "$value" <<'PY'` with a **quoted** heredoc delimiter, then `sys.argv[1]`), or through the environment — and always quote shell expansions (`"$value"`). In opencode modules, spawn with `await runCommand(cmd, [args…], { cwd, timeout })` from `utils.js`: an argument array, no shell, never a synchronous spawn (see [Shared utilities](#shared-utilities-utilsjs)).
+
+**Hand a tool the edited file as an absolute path.** Resolve a relative path first, against the input's `cwd` (Claude Code) or `ctx.directory` (opencode, `editedPath` in `utils.js`), else the process cwd. Tools run from the project root, and an absolute path is never read as an option. When a tool needs a relative value, pass it after `--`, and check how the tool reads it: jest treats a bare path as a regex, so the hook adds `--runTestsByPath` to match the exact file; ruff still expands `@argfile` after `--`; vitest drops file filters after it (#121).
 
 Two more rules for the Python calls:
 
@@ -213,7 +215,7 @@ export async function myGuard(_ctx) {
 | Event | Signature | Notes |
 |-------|-----------|-------|
 | `tool.execute.before` | `async (input, output) => {}` | `input.tool` = tool name (lowercase), `output.args` = mutable args |
-| `file.edited` | `async (event) => {}` | `event.file` = absolute file path (delivered by the entry's `event` adapter); must never throw |
+| `file.edited` | `async (event) => {}` | `event.file` = the edited path (delivered by the entry's `event` adapter; opencode sends it absolute, resolve it with `editedPath(event.file, ctx.directory)`); must never throw |
 
 ### Tool names in opencode (lowercase)
 
@@ -228,12 +230,13 @@ export async function myGuard(_ctx) {
 
 ```js
 import {
-  findRoot, which, runLinter, runCommand, countLines,
+  findRoot, editedPath, which, runLinter, runCommand, countLines,
   existsSync, join, dirname, resolve, extname, basename,
   LINT_EXTS,
 } from './utils.js';
 
 findRoot(filePath)         // walks up to find package.json / go.mod / .git
+editedPath(file, ctx.directory)  // absolute path of the edited file (relative → against ctx.directory)
 await which('ruff')                     // resolves binary path or null
 await runLinter(cmd, args, cwd)         // runs linter, prints output, swallows non-zero exit, 10s timeout
 await runCommand(cmd, args, { cwd, timeout, output })
