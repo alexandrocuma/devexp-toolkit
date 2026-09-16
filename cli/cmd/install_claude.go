@@ -17,11 +17,11 @@ import (
 // ── Claude Code ───────────────────────────────────────────────────────────────
 
 func doInstallClaude(opts *installOpts) error {
-	home := os.Getenv("HOME")
-	agentsTarget := filepath.Join(home, ".claude", "agents")
-	skillsTarget := filepath.Join(home, ".claude", "skills")
-	settingsPath := filepath.Join(home, ".claude", "settings.json")
-	backupDir := filepath.Join(home, ".claude", ".devexp-backup-"+time.Now().Format("20060102T150405"))
+	p := claudeTargetPaths(os.Getenv("HOME"), time.Now())
+	agentsTarget := p.agents
+	skillsTarget := p.skills
+	settingsPath := p.settings
+	backupDir := p.backup
 
 	ui.Info("Installing for Claude Code...")
 	fmt.Println()
@@ -38,7 +38,7 @@ func doInstallClaude(opts *installOpts) error {
 		}
 	}
 
-	manifestPath := filepath.Join(home, ".claude", ".devexp-manifest.json")
+	manifestPath := p.manifest
 	old, _ := manifest.Load(manifestPath)
 	newManifest := &manifest.Manifest{Agents: old.Agents, Skills: old.Skills}
 

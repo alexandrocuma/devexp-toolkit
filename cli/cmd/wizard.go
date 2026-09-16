@@ -43,28 +43,22 @@ func runWizard(repoDir string, registry []mcp.MCP, agentNames []string) (*wizard
 	fmt.Println()
 
 	// ── Section 1: Platform ───────────────────────────────────────────────────
+	// Shares announceTargets/selectTargets with the flag path, so the rule for
+	// which CLIs to install for lives in exactly one place. The trailing blank
+	// line stays here: the flag path's caller prints its own.
 	hasClaude := commandExists("claude")
 	hasOpencode := commandExists("opencode")
 
-	switch {
-	case hasClaude && hasOpencode:
-		ui.Info("Detected: Claude Code and opencode")
-		fmt.Println()
-		choice, err := ui.SelectPlatform()
-		if err != nil {
-			return nil, err
-		}
-		result.installClaude = choice == "Claude Code" || choice == "Both"
-		result.installOpencode = choice == "opencode" || choice == "Both"
-	case hasClaude:
-		ui.Info("Detected: Claude Code")
-		result.installClaude = true
-	case hasOpencode:
-		ui.Info("Detected: opencode")
-		result.installOpencode = true
-	default:
-		return nil, fmt.Errorf("no supported CLI detected (claude or opencode)")
+	choice, err := announceTargets(hasClaude, hasOpencode)
+	if err != nil {
+		return nil, err
 	}
+	installClaude, installOpencode, err := selectTargets(hasClaude, hasOpencode, choice)
+	if err != nil {
+		return nil, err
+	}
+	result.installClaude = installClaude
+	result.installOpencode = installOpencode
 	fmt.Println()
 
 	// ── Section 2: Agents ─────────────────────────────────────────────────────

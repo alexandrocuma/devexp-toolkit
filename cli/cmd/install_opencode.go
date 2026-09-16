@@ -15,10 +15,10 @@ import (
 // ── opencode ──────────────────────────────────────────────────────────────────
 
 func doInstallOpencode(opts *installOpts) error {
-	home := os.Getenv("HOME")
-	agentsTarget := filepath.Join(home, ".config", "opencode", "agents")
-	skillsTarget := filepath.Join(home, ".config", "opencode", "commands")
-	configPath := filepath.Join(home, ".config", "opencode", "config.json")
+	p := opencodeTargetPaths(os.Getenv("HOME"))
+	agentsTarget := p.agents
+	skillsTarget := p.skills
+	configPath := p.config
 
 	ui.Warn("opencode installs a feature subset — multi-agent orchestration (Agent/Skill/Task tools), persistent memory, and terminal colors are unavailable. Orchestrator skills like /deliver and /improve run in degraded mode. Claude Code is recommended for full functionality.")
 	fmt.Println()
@@ -37,7 +37,7 @@ func doInstallOpencode(opts *installOpts) error {
 		}
 	}
 
-	manifestPath := filepath.Join(home, ".config", "opencode", ".devexp-manifest.json")
+	manifestPath := p.manifest
 	old, _ := manifest.Load(manifestPath)
 	newManifest := &manifest.Manifest{Agents: old.Agents, Skills: old.Skills}
 
