@@ -79,7 +79,7 @@ Re-running the installer is how you update devexp — there's no separate "upgra
     - It never removes anything through it: not stale plugin files, not the plugin when every hook is disabled, not legacy flat files, not an empty `devexp/`.
     - The output says `plugins/ is a symlink — devexp never removes files through it; remove these by hand: …`. Those files stay recorded in the manifest, so a run after the link is replaced with a directory cleans them up.
   - **`plugins/devexp/` is a symlink**, or `plugins/` is a dangling link or doesn't point at a directory: the install stops with an error before writing or removing anything. A `devexp/` link may point at a source checkout. Replace the link with a real directory.
-  - Removing the whole plugin is all-or-nothing. If `devexp.js` has to stay (it is a symlink, or can't be deleted), `devexp/` stays too, and the output says the hooks remain active.
+  - Removing the whole plugin is all-or-nothing. If `devexp.js` has to stay, `devexp/` stays too, and the output says why. It has to stay when it is a symlink, can't be deleted, or isn't recognised as devexp's: not recorded in the manifest and without the devexp header (for example after an editor added `// @ts-check` above it). Removing only `devexp/` would leave an entry that blocks every opencode tool call.
   - Files are written atomically. A `devexp.js` recorded in the manifest is repaired on re-install even if it was damaged; one that isn't recorded and isn't a devexp entry is never replaced.
 - **Legacy opencode flat install** (clones from before v0.1.0 copied every hook file flat into `plugins/` and registered `plugins/devexp-plugin.js` in `config.json`). Cleaned up only after the new plugin installed successfully, so a refused install leaves the old one working. Through a symlinked `plugins/` the matching files are listed to remove by hand instead:
   - A file in `plugins/` is removed only when its name is one of the 9 legacy file names **and** its content starts with that file's devexp header. A same-named file without the header is kept, with a warning.
@@ -119,8 +119,13 @@ Shows every add, update, and removal devexp would make — including stale-file 
 - **opencode hook plugin**: an install with only the plugin (no agents) is detected too. The plugin (`plugins/devexp.js` + `plugins/devexp/`) and a legacy flat install are removed by the hidden `devexp uninstall --target opencode`, with exactly the rules of [Stale-file cleanup](#stale-file-cleanup): only devexp-owned files, nothing through a symlinked `plugins/`, a refusal (nothing removed) for a symlinked `devexp/` or a dangling `plugins/` link, all-or-nothing on `devexp.js` + `devexp/`, and the legacy `config.json` entry spliced out byte for byte. It runs before the MCP servers are removed from `config.json`.
   - The preview before the confirmation is that command's `--dry-run`.
   - It needs a `devexp` binary that has the command, looked up in this order: `DEVEXP_BIN` (set when you choose Remove in `devexp install`), `bin/devexp` in the clone, `devexp` on `PATH`. Without one, the plugin is left in place with a warning and the uninstall still completes. In a clone with an older binary, rebuild it: `rm bin/devexp && ./install.sh`.
-  - Afterwards the opencode manifest's `plugins` key lists only the files that had to stay (for example behind a symlinked `plugins/`), so a later run can finish the job. A manifest that is missing or can't be read is left as it is.
-- A malformed or unexpected `config.json` is skipped with a message; the uninstall still exits 0
+  - Afterwards the opencode manifest's `plugins` key lists only the files that had to stay (for example behind a symlinked `plugins/`), so a later run can finish the job. A manifest that is missing, can't be read or is a symlink is left as it is.
+  - The command refuses to run (nothing is removed) when `HOME` is unset, empty or not an absolute path.
+- **opencode MCP servers** are removed from `config.json` by an embedded python step, which never fails the uninstall:
+  - a malformed or unexpected `config.json` is skipped with a message;
+  - a symlinked `config.json` is left untouched, with a warning to remove the servers by hand;
+  - one that can't be written (a read-only file or directory) is left as it was, with a warning, and the remaining steps still run;
+  - otherwise it is saved atomically (temp file, then rename), keeping its mode. The file is reformatted (2-space JSON), unlike the plugin step's byte-preserving edit.
 
 > `uninstall.sh` predates the Go CLI and doesn't fully match it — e.g. it never removes opencode skills from `~/.config/opencode/commands/` or the `.devexp-manifest.json` files. See [Known gaps](../architecture/overview.md#known-gaps).
 
