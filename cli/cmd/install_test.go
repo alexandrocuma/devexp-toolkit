@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"devexp/internal/config"
 	"devexp/internal/hooks"
 	"devexp/internal/mcp"
+	"devexp/internal/repo"
 )
 
 func TestFilterMCPs(t *testing.T) {
@@ -2381,22 +2383,26 @@ func TestInstallCmd_DevexpDirNotARepo(t *testing.T) {
 
 // ── Asset root detection (#134) ───────────────────────────────────────────────
 
-// TestInstallCmd_AssetRoot: without DEVEXP_DIR, `devexp install` run inside a
-// directory tree installs from it only when it is a devexp-toolkit checkout
-// (it has the marker file) and the binary is a dev build. Otherwise nothing
-// from that tree is registered or copied, the tree is left as it was, and the
-// bundled assets are used. Either way the asset root is printed before
-// anything is installed.
+// TestInstallCmd_AssetRoot: without DEVEXP_DIR, `devexp install` run inside
+// a directory tree never installs from that tree, marked as a devexp-toolkit
+// checkout or not: a dev build uses the checkout it was built from (for
+// `go test`, this repository), a tagged build its bundled assets. Nothing from
+// the tree is registered or copied, the tree is left as it was, and the asset
+// root is printed before anything is installed.
 func TestInstallCmd_AssetRoot(t *testing.T) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	sourceCheckout := filepath.Dir(filepath.Dir(filepath.Dir(thisFile))) // <root>/cli/cmd/install_test.go
 	tests := map[string]struct {
-		version  string
-		marker   bool
-		wantUsed bool
+		version string
+		marker  bool
 	}{
 		"dev build, same shape without the marker":    {version: "dev"},
+		"dev build, a devexp-toolkit checkout":        {version: "dev", marker: true},
 		"tagged build, same shape without the marker": {version: "v9.9.9"},
 		"tagged build, a devexp-toolkit checkout":     {version: "v9.9.9", marker: true},
-		"dev build, a devexp-toolkit checkout":        {version: "dev", marker: true, wantUsed: true},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -2431,8 +2437,8 @@ func TestInstallCmd_AssetRoot(t *testing.T) {
 				t.Fatalf("install error = %v\n%s", err, out)
 			}
 
-			wantRoot, wantOrigin := tree, "the devexp-toolkit checkout containing the current directory"
-			if !tt.wantUsed {
+			wantRoot, wantOrigin := sourceCheckout, "the devexp-toolkit checkout this binary was built from"
+			if tt.version != "dev" {
 				cache, err := os.UserCacheDir()
 				if err != nil {
 					t.Fatal(err)
@@ -2457,12 +2463,49 @@ func TestInstallCmd_AssetRoot(t *testing.T) {
 					t.Errorf("hook command %q is not under the asset root %q", c, wantRoot)
 				}
 			}
-			logged, _ := os.ReadFile(calls)
-			if used := strings.Contains(string(logged), "probe"); used != tt.wantUsed {
-				t.Errorf("MCP from the tree registered = %v, want %v; CLI calls:\n%s", used, tt.wantUsed, logged)
+			if logged, _ := os.ReadFile(calls); strings.Contains(string(logged), "probe") {
+				t.Errorf("the tree's MCP was registered; CLI calls:\n%s", logged)
 			}
 			if after := treeState(t, tree); !reflect.DeepEqual(before, after) {
 				t.Errorf("files in the tree changed:\nbefore %v\nafter  %v", before, after)
+			}
+		})
+	}
+}
+
+// TestAnnounceAssetRoot: a warning about a skipped source checkout is shown,
+// before the asset root line.
+func TestAnnounceAssetRoot(t *testing.T) {
+	tests := map[string]struct {
+		src   repo.Source
+		want  []string // in order
+		avoid []string
+	}{
+		"checkout": {
+			src:   repo.Source{RepoDir: "/src/toolkit", Origin: repo.OriginSourceDir},
+			want:  []string{"Asset root: /src/toolkit (" + repo.OriginSourceDir + ")"},
+			avoid: []string{"standalone", "skipped"},
+		},
+		"bundled, with a warning": {
+			src:  repo.Source{RepoDir: "/cache/devexp/assets", Embedded: true, Origin: repo.OriginEmbedded, Warning: "checkout skipped: no marker"},
+			want: []string{"checkout skipped: no marker", "Running standalone", "Asset root: /cache/devexp/assets (" + repo.OriginEmbedded + ")"},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			out := captureStdout(t, func() { announceAssetRoot(tt.src) })
+			at := 0
+			for _, w := range tt.want {
+				i := strings.Index(out[at:], w)
+				if i < 0 {
+					t.Fatalf("output lacks %q after offset %d:\n%s", w, at, out)
+				}
+				at += i + len(w)
+			}
+			for _, a := range tt.avoid {
+				if strings.Contains(out, a) {
+					t.Errorf("output contains %q:\n%s", a, out)
+				}
 			}
 		})
 	}

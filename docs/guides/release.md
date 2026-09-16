@@ -13,7 +13,7 @@
 
 Kinds: `library` · `cli` · `web` · `service` · `ios` · `android` · `desktop` · `other`
 
-Asset edits reach the two targets at different times. Clone users get them on the next `git pull` (a binary built from the clone reads assets live from disk — `findRepoDir` in `cli/internal/repo/repo.go`). Binary users get them only in the next tagged release, because goreleaser stages and embeds them at build time (`.goreleaser.yaml:5-7`, `scripts/stage-assets.sh:12-23`; `mcps/.env` is never embedded — `scripts/stage-assets.sh:19`).
+Asset edits reach the two targets at different times. Clone users get them on the next `git pull` (a binary built from the clone reads assets live from that clone — `Resolve` in `cli/internal/repo/repo.go`). Binary users get them only in the next tagged release, because goreleaser stages and embeds them at build time (`.goreleaser.yaml:5-7`, `scripts/stage-assets.sh:12-23`; `mcps/.env` is never embedded — `scripts/stage-assets.sh:19`).
 
 ## Cut (shared by all targets)
 
@@ -87,7 +87,7 @@ Every merge to `main` ships this target; the release cut only adds the changelog
 
 ### Build
 
-N/A — there is nothing to build centrally. In a clone the CLI built by `./install.sh` reads assets live from disk (`findRepoDir` in `cli/internal/repo/repo.go`). Each user's `./install.sh` builds `bin/devexp` only if it is missing (`install.sh:7-18`), so after Go changes users must `rm bin/devexp` first.
+N/A — there is nothing to build centrally. In a clone the CLI built by `./install.sh` reads assets live from that clone (`Resolve` in `cli/internal/repo/repo.go`). Each user's `./install.sh` builds `bin/devexp` only if it is missing (`install.sh:7-18`), so after Go changes users must `rm bin/devexp` first.
 
 ### Distribute
 

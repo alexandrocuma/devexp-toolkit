@@ -200,8 +200,12 @@ func runInstall(cmd *cobra.Command, args []string) error {
 }
 
 // announceAssetRoot tells the user which directory devexp installs from and
-// how it was chosen (#134).
+// how it was chosen, after any warning about a source checkout that was
+// skipped (#134).
 func announceAssetRoot(src repo.Source) {
+	if src.Warning != "" {
+		ui.Warn(src.Warning)
+	}
 	if src.Embedded {
 		ui.Info("Running standalone — using assets bundled in this binary.")
 	}

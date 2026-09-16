@@ -131,21 +131,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **Asset root detection only accepts a devexp-toolkit checkout (#134).** Repo
-  detection accepted non-toolkit directories that merely had the same
-  directory names, and `devexp install` only said which root it used when it
-  fell back to the bundled assets.
-  - A checkout is now identified by the committed `.devexp-toolkit` marker file
-    (first line `devexp-toolkit`) plus `agents/`, `skills/` and `mcps/`. The
-    marker is embedded in the binary, so the extracted bundled assets still
-    qualify. `DEVEXP_DIR` gets the same check and is refused when it fails.
-  - Tagged release builds use `DEVEXP_DIR` or their bundled assets only; they
-    no longer look for a checkout next to the binary or above the current
-    directory. Binaries built from a clone (`./install.sh`, `go run`) still find
-    it there.
+- **`devexp install` no longer uses a directory it finds on disk (#134).** Repo
+  detection accepted non-toolkit directories, and the choice depended on where
+  the binary was run from; `devexp install` only named the directory it used
+  when it fell back to the bundled assets.
+  - Release builds use only `DEVEXP_DIR` or the assets bundled in the binary.
+  - Dev builds (`./install.sh`'s `bin/devexp`, `go run`, `go test`) use only
+    `DEVEXP_DIR`, the checkout they were compiled from, or their bundled assets.
+    A copied or linked dev binary still uses its own checkout. A `-trimpath`
+    build has no recorded checkout and uses its bundled assets.
+  - Neither looks next to the binary or in the current directory or its
+    parents any more.
+  - A devexp-toolkit checkout is recognised by the committed `.devexp-toolkit`
+    marker file (first line `devexp-toolkit`) plus `agents/`, `skills/` and
+    `mcps/`. The marker tells a checkout apart from other directories; which
+    directory may be used is decided by the rules above. `DEVEXP_DIR` must pass
+    the same check. The marker is embedded, so the extracted bundled assets
+    qualify too. Forks must keep the file.
   - `devexp install` prints `Asset root: <dir> (<how it was chosen>)` before it
-    extracts or installs anything.
-  - Forks must keep `.devexp-toolkit` at the repo root.
+    extracts or installs anything. When a dev build skips its own checkout,
+    because the checkout lacks the marker or no longer exists, it warns and says
+    how to fix it.
+  - Dev builds re-extract their bundled assets on every run instead of reusing
+    a cached copy, since every dev build has the same version.
 
 ## [0.8.0] - 2026-09-16
 

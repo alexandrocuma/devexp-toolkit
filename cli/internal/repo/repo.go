@@ -4,11 +4,11 @@
 package repo
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"devexp/internal/assets"
@@ -19,42 +19,42 @@ import (
 // mcps/ — either a live devexp-toolkit checkout (Embedded == false) or a
 // materialized copy of the binary's embedded assets (Embedded == true) — so
 // existing file-based installers work unchanged in both cases. Origin says, in
-// words, how RepoDir was chosen.
+// words, how RepoDir was chosen. Warning, when set, explains why a dev build
+// is not using the checkout it was built from.
 type Source struct {
 	RepoDir  string
 	Embedded bool
 	Origin   string
+	Warning  string
 }
 
 // Origins, as reported to the user before anything is installed.
 const (
-	OriginDevexpDir  = "DEVEXP_DIR"
-	OriginBinaryDir  = "the devexp-toolkit checkout this binary was built in"
-	OriginWorkingDir = "the devexp-toolkit checkout containing the current directory"
-	OriginEmbedded   = "assets bundled in this binary, extracted to the user cache"
+	OriginDevexpDir = "DEVEXP_DIR"
+	OriginSourceDir = "the devexp-toolkit checkout this binary was built from"
+	OriginEmbedded  = "assets bundled in this binary, extracted to the user cache"
 )
 
 // devBuild is the version of a binary built without goreleaser's -X flag
 // (`go build`, `go run`, `go test`); every other value is a tagged build.
 const devBuild = "dev"
 
-// Resolve finds the devexp-toolkit checkout to read assets from. If none is
-// found it extracts the assets embedded in the binary at build time to a
-// per-version cache directory and uses that instead.
+// Resolve decides which assets to install from (#134):
+//   - DEVEXP_DIR, when set, in every build. It must be a devexp-toolkit
+//     checkout; otherwise Resolve fails rather than look elsewhere, since the
+//     user named a directory and silently installing from another would hide
+//     the mistake.
+//   - dev builds only: the checkout the binary was compiled from (sourceRoot),
+//     if it still is a devexp-toolkit checkout. This is what ./install.sh's
+//     bin/devexp, `go run` and `go test` use.
+//   - otherwise the assets embedded in the binary, extracted to a cache dir.
 //
-// Where it looks depends on the build (#134):
-//   - every build: DEVEXP_DIR, when set;
-//   - dev builds only: the directory above the binary (bin/devexp in a clone,
-//     as built by install.sh), then each directory from the cwd up.
-//
-// A tagged release build never adopts a checkout it merely finds on disk: it
-// carries its release's assets, and DEVEXP_DIR is how to point it at a clone.
-// Whatever the lookup, a directory counts only if it is a devexp-toolkit
-// checkout (isRepoDir), not merely one with the same directory names.
-//
-// A DEVEXP_DIR that isn't a checkout is an error, not a reason to look
-// elsewhere: the user named a directory, and silently installing from another
-// one would hide the mistake.
+// No other directory on disk is ever used: not the one the binary sits in, and
+// not the current directory or its parents. Release builds therefore only use
+// DEVEXP_DIR or their bundled assets, and dev builds only DEVEXP_DIR, their own
+// source checkout, or their bundled assets. The marker file (isRepoDir) tells a
+// devexp-toolkit checkout apart from other directories; it is not what decides
+// which directory is trusted — that is the rule above.
 //
 // announce, when non-nil, is called with the chosen Source once it is decided
 // and before Resolve writes anything (extracting the embedded assets), so the
@@ -73,27 +73,33 @@ func Resolve(version string, announce func(Source)) (Source, error) {
 	}
 	if src.Embedded {
 		if _, err := extractEmbedded(version); err != nil {
-			return Source{}, fmt.Errorf("no devexp-toolkit checkout found on disk and failed to extract embedded assets: %w", err)
+			return Source{}, fmt.Errorf("failed to extract the assets bundled in this binary: %w", err)
 		}
 	}
 	return src, nil
 }
 
-// locate decides Resolve's Source without writing anything: a checkout found
-// by findRepoDir, else the directory the embedded assets are extracted to.
+// locate decides Resolve's Source without writing anything.
 func locate(version string) (Source, error) {
-	dir, origin, err := findRepoDir(version != devBuild)
-	switch {
-	case err == nil:
-		return absoluteSource(Source{RepoDir: dir, Origin: origin})
-	case !errors.Is(err, errRepoNotFound):
-		return Source{}, err
+	if d := os.Getenv("DEVEXP_DIR"); d != "" {
+		dir, err := devexpDir(d)
+		if err != nil {
+			return Source{}, err
+		}
+		return absoluteSource(Source{RepoDir: dir, Origin: OriginDevexpDir})
 	}
-	dir, err = embeddedDir()
+	var warning string
+	if version == devBuild {
+		var dir string
+		if dir, warning = sourceCheckout(); dir != "" {
+			return absoluteSource(Source{RepoDir: dir, Origin: OriginSourceDir})
+		}
+	}
+	dir, err := embeddedDir()
 	if err != nil {
-		return Source{}, fmt.Errorf("no devexp-toolkit checkout found on disk and failed to extract embedded assets: %w", err)
+		return Source{}, fmt.Errorf("failed to extract the assets bundled in this binary: %w", err)
 	}
-	return absoluteSource(Source{RepoDir: dir, Embedded: true, Origin: OriginEmbedded})
+	return absoluteSource(Source{RepoDir: dir, Embedded: true, Origin: OriginEmbedded, Warning: warning})
 }
 
 // absoluteSource refuses a Source whose RepoDir is not absolute.
@@ -104,11 +110,7 @@ func absoluteSource(src Source) (Source, error) {
 	return src, nil
 }
 
-// ── Live repo detection ───────────────────────────────────────────────────────
-
-// errRepoNotFound means no live repo was found, so Resolve may fall back to the
-// embedded assets. Any other findRepoDir error stops Resolve.
-var errRepoNotFound = errors.New("no devexp-toolkit checkout found")
+// ── Live checkout detection ───────────────────────────────────────────────────
 
 // markerFile identifies a devexp-toolkit checkout: a regular file at its root
 // whose first line is markerID. It is committed to the repo and embedded in
@@ -118,52 +120,75 @@ const (
 	markerID   = "devexp-toolkit"
 )
 
-// executable is indirected so tests can place the binary inside a checkout.
-var executable = os.Executable
+// devexpDir resolves DEVEXP_DIR to an absolute path and requires a checkout.
+func devexpDir(d string) (string, error) {
+	abs, err := filepath.Abs(d)
+	if err != nil {
+		return "", fmt.Errorf("DEVEXP_DIR %q: %w", d, err)
+	}
+	if !isRepoDir(abs) {
+		return "", fmt.Errorf("DEVEXP_DIR is %q (%s), which is not a devexp-toolkit checkout (it needs the %s marker file, agents/, skills/ and mcps/) — point it at a devexp-toolkit clone or unset it", d, abs, markerFile)
+	}
+	return abs, nil
+}
 
-// findRepoDir returns the checkout to use and how it was found. tagged
-// disables the lookups next to the binary and up from the cwd (see Resolve).
-func findRepoDir(tagged bool) (dir, origin string, err error) {
-	if d := os.Getenv("DEVEXP_DIR"); d != "" {
-		abs, err := filepath.Abs(d)
-		if err != nil {
-			return "", "", fmt.Errorf("DEVEXP_DIR %q: %w", d, err)
-		}
-		if !isRepoDir(abs) {
-			return "", "", fmt.Errorf("DEVEXP_DIR is %q (%s), which is not a devexp-toolkit checkout (it needs the %s marker file, agents/, skills/ and mcps/) — point it at a devexp-toolkit clone or unset it", d, abs, markerFile)
-		}
-		return abs, OriginDevexpDir, nil
+// sourceRoot returns the root of the checkout this binary was compiled from,
+// or "" when that is unknown. It is indirected so tests can stand in for
+// binaries built elsewhere.
+var sourceRoot = func() string {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return ""
 	}
-	if tagged {
-		return "", "", errRepoNotFound
+	return sourceRootOf(file)
+}
+
+// sourceFileInRepo is where this file lives in a devexp-toolkit checkout.
+var sourceFileInRepo = filepath.Join("cli", "internal", "repo", "repo.go")
+
+// sourceRootOf derives the checkout root from this file's compile-time path.
+// `go build`, `go run` and `go test` record an absolute path; a -trimpath
+// build records a module-relative one, which names no directory, so it yields
+// "" and the binary uses its bundled assets.
+func sourceRootOf(file string) string {
+	suffix := string(filepath.Separator) + sourceFileInRepo
+	if !filepath.IsAbs(file) || !strings.HasSuffix(file, suffix) {
+		return ""
 	}
-	if exe, err := executable(); err == nil {
-		if candidate := filepath.Dir(filepath.Dir(exe)); isRepoDir(candidate) {
-			return candidate, OriginBinaryDir, nil
-		}
+	return strings.TrimSuffix(file, suffix)
+}
+
+// sourceCheckout returns this dev build's source checkout when it is a
+// devexp-toolkit checkout. Otherwise dir is "", and warning explains why the
+// checkout is skipped when there is one to explain: it is gone (moved or
+// deleted since the build), or it lacks the marker (a clone or fork from
+// before the marker existed).
+func sourceCheckout() (dir, warning string) {
+	root := sourceRoot()
+	switch {
+	case root == "":
+		return "", ""
+	case isRepoDir(root):
+		return root, ""
 	}
-	cwd, _ := os.Getwd()
-	for dir := cwd; ; {
-		if isRepoDir(dir) {
-			return dir, OriginWorkingDir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
+	if fi, err := os.Stat(root); err != nil || !fi.IsDir() {
+		return "", fmt.Sprintf("the devexp-toolkit checkout this binary was built from, %s, no longer exists — using the assets bundled in this binary instead; rebuild devexp from your clone (rm bin/devexp && ./install.sh) to install from it", root)
 	}
-	return "", "", errRepoNotFound
+	if hasAssetDirs(root) {
+		return "", fmt.Sprintf("%s, the checkout this binary was built from, has agents/, skills/ and mcps/ but no valid %s marker file, so it was skipped — using the assets bundled in this binary instead; pull the latest devexp-toolkit (or restore %s) to install from it", root, markerFile, markerFile)
+	}
+	return "", ""
 }
 
 // isRepoDir reports whether dir is a devexp-toolkit checkout: it holds the
 // marker file — a regular file, not a symlink, whose first line is markerID —
-// and agents/, skills/ and mcps/. The directory names alone are not enough;
-// plenty of other projects have them.
+// and agents/, skills/ and mcps/.
 func isRepoDir(dir string) bool {
-	if !hasMarker(filepath.Join(dir, markerFile)) {
-		return false
-	}
+	return hasMarker(filepath.Join(dir, markerFile)) && hasAssetDirs(dir)
+}
+
+// hasAssetDirs reports whether dir has agents/, skills/ and mcps/.
+func hasAssetDirs(dir string) bool {
 	for _, sub := range []string{"agents", "skills", "mcps"} {
 		if _, err := os.Stat(filepath.Join(dir, sub)); err != nil {
 			return false
@@ -197,7 +222,8 @@ var userCacheDir = os.UserCacheDir
 
 // extractEmbedded materializes assets.FS onto disk under the user's cache
 // directory, keyed by binary version so an upgrade gets a fresh copy. Returns
-// the destination directory, reusing a prior extraction when present.
+// the destination directory, reusing a prior extraction of the same tagged
+// version; a dev build always extracts afresh.
 //
 // With no usable cache directory it refuses rather than fall back (#126). The
 // old fallback, os.TempDir(), was either a relative $TMPDIR — a directory under
@@ -212,7 +238,9 @@ func extractEmbedded(version string) (string, error) {
 	}
 	marker := filepath.Join(dest, ".devexp-version")
 
-	if data, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(data)) == version {
+	// A dev build's version says nothing about which assets it embeds — every
+	// one is "dev" — so it never reuses an extraction.
+	if data, err := os.ReadFile(marker); err == nil && version != devBuild && strings.TrimSpace(string(data)) == version {
 		return dest, nil
 	}
 

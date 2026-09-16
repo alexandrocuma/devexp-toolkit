@@ -46,17 +46,21 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
   → exec bin/devexp install "$@"
   → cli/cmd/root.go Execute() → cli/cmd/install.go runInstall()
       → cli/internal/repo/repo.go Resolve(version, announceAssetRoot)
-          findRepoDir(tagged = version != "dev"):
+          locate(): no directory is ever searched for (not cwd, not next to the binary)
                          $DEVEXP_DIR (must be a checkout, else error — no fallback)
-                         → dev builds only: parent of the executable's dir (bin/devexp → repo root)
-                         → dev builds only: walk up from cwd
+                         → dev builds only (version == "dev"): sourceCheckout(), the checkout
+                           compiled in via runtime.Caller (none under -trimpath); if it lacks
+                           the marker or is gone → Source.Warning, fall through
                          a checkout = .devexp-toolkit marker (regular file, first line
                          "devexp-toolkit") + agents/ skills/ mcps/ (isRepoDir)
           else embeddedDir(): os.UserCacheDir()/devexp/assets (must be absolute)
-          → announce(Source): install.go prints "Asset root: <dir> (<origin>)" — before any write
+          → announce(Source): install.go prints the warning, then
+                         "Asset root: <dir> (<origin>)" — before any write
           → if embedded, extractEmbedded(): assets.FS (marker included) → that dir,
-                         reused while .devexp-version == binary version; *.sh written 0755
-          → Source{RepoDir, Embedded, Origin}; every installer below reads RepoDir on disk
+                         reused while .devexp-version == a tagged version (dev builds always
+                         re-extract); *.sh written 0755
+          → Source{RepoDir, Embedded, Origin, Warning}; every installer below — and the
+                         wizard's Remove (runRemove) — reads RepoDir on disk
       → cli/internal/config/config.go Load(<repo>/devexp.config.json)   (missing → ui.Warn + defaults; --model overrides)
       → cli/internal/config/dotenv.go LoadDotenv(<repo>/mcps/.env)
       → cli/cmd/registry.go buildEnv(): OS env + DEVEXP_DIR + dotenv (dotenv wins)
