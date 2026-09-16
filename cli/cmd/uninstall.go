@@ -77,7 +77,21 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	if !ok {
 		return fmt.Errorf("unsupported target %q (%s)", flagUninstallTarget, supportedUninstallTargets())
 	}
-	return handler(os.Getenv("HOME"), flagUninstallDryRun)
+	home, err := uninstallHome(os.Getenv("HOME"))
+	if err != nil {
+		return err
+	}
+	return handler(home, flagUninstallDryRun)
+}
+
+// uninstallHome refuses a HOME that is unset, empty or relative: every target
+// path is built from it, and a relative one would remove files under whatever
+// directory the command happens to run in.
+func uninstallHome(home string) (string, error) {
+	if home == "" || !filepath.IsAbs(home) {
+		return "", fmt.Errorf("HOME is %q, not an absolute path — refusing to remove anything; set HOME and re-run", home)
+	}
+	return filepath.Clean(home), nil
 }
 
 // doUninstallOpencode removes devexp's opencode hook plugin and whatever the
@@ -90,7 +104,10 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 func doUninstallOpencode(home string, dryRun bool) error {
 	p := opencodeTargetPaths(home)
 
-	_, statErr := os.Lstat(p.manifest)
+	// Only a regular file counts as an existing manifest. A symlink (dangling
+	// or not) is never written through: saving would create or change a file
+	// somewhere else, such as a dotfiles checkout.
+	manifestInfo, statErr := os.Lstat(p.manifest)
 	old, loadErr := manifest.Load(p.manifest)
 	if loadErr != nil {
 		ui.Warn(fmt.Sprintf("manifest %s is unreadable, so plugin files are identified from disk only: %v", p.manifest, loadErr))
@@ -113,12 +130,18 @@ func doUninstallOpencode(home string, dryRun bool) error {
 
 	// Record only what had to stay, so a devexp.js a user later puts there is
 	// never taken for devexp's. Never on a dry run, never into a manifest that
-	// didn't exist, and never over one that failed to load.
-	if !dryRun && statErr == nil && loadErr == nil && !slices.Equal(old.Plugins, kept) {
-		old.Plugins = kept
-		if err := manifest.Save(p.manifest, old); err != nil {
-			ui.Warn(fmt.Sprintf("save manifest: %v", err))
-		}
+	// didn't exist, never over one that failed to load, and never through a
+	// symlink.
+	if dryRun || statErr != nil || loadErr != nil || slices.Equal(old.Plugins, kept) {
+		return nil
+	}
+	if !manifestInfo.Mode().IsRegular() {
+		ui.Warn(fmt.Sprintf("manifest %s is a symlink, so it was left untouched — its plugins list no longer matches what is on disk", p.manifest))
+		return nil
+	}
+	old.Plugins = kept
+	if err := manifest.Save(p.manifest, old); err != nil {
+		ui.Warn(fmt.Sprintf("save manifest: %v", err))
 	}
 	return nil
 }

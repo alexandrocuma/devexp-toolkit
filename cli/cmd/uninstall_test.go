@@ -148,6 +148,54 @@ func TestDoUninstallOpencode_Manifest(t *testing.T) {
 		}
 	})
 
+	t.Run("a manifest symlink is never written through", func(t *testing.T) {
+		for _, dangling := range []bool{true, false} {
+			t.Run(map[bool]string{true: "dangling", false: "to a manifest"}[dangling], func(t *testing.T) {
+				home, p := installedOpencodeHome(t)
+				dotfiles := t.TempDir()
+				target := filepath.Join(dotfiles, "manifest.json")
+				if dangling {
+					os.Remove(p.manifest) //nolint:errcheck
+					// Files have to stay (symlinked plugins/), so a save would happen.
+					linked := filepath.Join(dotfiles, "plugins")
+					if err := os.Rename(p.plugins, linked); err != nil {
+						t.Fatal(err)
+					}
+					os.Symlink(linked, p.plugins) //nolint:errcheck
+				} else if err := os.Rename(p.manifest, target); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, p.manifest); err != nil {
+					t.Fatal(err)
+				}
+				before, _ := os.ReadFile(target)
+
+				out, err := uninstallOpencode(t, home, false)
+				if err != nil {
+					t.Fatalf("doUninstallOpencode() error = %v\n%s", err, out)
+				}
+				after, afterErr := os.ReadFile(target)
+				if dangling && !os.IsNotExist(afterErr) {
+					t.Errorf("manifest created behind the dangling link: %s", after)
+				}
+				if !dangling && !bytes.Equal(before, after) {
+					t.Errorf("manifest behind the link changed:\n%s", after)
+				}
+				if fi, err := os.Lstat(p.manifest); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+					t.Errorf("manifest symlink replaced")
+				}
+				if !strings.Contains(out, "is a symlink, so it was left untouched") {
+					t.Errorf("no warning about the manifest symlink:\n%s", out)
+				}
+				if !dangling {
+					if tree := pluginTree(t, p.plugins); len(tree) != 0 {
+						t.Errorf("plugins tree = %v, want the recorded plugin removed", tree)
+					}
+				}
+			})
+		}
+	})
+
 	t.Run("a malformed manifest is never rewritten and the plugin is found on disk", func(t *testing.T) {
 		home, p := installedOpencodeHome(t)
 		const bad = `{"agents": "oops"`
@@ -415,6 +463,66 @@ func TestUninstallCmd(t *testing.T) {
 			t.Errorf("plugins tree = %v, want empty", tree)
 		}
 	})
+}
+
+func TestUninstallHome(t *testing.T) {
+	tests := map[string]struct {
+		home    string
+		wantErr bool
+	}{
+		"absolute":      {home: "/home/me"},
+		"cleaned":       {home: "/home/me/"},
+		"empty":         {home: "", wantErr: true},
+		"relative":      {home: "home/me", wantErr: true},
+		"dot":           {home: ".", wantErr: true},
+		"tilde literal": {home: "~", wantErr: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := uninstallHome(tt.home)
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "refusing to remove anything") {
+					t.Errorf("uninstallHome(%q) = %q, %v; want a refusal", tt.home, got, err)
+				}
+				return
+			}
+			if err != nil || got != "/home/me" {
+				t.Errorf("uninstallHome(%q) = %q, %v; want /home/me", tt.home, got, err)
+			}
+		})
+	}
+}
+
+// TestUninstallCmd_RefusesBadHome: with HOME unset, empty or relative, target
+// paths would resolve under the current directory. Nothing there is touched.
+func TestUninstallCmd_RefusesBadHome(t *testing.T) {
+	for name, set := range map[string]func(t *testing.T){
+		"unset":    func(t *testing.T) { t.Setenv("HOME", ""); os.Unsetenv("HOME") }, //nolint:errcheck
+		"empty":    func(t *testing.T) { t.Setenv("HOME", "") },
+		"relative": func(t *testing.T) { t.Setenv("HOME", "home") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			cwd := t.TempDir()
+			t.Chdir(cwd)
+			t.Setenv("DEVEXP_DIR", writeOpencodeHookRepo(t))
+			plugins := filepath.Join(cwd, "home", ".config", "opencode", "plugins")
+			for _, dir := range []string{filepath.Join(cwd, ".config", "opencode", "plugins"), plugins} {
+				os.MkdirAll(filepath.Join(dir, "devexp"), 0o755)                                                                                        //nolint:errcheck
+				os.WriteFile(filepath.Join(dir, "devexp.js"), []byte("/**\n * devexp-plugin.js — entry point for devexp opencode hooks\n */\n"), 0o644) //nolint:errcheck
+				os.WriteFile(filepath.Join(dir, "devexp", "utils.js"), []byte("x"), 0o644)                                                              //nolint:errcheck
+			}
+			before := treeBytes(t, cwd)
+			set(t)
+
+			out, err := executeRoot(t, "uninstall", "--target", "opencode")
+			if err == nil || !strings.Contains(err.Error(), "HOME") {
+				t.Errorf("uninstall error = %v, want a HOME refusal\n%s", err, out)
+			}
+			if after := treeBytes(t, cwd); !reflect.DeepEqual(before, after) {
+				t.Errorf("files under the current directory changed")
+			}
+		})
+	}
 }
 
 func readOnlyTestDir(t *testing.T, dir string) {
