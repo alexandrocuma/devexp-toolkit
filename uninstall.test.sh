@@ -132,6 +132,26 @@ expect "removes a ./-relative devexp hook, keeps a relative user hook" \
   "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Glob\",\"hooks\":[{\"type\":\"command\",\"command\":\"./hooks/claude-code/graphify-read-guard.sh\"},{\"type\":\"command\",\"command\":\"my-hooks/secret-guard.sh\"}]}]}}" \
   "my-hooks/secret-guard.sh"
 
+# Only a plain path is devexp's: a command that expands a variable, takes an
+# argument or is wrapped is the user's, and so is one under a directory that
+# merely ends in hooks/claude-code/ (#126).
+expect "keeps a \$CLAUDE_PROJECT_DIR hook" \
+  "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"\$CLAUDE_PROJECT_DIR/hooks/claude-code/secret-guard.sh\"}]}]}}" \
+  "\$CLAUDE_PROJECT_DIR/hooks/claude-code/secret-guard.sh"
+
+expect "keeps quoted, ~, \$HOME and wrapped hooks" \
+  "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"\\\"\$CLAUDE_PROJECT_DIR\\\"/hooks/claude-code/secret-guard.sh\"},{\"type\":\"command\",\"command\":\"~/vendor/hooks/claude-code/secret-guard.sh\"},{\"type\":\"command\",\"command\":\"\$HOME/vendor/hooks/claude-code/secret-guard.sh\"},{\"type\":\"command\",\"command\":\"bash $FOREIGN\"},{\"type\":\"command\",\"command\":\"FOO=1 $FOREIGN\"}]}]}}" \
+  "\"\$CLAUDE_PROJECT_DIR\"/hooks/claude-code/secret-guard.sh
+~/vendor/hooks/claude-code/secret-guard.sh
+\$HOME/vendor/hooks/claude-code/secret-guard.sh
+bash $FOREIGN
+FOO=1 $FOREIGN"
+
+expect "keeps a my-hooks/claude-code/ hook, relative and absolute" \
+  "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"my-hooks/claude-code/secret-guard.sh\"},{\"type\":\"command\",\"command\":\"$OTHER/my-hooks/claude-code/secret-guard.sh\"}]}]}}" \
+  "my-hooks/claude-code/secret-guard.sh
+$OTHER/my-hooks/claude-code/secret-guard.sh"
+
 # ── opencode (#109) ──────────────────────────────────────────────────────────
 
 ok() { pass=$((pass+1)); }

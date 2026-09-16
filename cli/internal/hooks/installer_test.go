@@ -492,6 +492,30 @@ func TestIsForeignDevexpHook(t *testing.T) {
 			cmd:  "",
 			want: false,
 		},
+		"a relative command is not foreign (isRelativeDevexpHook handles it)": {
+			cmd:  "hooks/claude-code/secret-guard.sh",
+			want: false,
+		},
+		"script dir inside another dir name is untouched": {
+			cmd:  filepath.Join(otherRoot, "my-hooks", "claude-code", "secret-guard.sh"),
+			want: false,
+		},
+		"script dir not directly above the script is untouched": {
+			cmd:  filepath.Join(otherRoot, "hooks", "claude-code", "sub", "secret-guard.sh"),
+			want: false,
+		},
+		"env assignment before an absolute path is untouched": {
+			cmd:  "FOO=1 " + filepath.Join(otherRoot, "hooks", "claude-code", "secret-guard.sh"),
+			want: false,
+		},
+		"interpreter wrapper around an absolute path is untouched": {
+			cmd:  "bash " + filepath.Join(otherRoot, "hooks", "claude-code", "secret-guard.sh"),
+			want: false,
+		},
+		"quoted absolute path is untouched": {
+			cmd:  `"` + filepath.Join(otherRoot, "hooks", "claude-code", "secret-guard.sh") + `"`,
+			want: false,
+		},
 	}
 
 	for name, tt := range tests {
@@ -518,6 +542,21 @@ func TestIsRelativeDevexpHook(t *testing.T) {
 		"relative unknown script in the script dir": {cmd: "hooks/claude-code/my-own-hook.sh", want: false},
 		"bare basename":                             {cmd: "secret-guard.sh", want: false},
 		"empty":                                     {cmd: "", want: false},
+		// Not plain paths: devexp never registered these, so they are the user's.
+		"project-dir variable":        {cmd: "$CLAUDE_PROJECT_DIR/hooks/claude-code/secret-guard.sh", want: false},
+		"quoted project-dir variable": {cmd: `"$CLAUDE_PROJECT_DIR"/hooks/claude-code/secret-guard.sh`, want: false},
+		"braced project-dir variable": {cmd: "${CLAUDE_PROJECT_DIR}/hooks/claude-code/secret-guard.sh", want: false},
+		"tilde":                       {cmd: "~/vendor/hooks/claude-code/secret-guard.sh", want: false},
+		"HOME variable":               {cmd: "$HOME/vendor/hooks/claude-code/secret-guard.sh", want: false},
+		"env assignment prefix":       {cmd: "FOO=1 hooks/claude-code/secret-guard.sh", want: false},
+		"interpreter wrapper":         {cmd: "bash hooks/claude-code/secret-guard.sh", want: false},
+		"single-quoted":               {cmd: "'hooks/claude-code/secret-guard.sh'", want: false},
+		"backticks":                   {cmd: "`pwd`/hooks/claude-code/secret-guard.sh", want: false},
+		"trailing argument":           {cmd: "hooks/claude-code/secret-guard.sh --strict", want: false},
+		"chained command":             {cmd: "hooks/claude-code/secret-guard.sh;true", want: false},
+		// hooks/claude-code/ must start at a path-segment boundary, right above the script.
+		"script dir inside another dir name": {cmd: "my-hooks/claude-code/secret-guard.sh", want: false},
+		"script dir not directly above":      {cmd: "hooks/claude-code/sub/secret-guard.sh", want: false},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -597,6 +636,33 @@ func TestPruneForeignDevexpHooks(t *testing.T) {
 			}},
 			wantHooks: hooksMapT{"PreToolUse": {
 				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: "my-hooks/secret-guard.sh"}}},
+			}},
+			wantPruned: false,
+		},
+		"keeps every hook that isn't a plain devexp script path": {
+			hooksMap: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{
+					{Type: "command", Command: "$CLAUDE_PROJECT_DIR/hooks/claude-code/secret-guard.sh"},
+					{Type: "command", Command: `"$CLAUDE_PROJECT_DIR"/hooks/claude-code/secret-guard.sh`},
+					{Type: "command", Command: "~/vendor/hooks/claude-code/secret-guard.sh"},
+					{Type: "command", Command: "$HOME/vendor/hooks/claude-code/secret-guard.sh"},
+					{Type: "command", Command: "FOO=1 " + foreign},
+					{Type: "command", Command: "bash " + foreign},
+					{Type: "command", Command: "my-hooks/claude-code/secret-guard.sh"},
+					{Type: "command", Command: filepath.Join(otherRoot, "my-hooks", "claude-code", "secret-guard.sh")},
+				}},
+			}},
+			wantHooks: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{
+					{Type: "command", Command: "$CLAUDE_PROJECT_DIR/hooks/claude-code/secret-guard.sh"},
+					{Type: "command", Command: `"$CLAUDE_PROJECT_DIR"/hooks/claude-code/secret-guard.sh`},
+					{Type: "command", Command: "~/vendor/hooks/claude-code/secret-guard.sh"},
+					{Type: "command", Command: "$HOME/vendor/hooks/claude-code/secret-guard.sh"},
+					{Type: "command", Command: "FOO=1 " + foreign},
+					{Type: "command", Command: "bash " + foreign},
+					{Type: "command", Command: "my-hooks/claude-code/secret-guard.sh"},
+					{Type: "command", Command: filepath.Join(otherRoot, "my-hooks", "claude-code", "secret-guard.sh")},
+				}},
 			}},
 			wantPruned: false,
 		},

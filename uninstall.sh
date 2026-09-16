@@ -340,6 +340,10 @@ settings_path = sys.argv[2]
 # cache -- see issue #93. Disabled hooks are included: their foreign-root
 # copies must go too.
 SCRIPT_DIR = 'hooks/claude-code/'
+# A command with any of these is more than a plain path (arguments, env
+# assignments, expansions, quoting): devexp never registered one, so it is
+# the user's. Same rule as isManagedScriptPath in cli/internal/hooks.
+SHELL_SYNTAX = set(' \t\n\r$~\'"`\\;&|<>()*?[]{}!#')
 try:
     with open(os.path.join(repo_dir, 'hooks', 'registry.json')) as f:
         managed = {
@@ -352,7 +356,16 @@ except (OSError, json.JSONDecodeError, KeyError):
     sys.exit(0)
 
 def is_devexp_hook(cmd):
-    return bool(cmd) and os.path.basename(cmd) in managed and SCRIPT_DIR in cmd.replace('\\', '/')
+    # A plain path whose basename is a registry script, with hooks/claude-code/
+    # directly above it at a path-segment boundary (so my-hooks/claude-code/
+    # is not devexp's).
+    if not cmd or any(c in SHELL_SYNTAX for c in cmd):
+        return False
+    base = os.path.basename(cmd)
+    if base not in managed:
+        return False
+    head = cmd[:-len(base)]
+    return head == SCRIPT_DIR or head.endswith('/' + SCRIPT_DIR)
 
 with open(settings_path) as f:
     try:

@@ -54,6 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     next install and replaced by the absolute registration; relative hooks that
     aren't devexp's are left alone. `uninstall.sh` already removed them; it now
     has tests for it.
+  - A hook command counts as devexp's only if it is a plain path (no
+    whitespace, variables, `~`, quotes or other shell syntax) ending in
+    `hooks/claude-code/<registry script>`, with `hooks/claude-code/` at a path
+    segment boundary. This applies to install-time pruning and to
+    `uninstall.sh`. Before, commands such as `$CLAUDE_PROJECT_DIR/hooks/claude-code/…`
+    or `…/my-hooks/claude-code/…` could be removed.
 
 ## [0.8.0] - 2026-09-16
 
