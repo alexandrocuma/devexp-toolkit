@@ -11,8 +11,10 @@ set -euo pipefail
 input=$(cat)
 
 file_path=$(echo "$input" | python3 -c \
-    "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" \
-    2>/dev/null || echo "")
+    "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))") || {
+    echo "[devexp large-file-guard] internal error -- could not read hook input, skipping. The interpreter's error is above." >&2
+    exit 0
+}
 
 if [[ -n "$file_path" && -f "$file_path" ]]; then
     line_count=$(wc -l < "$file_path" 2>/dev/null || echo 0)
