@@ -85,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `opencode` registry mapping is the touch point (`CLAUDE.md`, `conventions.md`,
     `workflows.md`, `hooks/README.md`, `reference/hooks.md`,
     `hook-authoring-guide.md`, `architecture/overview.md`, `docs-sync` agent).
-    New `hooks/opencode/devexp-plugin.test.js`.
+    New `hooks/opencode/devexp-plugin.test.js`, recorded in `testing.md`.
 
 - **Docs and agent sources drifted from the code** — found by the first `/devxp`
   run with the development kit, fixed by `update-docs` passes verified against code:
