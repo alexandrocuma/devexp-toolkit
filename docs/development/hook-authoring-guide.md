@@ -1,6 +1,6 @@
 # Hook Authoring Guide
 
-This guide covers everything you need to write a new devexp hook — from deciding what to guard to writing both the Claude Code script and the opencode module, and deploying it. (Only the Claude Code script is deployed by the installer today — see [How the System Is Structured](#how-the-system-is-structured).)
+This guide covers everything you need to write a new devexp hook — from deciding what to guard to writing both the Claude Code script and the opencode module, and deploying it. The installer deploys both — see [How the System Is Structured](#how-the-system-is-structured).
 
 ---
 
@@ -31,7 +31,7 @@ hooks/
 
 The installer reads `registry.json` and:
 - Registers each enabled `.sh` script in `~/.claude/settings.json` with the correct event and matcher, by absolute path into the install root (`cli/internal/hooks/installer.go`)
-- Does **not** deploy the opencode modules. No code under `cli/` references `devexp-plugin.js`, and the opencode install (`cli/cmd/install_opencode.go`) has no hook step — see [Known gaps](../architecture/overview.md#known-gaps). Still write and register the JS module (below) so the plugin stays correct and tested.
+- Installs the opencode plugin: copies `opencode/devexp-plugin.js` to `~/.config/opencode/plugins/devexp.js`, copies each selected hook's `opencode.module` plus `utils.js` and `package.json` into `plugins/devexp/`, and writes `plugins/devexp/hooks.json` (`cli/internal/hooks/opencode.go`). It copies by the registry list, so a module without an `opencode` mapping is never installed and `*.test.js` never ships.
 
 ---
 
@@ -260,7 +260,7 @@ The installed plugin is `<plugins>/devexp.js` (the entry) next to `<plugins>/dev
 - An empty array is **not** a valid selection. With every hook disabled the installer installs no plugin at all, so `[]` can only be an installer bug and is treated like an unreadable file.
 - `hooks/opencode/devexp-plugin.test.js` parses the example above and asserts these exact key names, so it is the target the installer must write.
 
-Writing this file is the installer's job (not done yet — see [Known gaps](../architecture/overview.md#known-gaps)).
+Writing this file is the installer's job (`opencodeSelectionJSON` in `cli/internal/hooks/opencode.go`); `TestOpencodeSelectionJSON_Contract` checks its output against the example above.
 
 ### Failure behaviour
 
@@ -294,7 +294,7 @@ opencode has no `file.edited` plugin hook: file events reach plugins only throug
 - [ ] Hook catalog, file tree and counts updated (`docs/reference/hooks.md`, `hooks/README.md`, `README.md`, `CLAUDE.md`)
 - [ ] `bash -n hooks/claude-code/<hook-name>.sh` passes
 - [ ] `node --input-type=module` import test passes
-- [ ] `./install.sh` installs without errors, and the hook appears in `~/.claude/settings.json`
+- [ ] `./install.sh` installs without errors, and the hook appears in `~/.claude/settings.json` and in `~/.config/opencode/plugins/devexp/hooks.json`
 - [ ] Tested both the block path and the allow path
 
 Exact steps and the files each touches: [workflows → Add a hook](../guides/workflows.md#add-a-hook).

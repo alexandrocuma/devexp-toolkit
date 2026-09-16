@@ -2,7 +2,7 @@
 
 Hooks run automatically on matching tool calls — no configuration needed. Each hook has a Claude Code implementation (shell script in `claude-code/`) and an opencode implementation (JS module in `opencode/`, composed by `opencode/devexp-plugin.js`).
 
-Install them by running `./install.sh` from the repo root. The installer registers the **Claude Code** scripts in `~/.claude/settings.json`; it does **not** deploy the opencode modules yet (`cli/cmd/install_opencode.go` has no hook step — see [Known gaps](../docs/architecture/overview.md#known-gaps)).
+Install them by running `./install.sh` from the repo root. The installer registers the **Claude Code** scripts in `~/.claude/settings.json` and installs the **opencode** plugin into `~/.config/opencode/plugins/` (the entry `devexp.js` plus `devexp/` with the selected modules and `hooks.json`).
 
 ---
 

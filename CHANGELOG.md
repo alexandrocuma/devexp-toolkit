@@ -53,6 +53,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **opencode: `devexp install` now installs the hook plugin (#106, #107, #108).**
+  The Go CLI never deployed the opencode hooks, so opencode users got no guards
+  while the installer reported success.
+  - It installs `~/.config/opencode/plugins/devexp.js` (the single entry opencode
+    loads) plus `devexp/` with only the selected modules, `utils.js`,
+    `package.json` and `hooks.json`. Files are copied by the registry list, so
+    `*.test.js` never ships, and `plugins/package.json` is never written.
+  - It honours `hooks.disabled` and the wizard selection, the same way the Claude
+    Code path does. A hook disabled or removed since the last install is deleted
+    on re-install, tracked through the new `plugins` key in
+    `~/.config/opencode/.devexp-manifest.json`. With every hook disabled it
+    installs no plugin and says why. A lost or unreadable manifest doesn't stop
+    that: devexp also recognises its own plugin files on disk.
+  - It turns on lint/format/test-on-save for opencode. The `graphify-*` hooks are
+    on for opencode (turn them off with `hooks.disabled`).
+  - It cleans up the pre-v0.1.0 flat install, but only after the new plugin is in
+    place, so a refused install keeps the old one. A file is removed only when its name
+    is in the legacy set and its content carries the devexp header; a same-named
+    user file is kept with a warning. The legacy `config.json` `plugin` entry is
+    removed only on an exact match, and the rest of `config.json` keeps its bytes;
+    a symlinked `config.json` is left untouched with a warning.
+  - Nothing is written or removed until every check has passed:
+    - It refuses a `plugins/devexp/` that is a symlink (it may point at a
+      source checkout), and a `plugins/` link that is dangling or doesn't
+      point at a directory.
+    - A `plugins/` symlinked to a directory (for example from dotfiles) is
+      written through but never removed through. Stale plugin files, the
+      every-hook-disabled uninstall and legacy flat files are left in place.
+      The output lists them to remove by hand, and they stay recorded in the
+      manifest so a run after the link is replaced can clean them up.
+    - It never overwrites a `devexp.js` that is neither a devexp entry nor
+      recorded in the manifest. A recorded, damaged one is repaired.
+  - It never deletes anything outside `devexp.js` and a real `devexp/`
+    directory, and never deletes through a symlink. Files are replaced atomically (temp file + rename). Removing
+    the plugin is all-or-nothing: if `devexp.js` has to stay (a symlink, or
+    it can't be deleted), `devexp/` stays too and the output says the hooks
+    remain active.
+  - `--dry-run` lists every file and writes nothing.
+  - **Clone users:** run `rm bin/devexp && ./install.sh`. `install.sh` never
+    rebuilds an existing binary.
+
+- **An unreadable install manifest crashed `devexp install`.** When
+  `.devexp-manifest.json` couldn't be read (for example a directory at that
+  path), `manifest.Load` returned no manifest and both install targets panicked.
+  It now returns an empty manifest with the error. The install warns, removes
+  no stale agents or skills on that run, and rewrites the manifest at the end. A
+  malformed manifest gets the same warning; before, it was silently treated as
+  empty. Partly decoded data is discarded, so it can never mark files stale.
+  `--agents-only`/`--skills-only` runs no longer print the opencode `Hooks :`
+  line.
+
 - **opencode plugin: data-driven entry, explicit registry mapping, parity fixes
   (#107).** Groundwork for installing the plugin (#108); no user-visible change
   until then.

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"devexp/internal/agents"
+	"devexp/internal/hooks"
 	"devexp/internal/manifest"
 	"devexp/internal/mcp"
 	"devexp/internal/skills"
@@ -38,8 +39,8 @@ func doInstallOpencode(opts *installOpts) error {
 	}
 
 	manifestPath := p.manifest
-	old, _ := manifest.Load(manifestPath)
-	newManifest := &manifest.Manifest{Agents: old.Agents, Skills: old.Skills}
+	old := loadOldManifest(manifestPath)
+	newManifest := &manifest.Manifest{Agents: old.Agents, Skills: old.Skills, Plugins: old.Plugins}
 
 	if !opts.skillsOnly {
 		ui.Info("Installing agents (transformed for opencode)...")
@@ -94,6 +95,29 @@ func doInstallOpencode(opts *installOpts) error {
 		removeStale(skillsTarget, staleSkillFiles, os.Remove, opts.dryRun)
 	}
 
+	if !opts.agentsOnly && !opts.skillsOnly {
+		registry, err := hooks.LoadRegistry(filepath.Join(opts.repoDir, "hooks", "registry.json"))
+		if err != nil {
+			ui.Warn(fmt.Sprintf("hooks registry: %v", err))
+		} else {
+			ui.Info(fmt.Sprintf("Installing hooks (opencode plugin → %s)...", p.plugins))
+			disabled := resolveHookDisabled(registry, opts.selectedHooks, opts.cfg.DisabledHooks)
+			// InstallOpencode validates before it changes anything and removes
+			// the plugin files it no longer installs itself.
+			installedPlugins, err := hooks.InstallOpencode(registry, opts.repoDir, p.plugins, disabled, old.Plugins, opts.dryRun)
+			if err != nil {
+				return err
+			}
+			newManifest.Plugins = installedPlugins
+			// Only once the new plugin is in place: a refused install must not
+			// take away a working legacy one.
+			if err := hooks.CleanLegacyOpencode(p.plugins, configPath, opts.dryRun); err != nil {
+				ui.Warn(fmt.Sprintf("legacy opencode plugin cleanup: %v", err))
+			}
+			fmt.Println()
+		}
+	}
+
 	if !opts.dryRun {
 		if err := manifest.Save(manifestPath, newManifest); err != nil {
 			ui.Warn(fmt.Sprintf("save manifest: %v", err))
@@ -103,6 +127,9 @@ func doInstallOpencode(opts *installOpts) error {
 	ui.Success("opencode installation complete.")
 	fmt.Printf("  Agents : %s\n", agentsTarget)
 	fmt.Printf("  Skills : %s\n", skillsTarget)
+	if !opts.agentsOnly && !opts.skillsOnly {
+		fmt.Printf("  Hooks  : %s\n", p.plugins)
+	}
 	fmt.Println()
 	ui.Info("Restart opencode to activate.")
 	fmt.Println()

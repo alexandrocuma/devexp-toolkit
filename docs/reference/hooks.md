@@ -2,7 +2,7 @@
 
 ## How Hooks Work
 
-Hooks intercept tool calls automatically — no user action required. Some are safety guards that block or ask; others (`lint-on-save`, `format-on-save`, `test-on-save`, `graphify-grep-nudge`) are advisory and never block. Each hook has an implementation per CLI, but only the **Claude Code** scripts are installed today: the installer has no opencode hook step (`cli/cmd/install_opencode.go`; see [Known gaps](../architecture/overview.md#known-gaps)).
+Hooks intercept tool calls automatically — no user action required. Some are safety guards that block or ask; others (`lint-on-save`, `format-on-save`, `test-on-save`, `graphify-grep-nudge`) are advisory and never block. Each hook has an implementation per CLI, and the installer installs both: the Claude Code scripts (`cli/cmd/install_claude.go`) and the opencode plugin (`cli/cmd/install_opencode.go`).
 
 **Claude Code** hooks are shell scripts registered in `~/.claude/settings.json` under `PreToolUse` or `PostToolUse` events. Claude Code calls the script with a JSON payload on stdin and reads the response:
 
@@ -10,7 +10,7 @@ Hooks intercept tool calls automatically — no user action required. Some are s
 - **Soft block (ask)** — output `{"hookSpecificOutput": {"permissionDecision": "ask"}}` to stdout, `exit 0`. Claude pauses and asks the user.
 - **Allow** — `exit 0` with no output.
 
-**opencode** hooks are JS modules composed into a single plugin (`hooks/opencode/devexp-plugin.js`). The installer doesn't deploy or register this plugin; no code under `cli/` references it. Handlers receive `(input, output)` and:
+**opencode** hooks are JS modules composed into a single plugin. The installer copies `hooks/opencode/devexp-plugin.js` to `~/.config/opencode/plugins/devexp.js`, the only file opencode loads, and puts the selected modules, `utils.js`, `package.json` and the `hooks.json` selection in `plugins/devexp/`, a subdirectory opencode's loader never scans (`cli/internal/hooks/opencode.go`). Handlers receive `(input, output)` and:
 
 - **Block** — `throw new Error("reason")`. opencode stops the tool call.
 - **Allow** — return without throwing.
@@ -131,7 +131,9 @@ This front-loads grounding when the agent knows least about the codebase, and ea
 |---|---|---|
 | Hook scripts | `hooks/claude-code/*.sh` (one per hook) | `hooks/opencode/*.js` (one module per hook) |
 | Entry point | Each script registered separately in `settings.json` | `devexp-plugin.js` composes the modules listed in `devexp/hooks.json`; file events arrive through `event` → `file.edited` |
-| Installed by `./install.sh` | Yes — enabled hooks, into `~/.claude/settings.json` | No — not deployed ([Known gaps](../architecture/overview.md#known-gaps)) |
+| Installed by `./install.sh` | Yes — enabled hooks, into `~/.claude/settings.json` | Yes — selected modules, into `~/.config/opencode/plugins/` (`devexp.js` + `devexp/`) |
+| Selection | Top-level `enabled`, minus `hooks.disabled` / wizard deselection | `opencode.enabled` if set, else `enabled`, minus `hooks.disabled` / wizard deselection — so the `graphify-*` hooks are on (turn them off with `hooks.disabled`) |
+| Hook disabled after install | Stays registered in `settings.json` | Removed on the next install |
 | Block mechanism | `exit 2` + stderr | `throw new Error(...)` |
 | Confirm/ask | `permissionDecision: "ask"` JSON output | Not supported — hard block instead |
 

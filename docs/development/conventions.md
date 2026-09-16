@@ -36,6 +36,7 @@ For where things live, see the [architecture overview](../architecture/overview.
 - `cli/internal/<kind>/` does the file, JSON and exec work for one kind (`agents`, `skills`, `hooks`, `mcp`) or one concern (`repo`, `assets`, `config`, `manifest`, `ui`).
 - **Dependencies flow one way.** `cmd` imports `internal/*`. Internal packages import only `internal/ui`, plus `internal/repo` → `internal/assets` (from the imports in `cli/internal/*/*.go`). Don't add imports from one internal package to another.
 - **Installers take explicit paths and return what they installed.** For example, `agents.InstallClaude(srcDir, targetDir, model string, disabled []string, dryRun bool) ([]string, error)` returns names that the caller diffs against the manifest. See `cli/internal/agents/installer.go` and `cli/internal/skills/installer.go`. `hooks.InstallClaude` takes `settingsPath` instead of reading `$HOME` (`cli/internal/hooks/installer.go`).
+- **Copy by registry list, never by glob.** `hooks.InstallOpencode` copies exactly the files the selected registry entries name, plus the entry, `utils.js` and `package.json`, so `*.test.js` never ships (`cli/internal/hooks/opencode.go`).
 - **Keep decisions apart from I/O.** A pure function makes the decision, and a separate function prints, prompts or execs. The pure function takes whatever varies, such as the clock or the answers, as parameters. See `cli/cmd/targets.go` (`selectTargets` is pure, `announceTargets` handles I/O, `detectTargets` wraps both), `cli/cmd/paths.go` (`claudeTargetPaths(home, now)`) and `cli/internal/ui/prompts.go` (the pure `buildMultiSelectDisplay` / `applyMultiSelectChoice` behind the TTY-bound `MultiSelect`).
 
 ```go
@@ -75,14 +76,14 @@ func selectTargets(hasClaude, hasOpencode bool, choice string) (claude, opencode
 
 - **Internal installers return fatal I/O errors unwrapped** and give back the partial result. Examples are `return installed, err` in `cli/internal/agents/installer.go` and `cli/internal/skills/installer.go`.
 - **Problems with a single item warn and continue; they never abort the install.** A failed opencode transform does `ui.Warn` then `continue` (`cli/internal/agents/installer.go`). A failed `claude mcp add` warns and returns nil, and a missing `required_env` prints a `[REQUIRED]` notice and returns nil (`cli/internal/mcp/claude.go`). A bad hooks registry only warns (`cli/cmd/install_claude.go`), and so do bad `mcps` entries in config (`cli/cmd/registry.go`).
-- **Loading state never blocks an install.** A missing or malformed manifest counts as empty (`cli/internal/manifest/manifest.go`, `Load`). Malformed `settings.json` or opencode `config.json` is read with `json.Unmarshal(...) //nolint:errcheck` and treated as empty (`cli/internal/hooks/installer.go`, `cli/internal/mcp/opencode.go`). A missing `devexp.config.json` warns and uses the defaults (`cli/cmd/install.go`). Backup failures are ignored (`cli/cmd/backup.go`). The reason is recorded in the doc comments:
+- **Loading state never blocks an install.** A missing manifest counts as empty. An unreadable or malformed one also counts as empty, with a warning, and no agent or skill is treated as stale on that run (opencode plugin files are also recognised on disk) (`manifest.Load` in `cli/internal/manifest/manifest.go`, `loadOldManifest` in `cli/cmd/backup.go`). Malformed `settings.json` or opencode `config.json` is read with `json.Unmarshal(...) //nolint:errcheck` and treated as empty (`cli/internal/hooks/installer.go`, `cli/internal/mcp/opencode.go`). A missing `devexp.config.json` warns and uses the defaults (`cli/cmd/install.go`). Backup failures are ignored (`cli/cmd/backup.go`). The reason is recorded in the doc comments:
 
 ```go
-// Load reads a manifest from path. A missing file is not an error — it
-// returns an empty Manifest, which is the expected state on a first install
-// or when upgrading from a devexp version that predates manifests. A
-// malformed file is tolerated the same way, so a corrupt cache file never
-// blocks install.
+// A file that exists but can't be read or parsed returns an empty Manifest
+// together with the error, so the caller can warn and still install. The
+// manifest is empty rather than whatever decoded before the error (a type
+// mismatch leaves earlier fields filled in): an untrustworthy manifest must
+// never mark files as stale, and an empty one marks none.
 ```
 — `cli/internal/manifest/manifest.go`
 
