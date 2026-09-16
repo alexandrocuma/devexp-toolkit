@@ -10,7 +10,7 @@ set -euo pipefail
 
 input=$(cat)
 
-content=$(echo "$input" | python3 -c "
+content=$(echo "$input" | python3 -I -c "
 import sys, json
 d = json.load(sys.stdin)
 ti = d.get('tool_input', {})

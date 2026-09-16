@@ -177,6 +177,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Phase 8 and the report Phase 9. Retirement requires every target shipped or
   skipped, not just a successful tag.
 
+## [0.7.1] - 2026-09-16
+
+### Security
+
+- **Harden hook input handling** (#119). A Claude Code hook script could let
+  tool-supplied values be interpreted as code under crafted input. Such values
+  are now passed to the hook's interpreter strictly as data.
+- **Harden hook interpreter isolation** (#119). Every Python-based Claude Code
+  hook now runs its interpreter in isolated mode, so hook interpreters ignore
+  modules in the project directory (and `PYTHON*` variables and user
+  site-packages, which no hook needs; tools a hook launches still get the full
+  environment).
+- **Harden path handling** (#119). The on-save hooks and the large-file guard
+  now act on the exact path they are given.
+- Decisions for legitimate inputs are unchanged. All Claude Code and opencode
+  hooks were audited; the opencode modules are not affected. Regression tests
+  cover hostile input shapes, interpreter isolation for every hook, and exact
+  path handling. The hook authoring guide now documents these rules and the
+  fail-closed/fail-open contract for internal errors. Re-run `./install.sh` (or
+  update the CLI) to deploy the fix.
+
 ## [0.7.0] - 2026-09-15
 
 ### Added

@@ -7,7 +7,7 @@ set -euo pipefail
 
 input=$(cat)
 
-command=$(echo "$input" | python3 -c \
+command=$(echo "$input" | python3 -I -c \
     "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))") || {
     echo "[devexp dangerous-cmd-guard] internal error -- the guard could not read its input, so it did not run. Blocking to be safe; the interpreter's error is above." >&2
     exit 2

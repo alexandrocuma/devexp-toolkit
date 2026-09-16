@@ -147,7 +147,8 @@ This front-loads grounding when the agent knows least about the codebase, and ea
    set -euo pipefail
    input=$(cat)
    # hard block: echo "reason" >&2; exit 2
-   # soft block: python3 -c "print(json.dumps({'hookSpecificOutput': {'permissionDecision': 'ask'}}))"
+   # soft block: python3 -I -c "import json; print(json.dumps({'hookSpecificOutput': {'permissionDecision': 'ask'}}))"
+   # tool values go in as data, never into program text — see docs/development/hook-authoring-guide.md
    exit 0
    ```
 

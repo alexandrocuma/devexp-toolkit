@@ -92,6 +92,17 @@ For `Write`: `tool_input.file_path`, `tool_input.content`
 For `Edit`: `tool_input.file_path`, `tool_input.old_string`, `tool_input.new_string`
 For `Bash`: `tool_input.command`
 
+### Treat tool input as data, never as code
+
+Every value in `tool_input` — paths, commands, content — is untrusted. Never expand one into program text: not inside a `python3 -c "..."` string, not through `eval`, `bash -c` or an unquoted expansion. Pass it as data instead — on stdin, as an argument (`python3 -I - "$value" <<'PY'` with a **quoted** heredoc delimiter, then `sys.argv[1]`), or through the environment — and always quote shell expansions (`"$value"`). In opencode modules, use `execFileSync`/`spawnSync` with an argument array, never a shell string.
+
+Two more rules for the Python calls:
+
+- **Always run the interpreter isolated: `python3 -I`.** Hooks run with the project as their working directory; isolated mode keeps the interpreter from importing anything from the project. It also ignores `PYTHON*` environment variables and the user's site-packages; hooks use only the standard library, so they lose nothing. Child processes still inherit the full environment, so project tools a hook launches (formatters, linters, test runners) find their configuration as before.
+- **Keep paths byte-exact.** `$(...)` trims trailing newlines, which are legal in file names. When extracting a path, have Python write it with a one-character suffix and strip that suffix in bash (see the boilerplate below).
+
+`hooks/claude-code/interpreter-isolation.test.sh` fails for any hook that starts `python3` without isolation, or that is not listed in it — add new hooks there.
+
 ### Response types
 
 **Hard block** — tool call is cancelled, reason shown to Claude:
@@ -100,16 +111,18 @@ echo "[devexp my-guard] Blocked: reason here." >&2
 exit 2
 ```
 
-**Soft block (ask)** — Claude pauses and shows a confirmation prompt to the user:
+**Soft block (ask)** — Claude pauses and shows a confirmation prompt to the user. Values go in as arguments; the quoted `<<'PY'` delimiter stops bash expanding anything inside the script:
 ```bash
-python3 -c "
-import json
+python3 -I - "$file_path" <<'PY' || { echo "[devexp my-guard] internal error -- could not build the prompt, skipping. The interpreter's error is above." >&2; exit 0; }
+import json, sys
+file_path = sys.argv[1]
 print(json.dumps({
     'hookSpecificOutput': {
         'permissionDecision': 'ask',
-        'permissionDecisionReason': '[devexp my-guard] Reason. Confirm this is intentional.'
+        'permissionDecisionReason': '[devexp my-guard] About to change "' + file_path + '". Confirm this is intentional.'
     }
-}))"
+}))
+PY
 exit 0
 ```
 
@@ -136,18 +149,30 @@ set -euo pipefail
 
 input=$(cat)
 
-command=$(echo "$input" | python3 -c \
-    "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('command',''))") || {
+# The trailing "x" keeps $(...) from trimming newlines that belong to the value.
+command=$(echo "$input" | python3 -I -c \
+    "import sys,json; d=json.load(sys.stdin); sys.stdout.write(str(d.get('tool_input',{}).get('command','')) + 'x')") || {
+    # A guard must fail CLOSED: an empty value would make every check pass.
     echo "[devexp my-guard] internal error -- the guard could not read its input, so it did not run. Blocking to be safe; the interpreter's error is above." >&2
     exit 2
 }
+command=${command%x}
 
 # Guard logic here...
 
 exit 0
 ```
 
-**Failing on bad input.** Never collapse a failed extraction to an empty string (`2>/dev/null || echo ""`): an empty result looks like "nothing to block" and silently allows the operation. Security guards fail **closed** (`exit 2`, as above — see `hooks/claude-code/secret-guard.sh`); advisory hooks fail **open but loud** (print `internal error … skipping` and `exit 0` — see `hooks/claude-code/lint-on-save.sh`). `hooks/claude-code/fail-closed.test.sh` enforces this; rationale in [conventions → Error Handling](conventions.md#error-handling).
+If the interpreter fails, never swallow it (`2>/dev/null || echo ""` turns a crash into "nothing to block"). Follow the contract `hooks/claude-code/fail-closed.test.sh` enforces:
+
+| Hook kind | On internal error |
+|-----------|-------------------|
+| Guard (blocks something) | `exit 2` and print `internal error` to stderr — fail closed |
+| Advisory (asks, formats, lints, tests) | `exit 0` and print `internal error` to stderr — fail open, but loudly |
+
+Add every new hook to `fail-closed.test.sh` with its kind.
+
+Examples: `hooks/claude-code/secret-guard.sh` (guard) and `hooks/claude-code/lint-on-save.sh` (advisory); rationale in [conventions → Error Handling](conventions.md#error-handling).
 
 ---
 
