@@ -57,6 +57,7 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 	}
 
 	pruned := pruneStaleHooks(hooksMap, repoDir, dryRun)
+	pruned = pruneForeignDevexpHooks(hooksMap, registry, repoDir, dryRun) || pruned
 
 	isDisabled := func(name string) bool {
 		for _, d := range disabled {
@@ -183,4 +184,86 @@ func isStaleDevexpHook(cmd, repoDir string) bool {
 	}
 	_, statErr := os.Stat(cmd)
 	return os.IsNotExist(statErr)
+}
+
+// scriptDir is the one directory every claude_code.script in the registry
+// lives under. Requiring it in a command path keeps the basename match below
+// from ever catching a user hook that merely shares a filename.
+const scriptDir = "hooks/claude-code/"
+
+// managedScriptNames collects the basename of every script the registry knows
+// about — including disabled hooks, whose foreign-root copies would otherwise
+// keep running after the hook was turned off.
+func managedScriptNames(registry Registry) map[string]bool {
+	names := map[string]bool{}
+	for _, h := range registry {
+		if s := h.ClaudeCode.Script; s != "" {
+			names[filepath.Base(s)] = true
+		}
+	}
+	return names
+}
+
+// isForeignDevexpHook reports whether cmd is a devexp-managed hook registered
+// from a *different* install root than repoDir — the copy a release-binary
+// install leaves behind when the same machine is later installed from a clone.
+//
+// The registry admits exactly one script per hook, so a second registration of
+// the same script under another root is a duplicate by definition: both fire,
+// and the one outside repoDir is never refreshed again. It is identified by
+// registry basename plus the registry's own script directory, so a user hook
+// that happens to share a filename is untouched.
+func isForeignDevexpHook(cmd string, managed map[string]bool, repoDir string) bool {
+	if !managed[filepath.Base(cmd)] {
+		return false
+	}
+	if !strings.Contains(filepath.ToSlash(cmd), scriptDir) {
+		return false
+	}
+	rel, err := filepath.Rel(repoDir, cmd)
+	if err != nil {
+		return false
+	}
+	// Under repoDir: it is the copy being installed, not a foreign duplicate.
+	return strings.HasPrefix(rel, "..")
+}
+
+// pruneForeignDevexpHooks removes devexp-managed registrations that point at an
+// install root other than repoDir. Without this, a clone install can never
+// clean up a release-binary install's entries: they sit outside repoDir, so
+// pruneStaleHooks refuses to touch them, and they go stale permanently while
+// still executing.
+func pruneForeignDevexpHooks(hooksMap map[string][]hookEntry, registry Registry, repoDir string, dryRun bool) bool {
+	managed := managedScriptNames(registry)
+	pruned := false
+	for event, entries := range hooksMap {
+		var kept []hookEntry
+		for _, e := range entries {
+			var keptCmds []hookCmd
+			for _, h := range e.Hooks {
+				if isForeignDevexpHook(h.Command, managed, repoDir) {
+					msg := fmt.Sprintf("%s: %s (duplicate from another install root)", event, filepath.Base(h.Command))
+					if dryRun {
+						ui.DryRun("remove " + msg)
+					} else {
+						ui.Removed(msg)
+					}
+					pruned = true
+					continue
+				}
+				keptCmds = append(keptCmds, h)
+			}
+			if len(keptCmds) == 0 {
+				continue
+			}
+			e.Hooks = keptCmds
+			kept = append(kept, e)
+		}
+		if len(kept) == 0 {
+			delete(hooksMap, event)
+		} else {
+			hooksMap[event] = kept
+		}
+	}
+	return pruned
 }

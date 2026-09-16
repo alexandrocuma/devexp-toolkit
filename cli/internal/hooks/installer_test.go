@@ -322,3 +322,143 @@ func TestInstallClaude(t *testing.T) {
 		})
 	}
 }
+
+func testRegistry() Registry {
+	return Registry{
+		{Name: "secret-guard", Enabled: true, ClaudeCode: HookCC{
+			Event: "PreToolUse", Matcher: "Read|Bash", Script: "hooks/claude-code/secret-guard.sh"}},
+		{Name: "dangerous-cmd-guard", Enabled: true, ClaudeCode: HookCC{
+			Event: "PreToolUse", Matcher: "Bash", Script: "hooks/claude-code/dangerous-cmd-guard.sh"}},
+		// Disabled on purpose: a foreign copy of a disabled hook still runs,
+		// so it must still be pruned.
+		{Name: "graphify-read-guard", Enabled: false, ClaudeCode: HookCC{
+			Event: "PreToolUse", Matcher: "Read|Glob", Script: "hooks/claude-code/graphify-read-guard.sh"}},
+	}
+}
+
+func TestIsForeignDevexpHook(t *testing.T) {
+	repoDir := t.TempDir()
+	otherRoot := t.TempDir()
+	managed := managedScriptNames(testRegistry())
+
+	tests := map[string]struct {
+		cmd  string
+		want bool
+	}{
+		"devexp hook registered from another install root is foreign": {
+			cmd:  filepath.Join(otherRoot, "hooks", "claude-code", "secret-guard.sh"),
+			want: true,
+		},
+		"the same hook under repoDir is not foreign": {
+			cmd:  filepath.Join(repoDir, "hooks", "claude-code", "secret-guard.sh"),
+			want: false,
+		},
+		"a disabled hook from another root is still foreign": {
+			cmd:  filepath.Join(otherRoot, "hooks", "claude-code", "graphify-read-guard.sh"),
+			want: true,
+		},
+		"user hook sharing a basename but outside the script dir is untouched": {
+			cmd:  filepath.Join(otherRoot, "my-hooks", "secret-guard.sh"),
+			want: false,
+		},
+		"unknown script inside the script dir is untouched": {
+			cmd:  filepath.Join(otherRoot, "hooks", "claude-code", "my-own-hook.sh"),
+			want: false,
+		},
+		// A sibling directory shares a string prefix with repoDir without being
+		// nested in it — a naive strings.HasPrefix would wrongly call this ours.
+		"sibling root sharing a path prefix is foreign": {
+			cmd:  repoDir + "-old/hooks/claude-code/secret-guard.sh",
+			want: true,
+		},
+		"empty command is not foreign": {
+			cmd:  "",
+			want: false,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := isForeignDevexpHook(tt.cmd, managed, repoDir); got != tt.want {
+				t.Errorf("isForeignDevexpHook(%q) = %v, want %v", tt.cmd, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPruneForeignDevexpHooks(t *testing.T) {
+	repoDir := t.TempDir()
+	otherRoot := t.TempDir()
+	registry := testRegistry()
+
+	mine := filepath.Join(repoDir, "hooks", "claude-code", "secret-guard.sh")
+	foreign := filepath.Join(otherRoot, "hooks", "claude-code", "secret-guard.sh")
+	foreignDisabled := filepath.Join(otherRoot, "hooks", "claude-code", "graphify-read-guard.sh")
+	userHook := filepath.Join(otherRoot, "my-hooks", "secret-guard.sh")
+
+	tests := map[string]struct {
+		hooksMap   hooksMapT
+		wantHooks  hooksMapT
+		wantPruned bool
+	}{
+		"removes the foreign duplicate and keeps ours": {
+			hooksMap: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: foreign}}},
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: mine}}},
+			}},
+			wantHooks: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: mine}}},
+			}},
+			wantPruned: true,
+		},
+		"prunes a foreign copy of a disabled hook": {
+			hooksMap: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Glob", Hooks: []hookCmd{{Type: "command", Command: foreignDisabled}}},
+			}},
+			wantHooks:  hooksMapT{},
+			wantPruned: true,
+		},
+		"keeps a user hook that merely shares a basename": {
+			hooksMap: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: userHook}}},
+			}},
+			wantHooks: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: userHook}}},
+			}},
+			wantPruned: false,
+		},
+		"an entry holding both keeps only the user command": {
+			hooksMap: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{
+					{Type: "command", Command: foreign},
+					{Type: "command", Command: userHook},
+				}},
+			}},
+			wantHooks: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: userHook}}},
+			}},
+			wantPruned: true,
+		},
+		"nothing foreign means nothing pruned": {
+			hooksMap: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: mine}}},
+			}},
+			wantHooks: hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: mine}}},
+			}},
+			wantPruned: false,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := pruneForeignDevexpHooks(tt.hooksMap, registry, repoDir, false)
+			if got != tt.wantPruned {
+				t.Errorf("pruneForeignDevexpHooks() pruned = %v, want %v", got, tt.wantPruned)
+			}
+			if !reflect.DeepEqual(tt.hooksMap, tt.wantHooks) {
+				t.Errorf("hooksMap = %+v, want %+v", tt.hooksMap, tt.wantHooks)
+			}
+		})
+	}
+}

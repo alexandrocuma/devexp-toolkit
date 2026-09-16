@@ -252,6 +252,26 @@ import json, sys, os
 repo_dir      = sys.argv[1]
 settings_path = sys.argv[2]
 
+# Identify devexp hooks by what the registry says they are, not by where they
+# happen to live. Matching only on repo_dir left behind any registration made
+# by an earlier release-binary install, which then ran forever from a stale
+# cache -- see issue #93. Disabled hooks are included: their foreign-root
+# copies must go too.
+SCRIPT_DIR = 'hooks/claude-code/'
+try:
+    with open(os.path.join(repo_dir, 'hooks', 'registry.json')) as f:
+        managed = {
+            os.path.basename(h['claude_code']['script'])
+            for h in json.load(f)
+            if h.get('claude_code', {}).get('script')
+        }
+except (OSError, json.JSONDecodeError, KeyError):
+    print("  [skip] could not read hooks/registry.json")
+    sys.exit(0)
+
+def is_devexp_hook(cmd):
+    return bool(cmd) and os.path.basename(cmd) in managed and SCRIPT_DIR in cmd.replace('\\', '/')
+
 with open(settings_path) as f:
     try:
         settings = json.load(f)
@@ -268,15 +288,20 @@ changed = False
 for event, hook_list in list(hooks_section.items()):
     filtered = []
     for entry in hook_list:
-        cmd = ''
-        if entry.get('hooks'):
-            cmd = entry['hooks'][0].get('command', '')
-        # Remove entries whose command path lives inside the devexp repo
-        if repo_dir in cmd:
-            script_name = os.path.basename(cmd)
-            print(f"  \033[0;31m-\033[0m {event}: {script_name}")
-            changed = True
-        else:
+        # Filter per command, not by entry['hooks'][0]: an entry may hold more
+        # than one, and judging it by its first silently mishandles the rest.
+        kept_cmds = []
+        for h in entry.get('hooks', []):
+            cmd = h.get('command', '')
+            if is_devexp_hook(cmd):
+                print(f"  \033[0;31m-\033[0m {event}: {os.path.basename(cmd)}")
+                changed = True
+            else:
+                kept_cmds.append(h)
+        if not entry.get('hooks'):
+            filtered.append(entry)
+        elif kept_cmds:
+            entry['hooks'] = kept_cmds
             filtered.append(entry)
     hooks_section[event] = filtered
 
