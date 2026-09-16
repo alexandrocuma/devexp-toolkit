@@ -54,7 +54,7 @@ func selectTargets(hasClaude, hasOpencode bool, choice string) (claude, opencode
 
 - **Author in Claude Code format only.** opencode copies are generated at install time: agent frontmatter is rewritten by `transformForOpencode` (`cli/internal/agents/installer.go`), and skills are reduced to `SKILL.md` saved as `commands/<name>.md` (`cli/internal/skills/installer.go`, `InstallOpencode`). Anything a skill needs to work must therefore be in `SKILL.md`, because `references/` files reach Claude Code only (`docs/reference/skills.md`, "Adding a New Skill"). opencode-only agents go in `agents/opencode/` (`InstallOpencodeExclusive`).
 - **Agents are run by reading the file, never spawned by name.** A custom agent name is not a valid `subagent_type`. Skills and agents read `~/.claude/agents/<name>.md` and follow it in the current context. See `skills/devxp/SKILL.md` ("read `~/.claude/agents/gen-docs.md` … and follow their instructions"), `agents/README.md` ("Critical"), and `CLAUDE.md`.
-- **A hook is four touch points:** the `.sh` script, the `.js` module, the import plus `Promise.all([...])` entry in `hooks/opencode/devexp-plugin.js`, and the `hooks/registry.json` entry. The step list is in [workflows](../guides/workflows.md#add-a-hook).
+- **A hook is three touch points:** the `.sh` script, the `.js` module, and the `hooks/registry.json` entry, including the `opencode` mapping (`module`, `export`, and `fail_closed` for security guards). The opencode entry (`hooks/opencode/devexp-plugin.js`) composes from the installed selection, so it is never edited per hook. The step list is in [workflows](../guides/workflows.md#add-a-hook).
 - **The source repo is the only place to edit.** `~/.claude/agents/`, `~/.claude/skills/` and `~/.config/opencode/` hold copies that the next install overwrites (`agents.InstallClaude` writes with `os.WriteFile`; `skills.CopyDir` copies the whole directory).
 - **Documentation:** `CLAUDE.md` holds only an index. Everything else goes in `docs/`, and every docs folder has a `README.md` index with a Status column. See [docs-architecture](../guides/docs-architecture.md) and `docs/development/README.md`.
 
@@ -100,7 +100,7 @@ command=$(echo "$input" | python3 -c \
 ```
 — `hooks/claude-code/dangerous-cmd-guard.sh`
 
-- **Post-edit hooks never block.** JS `file.edited` handlers are "Advisory only — never throws" (`hooks/opencode/lint-on-save.js`). A guard that fails in opencode stops the chain, because handlers run one after another and the first throw wins (`hooks/opencode/devexp-plugin.js`).
+- **Post-edit hooks never block.** JS `file.edited` handlers are "Advisory only — never throws" (`hooks/opencode/lint-on-save.js`). A guard that fails in opencode stops the chain, because handlers run one after another and the first throw wins (`hooks/opencode/devexp-plugin.js`). opencode modules never spawn synchronously — opencode runs plugins in its server process — so they `await` `runCommand` / `which` / `runLinter` from `hooks/opencode/utils.js`.
 
 ## Logging & Observability
 

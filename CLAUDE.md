@@ -38,7 +38,7 @@ Sources: `install.sh`, `cli/cmd/install.go`, `.github/workflows/ci.yml`. Full li
 - **Always** re-run `./install.sh` after editing `agents/`, `skills/` or `hooks/` — it is idempotent — see [workflows](docs/guides/workflows.md#ground-rules-every-change)
 - **Never** edit deployed copies (`~/.claude/agents/`, `~/.claude/skills/`, `~/.config/opencode/`) — edit source here; the next install overwrites them — see [conventions](docs/development/conventions.md#module-structure)
 - **Never** call the `Agent` tool with a custom agent name as `subagent_type` — read `agents/<name>.md` and follow it in the current context — see `agents/README.md`, [conventions](docs/development/conventions.md#module-structure)
-- **Always** import a new hook in `hooks/opencode/devexp-plugin.js` and add it to `Promise.all([...])` — see [workflows](docs/guides/workflows.md#add-a-hook)
+- **Always** give a new hook an `opencode.module` + `opencode.export` (and `fail_closed` for security guards) in `hooks/registry.json` — see [workflows](docs/guides/workflows.md#add-a-hook)
 - **Always** add a `CHANGELOG.md` entry under `[Unreleased]` in the same commit — see [conventions](docs/development/conventions.md#commits--branches)
 - **Never** put knowledge in `CLAUDE.md` — directives and pointers only; content goes in `docs/` — see [docs-architecture](docs/guides/docs-architecture.md)
 - **Before marking work done:** all four CI suites pass — see [testing](docs/development/testing.md#before-every-commit)

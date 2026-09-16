@@ -34,15 +34,14 @@ New slash commands should be rare. First check whether the capability fits insid
 
 ### Add a hook
 
-Full guide: [hook-authoring-guide](../development/hook-authoring-guide.md#deployment-checklist). Every hook has four touch points, and **step 3 is the one people miss**:
+Full guide: [hook-authoring-guide](../development/hook-authoring-guide.md#deployment-checklist). Every hook has three touch points, and **the `opencode` mapping in step 3 is the one people miss**:
 
 1. `hooks/claude-code/<hook-name>.sh`: start with the `# devexp hook:` / `# Event: … | Matcher: …` header and `set -euo pipefail`, then `chmod +x`. A security guard must fail closed (`exit 2`) if it can't parse its input, and an advisory hook fails open but prints an internal error ([conventions](../development/conventions.md#error-handling)).
 2. `hooks/opencode/<hook-name>.js`: export `async function <hookName>(_ctx)` that returns the event handlers, using `hooks/opencode/utils.js` for shared helpers.
-3. **`hooks/opencode/devexp-plugin.js`**: import the module, add `<hookName>(ctx)` to the `Promise.all([...])` array, and add a line to the header comment. Without this, opencode silently lacks the hook. (Today the Go CLI doesn't deploy the plugin at all; see [overview → Known gaps](../architecture/overview.md#known-gaps). Keep the plugin correct anyway.)
-4. Add an entry to `hooks/registry.json` with `name`, `description`, `claude_code{event,matcher,script}`, `opencode{event,plugin}` and `enabled`. The Go installer reads only `claude_code` and `enabled` (`cli/internal/hooks/installer.go`).
-5. Write tests. Add a mirrored `<hook-name>.test.sh` and `<hook-name>.test.js` for the decision logic (pattern: `hooks/claude-code/secret-guard.test.sh` ↔ `hooks/opencode/secret-guard.test.js`). If the script extracts input with python3, add a `check <hook-name> 2 guard` or `check <hook-name> 0 advisory` line to `hooks/claude-code/fail-closed.test.sh`. CI runs every `*.test.sh` / `*.test.js` automatically (`.github/workflows/ci.yml`). How to write them: [testing](../development/testing.md).
-6. Update the hook catalog and counts: `docs/reference/hooks.md` (catalog table and file tree), `hooks/README.md`, `README.md` ("10 hooks") and `CLAUDE.md` ("10 safety guards").
-7. Run `./install.sh`, then check that the hook appears in `~/.claude/settings.json` and exercise both the block and allow paths.
+3. Add an entry to `hooks/registry.json` with `name`, `description`, `claude_code{event,matcher,script}`, **`opencode{event,module,export,fail_closed?,enabled?}`** and `enabled`. `module` is `hooks/opencode/<hook-name>.js`, `export` is `<hookName>`, and security guards set `fail_closed: true`. Without the `opencode` mapping, opencode silently lacks the hook: `hooks/opencode/devexp-plugin.js` composes only the modules the installed selection lists, so it is never edited per hook. The Go installer parses every target block into `hooks.Hook.Targets`; the Claude Code install uses `claude_code` and the top-level `enabled` (`cli/internal/hooks/installer.go`). (Today the Go CLI doesn't deploy the opencode plugin at all; see [overview → Known gaps](../architecture/overview.md#known-gaps). Keep the mapping correct anyway.)
+4. Write tests. Add a mirrored `<hook-name>.test.sh` and `<hook-name>.test.js` for the decision logic (pattern: `hooks/claude-code/secret-guard.test.sh` ↔ `hooks/opencode/secret-guard.test.js`). If the script extracts input with python3, add a `check <hook-name> 2 guard` or `check <hook-name> 0 advisory` line to `hooks/claude-code/fail-closed.test.sh`. CI runs every `*.test.sh` / `*.test.js` automatically (`.github/workflows/ci.yml`). How to write them: [testing](../development/testing.md).
+5. Update the hook catalog and counts: `docs/reference/hooks.md` (catalog table and file tree), `hooks/README.md`, `README.md` ("10 hooks") and `CLAUDE.md` ("10 safety guards").
+6. Run `./install.sh`, then check that the hook appears in `~/.claude/settings.json` and exercise both the block and allow paths.
 
 ### Add an MCP server
 
@@ -85,7 +84,7 @@ There's no database, so there are no migrations. The "data model" is the JSON an
 
 | Schema | Go definition | Also update |
 |--------|---------------|-------------|
-| `hooks/registry.json` entries | `hooks.Hook` / `hooks.HookCC` in `cli/internal/hooks/installer.go` | Registry format in `docs/reference/hooks.md` and `docs/development/hook-authoring-guide.md` |
+| `hooks/registry.json` entries | `hooks.Hook` / `hooks.TargetSpec` (per-target map `Hook.Targets`, one sibling block per install target) in `cli/internal/hooks/installer.go` | Registry format in `docs/reference/hooks.md` and `docs/development/hook-authoring-guide.md` |
 | MCP entries (`mcps/registry.json` and `mcps` in `devexp.config.json`) | `mcp.MCP` in `cli/internal/mcp/types.go` | `mcps.items` in `devexp.config.schema.json` (it has `additionalProperties: false`, so leaving it out rejects the new field), the field reference in `docs/development/mcp-guide.md`, `docs/reference/mcps.md` |
 | `devexp.config.json` | `config.Config` + viper keys in `config.Load` (`cli/internal/config/config.go`) | `devexp.config.schema.json`, `devexp.config.json` (default value), the Fields table in `docs/guides/team-distribution.md` |
 | Install manifest `~/.claude/.devexp-manifest.json` | `manifest.Manifest` in `cli/internal/manifest/manifest.go` | Nothing else. Keep `Load` tolerant, so a missing or old manifest loads as empty and the next install records a new baseline |
