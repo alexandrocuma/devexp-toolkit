@@ -37,3 +37,9 @@ jobs:
           for f in hooks/opencode/*.test.js; do
             echo "== $f"; node "$f" || exit 1
           done
+      - name: installer script tests
+        run: |
+          for f in ./*.test.sh; do
+            [ -e "$f" ] || continue
+            echo "== $f"; bash "$f" || exit 1
+          done

@@ -23,6 +23,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A clone install can now clean up hook registrations left by a release-binary
+  install.** The two installs use different roots: a release binary extracts its
+  assets to the user cache and registers commands there, while a clone registers
+  commands inside the clone. Both sets survived, so every hook ran twice — once
+  current, once frozen at whatever the other root last held. On the machine that
+  surfaced this, `settings.json` carried **14 registrations for 7 hooks**, the
+  second set three months stale, and `./install.sh` reported
+  `[skip] already registered` for all of them while changing nothing.
+  - **Why it was unreachable:** `isStaleDevexpHook` prunes only commands *under*
+    `repoDir` whose script is missing. A foreign-root command yields a
+    `..`-prefixed relative path, so the function returned `false` immediately and
+    the entry could never be touched. The intent — don't delete hooks you don't
+    own — was right; the premise was wrong, because devexp *did* write these,
+    just from a different root.
+  - **The fix:** identify a devexp hook by what the registry says it is — a
+    `claude_code.script` basename plus the registry's own `hooks/claude-code/`
+    directory — rather than by path prefix. A registration matching that outside
+    the current root is a duplicate by definition, since the registry admits one
+    script per hook, and is removed. Disabled hooks are included: a foreign copy
+    of a disabled hook still runs.
+  - **`uninstall.sh` had the mirror-image bug**, matching `if repo_dir in cmd`,
+    so uninstalling from a clone stripped the *working* registrations and left
+    the stale ones behind — worse than doing nothing. It now uses the same
+    predicate. A second defect there is fixed in passing: it judged each entry by
+    `entry['hooks'][0]` alone, so any additional command in the same entry was
+    handled by accident rather than on its merits.
+  - Covered by `TestIsForeignDevexpHook`, `TestPruneForeignDevexpHooks` and a new
+    `uninstall.test.sh`, including a user hook that merely shares a basename, an
+    entry holding both a devexp and a user command in either order, and a sibling
+    root sharing a path prefix without being nested — the case a `strings.HasPrefix`
+    check would have got wrong. `uninstall.test.sh` runs in CI via a new step, so
+    the uninstaller has coverage for the first time.
+
 - **Hooks no longer fail open silently.** Every shell hook extracted its decision
   input by piping the tool envelope through `python3`, wrapped as
   `2>/dev/null || echo ""`. Any interpreter failure — a syntax error, a missing
