@@ -253,8 +253,13 @@ if $REMOVE_OPENCODE && [[ -f "$REPO_DIR/mcps/registry.json" ]]; then
     if [[ -f "$config_path" ]]; then
         info "Removing MCP servers (opencode)..."
         python3 - "$REPO_DIR/mcps/registry.json" "$config_path" <<'PYEOF'
-import json, sys, os
+import json, sys, os, tempfile
 config_path = sys.argv[2]
+# Like the plugin step (removeLegacyConfigEntry), a symlinked config.json is
+# someone's dotfiles setup: never written through, never replaced.
+if os.path.islink(config_path):
+    print(f"  [skip] {config_path} is a symlink, so it was left untouched — remove the devexp MCP servers from it by hand")
+    sys.exit(0)
 try:
     with open(sys.argv[1]) as f:
         mcps = json.load(f)
@@ -277,10 +282,35 @@ for mcp in mcps:
         print(f"  \033[0;31m-\033[0m {name}")
     else:
         print(f"  [skip] {name} — not configured")
-if changed:
-    with open(config_path, 'w') as f:
+if not changed:
+    sys.exit(0)
+if not os.access(config_path, os.W_OK):
+    print(f"  [warn] {config_path} is not writable, so it was left untouched — remove the devexp MCP servers from it by hand")
+    sys.exit(0)
+# Replace atomically: a temp file in the same directory, fsync'd, given the
+# old file's mode, then renamed over it. An interrupted save leaves the old
+# file or the new one, never a truncated one, and no temp file.
+tmp = None
+try:
+    mode = os.stat(config_path).st_mode & 0o7777
+    fd, tmp = tempfile.mkstemp(prefix='.config.json.tmp-', dir=os.path.dirname(config_path))
+    with os.fdopen(fd, 'w') as f:
         json.dump(config, f, indent=2)
-    print(f"  Saved: {config_path}")
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(tmp, mode)
+    os.replace(tmp, config_path)
+    tmp = None
+except OSError as e:
+    print(f"  [warn] could not save {config_path}, so it was left untouched: {e}")
+    sys.exit(0)
+finally:
+    if tmp is not None:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+print(f"  Saved: {config_path}")
 PYEOF
         echo ""
     fi

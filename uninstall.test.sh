@@ -159,6 +159,67 @@ else
     python3 "$TMP/mcp.py" "$TMP/mcp-registry.json" "$TMP/mcp-config.json" >/dev/null 2>&1
     got="$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1])); print(c["theme"], sorted(c["mcp"]))' "$TMP/mcp-config.json" 2>&1)"
     if [ "$got" = "x ['mine']" ]; then ok; else ko "MCP block removes only registry MCPs" "$got"; fi
+
+    # mcp_run <dir>: runs the block on <dir>/config.json; output in <dir>.out,
+    # exit code in <dir>.rc.
+    mcp_run() {
+        python3 "$TMP/mcp.py" "$TMP/mcp-registry.json" "$1/config.json" > "$1.out" 2>&1
+        echo $? > "$1.rc"
+    }
+    mode_of() { python3 -c 'import os,sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$1"; }
+
+    # The save is atomic: a replaced file (a hard link keeps the old bytes), the
+    # old mode, and no temp file left behind.
+    D="$TMP/mcp-atomic"; mkdir -p "$D"
+    printf '%s' '{"theme":"x","mcp":{"context7":{},"mine":{}}}' > "$D/config.json"
+    chmod 640 "$D/config.json"; ln "$D/config.json" "$D/hardlink"
+    mcp_run "$D"
+    got="$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1])); print(c["theme"], sorted(c["mcp"]))' "$D/config.json" 2>&1)"
+    if [ "$(cat "$D.rc")" = 0 ] && [ "$got" = "x ['mine']" ] \
+        && [ "$(cat "$D/hardlink")" = '{"theme":"x","mcp":{"context7":{},"mine":{}}}' ] \
+        && [ "$(mode_of "$D/config.json")" = 0o640 ] \
+        && [ "$(ls -A "$D" | tr '\n' ' ')" = "config.json hardlink " ]; then
+        ok
+    else
+        ko "MCP block saves by replacing the file atomically, keeping its mode, leaving no temp file" \
+           "rc=$(cat "$D.rc") got=$got mode=$(mode_of "$D/config.json") files=$(ls -A "$D" | tr '\n' ' ')"
+    fi
+
+    # A symlinked config.json (dotfiles) is left alone, like the plugin step does.
+    D="$TMP/mcp-symlink"; mkdir -p "$D" "$TMP/mcp-dotfiles"
+    printf '%s' '{"mcp":{"context7":{}}}' > "$TMP/mcp-dotfiles/config.json"
+    ln -s "$TMP/mcp-dotfiles/config.json" "$D/config.json"
+    mcp_run "$D"
+    if [ "$(cat "$D.rc")" = 0 ] && [ -L "$D/config.json" ] \
+        && [ "$(cat "$TMP/mcp-dotfiles/config.json")" = '{"mcp":{"context7":{}}}' ] \
+        && grep -qF "is a symlink, so it was left untouched" "$D.out" \
+        && [ "$(ls -A "$TMP/mcp-dotfiles")" = "config.json" ]; then
+        ok
+    else
+        ko "MCP block leaves a symlinked config.json and its target untouched, with a warning" "$(cat "$D.out")"
+    fi
+
+    # Read-only config.json, or a directory where no temp file can be made:
+    # a warning, exit 0, the file unchanged, nothing left behind.
+    for ro in file dir; do
+        D="$TMP/mcp-ro-$ro"; mkdir -p "$D"
+        printf '%s' '{"mcp":{"context7":{}}}' > "$D/config.json"
+        if [ "$ro" = file ]; then chmod 444 "$D/config.json"; else chmod 555 "$D"; fi
+        if [ "$ro" = dir ] && ( : > "$D/.probe" ) 2>/dev/null; then
+            rm -f "$D/.probe"; chmod 755 "$D"
+            echo "SKIP MCP block with a read-only $ro (permissions not enforced, running as root?)"
+            continue
+        fi
+        mcp_run "$D"
+        files="$(ls -A "$D" | tr '\n' ' ')"
+        chmod 755 "$D"; chmod 644 "$D/config.json"
+        if [ "$(cat "$D.rc")" = 0 ] && [ "$(cat "$D/config.json")" = '{"mcp":{"context7":{}}}' ] \
+            && [ "$files" = "config.json " ] && grep -qF "[warn]" "$D.out" && ! grep -qF "Traceback" "$D.out"; then
+            ok
+        else
+            ko "MCP block with a read-only $ro warns, exits 0 and leaves config.json alone" "rc=$(cat "$D.rc") files=$files $(cat "$D.out")"
+        fi
+    done
 fi
 
 # ── Harness: uninstall.sh in a temp HOME with stub devexp binaries ───────────
@@ -210,9 +271,10 @@ STUB
 }
 
 # run_uninstall [VAR=value ...]: uninstall.sh --yes with only these variables.
+# Stdin is /dev/null unless STDIN_FILE names a file (menu answers).
 run_uninstall() {
     env -i HOME="$E/h" PATH="$E/bin:/usr/bin:/bin" CALLS="$E/calls" "$@" \
-        /bin/bash "$E/r/uninstall.sh" --yes </dev/null > "$E/out" 2>&1
+        /bin/bash "$E/r/uninstall.sh" --yes <"${STDIN_FILE:-/dev/null}" > "$E/out" 2>&1
     echo $? > "$E/rc"
 }
 
@@ -305,6 +367,41 @@ check "agents install: agents removed" test ! -e "$E/h/.config/opencode/agents/s
 check "the plugin is removed before the MCP block runs" test -n "$plugin_line" -a -n "$mcp_line" -a "${plugin_line:-0}" -lt "${mcp_line:-0}"
 
 # ── Crash regressions ────────────────────────────────────────────────────────
+# A config.json the MCP step can't save used to abort the script (exit 1)
+# before the Claude Code hooks were removed. Choice [3] removes from both CLIs,
+# so every later step must still run.
+for ro in file dir; do
+    new_env
+    mkdir -p "$E/r/hooks/claude-code" "$E/h/.claude/agents" "$E/h/.config/opencode/agents"
+    printf '[{"name": "secret-guard", "enabled": true, "claude_code": {"event": "PreToolUse", "matcher": "Read", "script": "hooks/claude-code/secret-guard.sh"}}]' > "$E/r/hooks/registry.json"
+    printf '[{"name": "context7"}]' > "$E/r/mcps/registry.json"
+    printf '# agent\n' > "$E/r/agents/some-agent.md"
+    printf '# agent\n' > "$E/h/.claude/agents/some-agent.md"
+    printf '# agent\n' > "$E/h/.config/opencode/agents/some-agent.md"
+    printf '{"hooks":{"PreToolUse":[{"matcher":"Read","hooks":[{"type":"command","command":"%s/hooks/claude-code/secret-guard.sh"}]}]}}' "$E/r" > "$E/h/.claude/settings.json"
+    cfg='{"mcp":{"context7":{}}}'
+    printf '%s' "$cfg" > "$E/h/.config/opencode/config.json"
+    if [ "$ro" = file ]; then chmod 444 "$E/h/.config/opencode/config.json"; else chmod 555 "$E/h/.config/opencode"; fi
+    if [ "$ro" = dir ] && ( : > "$E/h/.config/opencode/.probe" ) 2>/dev/null; then
+        rm -f "$E/h/.config/opencode/.probe"; chmod 755 "$E/h/.config/opencode"
+        echo "SKIP uninstall.sh with a read-only config dir (permissions not enforced, running as root?)"
+        continue
+    fi
+    make_stub "$E/stubs/a" A
+    printf '3\n' > "$E/menu"
+    STDIN_FILE="$E/menu" run_uninstall DEVEXP_BIN="$E/stubs/a"
+    chmod 755 "$E/h/.config/opencode"; chmod 644 "$E/h/.config/opencode/config.json"
+    check "read-only config ($ro): exit 0" rc_is 0
+    check "read-only config ($ro): a warning, no traceback" out_lacks "Traceback"
+    check "read-only config ($ro): says it was left untouched" out_has "left untouched"
+    check "read-only config ($ro): config.json unchanged" test "$(cat "$E/h/.config/opencode/config.json")" = "$cfg"
+    check "read-only config ($ro): the later Claude Code hook step still ran" \
+        test "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("hooks"))' "$E/h/.claude/settings.json")" = "{}"
+    check "read-only config ($ro): both CLIs' agents removed" \
+        test ! -e "$E/h/.claude/agents/some-agent.md" -a ! -e "$E/h/.config/opencode/agents/some-agent.md"
+    check "read-only config ($ro): the run reaches the end" out_has "Uninstall complete."
+done
+
 new_env
 touch "$E/h/.config/opencode/plugins/devexp.js"
 printf '{not json' > "$E/h/.config/opencode/config.json"
