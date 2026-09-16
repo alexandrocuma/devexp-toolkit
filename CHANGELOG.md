@@ -23,6 +23,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Hooks no longer fail open silently.** Every shell hook extracted its decision
+  input by piping the tool envelope through `python3`, wrapped as
+  `2>/dev/null || echo ""`. Any interpreter failure — a syntax error, a missing
+  `python3`, a malformed envelope — collapsed to an empty string, which is
+  indistinguishable from *"ran fine, nothing to block."* The hook then exited 0
+  and allowed the operation, saying nothing. **Seven of ten shell hooks shared
+  the shape**, including all three security guards.
+  - **Guards now fail closed.** `secret-guard`, `secret-in-write-guard` and
+    `dangerous-cmd-guard` exit 2 with a named internal error. An empty extraction
+    makes every pattern check trivially pass, so allowing there would have
+    permitted precisely what each guard exists to stop — reading dotenv and
+    private-key files, writing API keys, and `rm -rf` / `git push --force`.
+  - **Advisory hooks fail open, but loudly.** `large-file-guard`,
+    `format-on-save`, `lint-on-save` and `test-on-save` still exit 0 — blocking
+    every `Write` because a formatter's parser broke would wedge the user — but
+    they now say the hook did not run.
+  - `2>/dev/null` was dropped throughout, so the interpreter's own error reaches
+    the terminal instead of being discarded.
+  - `hooks/claude-code/fail-closed.test.sh` asserts the exit code *and* that a
+    message was printed, for all seven, plus that a clean envelope still exits 0
+    quietly. The opencode hooks are unaffected: they run in-process and their
+    guards already propagate exceptions.
+
 - **`secret-guard` no longer blocks committed templates or bare mentions.** Two
   distinct false positives in the same guard, both of which obstructed without
   protecting anything:

@@ -15,7 +15,10 @@ import sys, json
 d = json.load(sys.stdin)
 ti = d.get('tool_input', {})
 print(ti.get('content', '') or ti.get('new_string', ''))
-" 2>/dev/null || echo "")
+") || {
+    echo "[devexp secret-in-write-guard] internal error -- the guard could not read its input, so it did not run. Blocking to be safe; the interpreter's error is above." >&2
+    exit 2
+}
 
 if [[ -z "$content" ]]; then
     exit 0

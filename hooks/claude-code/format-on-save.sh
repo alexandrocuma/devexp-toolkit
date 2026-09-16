@@ -16,8 +16,10 @@ set -euo pipefail
 input=$(cat)
 
 file_path=$(echo "$input" | python3 -c \
-    "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))" \
-    2>/dev/null || echo "")
+    "import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path',''))") || {
+    echo "[devexp format-on-save] internal error -- could not read hook input, skipping. The interpreter's error is above." >&2
+    exit 0
+}
 
 python3 - "$file_path" <<'PYFORMAT'
 import sys, os, shutil, subprocess

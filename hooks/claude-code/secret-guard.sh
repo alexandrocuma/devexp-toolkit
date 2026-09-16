@@ -107,7 +107,10 @@ elif tool_name == 'Bash':
         if hit:
             print(hit)
             break
-" 2>/dev/null || echo "")
+") || {
+    echo "[devexp secret-guard] internal error -- the guard could not read its input, so it did not run. Blocking to be safe; the interpreter's error is above." >&2
+    exit 2
+}
 
 if [[ -n "$result" ]]; then
     echo "[devexp secret-guard] Blocked access to \"$result\". This file may contain secrets. If intentional, confirm with the user first." >&2
