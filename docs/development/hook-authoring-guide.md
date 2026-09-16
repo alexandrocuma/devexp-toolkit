@@ -90,6 +90,10 @@ For `Write`: `tool_input.file_path`, `tool_input.content`
 For `Edit`: `tool_input.file_path`, `tool_input.old_string`, `tool_input.new_string`
 For `Bash`: `tool_input.command`
 
+### Treat tool input as data, never as code
+
+Every value in `tool_input` — paths, commands, content — is untrusted. Never expand one into program text: not inside a `python3 -c "..."` string, not through `eval`, `bash -c` or an unquoted expansion. Pass it as data instead — on stdin, as an argument (`python3 - "$file_path" <<'PY'` with a **quoted** heredoc delimiter, then `sys.argv[1]`), or through the environment — and always quote shell expansions (`"$file_path"`). In opencode modules, use `execFileSync`/`spawnSync` with an argument array, never a shell string.
+
 ### Response types
 
 **Hard block** — tool call is cancelled, reason shown to Claude:

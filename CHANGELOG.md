@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Harden hook input handling** (#119). A Claude Code hook script could let
+  tool-supplied values be interpreted as code under crafted input. Such values
+  are now passed to the hook's interpreter strictly as data, and the hook's
+  decisions for legitimate inputs are unchanged. All Claude Code and opencode
+  hooks were audited for the same class of issue; no other instance was found.
+  Regression tests cover hostile input shapes. Re-run `./install.sh` (or update
+  the CLI) to deploy the fix.
+
 ## [0.7.0] - 2026-09-15
 
 ### Added
