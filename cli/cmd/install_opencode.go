@@ -16,7 +16,10 @@ import (
 // ── opencode ──────────────────────────────────────────────────────────────────
 
 func doInstallOpencode(opts *installOpts) error {
-	p := opencodeTargetPaths(os.Getenv("HOME"))
+	p, err := opencodeTargetPaths(os.Getenv("HOME"))
+	if err != nil {
+		return err
+	}
 	agentsTarget := p.agents
 	skillsTarget := p.skills
 	configPath := p.config

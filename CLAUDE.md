@@ -49,7 +49,7 @@ Sources: `install.sh`, `cli/cmd/install.go`, `.github/workflows/ci.yml`. Full li
 
 - **`go build`/`go test` fail in a fresh clone or worktree** (`pattern all:agents: no matching files found`) — staged assets under `cli/internal/assets/` are gitignored; run `./scripts/stage-assets.sh` first — see `.gitignore`, [setup](docs/development/setup.md#troubleshooting)
 - **Go changes don't reach `bin/devexp`** — `install.sh` builds only when the binary is missing; `rm bin/devexp` first — see `install.sh`
-- **`./install.sh` with no flags opens an interactive wizard** (needs a TTY) — only `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, `--skills-only` take the non-interactive path; `--model` alone does not — see `cli/cmd/install.go:108-112`
+- **`./install.sh` with no flags opens an interactive wizard** (needs a TTY) — only `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, `--skills-only` take the non-interactive path; `--model` alone does not — see `cli/cmd/install.go:117-121`
 - **graphify hooks are on for opencode** (`opencode.enabled` in the registry), though off for Claude Code — turn them off with `hooks.disabled` — see [reference/hooks](docs/reference/hooks.md)
 - **Adding or removing an agent, skill or hook leaves counts stale** in `CLAUDE.md`, `README.md`, `docs/README.md` and more — see [workflows](docs/guides/workflows.md#add-a-feature)
 

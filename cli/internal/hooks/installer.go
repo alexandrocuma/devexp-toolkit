@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -131,6 +132,12 @@ func ParseRegistry(data []byte) (Registry, error) {
 }
 
 func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []string, dryRun bool) error {
+	// Every command is registered as repoDir/<script> and run later from
+	// whatever directory Claude Code is in, so it must be absolute (#126).
+	if !filepath.IsAbs(repoDir) {
+		return fmt.Errorf("hooks: repo dir %q is not an absolute path, so hook commands would be relative — refusing to register them", repoDir)
+	}
+
 	// Load existing settings as a raw map to preserve unknown fields
 	raw := map[string]json.RawMessage{}
 	if data, err := os.ReadFile(settingsPath); err == nil {
@@ -277,6 +284,30 @@ func isStaleDevexpHook(cmd, repoDir string) bool {
 // from ever catching a user hook that merely shares a filename.
 const scriptDir = "hooks/claude-code/"
 
+// shellSyntax holds the characters that make a hook command more than a plain
+// path: whitespace (arguments, env assignments, wrappers like `bash …`),
+// expansions ($, ~, backticks), quoting and other shell operators.
+const shellSyntax = " \t\n\r$~'\"`\\;&|<>()*?[]{}!#"
+
+// isManagedScriptPath reports whether cmd is a plain path to a registry script:
+// no shell syntax, a managed basename, and scriptDir directly above it starting
+// at a path-segment boundary (the start of cmd or right after a "/"). devexp
+// only ever registers such paths; a command that expands variables, takes
+// arguments or lives in some other */hooks/claude-code/ directory (e.g.
+// my-hooks/claude-code/) is the user's, and is never pruned.
+func isManagedScriptPath(cmd string, managed map[string]bool) bool {
+	if cmd == "" || strings.ContainsAny(cmd, shellSyntax) {
+		return false
+	}
+	p := filepath.ToSlash(cmd)
+	base := path.Base(p)
+	if !managed[base] {
+		return false
+	}
+	head := strings.TrimSuffix(p, base)
+	return head == scriptDir || strings.HasSuffix(head, "/"+scriptDir)
+}
+
 // managedScriptNames collects the basename of every script the registry knows
 // about — including disabled hooks, whose foreign-root copies would otherwise
 // keep running after the hook was turned off.
@@ -300,10 +331,7 @@ func managedScriptNames(registry Registry) map[string]bool {
 // registry basename plus the registry's own script directory, so a user hook
 // that happens to share a filename is untouched.
 func isForeignDevexpHook(cmd string, managed map[string]bool, repoDir string) bool {
-	if !managed[filepath.Base(cmd)] {
-		return false
-	}
-	if !strings.Contains(filepath.ToSlash(cmd), scriptDir) {
+	if !filepath.IsAbs(cmd) || !isManagedScriptPath(cmd, managed) {
 		return false
 	}
 	rel, err := filepath.Rel(repoDir, cmd)
@@ -314,11 +342,20 @@ func isForeignDevexpHook(cmd string, managed map[string]bool, repoDir string) bo
 	return strings.HasPrefix(rel, "..")
 }
 
+// isRelativeDevexpHook reports whether cmd is a devexp-managed hook registered
+// with a relative path — what an install from a relative DEVEXP_DIR wrote
+// before repo dirs were made absolute (#126). It is matched like
+// isForeignDevexpHook, by isManagedScriptPath, and replaced by the absolute
+// registration on the same run.
+func isRelativeDevexpHook(cmd string, managed map[string]bool) bool {
+	return !filepath.IsAbs(cmd) && isManagedScriptPath(cmd, managed)
+}
+
 // pruneForeignDevexpHooks removes devexp-managed registrations that point at an
-// install root other than repoDir. Without this, a clone install can never
-// clean up a release-binary install's entries: they sit outside repoDir, so
-// pruneStaleHooks refuses to touch them, and they go stale permanently while
-// still executing.
+// install root other than repoDir, or that are relative paths. Without this, a
+// clone install can never clean up a release-binary install's entries: they sit
+// outside repoDir, so pruneStaleHooks refuses to touch them, and they go stale
+// permanently while still executing.
 func pruneForeignDevexpHooks(hooksMap map[string][]hookEntry, registry Registry, repoDir string, dryRun bool) bool {
 	managed := managedScriptNames(registry)
 	pruned := false
@@ -327,8 +364,15 @@ func pruneForeignDevexpHooks(hooksMap map[string][]hookEntry, registry Registry,
 		for _, e := range entries {
 			var keptCmds []hookCmd
 			for _, h := range e.Hooks {
-				if isForeignDevexpHook(h.Command, managed, repoDir) {
-					msg := fmt.Sprintf("%s: %s (duplicate from another install root)", event, filepath.Base(h.Command))
+				reason := ""
+				switch {
+				case isRelativeDevexpHook(h.Command, managed):
+					reason = "relative path"
+				case isForeignDevexpHook(h.Command, managed, repoDir):
+					reason = "duplicate from another install root"
+				}
+				if reason != "" {
+					msg := fmt.Sprintf("%s: %s (%s)", event, filepath.Base(h.Command), reason)
 					if dryRun {
 						ui.DryRun("remove " + msg)
 					} else {
