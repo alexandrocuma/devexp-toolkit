@@ -20,7 +20,7 @@ const SOURCE_EXTS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py'
 const TEST_MARKERS = ['.test.', '.spec.', '_test.', 'test_'];
 
 function isTestFile(filePath) {
-  const name = path.basename(filePath);
+  const name = basename(filePath);
   return TEST_MARKERS.some(m => name.includes(m));
 }
 

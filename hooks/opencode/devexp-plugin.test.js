@@ -31,12 +31,14 @@ async function rejection(promise) {
   try { await promise; return null; } catch (e) { return e; }
 }
 
-// Collects console.error output so skipped-module logs don't clutter the run.
+// Collects console.error output (and drops console.log) so skipped-module logs
+// and advisory tool output don't clutter the run.
 async function quietly(fn) {
   const logged = [];
-  const orig = console.error;
+  const { error, log } = console;
   console.error = (...args) => logged.push(args.join(' '));
-  try { return { result: await fn(), logged }; } finally { console.error = orig; }
+  console.log = () => {}; // advisory tool output (e.g. a linter on PATH)
+  try { return { result: await fn(), logged }; } finally { Object.assign(console, { error, log }); }
 }
 
 // ── Probe modules ────────────────────────────────────────────────────────────
@@ -266,6 +268,28 @@ const BENIGN = [{ tool: 'bash' }, { args: { command: 'ls' } }];
     result.hooks.event({ event: { type: 'file.edited', properties: { file } } })));
   check('9 file.edited reaches the on-save modules without rejecting', edited.result === null && edited.logged.length === 0, `got ${edited.logged}`);
   check('9 dispatch continues past the on-save modules', globalThis.__probe.count?.edited?.[0]?.file === file);
+
+  // Source and test files take each module's real edit path. A .js file with
+  // no sibling test and no linter/formatter on PATH runs no tool, but it does
+  // reach code that an unknown extension skips — test-on-save's isTestFile
+  // once threw ReferenceError (path is not defined) on every source edit.
+  const src = join(scratch, 'widget.js');
+  const testFile = join(scratch, 'widget.test.js');
+  writeFileSync(src, 'export const x = 1;\n');
+  writeFileSync(testFile, '\n');
+  for (const f of [src, testFile]) {
+    const label = f === src ? 'source' : 'test';
+    for (const e of onSave) {
+      const mod = await import(pathToFileURL(join(tree.devexp, e.module)).href);
+      const handler = (await mod[e.export]({}))['file.edited'];
+      const err = (await quietly(() => rejection(handler({ file: f })))).result;
+      check(`9 ${e.name} handles a ${label} file edit without throwing`, err === null, `got ${err?.name}: ${err?.message}`);
+    }
+    const viaEntry = await quietly(() => rejection(
+      result.hooks.event({ event: { type: 'file.edited', properties: { file: f } } })));
+    check(`9 a ${label} file edit reaches every on-save module with no handler error`,
+      viaEntry.result === null && !viaEntry.logged.some((l) => l.includes('file.edited failed')), `got ${viaEntry.logged}`);
+  }
 }
 
 // ── 10. Registry consistency ─────────────────────────────────────────────────

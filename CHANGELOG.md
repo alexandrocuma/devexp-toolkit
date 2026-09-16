@@ -68,6 +68,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - lint/format/test-on-save never ran in opencode: `file.edited` is not a plugin
     hook key, so file events only reach plugins through `event`. The entry now
     adapts `event` → `file.edited` and hands each module `{ file }`.
+  - opencode `test-on-save` threw `ReferenceError: path is not defined` on every
+    source-file edit (`isTestFile` called `path.basename` without importing
+    `path`), so it could never run a test even once file events arrived. It now
+    uses the `basename` it already imports from `utils.js`.
   - The opencode `secret-guard` message now matches Claude Code's:
     `Blocked access to "…"` (was `Blocked read of` / `Blocked bash access to`).
   - `hooks/registry.json` maps each hook explicitly per install target: every
