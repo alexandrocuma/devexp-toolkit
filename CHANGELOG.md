@@ -69,7 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hash later in the file no longer blocks, but key-like text on the header's
   line or just after it still does. Real PEM blocks still block, including
   escaped, concatenated, encrypted and PGP-armored ones and ones with a dash
-  rule under the header. The test fixtures now use a realistic PEM body.
+  rule under the header. A body wrapped far narrower than the usual PEM line
+  width, or written in pieces across several edits, isn't recognized as key
+  material; `docs/reference/hooks.md` lists this with the guard's other
+  limits. The test fixtures now use a realistic PEM body.
 - **`secret-in-write-guard` decides in linear time (#143).** Each pattern is
   retried at every position in the text, and some of the new patterns could
   rescan the rest of a long write from each retry. A write that repeated a

@@ -13,7 +13,9 @@
  * the file text around it, so a secret completed across existing file text
  * and an edit is not seen. For apply_patch, opencode matches context lines
  * against the file loosely and writes the patch's own text for them, so what
- * lands on disk for a context line isn't scanned either. The guard catches
+ * lands on disk for a context line isn't scanned either. A private-key body
+ * wrapped far narrower than the usual PEM line width, or written in pieces
+ * across several edits, isn't recognized as key material. The guard catches
  * secrets written in one piece; it does not replace a secret scanner on the
  * repository.
  *

@@ -11,7 +11,9 @@
 #
 # Known limitation: only the new text of each edit is scanned, never the file
 # text around it, so a secret completed across existing file text and an edit
-# is not seen. The guard catches secrets written in one piece; it does not
+# is not seen. A private-key body wrapped far narrower than the usual PEM line
+# width, or written in pieces across several edits, isn't recognized as key
+# material. The guard catches secrets written in one piece; it does not
 # replace a secret scanner on the repository.
 #
 # Matching happens inside the Python step, which fails closed. An earlier
