@@ -97,13 +97,22 @@ echo ""
 AGENT_FILES_CLAUDE=()
 AGENT_FILES_OPENCODE=()
 SKILL_DIRS=()
+LEFT_THROUGH_LINK=()  # entries of a symlinked target directory
+LEFT_LINKS=()         # entries that are symlinks themselves
+
+# removable <dir> <name> <-f|-d>: whether <dir>/<name> is a file (-f) or
+# directory (-d) this script may remove. `devexp install` writes through a
+# symlinked target directory (a dotfiles setup) but never removes through one
+# (#128), and never removes an entry that is itself a symlink (#117): the
+# user's own setup. Such an entry is recorded to list instead. One line, like
+# every function here: a top-level `local` once aborted the script (#109).
+removable() { test "$3" "$1/$2" || return 1; if [[ -L "$1" ]]; then LEFT_THROUGH_LINK+=("$1/$2"); return 1; fi; if [[ -L "$1/$2" ]]; then LEFT_LINKS+=("$1/$2"); return 1; fi; }
 
 if $REMOVE_CLAUDE; then
     for f in "$REPO_DIR/agents/"*.md; do
         [[ -f "$f" ]] || continue
         [[ "$(basename "$f")" == "README.md" ]] && continue
-        t="$CLAUDE_AGENTS/$(basename "$f")"
-        [[ -f "$t" ]] && AGENT_FILES_CLAUDE+=("$t")
+        removable "$CLAUDE_AGENTS" "$(basename "$f")" -f && AGENT_FILES_CLAUDE+=("$CLAUDE_AGENTS/$(basename "$f")")
     done
 fi
 
@@ -112,14 +121,12 @@ if $REMOVE_OPENCODE; then
     for f in "$REPO_DIR/agents/"*.md; do
         [[ -f "$f" ]] || continue
         [[ "$(basename "$f")" == "README.md" ]] && continue
-        t="$OPENCODE_AGENTS/$(basename "$f")"
-        [[ -f "$t" ]] && AGENT_FILES_OPENCODE+=("$t")
+        removable "$OPENCODE_AGENTS" "$(basename "$f")" -f && AGENT_FILES_OPENCODE+=("$OPENCODE_AGENTS/$(basename "$f")")
     done
     # opencode-exclusive agents
     for f in "$REPO_DIR/agents/opencode/"*.md; do
         [[ -f "$f" ]] || continue
-        t="$OPENCODE_AGENTS/$(basename "$f")"
-        [[ -f "$t" ]] && AGENT_FILES_OPENCODE+=("$t")
+        removable "$OPENCODE_AGENTS" "$(basename "$f")" -f && AGENT_FILES_OPENCODE+=("$OPENCODE_AGENTS/$(basename "$f")")
     done
 fi
 
@@ -136,8 +143,7 @@ fi
 if $REMOVE_SKILLS; then
     for d in "$REPO_DIR/skills/"/*/; do
         [[ -d "$d" ]] || continue
-        t="$SKILLS_DIR/$(basename "$d")"
-        [[ -d "$t" ]] && SKILL_DIRS+=("$t")
+        removable "$SKILLS_DIR" "$(basename "$d")" -d && SKILL_DIRS+=("$SKILLS_DIR/$(basename "$d")")
     done
 fi
 
@@ -166,6 +172,26 @@ if [[ ${#SKILL_DIRS[@]} -gt 0 ]]; then
     echo ""
 elif $REMOVE_CLAUDE || $REMOVE_OPENCODE; then
     info "Skills will be kept (still in use by other installed CLI)."
+    echo ""
+fi
+
+# What is left in place is listed, once per symlinked directory.
+if [[ ${#LEFT_THROUGH_LINK[@]} -gt 0 ]]; then
+    for dir in "$CLAUDE_AGENTS" "$OPENCODE_AGENTS" "$SKILLS_DIR"; do
+        listed=false
+        for t in "${LEFT_THROUGH_LINK[@]}"; do
+            [[ "$(dirname "$t")" == "$dir" ]] || continue
+            $listed || warn "$dir is a symlink — devexp never removes files through it; remove these by hand:"
+            listed=true
+            echo "  $t"
+        done
+        $listed && echo ""
+    done
+fi
+if [[ ${#LEFT_LINKS[@]} -gt 0 ]]; then
+    for t in "${LEFT_LINKS[@]}"; do
+        warn "$t is a symlink — left untouched (devexp never removes one)"
+    done
     echo ""
 fi
 

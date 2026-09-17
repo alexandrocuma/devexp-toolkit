@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Real directories are cleaned up as before. Only the target directory itself
     is checked, so a symlinked `~/.claude` or `~/.config` above it doesn't stop
     the cleanup.
+  - `uninstall.sh` follows the same rule. It removed agents and skills through
+    a symlinked `agents/` or `skills/` directory, and removed an entry that was
+    itself a symlink. It now leaves both in place and lists them before the
+    confirmation.
 
 ## [0.9.1] - 2026-09-16
 

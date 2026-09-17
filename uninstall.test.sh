@@ -810,6 +810,75 @@ for home_case in unset empty relative; do
     check "HOME $home_case: the binary is not called" calls_are ""
 done
 
+# ── Symlinked target directories and entries (#128) ──────────────────────────
+# `devexp install` writes through a symlinked agents/ or skills/ (a dotfiles
+# setup) but never removes through one, and never removes a symlinked entry
+# (#117). uninstall.sh follows the same rule: what it leaves is listed, and a
+# real entry next to it is still removed.
+for linked in claude-agents claude-skills opencode-agents; do
+    new_env
+    D="$E/dotfiles"
+    printf '# agent\n' > "$E/r/agents/dev-agent.md"
+    mkdir -p "$E/r/skills/graphify" "$D/agents" "$D/skills/graphify" "$E/h/.claude/agents" "$E/h/.claude/skills" "$E/h/.config/opencode"
+    printf '# skill\n' > "$E/r/skills/graphify/SKILL.md"
+    printf 'user agent\n' > "$D/agents/dev-agent.md"
+    printf 'user skill\n' > "$D/skills/graphify/SKILL.md"
+    printf 'user notes\n' > "$D/skills/graphify/notes.md"
+    case "$linked" in
+        claude-agents)   dir="$E/h/.claude/agents";          left="$dir/dev-agent.md" ;;
+        claude-skills)   dir="$E/h/.claude/skills";          left="$dir/graphify" ;;
+        opencode-agents) dir="$E/h/.config/opencode/agents"; left="$dir/dev-agent.md"
+            # An opencode-only agent is collected by a loop of its own.
+            mkdir -p "$E/r/agents/opencode"
+            printf '# agent\n' > "$E/r/agents/opencode/oc-agent.md"
+            printf 'user agent\n' > "$D/agents/oc-agent.md" ;;
+    esac
+    rmdir "$dir" 2>/dev/null || true
+    ln -s "$D/${dir##*/}" "$dir"
+    # Claude Code's other directory is real and still cleaned up.
+    [ "$linked" = claude-skills ] && printf '# agent\n' > "$E/h/.claude/agents/dev-agent.md"
+    [ "$linked" = claude-agents ] && { mkdir -p "$E/h/.claude/skills/graphify"; printf '# skill\n' > "$E/h/.claude/skills/graphify/SKILL.md"; }
+    before="$(tree_sum "$D")"
+    run_uninstall
+    check "symlinked $linked dir: exit 0" rc_is 0
+    check "symlinked $linked dir: nothing in the link target is removed" test "$(tree_sum "$D")" = "$before"
+    check "symlinked $linked dir: the link stays" test -L "$dir"
+    check "symlinked $linked dir: says why, and to remove by hand" \
+        out_has "$dir is a symlink — devexp never removes files through it; remove these by hand:"
+    check "symlinked $linked dir: names the entry left" out_has "  $left"
+    [ "$linked" = opencode-agents ] && check "symlinked $linked dir: names the opencode-only agent left" out_has "  $dir/oc-agent.md"
+    case "$linked" in
+        claude-agents) check "symlinked $linked dir: the real skills dir is still cleaned up" test ! -e "$E/h/.claude/skills/graphify" ;;
+        claude-skills) check "symlinked $linked dir: the real agents dir is still cleaned up" test ! -e "$E/h/.claude/agents/dev-agent.md" ;;
+    esac
+done
+
+new_env
+U="$E/user"
+mkdir -p "$E/r/skills/graphify" "$E/r/skills/deliver" "$U/graphify" "$E/h/.claude/agents" "$E/h/.claude/skills/deliver"
+printf '# agent\n' > "$E/r/agents/dev-agent.md"; printf '# agent\n' > "$E/r/agents/some-agent.md"
+printf '# skill\n' > "$E/r/skills/graphify/SKILL.md"; printf '# skill\n' > "$E/r/skills/deliver/SKILL.md"
+printf 'user agent\n' > "$U/dev-agent.md"; printf 'user skill\n' > "$U/graphify/SKILL.md"
+ln -s "$U/dev-agent.md" "$E/h/.claude/agents/dev-agent.md"
+ln -s "$U/graphify" "$E/h/.claude/skills/graphify"
+printf '# agent\n' > "$E/h/.claude/agents/some-agent.md"
+printf '# skill\n' > "$E/h/.claude/skills/deliver/SKILL.md"
+# A file where a skill directory would be is not devexp's either.
+mkdir -p "$E/r/skills/loose"; printf '# skill\n' > "$E/r/skills/loose/SKILL.md"
+printf 'user file\n' > "$E/h/.claude/skills/loose"
+before="$(tree_sum "$U")"
+run_uninstall
+check "symlinked entries: exit 0" rc_is 0
+check "symlinked entries: what they point at is untouched" test "$(tree_sum "$U")" = "$before"
+check "symlinked entries: the links stay" test -L "$E/h/.claude/agents/dev-agent.md" -a -L "$E/h/.claude/skills/graphify"
+check "symlinked entries: the agent link is named as left untouched" \
+    out_has "$E/h/.claude/agents/dev-agent.md is a symlink — left untouched"
+check "symlinked entries: the skill link too" out_has "$E/h/.claude/skills/graphify is a symlink — left untouched"
+check "symlinked entries: real entries next to them are removed" \
+    test ! -e "$E/h/.claude/agents/some-agent.md" -a ! -e "$E/h/.claude/skills/deliver"
+check "symlinked entries: only the real ones are counted" out_has "Removed 2 item(s)."
+check "a file where a skill directory would be stays" test "$(cat "$E/h/.claude/skills/loose")" = "user file"
+
 # ── Round trip with the real binary ──────────────────────────────────────────
 if command -v go >/dev/null 2>&1 && [ -d "$ROOT/cli/internal/assets/hooks" ]; then
     new_env
