@@ -103,6 +103,9 @@ func runWizard(repoDir string, registry []mcp.MCP, agentNames []string) (*wizard
 
 // ── Remove ────────────────────────────────────────────────────────────────────
 
+// runRemove runs uninstall.sh from repoDir, which must be the asset root
+// repo.Resolve chose — DEVEXP_DIR, this dev build's own source checkout, or the
+// bundled assets — never a directory found some other way.
 func runRemove(repoDir string) error {
 	script := filepath.Join(repoDir, "uninstall.sh")
 	if _, err := os.Stat(script); err != nil {

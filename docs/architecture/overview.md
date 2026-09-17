@@ -45,12 +45,33 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
   → install.sh: if bin/devexp is missing → scripts/stage-assets.sh + (cd cli && go build -o ../bin/devexp .)
   → exec bin/devexp install "$@"
   → cli/cmd/root.go Execute() → cli/cmd/install.go runInstall()
-      → cli/internal/repo/repo.go Resolve(version)
-          findRepoDir(): $DEVEXP_DIR → parent of the executable's dir (bin/devexp → repo root)
-                         → walk up from cwd; a root must contain agents/ skills/ mcps/ (isRepoDir)
-          else extractEmbedded(): assets.FS → os.UserCacheDir()/devexp/assets,
-                         reused while .devexp-version == binary version; *.sh written 0755
-          → Source{RepoDir, Embedded}; every installer below reads RepoDir on disk
+      → cli/internal/repo/repo.go Resolve(version, announceAssetRoot)
+          locate(): no directory is ever searched for (not cwd, not next to the binary)
+                         $DEVEXP_DIR (must be a checkout, else error — no fallback)
+                         → dev builds only (version == "dev"): sourceCheckout(), the checkout
+                           compiled in via runtime.Caller (none under -trimpath), used only if
+                           ownedCheckout() verifies it as the user's: root, root files and every
+                           entry under agents/ skills/ mcps/ hooks/ owned by the user, no
+                           symlinks, no other-write, group-write only via the user's private
+                           group; parent owned by user/root, same write rule unless sticky; if it
+                           lacks the marker, is gone or can't be verified → Source.Warning,
+                           fall through
+                         a checkout = .devexp-toolkit marker (regular file, first line
+                         "devexp-toolkit") + agents/ skills/ mcps/ (isRepoDir)
+          else embeddedDir(version): os.UserCacheDir()/devexp/assets, or …/assets-dev for
+                         dev builds (must be absolute)
+          → announce(Source): install.go prints the warning, then
+                         "Asset root: <dir> (<origin>)" — before any write
+          → if embedded, extractEmbedded(): assets.FS (marker included) → a fresh sibling
+                         .assets.<rand>/ (dirs made one level at a time, so a tree swept
+                         mid-run fails), then a symlink renamed over that dir (atomic; a
+                         failed swap puts a moved-aside in-place dir back); the retired tree
+                         is kept (mtime refreshed) and sweepStale removes unlinked siblings
+                         older than 1h, after an extraction or a reuse; reused while
+                         .devexp-version == a tagged version (dev builds always re-extract);
+                         *.sh written 0755
+          → Source{RepoDir, Embedded, Origin, Warning}; every installer below — and the
+                         wizard's Remove (runRemove) — reads RepoDir on disk
       → cli/internal/config/config.go Load(<repo>/devexp.config.json)   (missing → ui.Warn + defaults; --model overrides)
       → cli/internal/config/dotenv.go LoadDotenv(<repo>/mcps/.env)
       → cli/cmd/registry.go buildEnv(): OS env + DEVEXP_DIR + dotenv (dotenv wins)
@@ -149,7 +170,7 @@ Hook commands point into the install root, so editing a registered script in the
 | `claude` CLI | Detecting the install target; registering and removing MCPs (`claude mcp list/add/remove`) | `cli/cmd/targets.go` (`commandExists`), `cli/internal/mcp/claude.go` |
 | `opencode` CLI | Detecting the install target only (on PATH). Its config file is edited directly | `cli/cmd/targets.go`, `cli/internal/mcp/opencode.go` |
 | `~/.claude/settings.json` | Hook registration (other keys are preserved) | `cli/internal/hooks/installer.go` |
-| User cache dir (`os.UserCacheDir()/devexp/assets`) | Assets extracted from the embedded FS when no clone is found | `cli/internal/repo/repo.go` |
+| User cache dir (`os.UserCacheDir()/devexp/assets`, `…/assets-dev` for dev builds) | Assets extracted from the embedded FS when no clone is found | `cli/internal/repo/repo.go` |
 | cobra, viper, promptui | Commands; reading `devexp.config.json`; the interactive wizard (needs a TTY) | `cli/cmd/root.go`, `cli/internal/config/config.go`, `cli/internal/ui/prompts.go` |
 | `python3` | Parsing hook input at runtime; `uninstall.sh` JSON edits | `hooks/claude-code/*.sh`, `uninstall.sh` |
 | Node | Running opencode hook modules (inside opencode); hook tests in CI (Node 22) | `hooks/opencode/*.js`, `.github/workflows/ci.yml` |

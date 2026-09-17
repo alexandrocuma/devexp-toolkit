@@ -8,19 +8,19 @@
 
 | Target | Kind | Path | Channel | Rollback |
 |--------|------|------|---------|----------|
-| `cli` | cli | `cli/`, plus the assets embedded at build time: `agents/`, `skills/`, `hooks/`, `mcps/`, `devexp.config.json`, `uninstall.sh`; build config `.goreleaser.yaml`, `.github/workflows/release.yml` | GitHub Releases for `alexandrocuma/devexp-toolkit`, built by goreleaser on a `v*` tag push; installed with `scripts/remote-install.sh` | hotfix-forward with a new patch tag; mark the bad release pre-release so `latest` falls back — see Target: cli |
+| `cli` | cli | `cli/`, plus the assets embedded at build time: `agents/`, `skills/`, `hooks/`, `mcps/`, `devexp.config.json`, `uninstall.sh`, the `.devexp-toolkit` marker; build config `.goreleaser.yaml`, `.github/workflows/release.yml` | GitHub Releases for `alexandrocuma/devexp-toolkit`, built by goreleaser on a `v*` tag push; installed with `scripts/remote-install.sh` | hotfix-forward with a new patch tag; mark the bad release pre-release so `latest` falls back — see Target: cli |
 | `toolkit-clone` | other | `agents/`, `skills/`, `hooks/`, `mcps/`, `templates/`, `devexp.config.json`, `devexp.config.schema.json`, `install.sh`, `uninstall.sh`, `scripts/` (and `cli/` for clone users, who build it locally) | the `main` branch — contributors and teams run `git pull` + `./install.sh` from a clone | `git revert` the offending merge on `main` — see Target: toolkit-clone |
 
 Kinds: `library` · `cli` · `web` · `service` · `ios` · `android` · `desktop` · `other`
 
-Asset edits reach the two targets at different times. Clone users get them on the next `git pull` (the CLI reads assets live from disk — `cli/internal/repo/repo.go:70-98`). Binary users get them only in the next tagged release, because goreleaser stages and embeds them at build time (`.goreleaser.yaml:5-7`, `scripts/stage-assets.sh:12-22`; `mcps/.env` is never embedded — `scripts/stage-assets.sh:19`).
+Asset edits reach the two targets at different times. Clone users get them on the next `git pull` (a binary built from the clone reads assets live from that clone — `Resolve` in `cli/internal/repo/repo.go`). Binary users get them only in the next tagged release, because goreleaser stages and embeds them at build time (`.goreleaser.yaml:5-7`, `scripts/stage-assets.sh:12-23`; `mcps/.env` is never embedded — `scripts/stage-assets.sh:19`).
 
 ## Cut (shared by all targets)
 
-- Version source of truth: **the git tag.** There is no version file. goreleaser injects the tag's version at build time with `-X devexp/cmd.version={{ .Version }}` (`.goreleaser.yaml:23`, `cli/cmd/root.go:9-15`); local builds report `dev`. Scheme: SemVer (`CHANGELOG.md:6`).
+- Version source of truth: **the git tag.** There is no version file. goreleaser injects the tag's version at build time with `-X devexp/cmd.version={{ .Version }}` (`.goreleaser.yaml:25`, `cli/cmd/root.go:9-15`); local builds report `dev`. Scheme: SemVer (`CHANGELOG.md:6`).
 - Tag format: `v<version>`, annotated, message `Release v<version> — <summary>` (`git tag -n1 v0.7.0 v0.6.0`). Any pushed `v*` tag starts the `release` workflow (`.github/workflows/release.yml:3-6`).
 - Release commit: `chore: release v<version>`, committed directly on `main`, changing only `CHANGELOG.md`. It moves the `## [Unreleased]` entries under `## [<version>] - YYYY-MM-DD` (Keep a Changelog — `CHANGELOG.md:5,8,60`). See `git show --stat d5f6943 f88f123 879a5c8 d15c02d` (v0.7.0, v0.6.0, v0.5.0, v0.4.0).
-- GitHub Release object: **created by `/release` right after the tag push**, with the version's `CHANGELOG.md` section as notes (`gh release create v<version> --title v<version> --notes-file <section> --verify-tag`); goreleaser then uploads the assets to it and keeps those notes. This is how v0.7.1, v0.7.0 and v0.5.0 were released. v0.6.0 was the exception: goreleaser created it with its own commit-list notes, which leave out `docs:`, `test:` and `chore:` commits (`.goreleaser.yaml:34-40`).
+- GitHub Release object: **created by `/release` right after the tag push**, with the version's `CHANGELOG.md` section as notes (`gh release create v<version> --title v<version> --notes-file <section> --verify-tag`); goreleaser then uploads the assets to it and keeps those notes. This is how v0.7.1, v0.7.0 and v0.5.0 were released. v0.6.0 was the exception: goreleaser created it with its own commit-list notes, which leave out `docs:`, `test:` and `chore:` commits (`.goreleaser.yaml:36-42`).
 - Nothing waits for CI before the tag. `main` has no branch protection or rulesets (GitHub API, checked 2026-09-16), and `release.yml` runs no tests. For v0.7.0, `ci` started on the release commit at 04:48:20Z and `release` started from the tag at 04:48:23Z (`gh run list`).
 
 ## Target: cli
@@ -38,7 +38,7 @@ gh run list --workflow release.yml --limit 1   # watch the tag-triggered run unt
 # CI runs: ./scripts/stage-assets.sh (goreleaser before-hook) → goreleaser release --clean   # source: .goreleaser.yaml:5-7, .github/workflows/release.yml:24-28
 ```
 
-Artifact: `devexp-toolkit_darwin_amd64.tar.gz`, `devexp-toolkit_darwin_arm64.tar.gz`, `devexp-toolkit_linux_amd64.tar.gz`, `devexp-toolkit_linux_arm64.tar.gz` (each holds a static `devexp` binary, `CGO_ENABLED=0`, stripped with `-s -w`) plus `checksums.txt`, attached to the tag's GitHub Release (`.goreleaser.yaml:9-32,42-45`).
+Artifact: `devexp-toolkit_darwin_amd64.tar.gz`, `devexp-toolkit_darwin_arm64.tar.gz`, `devexp-toolkit_linux_amd64.tar.gz`, `devexp-toolkit_linux_arm64.tar.gz` (each holds a static `devexp` binary, `CGO_ENABLED=0`, built with `-trimpath` so it records no build paths, stripped with `-s -w`) plus `checksums.txt`, attached to the tag's GitHub Release (`.goreleaser.yaml:9-34,44-47`).
 
 ### Distribute
 
@@ -73,7 +73,7 @@ Each check was run against v0.7.0 on 2026-09-16.
 | Signal | Where | Healthy when |
 |--------|-------|--------------|
 | Release workflow | `gh run list --workflow release.yml --limit 1` | `completed success` for the new tag (`.github/workflows/release.yml:1`) |
-| Release assets | `gh release view v<version> --json assets,isDraft,isPrerelease` | 5 assets — the 4 `devexp-toolkit_<os>_<arch>.tar.gz` + `checksums.txt`; `isDraft` and `isPrerelease` false (`.goreleaser.yaml:16-32`) |
+| Release assets | `gh release view v<version> --json assets,isDraft,isPrerelease` | 5 assets — the 4 `devexp-toolkit_<os>_<arch>.tar.gz` + `checksums.txt`; `isDraft` and `isPrerelease` false (`.goreleaser.yaml:16-34`) |
 | Latest resolution | `gh release list --limit 1` | the new tag shows as `Latest` — what `remote-install.sh` installs by default (`scripts/remote-install.sh:53`) |
 | Binary downloads and reports its version | `DEVEXP_VERSION=v<version> DEVEXP_INSTALL_DIR="$(mktemp -d)" DEVEXP_SKIP_RUN=1 bash scripts/remote-install.sh` | exits 0 and prints `devexp version <version>` (`scripts/remote-install.sh:61-83`); a temp install dir and `DEVEXP_SKIP_RUN` keep `~/.local/bin` and `~/.claude` untouched |
 
@@ -87,7 +87,7 @@ Every merge to `main` ships this target; the release cut only adds the changelog
 
 ### Build
 
-N/A — there is nothing to build centrally. In a clone the CLI reads assets live from disk (`cli/internal/repo/repo.go:70-98`). Each user's `./install.sh` builds `bin/devexp` only if it is missing (`install.sh:7-18`), so after Go changes users must `rm bin/devexp` first.
+N/A — there is nothing to build centrally. In a clone the CLI built by `./install.sh` reads assets live from that clone (`Resolve` in `cli/internal/repo/repo.go`). Each user's `./install.sh` builds `bin/devexp` only if it is missing (`install.sh:7-18`), so after Go changes users must `rm bin/devexp` first.
 
 ### Distribute
 

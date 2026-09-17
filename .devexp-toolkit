@@ -1,0 +1,5 @@
+devexp-toolkit
+# Marks this directory as a devexp-toolkit checkout. `devexp install` reads
+# agents, skills, hooks and MCPs only from a directory whose first line of this
+# file is exactly "devexp-toolkit" (cli/internal/repo/repo.go, isRepoDir).
+# Keep it in forks; it is also embedded in the release binary.

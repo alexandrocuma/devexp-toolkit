@@ -9,6 +9,7 @@ cli/internal/assets/hooks/
 cli/internal/assets/mcps/
 cli/internal/assets/devexp.config.json
 cli/internal/assets/uninstall.sh
+cli/internal/assets/.devexp-toolkit
 graphify-out/
 .devexp/health-baseline.json
 .devexp/system-health-review.md
