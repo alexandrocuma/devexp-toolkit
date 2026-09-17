@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"sort"
 )
@@ -233,6 +234,7 @@ type settingsDoc struct {
 	top     jsonContainer
 	hooksAt int      // index of the "hooks" member in top.members, or -1
 	events  []string // hooks' event keys, in document order
+	eol     string   // the file's line ending, for the lines devexp writes
 }
 
 // loadSettings parses settings.json content (empty for a missing file) and
@@ -241,7 +243,7 @@ type settingsDoc struct {
 // that isn't an object, an event that isn't an array, or an entry or handler
 // that isn't an object.
 func loadSettings(data []byte) (*settingsDoc, map[string][]hookEntry, error) {
-	doc := &settingsDoc{data: data, hooksAt: -1}
+	doc := &settingsDoc{data: data, hooksAt: -1, eol: lineEnding(data)}
 	hooksMap := map[string][]hookEntry{}
 	if len(bytes.TrimSpace(data)) == 0 {
 		return doc, hooksMap, nil
@@ -288,10 +290,11 @@ func loadSettings(data []byte) (*settingsDoc, map[string][]hookEntry, error) {
 
 // render returns settings.json with its hooks replaced by hooksMap. Events keep
 // their order; new ones follow, sorted. Only the hooks value is written anew,
-// indented like the line its key is on (or compact, in a compact file); a file
-// without hooks gains the key after its last member, and a new file is written
-// as earlier releases wrote it. The result must decode to the original document
-// with only hooks changed, or nothing is returned.
+// indented like the line its key is on (or compact, in a compact file) and with
+// the file's own line ending; a file without hooks gains the key after its last
+// member, and a new file is written as earlier releases wrote it. The result
+// must decode to the original document with only hooks changed, or nothing is
+// returned.
 func (d *settingsDoc) render(hooksMap map[string][]hookEntry) ([]byte, error) {
 	order := make([]string, 0, len(hooksMap))
 	listed := map[string]bool{}
@@ -331,9 +334,9 @@ func (d *settingsDoc) render(hooksMap map[string][]hookEntry) ([]byte, error) {
 	case d.hooksAt >= 0:
 		m := d.top.members[d.hooksAt]
 		valueStart := m.end - len(m.raw)
-		out = concat(data[:valueStart], layoutAt(data, m.start).format(hooks), data[m.end:])
+		out = concat(data[:valueStart], d.withEOL(layoutAt(data, m.start).format(hooks)), data[m.end:])
 	case len(d.top.members) == 0:
-		out = concat(data[:d.top.openEnd], []byte("\n  \"hooks\": "), indentJSON(hooks, "  ", "  "), []byte("\n"), data[d.top.close:])
+		out = concat(data[:d.top.openEnd], d.withEOL(concat([]byte("\n  \"hooks\": "), indentJSON(hooks, "  ", "  "), []byte("\n"))), data[d.top.close:])
 	default:
 		last := d.top.members[len(d.top.members)-1]
 		l := layoutAt(data, last.start)
@@ -343,25 +346,63 @@ func (d *settingsDoc) render(hooksMap map[string][]hookEntry) ([]byte, error) {
 		} else {
 			insert = concat([]byte(`,"hooks":`), hooks)
 		}
-		out = concat(data[:last.end], insert, data[last.end:])
+		out = concat(data[:last.end], d.withEOL(insert), data[last.end:])
 	}
 
+	// By construction out is data with only the hooks value replaced by hooks:
+	// every other byte is copied. This check can't fail unless the splice above
+	// has a bug, so it is a guard, not a code path a test can reach. Numbers
+	// are compared as their text (json.Number): a valid number no float64 holds,
+	// such as 1e400, must not stop the install.
 	want := map[string]any{}
 	if len(bytes.TrimSpace(data)) > 0 {
-		if err := json.Unmarshal(data, &want); err != nil {
+		if err := decodeJSON(data, &want); err != nil {
 			return nil, err
 		}
 	}
 	var hooksValue any
-	if err := json.Unmarshal(hooks, &hooksValue); err != nil {
+	if err := decodeJSON(hooks, &hooksValue); err != nil {
 		return nil, err
 	}
 	want["hooks"] = hooksValue
 	var got map[string]any
-	if err := json.Unmarshal(out, &got); err != nil || !reflect.DeepEqual(got, want) {
+	if err := decodeJSON(out, &got); err != nil || !reflect.DeepEqual(got, want) {
 		return nil, errors.New("rewriting it would change more than its hooks")
 	}
 	return out, nil
+}
+
+// decodeJSON decodes the single JSON value in b into v, keeping numbers as
+// json.Number.
+func decodeJSON(b []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	if err := dec.Decode(v); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return errors.New("trailing data after the JSON value")
+	}
+	return nil
+}
+
+// lineEnding is the line ending of data's first line: CRLF or LF (also for a
+// file with a single line or none).
+func lineEnding(data []byte) string {
+	if i := bytes.IndexByte(data, '\n'); i > 0 && data[i-1] == '\r' {
+		return "\r\n"
+	}
+	return "\n"
+}
+
+// withEOL returns text devexp wrote, whose lines end in LF, with the file's own
+// line ending. JSON strings can't hold a raw newline, so every LF is a line
+// break.
+func (d *settingsDoc) withEOL(b []byte) []byte {
+	if d.eol == "\n" {
+		return b
+	}
+	return bytes.ReplaceAll(b, []byte("\n"), []byte(d.eol))
 }
 
 // layout is how a member sits in its object: on its own line after prefix

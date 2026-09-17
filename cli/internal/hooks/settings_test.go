@@ -397,6 +397,26 @@ func TestInstallClaude_SettingsLayout(t *testing.T) {
 			in:   "{\n\t\"hooks\": null,\n\t\"model\": \"opus\"\n}",
 			want: "{\n\t\"hooks\": {\n\t\t\"PreToolUse\": [\n\t\t\t{\n\t\t\t\t\"matcher\": \"Read\",\n\t\t\t\t\"hooks\": [\n\t\t\t\t\t{\n\t\t\t\t\t\t\"type\": \"command\",\n\t\t\t\t\t\t\"command\": \"CMD\"\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t}\n\t\t]\n\t},\n\t\"model\": \"opus\"\n}",
 		},
+		// Lines devexp writes take the file's own line ending; every other
+		// byte, CRLF included, is kept.
+		"CRLF, hooks key": {
+			in:   "{\r\n  \"model\": \"opus\",\r\n  \"hooks\": {}\r\n}\r\n",
+			want: "{\r\n  \"model\": \"opus\",\r\n  \"hooks\": " + strings.ReplaceAll(hooks2, "\n", "\r\n") + "\r\n}\r\n",
+		},
+		"CRLF, no hooks key": {
+			in:   "{\r\n  \"model\": \"opus\"\r\n}\r\n",
+			want: "{\r\n  \"model\": \"opus\",\r\n  \"hooks\": " + strings.ReplaceAll(hooks2, "\n", "\r\n") + "\r\n}\r\n",
+		},
+		"CRLF, empty object": {
+			in:   "{}\r\n",
+			want: "{\r\n  \"hooks\": " + strings.ReplaceAll(hooks2, "\n", "\r\n") + "\r\n}\r\n",
+		},
+		// Valid JSON numbers no float64 holds are kept as written, and don't
+		// stop the install.
+		"numbers out of float64 range": {
+			in:   `{"n":1e400,"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/u","timeout":-1e400}]}]}}`,
+			want: `{"n":1e400,"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/u","timeout":-1e400}]}],"PreToolUse":[{"matcher":"Read","hooks":[{"type":"command","command":"CMD"}]}]}}`,
+		},
 		"four-space indented, hooks key": {
 			in:   "{\n    \"hooks\": {\"Stop\": []}\n}",
 			want: "{\n    \"hooks\": {\n        \"Stop\": [],\n        \"PreToolUse\": [\n            {\n                \"matcher\": \"Read\",\n                \"hooks\": [\n                    {\n                        \"type\": \"command\",\n                        \"command\": \"CMD\"\n                    }\n                ]\n            }\n        ]\n    }\n}",

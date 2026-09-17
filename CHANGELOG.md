@@ -20,9 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Install now edits only devexp's own handlers. Every other handler and entry
     keeps all its fields, in order; an entry without `matcher` doesn't gain one;
     a re-quoted devexp command changes that value only.
-  - Only the top-level `hooks` value is rewritten, in the indentation of the
-    file around it. Every other byte of `settings.json` stays as it was. New
-    files and devexp's own entries are written as before.
+  - Only the top-level `hooks` value is rewritten, in the indentation and line
+    ending (LF or CRLF) of the file around it. Every other byte of
+    `settings.json` stays as it was. New files and devexp's own entries are
+    written as before. A number no float64 holds (such as `1e400`) is kept as
+    written and doesn't stop the install.
   - A handler with `args` (spawned without a shell) or of a type other than
     `command` is the user's whatever path it names: never re-quoted, pruned,
     removed or counted as devexp's registration.
