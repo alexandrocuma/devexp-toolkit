@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timeout and runs in the server process, the deadline is checked at every unit
   of the scan and the check refuses the call.
 
+  Each of these guards is also registered with an explicit hook `timeout` of 45
+  seconds — three times the budget — so the guard's own block always lands
+  first. The installer writes that field and brings an existing registration to
+  it, so a machine installed before this stops running on the 600-second default
+  at its next install. `docs/reference/hooks.md` has the full behaviour.
+
 ## [0.9.2] - 2026-09-17
 
 ### Added

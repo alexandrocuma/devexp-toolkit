@@ -22,12 +22,19 @@ const (
 )
 
 // TargetSpec is one install target's view of a hook. Each target uses the
-// fields it needs (Claude Code: Event/Matcher/Script; opencode: Event/Module/
-// Export/FailClosed). A new target adds a registry block, not a new Go type.
+// fields it needs (Claude Code: Event/Matcher/Script/Timeout; opencode: Event/
+// Module/Export/FailClosed). A new target adds a registry block, not a new Go
+// type.
 type TargetSpec struct {
-	Event      string `json:"event,omitempty"`
-	Matcher    string `json:"matcher,omitempty"`
-	Script     string `json:"script,omitempty"`
+	Event   string `json:"event,omitempty"`
+	Matcher string `json:"matcher,omitempty"`
+	Script  string `json:"script,omitempty"`
+	// Timeout is the Claude Code hook timeout, in seconds, written into the
+	// registration. The guards that enforce their own scan budget set it above
+	// that budget so their exit 2 always lands first: a timed-out command hook
+	// does not block the tool call, and Claude Code's default for one is 600
+	// seconds (#162). Zero leaves the registration without a timeout.
+	Timeout    int    `json:"timeout,omitempty"`
 	Module     string `json:"module,omitempty"`
 	Export     string `json:"export,omitempty"`
 	FailClosed bool   `json:"fail_closed,omitempty"`
@@ -175,12 +182,14 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 		}
 
 		name := fmt.Sprintf("%s: %s", cc.Event, filepath.Base(cc.Script))
-		switch registerHook(hooksMap, cc.Event, cc.Matcher, command) {
+		switch registerHook(hooksMap, cc.Event, cc.Matcher, command, cc.Timeout) {
 		case hookRegistered:
 			ui.Skipped(name, "already registered")
 			continue
 		case hookMatcherUpdated:
 			fmt.Printf("  \033[0;33m~\033[0m %s (matcher now %q, as in the registry)\n", name, cc.Matcher)
+		case hookTimeoutUpdated:
+			fmt.Printf("  \033[0;33m~\033[0m %s (timeout now %ds, as in the registry)\n", name, cc.Timeout)
 		case hookAdded:
 			fmt.Printf("  \033[0;32m+\033[0m %s\n", name)
 		}
@@ -212,26 +221,41 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 
 // What registerHook did.
 const (
-	hookRegistered     = iota // already registered under the registry's matcher
+	hookRegistered     = iota // already registered under the registry's matcher and timeout
 	hookMatcherUpdated        // registered before, now under the registry's matcher
+	hookTimeoutUpdated        // registered before, now with the registry's timeout
 	hookAdded                 // newly registered
 )
 
 // registerHook makes devexp's command run for event under matcher, the
-// registry's current matcher. A command already registered under matcher is
-// left as it is. One registered only under other matchers — the registry
+// registry's current matcher, with the registry's timeout in seconds (0: none,
+// and whatever is registered stays). A command already registered under matcher
+// takes the registry's timeout and is otherwise left as it is — without that,
+// an install that ran before the registry declared one would keep Claude Code's
+// 600-second default for ever. One registered only under other matchers — the registry
 // changed its matcher since the install that wrote it — is brought to matcher:
 // an entry holding nothing but that command takes matcher in place, keeping
 // its other fields; from an entry shared with other commands (a user's, say)
 // the handler moves out, fields and all, into an entry of its own, so no one
 // else's matcher changes. A command registered nowhere gets a new entry.
-func registerHook(hooksMap map[string][]hookEntry, event, matcher, command string) int {
+func registerHook(hooksMap map[string][]hookEntry, event, matcher, command string, timeout int) int {
 	entries := hooksMap[event]
 	ours := func(h hookCmd) bool { return h.devexpForm() && h.Command == command }
-	for _, e := range entries {
-		if e.Matcher == matcher && slices.ContainsFunc(e.Hooks, ours) {
-			return hookRegistered
+	for i := range entries {
+		e := &entries[i]
+		if e.Matcher != matcher || !slices.ContainsFunc(e.Hooks, ours) {
+			continue
 		}
+		retimed := false
+		for j := range e.Hooks {
+			if ours(e.Hooks[j]) && e.Hooks[j].setTimeout(timeout) {
+				retimed = true
+			}
+		}
+		if retimed {
+			return hookTimeoutUpdated
+		}
+		return hookRegistered
 	}
 
 	var moved *hookCmd
@@ -242,6 +266,9 @@ func registerHook(hooksMap map[string][]hookEntry, event, matcher, command strin
 		case n == 0:
 		case n == len(e.Hooks):
 			e.Matcher = matcher
+			for j := range e.Hooks {
+				e.Hooks[j].setTimeout(timeout)
+			}
 			updated = true
 		default:
 			var kept []hookCmd
@@ -249,6 +276,7 @@ func registerHook(hooksMap map[string][]hookEntry, event, matcher, command strin
 				if !ours(h) {
 					kept = append(kept, h)
 				} else if moved == nil {
+					h.setTimeout(timeout)
 					moved = &h
 				}
 			}
@@ -264,7 +292,7 @@ func registerHook(hooksMap map[string][]hookEntry, event, matcher, command strin
 	}
 	hooksMap[event] = append(entries, hookEntry{
 		Matcher: matcher,
-		Hooks:   []hookCmd{{Type: "command", Command: command}},
+		Hooks:   []hookCmd{{Type: "command", Command: command, Timeout: timeout}},
 	})
 	return hookAdded
 }

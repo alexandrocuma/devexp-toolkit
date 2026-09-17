@@ -51,6 +51,39 @@ func (o rawObject) value(key string) (json.RawMessage, bool) {
 	return nil, false
 }
 
+// intField returns key's value as an int, or 0 when key is missing, is not a
+// JSON number, or is a number no int holds. A hook's timeout is such a number;
+// anything else there is the user's and is left as it is.
+func (o rawObject) intField(key string) int {
+	v, ok := o.value(key)
+	if !ok {
+		return 0
+	}
+	var n json.Number
+	if json.Unmarshal(v, &n) != nil {
+		return 0
+	}
+	i, err := n.Int64()
+	if err != nil || int64(int(i)) != i {
+		return 0
+	}
+	return int(i)
+}
+
+// withInt returns o with key set to n. When key already reads as n (as
+// intField reads it, so a missing key reads as 0), o is returned as it is and
+// its bytes stay.
+func (o rawObject) withInt(key string, n int) (rawObject, error) {
+	if o.intField(key) == n {
+		return o, nil
+	}
+	v, err := encodeJSON(n)
+	if err != nil {
+		return nil, err
+	}
+	return o.with(key, v), nil
+}
+
 func (o rawObject) has(key string) bool {
 	_, ok := o.value(key)
 	return ok
@@ -163,9 +196,23 @@ type hookEntry struct {
 type hookCmd struct {
 	Type    string
 	Command string
+	// Timeout is the handler's timeout in seconds, 0 when it has none. devexp
+	// owns it on the hooks it registers whose registry entry declares one (#162).
+	Timeout int
 	// fields is the handler as read from settings.json; nil for one devexp
 	// builds.
 	fields rawObject
+}
+
+// setTimeout brings h to the registry's timeout and reports whether that
+// changed it. A registry entry with no timeout (0) leaves whatever is
+// registered alone: devexp never takes a field away that it didn't ask for.
+func (h *hookCmd) setTimeout(seconds int) bool {
+	if seconds == 0 || h.Timeout == seconds {
+		return false
+	}
+	h.Timeout = seconds
+	return true
 }
 
 func (e *hookEntry) UnmarshalJSON(b []byte) error {
@@ -223,19 +270,26 @@ func (h *hookCmd) UnmarshalJSON(b []byte) error {
 	if err != nil {
 		return fmt.Errorf("hook handler: %w", err)
 	}
-	*h = hookCmd{Type: obj.stringField("type"), Command: obj.stringField("command"), fields: obj}
+	*h = hookCmd{
+		Type:    obj.stringField("type"),
+		Command: obj.stringField("command"),
+		Timeout: obj.intField("timeout"),
+		fields:  obj,
+	}
 	return nil
 }
 
 // MarshalJSON writes a handler devexp built exactly as earlier releases did
-// ({"type", "command"}), and a handler read from settings.json as its own
-// members in their order, changing only a command devexp rewrote.
+// ({"type", "command"}, and "timeout" after them when the registry asks for
+// one), and a handler read from settings.json as its own members in their
+// order, changing only a command devexp rewrote and a timeout it now owns.
 func (h hookCmd) MarshalJSON() ([]byte, error) {
 	if h.fields == nil {
 		return encodeJSON(struct {
 			Type    string `json:"type"`
 			Command string `json:"command"`
-		}{h.Type, h.Command})
+			Timeout int    `json:"timeout,omitempty"`
+		}{h.Type, h.Command, h.Timeout})
 	}
 	obj, err := h.fields.withString("type", h.Type)
 	if err != nil {
@@ -243,6 +297,12 @@ func (h hookCmd) MarshalJSON() ([]byte, error) {
 	}
 	if obj, err = obj.withString("command", h.Command); err != nil {
 		return nil, err
+	}
+	// 0 is "the registry asks for no timeout": whatever is registered stays.
+	if h.Timeout != 0 {
+		if obj, err = obj.withInt("timeout", h.Timeout); err != nil {
+			return nil, err
+		}
 	}
 	return obj.MarshalJSON()
 }
