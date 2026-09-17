@@ -18,7 +18,7 @@ CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `ma
 | E2E | N/A — no automated end-to-end install test. `runInstall`, `doInstallClaude`, `doInstallOpencode` and `runWizard` have 0% coverage. Manual check: `./install.sh --dry-run` | — |
 | Agents / skills (Markdown) | N/A — no automated validation. Edit → `./install.sh` → try it in Claude Code or opencode | `docs/development/README.md` (Notes) |
 
-At this commit: 10 Go packages with tests; `dangerous-cmd-guard.test.sh` 169 cases, `fail-closed.test.sh` 10, `interpreter-isolation.test.sh` 11, `large-file-guard.test.sh` 34, `on-save-path.test.sh` 73, `secret-guard.test.sh` 37, `secret-in-write-guard.test.sh` 159; `dangerous-cmd-guard.test.js` 170, `devexp-plugin.test.js` 130, `on-save-path.test.js` 61, `secret-guard.test.js` 38, `secret-in-write-guard.test.js` 141; `uninstall.test.sh` 128, `install.test.sh` 21, `remote-install.test.sh` 24.
+At this commit: 10 Go packages with tests; `dangerous-cmd-guard.test.sh` 169 cases, `fail-closed.test.sh` 10, `interpreter-isolation.test.sh` 11, `large-file-guard.test.sh` 34, `on-save-path.test.sh` 73, `secret-guard.test.sh` 37, `secret-in-write-guard.test.sh` 321; `dangerous-cmd-guard.test.js` 170, `devexp-plugin.test.js` 130, `on-save-path.test.js` 61, `secret-guard.test.js` 38, `secret-in-write-guard.test.js` 301; `uninstall.test.sh` 128, `install.test.sh` 21, `remote-install.test.sh` 24.
 
 Run one test:
 

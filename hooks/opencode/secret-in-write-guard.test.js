@@ -55,14 +55,22 @@ const OPENAI_NONE = `${SK}-None-${'0FAKE'.repeat(10)}`;
 const OPENAI_PROJ = `${SK}-proj-${'FAKE_proj-body'.repeat(8)}`;
 const OPENAI_SVC = `${SK}-svcacct-${'FAKE_svc-body'.repeat(8)}`;
 const OPENAI_ADMIN = `${SK}-admin-${'FAKE_admin-body'.repeat(8)}`;
+// An older service key: a service-account name, then 20 + watermark + 20.
+const OPENAI_SERVICE = `${SK}-service-fake-svc-${body('FAKE0', 20)}T3BlbkFJ${body('0FAKE', 20)}`;
 const GH_U = `${GH}u_${'0FAKE'.repeat(8)}`;
 const GH_R = `${GH}r_${'0FAKE'.repeat(8)}`;
 const GH_PAT = `${GHP}_pat_${body('0FAKE', 22)}_${body('FAKE0', 59)}`;
+// A stateless installation token: prefix, app id, _, then a JWT.
+const GH_S_JWT = `${GH}s_1536800_eyJ${'FAKE'.repeat(9)}.eyJ${'FAKE_'.repeat(30)}.${'FAKE-'.repeat(20)}`;
 const SLACK_B = `${XOX}b-1234567890-1234567890123-${'FAKE'.repeat(6)}`;
 const SLACK_P = `${XOX}p-1234567890-1234567890-1234567890123-${'0fake'.repeat(6)}`;
-const pem = (kind) => `${D5}BEGIN ${kind}${D5}\nMIIEFAKEFAKEFAKE\n${D5}END ${kind}${D5}`;
+// A block with one 64-character line of fake base64 material, as PEM wraps it.
+const pem = (kind) => `${D5}BEGIN ${kind}${D5}\n${body('MIIEFAKE0+/fake', 64)}\n${D5}END ${kind}${D5}`;
 const PK_RSA = pem('RSA PRIVATE KEY');
 const FILLER = 'an ordinary line of prose in a large generated file\n'.repeat(5000); // ~260 KB
+// A few paragraphs of ordinary text, as the shell twin builds them (no final newline).
+const PROSE = 'This key is used by the deploy job to reach the staging hosts over SSH.\n'.repeat(8).slice(0, -1);
+const CODE = "  logger.debug('reading the key file for the deploy service');\n".repeat(10).slice(0, -1);
 
 // [tool, word the block message must name, payload, opts]
 const BLOCK = [];
@@ -76,6 +84,7 @@ for (const tool of ['write', 'edit', 'apply_patch']) {
     [tool, 'OpenAI', OPENAI_PROJ],
     [tool, 'OpenAI', OPENAI_SVC],
     [tool, 'OpenAI', OPENAI_ADMIN],
+    [tool, 'OpenAI', OPENAI_SERVICE],
     [tool, 'AWS', AWS],
     [tool, 'AWS', AWS_TMP],
     [tool, 'GitHub', GH_P],
@@ -84,6 +93,7 @@ for (const tool of ['write', 'edit', 'apply_patch']) {
     [tool, 'GitHub', GH_U],
     [tool, 'GitHub', GH_R],
     [tool, 'GitHub', GH_PAT],
+    [tool, 'GitHub', GH_S_JWT],
     [tool, 'Slack', SLACK_B],
     [tool, 'Slack', SLACK_P],
     [tool, 'private key', PK_RSA],
@@ -101,6 +111,10 @@ BLOCK.push(
   ['write', 'OpenAI', `line one\nline two\nOPENAI_API_KEY=${OPENAI}\nline four`],
   ['edit', 'AWS', `aws_access_key_id = ${AWS}`],
   ['write', 'OpenAI', `client = OpenAI(api_key='${OPENAI_PROJ}')`],
+  ['write', 'OpenAI', `OPENAI_API_KEY=${OPENAI_SERVICE}`],
+  ['edit', 'OpenAI', `${SK}-service-${body('0FAKE', 48)}`],
+  ['write', 'OpenAI', `${SK}-service-fake_svc_${body('0FAKE', 48)}`],
+  ['edit', 'OpenAI', `${SK}-service-your-service-key-${body('0FAKE', 48)}`],
   ['write', 'AWS', `AWS_ACCESS_KEY_ID=${AWS_TMP}`],
   ['edit', 'AWS', `credentials = {'AccessKeyId': '${AWS_TMP}'}`],
   // apply_patch: an added line in an update hunk, a heredoc-wrapped patch, CRLF line endings.
@@ -123,15 +137,92 @@ BLOCK.push(
   ['write', 'AWS', `{"id": "\\u002F${AWS_TMP}"}`],
   ['write', 'AWS', `id = '\\x2F${AWS_TMP}'`],
   ['edit', 'AWS', `${AWS_TMP}secretAccessKey`],
+  ['write', 'GitHub', `GITHUB_TOKEN_${GH_P}_rotated_weekly`],
+  ['edit', 'GitHub', `export GITHUB_TOKEN=${GH_S_JWT}`],
+  ['write', 'GitHub', `${GH}u_eyJ${'FAKE'.repeat(5)}`],
+  ['write', 'GitHub', `${GH}r_9_eyJ${'FAKE'.repeat(5)}`],
+  ['write', 'GitHub', `${GH}s_12_34_eyJ${'FAKE'.repeat(5)}`],
   // A large write, secret first — the shell twin once allowed these (#101).
   ['write', 'OpenAI', `${OPENAI}\n${FILLER}`],
   ['edit', 'private key', `${PK_RSA}${FILLER}`],
+  // A real key is never hidden by a placeholder next to it (#143).
+  ['write', 'Slack', `${XOX}b-your-1234567890-${'FAKE'.repeat(6)}`],
+  ['edit', 'Slack', `${XOX}b-${'x'.repeat(10)}-1234567890123-${'FAKE'.repeat(6)}`],
+  ['write', 'Slack', `${XOX}b-your-token-${SLACK_B}`],
+  ['write', 'Slack', `${XOX}b-your-token ${SLACK_B}`],
+  ['write', 'AWS', `${AK}${body('FAKE', 16)}EXAMPLE`],
+  ['edit', 'AWS', `${AK}${'X'.repeat(15)}F`],
+  ['write', 'AWS', `id = ${AS}${'X'.repeat(15)}F`],
+  ['write', 'AWS', `${AK}IOSFODNN7EXAMPLE ${AWS}`],
+  ['write', 'AWS', `${AK}EXAMPLE${body('FAKE', 9)}`],
+  ['write', 'GitHub', `${GH}p_${'x'.repeat(35)}F`],
+  ['edit', 'GitHub', `${GH}p_${'x'.repeat(36)}F0FAKE`],
+  ['write', 'GitHub', `${GH}p_${'x'.repeat(36)}${GH_P}`],
+  ['write', 'OpenAI', `${SK}-${'x'.repeat(47)}F`],
+  ['edit', 'OpenAI', `${SK}-None-${'x'.repeat(40)} ${OPENAI}`],
+  ['write', 'Anthropic', `${SK}-ant-api03-${'x'.repeat(40)}FAKE`],
+  ['edit', 'Anthropic', `${SK}-ant-your-key-FAKE0-${body('FAKE0', 40)}`],
+  ['write', 'Anthropic', `${SK}-ant-your-key-here-${ANTHROPIC}`],
+  ['write', 'OpenAI', `${SK}-proj-your-project-key-${'FAKE0_'.repeat(16)}FAKE0`],
+  ['write', 'AWS', `id = ${AS}EXAMPLE${body('FAKE', 9)}`],
+  // A service-key name may hold an empty segment (a doubled separator) (#158).
+  ['edit', 'OpenAI', `${SK}-service-svc--${body('0FAKE', 48)}`],
+  // Only the whole body counts: "your" glued to more letters, or an unknown
+  // key-type segment before a repeated run, is not a placeholder.
+  ['edit', 'Anthropic', `${SK}-ant-your${'FAKEfake'.repeat(6)}`],
+  ['write', 'OpenAI', `${SK}-proj-YOUR${'FAKEfake'.repeat(12)}`],
+  ['write', 'Slack', `${XOX}b-your${'FAKEfake'.repeat(2)}`],
+  ['write', 'Anthropic', `${SK}-ant-fake0-${'x'.repeat(60)}`],
+  // A repeated run followed by a separator isn't the whole body (#158).
+  ['edit', 'OpenAI', `${SK}-service-${'x'.repeat(4)}-${body('0FAKE', 48)}`],
+  // A stateless GitHub token's id segment may hold letters (#158).
+  ['write', 'GitHub', `${GH}s_Iv23liFAKE_eyJ${'FAKE'.repeat(5)}`],
+  // Known and kept: a gh?_ fragment followed by a segment starting eyJ reads as a
+  // stateless token, since GitHub's JWT starts that way (#158).
+  ['write', 'GitHub', `hi${GH}s_eyJson_parser_for_every_region = 1`],
+  ['edit', 'OpenAI', `${SK}-proj-${'x'.repeat(80)}FAKE`],
+  // A private-key header with key material, however it is written (#143).
+  ['write', 'private key', `"${D5}BEGIN PRIVATE KEY${D5}\\n${body('MIIEFAKE0+/', 64)}\\n${D5}END PRIVATE KEY${D5}"`],
+  ['edit', 'private key', `${D5}BEGIN RSA PRIVATE KEY${D5}\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,FAKE\n\n${body('MIIEFAKE0+/', 64)}`],
+  ['write', 'private key', `${D5}BEGIN PGP PRIVATE KEY BLOCK${D5}\nVersion: FAKE\nComment: exported by a fake key tool for the devexp guard tests, not a real key\n\n${body('lQOYBFAKE0+/', 64)}`],
+  ['write', 'private key', `key = "${D5}BEGIN RSA PRIVATE KEY${D5}\\n" +\n  "${body('MIIEFAKE0+/', 64)}\\n"`],
+  ['edit', 'private key', `${D5}BEGIN PRIVATE KEY${D5}${body('MIIEFAKE0+/', 64)}`],
+  ['write', 'private key', `${D5}BEGIN OPENSSH PRIVATE KEY${D5}\n${body('b3BlbnNzaFAKE0', 70)}`],
+  ['write', 'private key', `Look for ${D5}BEGIN RSA PRIVATE KEY${D5} at the top.\n${PK_RSA}`],
+  ['edit', 'private key', `${D5}BEGIN EC PRIVATE KEY${D5}\n${D5}END EC PRIVATE KEY${D5}\n${pem('EC PRIVATE KEY')}`],
+  ['write', 'private key', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${body('FAKE0+/', 32)}\n${D5}END RSA PRIVATE KEY${D5}`],
+  // A dash rule between header and body doesn't end the search; only an END or
+  // BEGIN line does (#158).
+  ...['RSA PRIVATE KEY', 'PRIVATE KEY', 'EC PRIVATE KEY', 'DSA PRIVATE KEY', 'ENCRYPTED PRIVATE KEY', 'OPENSSH PRIVATE KEY', 'PGP PRIVATE KEY BLOCK', 'PGP SECRET KEY BLOCK']
+    .map((kind) => ['write', 'private key', `${D5}BEGIN ${kind}${D5}\n${D5}\n${body('MIIEFAKE0+/', 64)}\n${D5}END ${kind}${D5}`]),
+  // JSON that escapes every slash still carries the key material.
+  ['write', 'private key', `{"key": "${D5}BEGIN PRIVATE KEY${D5}\\n${body('MIIEFAKE0abcdefgh+\\/', 64)}\\n${body('fakeFAKE0123456+\\/', 64)}\\n${D5}END PRIVATE KEY${D5}"}`],
+  ['write', 'private key', `{"key": "${D5}BEGIN PRIVATE KEY${D5}\\n${body('MIIEFAKE0abcdefgh+\\/', 64)}"}`],
+  // An escaped body wrapped narrower than usual: escaped newlines join its lines.
+  ['edit', 'private key', `{"key": "${D5}BEGIN PRIVATE KEY${D5}\\n${body('MIIEFAKE0abcdefghijklmn', 24)}\\n${body('opqrstuFAKE0123456789ab', 24)}\\n${D5}END PRIVATE KEY${D5}"}`],
+  ['write', 'private key', `"${D5}BEGIN RSA PRIVATE KEY${D5}\\r\\n${body('MIIEFAKE0abcdefg', 16)}\\r\\n${body('hijklmnFAKE01234', 16)}\\r\\n${D5}END RSA PRIVATE KEY${D5}"`],
+  // Two escaped lines join only when both hold at least 16 characters (the
+  // shorter twins are in ALLOW).
+  ['write', 'private key', `"${D5}BEGIN RSA PRIVATE KEY${D5}\\n${body('FAKE0abcdefghijk', 16)}\\n${body('FAKE0abcdefghijk', 16)}\\n${D5}END RSA PRIVATE KEY${D5}"`],
+  // Key-like text on the header's line, or just after it, still blocks.
+  ['edit', 'private key', `if (pem.startsWith("${D5}BEGIN PRIVATE KEY${D5}")) return parsePkcs8PrivateKeyFromPemEncodedString(pem);`],
+  // Bounded repetitions (#158), pinned at the edge (the one-past twins are in ALLOW).
+  ['write', 'private key', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${' '.repeat(494)}${body('FAKE0+/', 32)}`],
+  ['write', 'private key', `${D5}BEGIN ${body('ABC ', 40)}PRIVATE KEY${D5}\n${body('MIIEFAKE0+/', 64)}`],
+  ['write', 'Anthropic', `${SK}-ant-your${'-a'.repeat(25)}`],
+  ['write', 'OpenAI', `${SK}-proj-your${'-abc'.repeat(25)}`],
+  ['write', 'Slack', `${XOX}b-your${'-a'.repeat(25)}`],
+  ['write', 'OpenAI', `${SK}-service-${'ab-'.repeat(20)}${body('0FAKE', 48)}`],
+  ['write', 'OpenAI', `${SK}-service-${body('abcFAKE', 47)}-${body('0FAKE', 48)}`],
+  ['write', 'GitHub', `${GH}s_${'1_'.repeat(8)}eyJ${'FAKE'.repeat(5)}`],
   // Length thresholds, pinned at the edge (the one-short twins are in ALLOW).
   ['write', 'Anthropic', `${SK}-ant-${body('FAKE_ant-', 40)}`],
   ['write', 'OpenAI', `${SK}-proj-${body('FAKE_proj-', 80)}`],
+  ['write', 'OpenAI', `${SK}-service-fake-svc-${body('0FAKE', 48)}`],
   ['write', 'OpenAI', `${SK}-None-${body('0FAKE', 32)}`],
   ['write', 'AWS', `${AS}${body('FAKE', 16)}`],
   ['write', 'GitHub', `${GH}u_${body('0FAKE', 36)}`],
+  ['write', 'GitHub', `${GH}s_${body('0FAKE', 36)}`],
   ['write', 'GitHub', `${GHP}_pat_${body('0FAKE', 22)}_${body('FAKE0', 59)}`],
 );
 
@@ -173,15 +264,91 @@ const ALLOW = [
   ['edit', 't("sk-proj-onboarding-checklist-welcome-email-sequence-step-three-title")'],
   ['write', 'sk-svcacct-rotation_reminder-banner-dismissed-at-timestamp-for-the-current-org: true'],
   ['edit', 'github_pat_rotation_reminder_days_for_organization_members_with_admin_access = 30'],
+  ['write', 'sk-service-account-rotation-reminder-banner-dismissed-at-timestamp-for-the-current-org: true'],
+  ['edit', 't("sk-service-worker-registration-failed-offline-fallback-page-title-for-every-locale")'],
+  ['write', `OPENAI_API_KEY=${SK}-service-${'x'.repeat(60)}`],
+  ['edit', `OPENAI_API_KEY=${SK}-service-your-service-account-key-goes-here`],
   ['write', 'const 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 = true;'],
   ['write', 'const REGION = "ASIAPACIFICDATACENTER01";'],
   ['edit', 'EURASIAPACIFICREGION024 = load_regions()'],
+  // Long snake_case names holding a GitHub prefix: right_ holds ght_, highs_ holds
+  // ghs_. Joined at runtime, since the guard blocked them before (#143).
+  ['write', `def test_blocks_ri${GH}t_token_when_a_write_holds_a_long_snake_case_name(): pass`],
+  ['edit', `hi${GH}s_and_lows_for_every_region_in_the_dataset_since_2000 = {}`],
+  ['write', `const wei${GH}t_surveyJson_for_every_respondent_in_the_panel = load();`],
+  ['edit', `ri${GH}t_eye_contact_duration_for_the_whole_recorded_session = 3`],
+  ['write', 'Installation tokens now look like ghs_APPID_JWT.'],
+  // Placeholders shaped like a key (#143): documented example values,
+  // your-... phrases, one repeated character, <...>.
+  ['write', `SLACK_BOT_TOKEN=${XOX}b-your-token`],
+  ['edit', `slack_token: ${XOX}p-your-slack-user-token-here`],
+  ['write', `SLACK_BOT_TOKEN=${XOX}b-${'x'.repeat(10)}-${'x'.repeat(13)}-${'x'.repeat(24)}`],
+  ['write', `aws_access_key_id = ${AK}IOSFODNN7EXAMPLE`],
+  ['write', `${AK}I44QH8DHBEXAMPLE`],
+  ['edit', `AccessKeyId: ${AS}IOSFODNN7EXAMPLE`],
+  ['write', `AWS_ACCESS_KEY_ID=${AK}${'X'.repeat(16)}`],
+  ['edit', `AWS_ACCESS_KEY_ID=${AS}${'X'.repeat(16)}`],
+  ['write', `GITHUB_TOKEN=${GH}p_${'x'.repeat(40)}`],
+  ['write', `OPENAI_API_KEY=${SK}-${'x'.repeat(48)}`],
+  ['edit', `OPENAI_API_KEY=${SK}-None-${'X'.repeat(48)}`],
+  ['write', `ANTHROPIC_API_KEY=${SK}-ant-api03-${'x'.repeat(95)}`],
+  ['edit', `ANTHROPIC_ADMIN_KEY=${SK}-ant-admin01-${'x'.repeat(95)}`],
+  ['write', `ANTHROPIC_API_KEY=${SK}-ant-${'X_'.repeat(30)}`],
+  ['edit', `ANTHROPIC_API_KEY=${SK}-ant-your-anthropic-api-key-goes-here-and-stays-out-of-git`],
+  ['write', `ANTHROPIC_API_KEY=${SK}-ant-YOUR_ANTHROPIC_API_KEY_GOES_HERE_PLEASE_THANKS`],
+  ['write', `SLACK_BOT_TOKEN=${XOX}b-YOUR-BOT-TOKEN`],
+  ['write', `OPENAI_API_KEY=${SK}-proj-${'x-'.repeat(60)}`],
+  ['edit', `OPENAI_API_KEY=${SK}-svcacct-YOUR_SERVICE_ACCOUNT_KEY_GOES_HERE_AND_NEVER_INTO_A_COMMITTED_FILE_OR_ANY_BUILD_LOG`],
+  ['write', `GITHUB_TOKEN=${GH}p_<your-token>`],
+  ['write', `SLACK_BOT_TOKEN=${XOX}b-<your-bot-token>`],
+  ['edit', `ANTHROPIC_API_KEY=${SK}-ant-<your-key> OPENAI_API_KEY=${SK}-proj-<project-key>`],
+  ['write', `AWS_ACCESS_KEY_ID=${AK}<ACCESS_KEY_ID>`],
+  // A private-key header with no key material (#143).
+  ['write', `Keys in PKCS#1 form start with "${D5}BEGIN RSA PRIVATE KEY${D5}"; see https://docs.example.com/security/private-keys.html`],
+  ['edit', `if line.startswith('${D5}BEGIN OPENSSH PRIVATE KEY${D5}'):\n    return True`],
+  ['write', `${D5}BEGIN PRIVATE KEY${D5}\n<your private key>\n${D5}END PRIVATE KEY${D5}`],
+  ['write', `${D5}BEGIN RSA PRIVATE KEY${D5}\nMIIEpAIBAAKCAQEA...\n${D5}END RSA PRIVATE KEY${D5}`],
+  ['edit', `${D5}BEGIN EC PRIVATE KEY${D5}\n${D5}END EC PRIVATE KEY${D5}`],
+  ['write', `PEM_HEADER = '${D5}BEGIN PRIVATE KEY${D5}'\n${pem('CERTIFICATE')}`],
+  // A quoted header, whatever the rest of the write holds (#158). Only text near
+  // the header counts as its key material, and the search ends at an END or
+  // BEGIN line, so a later identifier, fingerprint, path or hash doesn't block.
+  ['write', `if (pem.startsWith("${D5}BEGIN PRIVATE KEY${D5}")) {\n${CODE}\n  return parsePkcs8PrivateKeyFromPemEncodedString(pem);\n}`],
+  ['edit', `Paste the key (it starts with ${D5}BEGIN OPENSSH PRIVATE KEY${D5}).\n\n${PROSE}\nThe host fingerprint is SHA256:${body('FAKEfake0+/', 43)}.`],
+  ['write', `Store the ${D5}BEGIN EC PRIVATE KEY${D5} file on the host.\n${PROSE}\nPath: /home/deploy/configuration/secrets/keys/`],
+  ['write', `${D5}BEGIN PRIVATE KEY${D5}\n<paste your private key here>\n${D5}END PRIVATE KEY${D5}\nchecksum: ${body('0123456789abcdef', 64)}`],
+  ['edit', `Header: ${D5}BEGIN RSA PRIVATE KEY${D5}\n\n${PROSE}${PROSE}\nFixed in commit ${body('0123456789abcdef', 40)}.`],
+  // Backslashes near a quoted header that aren't an escaped key body (#158):
+  // Windows paths, escapes in code strings, \u escapes, escaped prose, LaTeX.
+  ['write', String.raw`Save the ${D5}BEGIN RSA PRIVATE KEY${D5} file as C:\ProgramData\ContosoDeploy\Certificates\Private\server.pem`],
+  ['edit', String.raw`Header ${D5}BEGIN OPENSSH PRIVATE KEY${D5}. Key path: C:\Users\Administrator\AppData\Roaming\SshAgent\keys\id_ed25519`],
+  ['write', String.raw`const body = pem.replace("${D5}BEGIN PRIVATE KEY${D5}", "").replace(/\\r\\n|\\n|\\r|\\s+/g, "");`],
+  ['edit', `if (pem.includes("${D5}BEGIN PRIVATE KEY${D5}")) {\n` + String.raw`  log("found a key header\\nstripping\\nand\\ndecoding\\nthe\\nbody");` + '\n}'],
+  ['write', String.raw`const HEADER = "${D5}BEGIN PRIVATE KEY${D5}"; const LABEL = "\u0050\u0072\u0069\u0076\u0061\u0074\u0065";`],
+  ['write', String.raw`{"hint":"${D5}BEGIN PRIVATE KEY${D5}\n<paste your key here>\n${D5}END PRIVATE KEY${D5}"}`],
+  ['edit', String.raw`{"text":"Keys start with \"${D5}BEGIN RSA PRIVATE KEY${D5}\".\n\nThen\nsee\nthe\ndocs\nfor\nmore\ninfo\nabout\nit."}`],
+  ['write', String.raw`The header \texttt{${D5}BEGIN PRIVATE KEY${D5}} \\ \textbackslash\textbackslash\newline\newline`],
+  // Two escaped lines join only when both hold at least 16 characters.
+  ['write', `"${D5}BEGIN RSA PRIVATE KEY${D5}\\n${body('FAKE0abcdefghijk', 15)}\\n${body('FAKE0abcdefghijk', 16)}\\n${D5}END RSA PRIVATE KEY${D5}"`],
+  ['write', `"${D5}BEGIN RSA PRIVATE KEY${D5}\\n${body('FAKE0abcdefghijk', 16)}\\n${body('FAKE0abcdefghijk', 15)}\\n${D5}END RSA PRIVATE KEY${D5}"`],
+  // Bounded repetitions (#158), one past the edge.
+  ['write', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${' '.repeat(495)}${body('FAKE0+/', 32)}`],
+  ['write', `${D5}BEGIN ${body('ABC ', 41)}PRIVATE KEY${D5}\n${body('MIIEFAKE0+/', 64)}`],
+  ['write', `${SK}-ant-your${'-a'.repeat(24)}`],
+  ['write', `${SK}-proj-your${'-abc'.repeat(24)}`],
+  ['write', `${XOX}b-your${'-a'.repeat(24)}`],
+  ['write', `${SK}-service-${'ab-'.repeat(21)}${body('0FAKE', 48)}`],
+  ['write', `${GH}s_${'1_'.repeat(9)}eyJ${'FAKE'.repeat(5)}`],
   // Length thresholds, one character short of blocking.
+  ['write', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${body('FAKE0+/', 31)}\n${D5}END RSA PRIVATE KEY${D5}`],
   ['write', `${SK}-ant-${body('FAKE_ant-', 39)}`],
   ['write', `${SK}-proj-${body('FAKE_proj-', 79)}`],
+  ['write', `${SK}-service-fake-svc-${body('0FAKE', 47)}`],
   ['write', `${SK}-None-${body('0FAKE', 31)}`],
   ['write', `${AS}${body('FAKE', 15)}`],
   ['write', `${GH}u_${body('0FAKE', 35)}`],
+  ['write', `${GH}s_${body('0FAKE', 35)}`],
+  ['write', `${GH}p_${body('0FAKE', 35)}_${body('FAKE0', 40)}`],
   ['write', `${GHP}_pat_${body('0FAKE', 21)}_${body('FAKE0', 59)}`],
   ['write', `${GHP}_pat_${body('0FAKE', 23)}_${body('FAKE0', 59)}`],
   ['write', `${GHP}_pat_${body('0FAKE', 22)}_${body('FAKE0', 58)}`],
@@ -229,6 +396,60 @@ for (const [tool, args] of OTHER_TOOLS) {
   }
 }
 
-const total = BLOCK.length + ALLOW.length + OTHER_TOOLS.length;
+// ── Timing: every pattern decides in linear time (#158) ─────────────────────
+// opencode runs this handler synchronously, so a slow pattern stalls the
+// session. These writes repeat a prefix or a header so that an unbounded
+// repetition would rescan from every start. Each runs in a child process that
+// is killed at its budget, so a slow module fails instead of hanging the suite.
+// The 100 KB tier stops at its first failure; the 2 MB tier runs only when the
+// first tier passed. Budgets cover the handler only, not starting node.
+const TIMING_SHAPES = `
+  const rep = (unit, n) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
+  const D5 = '-'.repeat(5), SK = 's' + 'k', GH = 'g' + 'h';
+  export const SHAPES = {
+    'key-type words after a private-key header': (n) => D5 + 'BEGIN ' + rep('PRIVATE KEY ', n),
+    'private-key header, then spaced capitals': (n) => D5 + 'BEGIN PRIVATE KEY' + rep(' A', n),
+    'private-key headers between near-material runs': (n) => rep(D5 + 'BEGIN RSA PRIVATE KEY' + D5 + '\\n' + rep('A'.repeat(31) + '.', 600), n),
+    'private-key headers between short escaped lines': (n) => rep(D5 + 'BEGIN RSA PRIVATE KEY' + D5 + '\\\\n' + rep('A'.repeat(15) + '\\\\r\\\\n', 600), n),
+    'repeated service-key prefix': (n) => rep(SK + '-service-', n),
+    'service-key prefixes with near-length name segments': (n) => rep(SK + '-service-' + rep('a'.repeat(47) + '-', 200), n),
+    'repeated Anthropic prefix and your-': (n) => rep(SK + '-ant-your-', n),
+    'repeated project-key prefix and your-': (n) => rep(SK + '-proj-your-', n),
+    'repeated GitHub prefix': (n) => rep(GH + 'p_', n),
+    'repeated GitHub prefix and id segment': (n) => rep(GH + 's_1_', n),
+  };`;
+const { spawnSync } = await import('node:child_process');
+const moduleUrl = new URL('./secret-in-write-guard.js', import.meta.url).href;
+const timeOne = (name, size) => {
+  const child = `
+    const { SHAPES } = await import('data:text/javascript,' + encodeURIComponent(${JSON.stringify(TIMING_SHAPES)}));
+    const { secretInWriteGuard } = await import(${JSON.stringify(moduleUrl)});
+    const h = (await secretInWriteGuard({}))['tool.execute.before'];
+    const content = SHAPES[${JSON.stringify(name)}](${size});
+    const t0 = performance.now();
+    try { await h({ tool: 'write' }, { args: { filePath: 'big.txt', content } }); } catch {}
+    process.stdout.write(String(performance.now() - t0));`;
+  return child;
+};
+const { SHAPES: TIMED } = await import('data:text/javascript,' + encodeURIComponent(TIMING_SHAPES));
+let timed = 0;
+let timingFail = 0;
+for (const [tier, size, budgetMs] of [['100 KB', 100_000, 250], ['2 MB', 2_000_000, 2000]]) {
+  for (const name of Object.keys(TIMED)) {
+    const p = spawnSync(process.execPath, ['--input-type=module', '-e', timeOne(name, size)], { timeout: budgetMs + 5000, encoding: 'utf8' });
+    const ms = Number(p.stdout);
+    timed++;
+    if (p.error || p.status !== 0 || !(ms <= budgetMs)) {
+      const why = p.error ? 'still running at the budget' : p.status !== 0 ? `exited ${p.status}: ${p.stderr.trim().slice(0, 200)}` : `took ${ms.toFixed(0)} ms`;
+      console.log(`FAIL timing ${tier}: ${name}: ${why}, budget ${budgetMs} ms`);
+      fail++;
+      timingFail++;
+      if (tier === '100 KB') break;
+    }
+  }
+  if (timingFail) break;
+}
+
+const total = BLOCK.length + ALLOW.length + OTHER_TOOLS.length + timed;
 console.log(`${total - fail} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
