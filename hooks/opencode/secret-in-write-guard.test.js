@@ -197,6 +197,7 @@ BLOCK.push(
     .map((kind) => ['write', 'private key', `${D5}BEGIN ${kind}${D5}\n${D5}\n${body('MIIEFAKE0+/', 64)}\n${D5}END ${kind}${D5}`]),
   // JSON that escapes every slash still carries the key material.
   ['write', 'private key', `{"key": "${D5}BEGIN PRIVATE KEY${D5}\\n${body('MIIEFAKE0abcdefgh+\\/', 64)}\\n${body('fakeFAKE0123456+\\/', 64)}\\n${D5}END PRIVATE KEY${D5}"}`],
+  ['write', 'private key', `{"key": "${D5}BEGIN PRIVATE KEY${D5}\\n${body('MIIEFAKE0abcdefgh+\\/', 64)}"}`],
   // An escaped body wrapped narrower than usual: escaped newlines join its lines.
   ['edit', 'private key', `{"key": "${D5}BEGIN PRIVATE KEY${D5}\\n${body('MIIEFAKE0abcdefghijklmn', 24)}\\n${body('opqrstuFAKE0123456789ab', 24)}\\n${D5}END PRIVATE KEY${D5}"}`],
   ['write', 'private key', `"${D5}BEGIN RSA PRIVATE KEY${D5}\\r\\n${body('MIIEFAKE0abcdefg', 16)}\\r\\n${body('hijklmnFAKE01234', 16)}\\r\\n${D5}END RSA PRIVATE KEY${D5}"`],

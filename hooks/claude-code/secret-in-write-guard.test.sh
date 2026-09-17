@@ -300,6 +300,7 @@ for kind in 'RSA PRIVATE KEY' 'PRIVATE KEY' 'EC PRIVATE KEY' 'DSA PRIVATE KEY' '
 done
 # JSON that escapes every slash still carries the key material.
 block Write 'private key' "{\"key\": \"${D5}BEGIN PRIVATE KEY${D5}\\n$(body 'MIIEFAKE0abcdefgh+\/' 64)\\n$(body 'fakeFAKE0123456+\/' 64)\\n${D5}END PRIVATE KEY${D5}\"}"
+block Write 'private key' "{\"key\": \"${D5}BEGIN PRIVATE KEY${D5}\\n$(body 'MIIEFAKE0abcdefgh+\/' 64)\"}"
 # An escaped body wrapped narrower than usual: escaped newlines join its lines.
 block Edit  'private key' "{\"key\": \"${D5}BEGIN PRIVATE KEY${D5}\\n$(body MIIEFAKE0abcdefghijklmn 24)\\n$(body opqrstuFAKE0123456789ab 24)\\n${D5}END PRIVATE KEY${D5}\"}"
 block Write 'private key' "\"${D5}BEGIN RSA PRIVATE KEY${D5}\\r\\n$(body MIIEFAKE0abcdefg 16)\\r\\n$(body hijklmnFAKE01234 16)\\r\\n${D5}END RSA PRIVATE KEY${D5}\""
