@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`dangerous-cmd-guard` no longer blocks a mention of a destructive command
+  (#100).** It matched its patterns anywhere in the command line, so an `echo`
+  printing a recovery hint, a commit message, or an issue body that named one
+  was refused. That included the report of this bug. Before matching, both the
+  Claude Code hook and the opencode module now blank out text that can't run:
+  `echo`/`printf` arguments, `git commit|tag` messages, `gh issue|pr|release`
+  bodies and titles, heredoc bodies fed to a text filter, and comments. They
+  do this only when the output can't reach a shell (no redirect into a file,
+  no pipe into anything but a text filter). Everything else is still scanned,
+  including `bash -c`, `sh -c`, `eval`, `ssh`, `psql -c` strings, `$(…)`,
+  heredocs fed to a shell, and commands after `&&`, `;`, `|`, `sudo` or `env`.
+  If the guard can't classify part of a command, it scans the whole command as
+  before. That covers unbalanced quotes, `case`, functions, aliases, pipes or
+  redirects on compound commands, a shell or interpreter anywhere in the
+  command, and a command word that is a path or a variable. Rules:
+  `docs/reference/hooks.md#what-dangerous-cmd-guard-matches`.
+- **`dangerous-cmd-guard` could miss a destructive command (security).** Some
+  large commands were read as "no match", and some ways of writing a command
+  (inside a quoted string passed to another shell or evaluator, or split
+  across lines) were not matched. Both the Claude Code hook and the opencode
+  module now match these forms, and a matching error blocks instead of
+  allowing. Upgrade to pick this up; rules:
+  `docs/reference/hooks.md#what-dangerous-cmd-guard-matches`.
+
 ## [0.9.0] - 2026-09-16
 
 ### Added
