@@ -45,6 +45,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   naming it, in a dry run too. Its name stays in the manifest. Replace the link
   with a regular file to get the release's copy. Agent, command and skill
   files are also written atomically now.
+- **Hook registrations from another install root were never pruned once their
+  script left the registry, and Claude Code ignored `claude_code.enabled`
+  (#150).**
+  - `devexp install` now removes a registration in a form devexp writes (a
+    plain or single-quoted absolute path) of a script that no longer exists
+    directly under `<root>/hooks/claude-code/`, when `<root>` is another devexp
+    install root. Such a root is recognised by its own `hooks/registry.json`
+    (a non-empty JSON array of hooks, each with a `name`). A directory without
+    one, including a root that has been deleted, is treated as the user's and
+    left alone, as are commands with arguments, double quotes, wrappers,
+    other directories or `args`.
+  - Claude Code hook registration uses `EnabledFor(claude_code)`, as opencode
+    already did: a hook's `claude_code.enabled` overrides the top-level
+    `enabled` either way.
 
 ## [0.9.1] - 2026-09-16
 

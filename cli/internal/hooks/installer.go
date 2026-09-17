@@ -156,7 +156,7 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 
 	changed := false
 	for _, hook := range registry {
-		if !hook.Enabled {
+		if !hook.EnabledFor(TargetClaudeCode) {
 			continue
 		}
 		if isDisabled(hook.Name) {
@@ -315,21 +315,33 @@ func removeHookCmds(hooksMap map[string][]hookEntry, drop func(event string, h *
 	}
 }
 
-// pruneStaleHooks removes registered hook commands that live under repoDir
-// (devexp-managed) but whose backing script no longer exists on disk — i.e.
-// the hook was removed from this version's registry. User-authored hooks
-// pointing elsewhere are left untouched. Returns whether anything was pruned.
+// pruneStaleHooks removes registered hook commands in a form devexp writes
+// whose backing script no longer exists on disk — i.e. the hook was removed
+// from the registry since it was registered: under repoDir
+// (isStaleDevexpHook), or under another devexp install root
+// (isOrphanedDevexpHook, #150). User-authored hooks are left untouched.
+// Returns whether anything was pruned.
 func pruneStaleHooks(hooksMap map[string][]hookEntry, repoDir string, dryRun bool) bool {
 	pruned := false
+	roots := map[string]bool{}
 	removeHookCmds(hooksMap, func(event string, h *hookCmd) bool {
-		if !h.devexpForm() || !isStaleDevexpHook(h.Command, repoDir) {
+		if !h.devexpForm() {
 			return false
 		}
-		name := commandBase(h.Command)
+		reason := ""
+		switch {
+		case isStaleDevexpHook(h.Command, repoDir):
+			reason = "script no longer exists"
+		case isOrphanedDevexpHook(h.Command, repoDir, roots):
+			reason = "script no longer exists, in another install root"
+		default:
+			return false
+		}
+		msg := fmt.Sprintf("%s: %s (%s)", event, commandBase(h.Command), reason)
 		if dryRun {
-			ui.DryRun(fmt.Sprintf("remove %s hook: %s (script no longer exists)", event, name))
+			ui.DryRun("remove " + msg)
 		} else {
-			ui.Removed(fmt.Sprintf("%s: %s (script no longer exists)", event, name))
+			ui.Removed(msg)
 		}
 		pruned = true
 		return true
@@ -364,6 +376,73 @@ func isStaleDevexpHook(cmd, repoDir string) bool {
 	}
 	_, statErr := os.Stat(p)
 	return os.IsNotExist(statErr)
+}
+
+// isOrphanedDevexpHook reports whether cmd is devexp's registration of a script
+// that no longer exists, from an install root other than repoDir (#150): a
+// checkout or asset cache that devexp was installed from before, whose registry
+// has since dropped the hook. The script's name can't be checked against any
+// registry (that is how it went stale), so the root is: cmd must be in a form
+// devexp writes (commandPath, a clean absolute path) naming
+// <root>/hooks/claude-code/<script>, the script must be gone, and <root> must
+// hold a devexp hooks registry (isDevexpRoot). A user's hook directory has no
+// such registry; one whose root was deleted outright can't be told from a
+// user's and is left alone. Scripts under repoDir are isStaleDevexpHook's.
+// roots caches isDevexpRoot per root for one pass.
+func isOrphanedDevexpHook(cmd, repoDir string, roots map[string]bool) bool {
+	p, ok := commandPath(cmd)
+	if !ok || !filepath.IsAbs(p) || filepath.Clean(p) != p {
+		return false
+	}
+	dir, script := path.Split(filepath.ToSlash(p))
+	root, ok := strings.CutSuffix(dir, "/"+scriptDir)
+	if !ok || root == "" || script == "" {
+		return false
+	}
+	if rel, err := filepath.Rel(repoDir, p); err == nil && !strings.HasPrefix(rel, "..") {
+		return false
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		return false
+	}
+	root = filepath.FromSlash(root)
+	isRoot, seen := roots[root]
+	if !seen {
+		isRoot = isDevexpRoot(root)
+		roots[root] = isRoot
+	}
+	return isRoot
+}
+
+// registryFile is where every devexp install root — a clone, DEVEXP_DIR or the
+// extracted asset cache — keeps its hooks registry.
+const registryFile = "hooks/registry.json"
+
+// isDevexpRoot reports whether root holds a devexp hooks registry: a regular
+// file at hooks/registry.json that is a non-empty JSON array of objects, each
+// with a non-empty string "name". uninstall.sh's is_devexp_root applies the
+// same test.
+func isDevexpRoot(root string) bool {
+	p := filepath.Join(root, filepath.FromSlash(registryFile))
+	fi, err := os.Stat(p)
+	if err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return false
+	}
+	var hooks []map[string]json.RawMessage
+	if json.Unmarshal(data, &hooks) != nil || len(hooks) == 0 {
+		return false
+	}
+	for _, h := range hooks {
+		var name string
+		if h == nil || json.Unmarshal(h["name"], &name) != nil || name == "" {
+			return false
+		}
+	}
+	return true
 }
 
 // legacyScriptPath returns cmd when it may be the bare path an install from

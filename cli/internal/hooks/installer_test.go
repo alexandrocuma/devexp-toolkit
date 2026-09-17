@@ -1656,6 +1656,209 @@ func TestRequoteDevexpHooks_DropsEmptiedEntry(t *testing.T) {
 	}
 }
 
+// devexpRoot makes dir look like a devexp install root: a hooks registry at
+// hooks/registry.json.
+func devexpRoot(t *testing.T, dir string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, "hooks", "claude-code"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	reg := `[{"name": "secret-guard", "enabled": true, "claude_code": {"event": "PreToolUse", "script": "hooks/claude-code/secret-guard.sh"}}]`
+	if err := os.WriteFile(filepath.Join(dir, "hooks", "registry.json"), []byte(reg), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestIsDevexpRoot(t *testing.T) {
+	tests := map[string]struct {
+		registry *string // nil: no file
+		dir      bool    // hooks/registry.json is a directory
+		want     bool
+	}{
+		"a registry":                      {registry: ptr(`[{"name": "a"}, {"name": "b", "enabled": false}]`), want: true},
+		"no registry":                     {},
+		"registry is a directory":         {dir: true},
+		"not JSON":                        {registry: ptr(`[{"name": "a"`)},
+		"an object, not an array":         {registry: ptr(`{"name": "a"}`)},
+		"an empty array":                  {registry: ptr(`[]`)},
+		"an element that isn't an object": {registry: ptr(`[{"name": "a"}, "b"]`)},
+		"a null element":                  {registry: ptr(`[{"name": "a"}, null]`)},
+		"an element without a name":       {registry: ptr(`[{"name": "a"}, {"description": "x"}]`)},
+		"an empty name":                   {registry: ptr(`[{"name": ""}]`)},
+		"a name that isn't a string":      {registry: ptr(`[{"name": 1}]`)},
+		"a null name":                     {registry: ptr(`[{"name": null}]`)},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			p := filepath.Join(root, "hooks", "registry.json")
+			os.MkdirAll(filepath.Dir(p), 0755) //nolint:errcheck
+			switch {
+			case tt.dir:
+				os.Mkdir(p, 0755) //nolint:errcheck
+			case tt.registry != nil:
+				os.WriteFile(p, []byte(*tt.registry), 0644) //nolint:errcheck
+			}
+			if got := isDevexpRoot(root); got != tt.want {
+				t.Errorf("isDevexpRoot() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func ptr(s string) *string { return &s }
+
+// TestIsOrphanedDevexpHook (#150): only devexp's own form, naming a missing
+// script directly under <root>/hooks/claude-code/ of another devexp root.
+func TestIsOrphanedDevexpHook(t *testing.T) {
+	base := t.TempDir()
+	repoDir := devexpRoot(t, filepath.Join(base, "repo"))
+	other := devexpRoot(t, filepath.Join(base, "other checkout's $root"))
+	userDir := filepath.Join(base, "user")
+	os.MkdirAll(filepath.Join(userDir, "hooks", "claude-code"), 0755) //nolint:errcheck
+	createScript(t, other, "hooks/claude-code/secret-guard.sh")
+	gone := filepath.Join(other, "hooks", "claude-code", "removed.sh")
+	plainOther := devexpRoot(t, filepath.Join(base, "plain"))
+	plainGone := filepath.Join(plainOther, "hooks", "claude-code", "removed.sh")
+
+	tests := map[string]struct {
+		cmd  string
+		want bool
+	}{
+		"missing script in another root, single-quoted": {cmd: shellQuote(gone), want: true},
+		"missing script in another root, plain":         {cmd: plainGone, want: true},
+		"missing script in another root, bare path needing quotes": {
+			cmd: gone, // the shell splits it: not a form devexp writes for this path
+		},
+		"existing script in another root":                                  {cmd: shellQuote(filepath.Join(other, "hooks", "claude-code", "secret-guard.sh"))},
+		"missing script in a root with no registry":                        {cmd: filepath.Join(userDir, "hooks", "claude-code", "removed.sh")},
+		"missing script in a root that is gone":                            {cmd: filepath.Join(base, "deleted", "hooks", "claude-code", "removed.sh")},
+		"missing script under repoDir (not orphaned: isStaleDevexpHook's)": {cmd: filepath.Join(repoDir, "hooks", "claude-code", "removed.sh")},
+		"with an argument":                                                 {cmd: plainGone + " --flag"},
+		"double-quoted":                                                    {cmd: `"` + plainGone + `"`},
+		"through a wrapper":                                                {cmd: "bash " + plainGone},
+		"chained":                                                          {cmd: plainGone + ";true"},
+		"through a variable":                                               {cmd: "$HOME/plain/hooks/claude-code/removed.sh"},
+		"relative":                                                         {cmd: "plain/hooks/claude-code/removed.sh"},
+		"nested below hooks/claude-code/":                                  {cmd: filepath.Join(plainOther, "hooks", "claude-code", "sub", "removed.sh")},
+		"directly under hooks/":                                            {cmd: filepath.Join(plainOther, "hooks", "removed.sh")},
+		"under my-hooks/claude-code/":                                      {cmd: filepath.Join(plainOther, "my-hooks", "claude-code", "removed.sh")},
+		"an unclean path":                                                  {cmd: plainOther + "/hooks/../hooks/claude-code/removed.sh"},
+		"the scripts directory itself":                                     {cmd: filepath.Join(plainOther, "hooks", "claude-code") + "/"},
+		"at the file-system root":                                          {cmd: "/hooks/claude-code/removed.sh"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := isOrphanedDevexpHook(tt.cmd, repoDir, map[string]bool{}); got != tt.want {
+				t.Errorf("isOrphanedDevexpHook(%q) = %v, want %v", tt.cmd, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestInstallClaude_PrunesOrphanedHooksFromOtherRoots (#150): a registration
+// from another install root whose script left that root's registry is pruned;
+// every user command that merely looks similar stays, fields and all.
+func TestInstallClaude_PrunesOrphanedHooksFromOtherRoots(t *testing.T) {
+	base := t.TempDir()
+	repoDir := devexpRoot(t, filepath.Join(base, "repo"))
+	createScript(t, repoDir, "hooks/claude-code/secret-guard.sh")
+	registry := Registry{ccHook("secret-guard", true, "PreToolUse", "Read", "hooks/claude-code/secret-guard.sh")}
+	other := devexpRoot(t, filepath.Join(base, "My Checkout"))
+	gone := filepath.Join(other, "hooks", "claude-code", "pre-tool-use.sh")
+	userRoot := filepath.Join(base, "dotfiles")
+	os.MkdirAll(filepath.Join(userRoot, "hooks", "claude-code"), 0755) //nolint:errcheck
+
+	user := []string{
+		filepath.Join(userRoot, "hooks", "claude-code", "pre-tool-use.sh"), // no registry in that root
+		shellQuote(gone) + " --flag",
+		`"` + gone + `"`,
+		"bash " + shellQuote(gone),
+		shellQuote(filepath.Join(other, "hooks", "claude-code", "sub", "x.sh")),
+	}
+	settingsPath := filepath.Join(base, "settings.json")
+	var cmds []hookCmd
+	for _, c := range user {
+		cmds = append(cmds, hookCmd{Type: "command", Command: c})
+	}
+	cmds = append(cmds, hookCmd{Type: "command", Command: shellQuote(gone)})
+	writeSettingsHooks(t, settingsPath, hooksMapT{"Stop": {{Hooks: cmds}}})
+	// An exec-form handler naming the orphaned script is the user's too.
+	data, _ := os.ReadFile(settingsPath)
+	data = []byte(strings.Replace(string(data), `"hooks": [`, `"hooks": [{"type": "command", "command": `+strconvQuote(shellQuote(gone))+`, "args": []},`, 1))
+	os.WriteFile(settingsPath, data, 0644) //nolint:errcheck
+
+	for _, dryRun := range []bool{true, false} {
+		var err error
+		out := captureOutput(t, func() { err = InstallClaude(registry, repoDir, settingsPath, nil, dryRun) })
+		if err != nil {
+			t.Fatalf("InstallClaude(dryRun=%v) error = %v\n%s", dryRun, err, out)
+		}
+		if !strings.Contains(out, "pre-tool-use.sh (script no longer exists, in another install root)") {
+			t.Errorf("dryRun=%v: output doesn't report the pruned registration:\n%s", dryRun, out)
+		}
+		if dryRun {
+			if after, _ := os.ReadFile(settingsPath); string(after) != string(data) {
+				t.Errorf("dry run changed settings.json")
+			}
+		}
+	}
+	got := readHooks(t, settingsPath)["Stop"][0].Hooks
+	var gotCmds []string
+	for _, h := range got {
+		gotCmds = append(gotCmds, h.Command)
+	}
+	want := append([]string{shellQuote(gone)}, user...) // the exec-form one first
+	if !reflect.DeepEqual(gotCmds, want) {
+		t.Errorf("Stop commands =\n%q\nwant\n%q", gotCmds, want)
+	}
+}
+
+func strconvQuote(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+// TestInstallClaude_PerTargetEnabled (#150): Claude Code registration follows
+// EnabledFor(TargetClaudeCode), so a hook's claude_code.enabled overrides its
+// top-level enabled either way.
+func TestInstallClaude_PerTargetEnabled(t *testing.T) {
+	on, off := true, false
+	repoDir := t.TempDir()
+	for _, s := range []string{"opencode-only.sh", "cc-only.sh", "both.sh", "neither.sh"} {
+		createScript(t, repoDir, "hooks/claude-code/"+s)
+	}
+	hook := func(name string, enabled bool, ccEnabled, ocEnabled *bool) Hook {
+		return Hook{Name: name, Enabled: enabled, Targets: map[string]TargetSpec{
+			TargetClaudeCode: {Event: "PreToolUse", Matcher: "Bash", Script: "hooks/claude-code/" + name + ".sh", Enabled: ccEnabled},
+			TargetOpencode:   {Event: "tool.execute.before", Module: "hooks/opencode/" + name + ".js", Enabled: ocEnabled},
+		}}
+	}
+	registry := Registry{
+		hook("opencode-only", true, &off, nil), // enabled at the top, off for Claude Code
+		hook("cc-only", false, &on, nil),       // off at the top, on for Claude Code
+		hook("both", true, nil, nil),
+		hook("neither", false, nil, &on), // the graphify-* shape: opencode only
+	}
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	var err error
+	out := captureOutput(t, func() { err = InstallClaude(registry, repoDir, settingsPath, nil, false) })
+	if err != nil {
+		t.Fatalf("InstallClaude() error = %v\n%s", err, out)
+	}
+	var got []string
+	for _, e := range readHooks(t, settingsPath)["PreToolUse"] {
+		for _, h := range e.Hooks {
+			got = append(got, filepath.Base(h.Command))
+		}
+	}
+	sort.Strings(got)
+	if want := []string{"both.sh", "cc-only.sh"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("registered %q, want %q", got, want)
+	}
+}
+
 // TestInstallClaude_SymlinkedSettings (#124): settings.json managed as a
 // symlink keeps its link; the file it points at gets the hooks, atomically and
 // with its own mode. A dangling link is refused and nothing is created.
