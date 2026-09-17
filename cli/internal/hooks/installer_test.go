@@ -1655,3 +1655,52 @@ func TestRequoteDevexpHooks_DropsEmptiedEntry(t *testing.T) {
 		t.Errorf("changed = %v, hooks =\n%+v\nwant\n%+v", changed, hooks, want)
 	}
 }
+
+// TestInstallClaude_SymlinkedSettings (#124): settings.json managed as a
+// symlink keeps its link; the file it points at gets the hooks, atomically and
+// with its own mode. A dangling link is refused and nothing is created.
+func TestInstallClaude_SymlinkedSettings(t *testing.T) {
+	repoDir := t.TempDir()
+	createScript(t, repoDir, "hooks/claude-code/foo.sh")
+	registry := Registry{ccHook("foo", true, "PreToolUse", "Bash", "hooks/claude-code/foo.sh")}
+
+	t.Run("link kept, target updated", func(t *testing.T) {
+		dotfiles := t.TempDir()
+		target := filepath.Join(dotfiles, "settings.json")
+		os.WriteFile(target, []byte("{\n  \"model\": \"opus\"\n}\n"), 0600) //nolint:errcheck
+		os.Chmod(target, 0600)                                              //nolint:errcheck
+		settingsPath := filepath.Join(t.TempDir(), "settings.json")
+		os.Symlink(target, settingsPath) //nolint:errcheck
+		var err error
+		out := captureOutput(t, func() { err = InstallClaude(registry, repoDir, settingsPath, nil, false) })
+		if err != nil {
+			t.Fatalf("InstallClaude() error = %v\n%s", err, out)
+		}
+		if fi, err := os.Lstat(settingsPath); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("settings.json symlink replaced")
+		}
+		if got := readHooks(t, target)["PreToolUse"]; len(got) != 1 {
+			t.Errorf("target hooks = %+v, want foo registered", got)
+		}
+		if fi, _ := os.Stat(target); fi.Mode().Perm() != 0600 {
+			t.Errorf("target mode = %v, want 0600", fi.Mode().Perm())
+		}
+		if entries, _ := os.ReadDir(dotfiles); len(entries) != 1 {
+			t.Errorf("dotfiles holds %d entries, want only settings.json", len(entries))
+		}
+	})
+
+	t.Run("dangling link refused", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "settings.json")
+		settingsPath := filepath.Join(t.TempDir(), "settings.json")
+		os.Symlink(missing, settingsPath) //nolint:errcheck
+		var err error
+		out := captureOutput(t, func() { err = InstallClaude(registry, repoDir, settingsPath, nil, false) })
+		if err == nil || !strings.Contains(err.Error(), "left untouched") {
+			t.Errorf("InstallClaude() error = %v, want a dangling-link refusal\n%s", err, out)
+		}
+		if _, err := os.Lstat(missing); !os.IsNotExist(err) {
+			t.Errorf("a settings.json was created at the link's destination")
+		}
+	})
+}

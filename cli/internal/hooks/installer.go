@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"devexp/internal/fsutil"
 	"devexp/internal/ui"
 )
 
@@ -200,8 +201,10 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(settingsPath, out, 0644); err != nil {
-		return err
+	// Atomic, and through a symlinked settings.json (dotfiles) to the file it
+	// points at, keeping the link (#124).
+	if err := fsutil.WriteFileAtomic(settingsPath, out, 0644); err != nil {
+		return fmt.Errorf("hooks: %w", err)
 	}
 	fmt.Printf("  Saved: %s\n", settingsPath)
 	return nil

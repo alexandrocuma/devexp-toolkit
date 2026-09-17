@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Saving `settings.json`, the manifests and the opencode plugin files could
+  leave a truncated file, and a plain atomic rename would have replaced a
+  symlinked file with a regular one (#124).** `devexp install` wrote
+  `~/.claude/settings.json` and both `.devexp-manifest.json` files by
+  truncating and rewriting them in place. All of them, and the opencode plugin
+  files and legacy `config.json` edit, now go through one writer
+  (`cli/internal/fsutil`):
+  - the new bytes go to a temp file next to the file being replaced, are
+    fsynced, get that file's permission bits (not a fixed 0644) and are
+    renamed over it, so an interrupted save leaves the old file or the new
+    one;
+  - a symlinked file (dotfiles) is followed to the file it finally points at,
+    which is replaced; the link, and every link in a chain, stays;
+  - a dangling link, a link loop, a directory, a file you can't write, a
+    directory where no temp file can be created, or a rename the file system
+    refuses (a bind-mounted file) is refused with an error naming the file,
+    which is left untouched. Earlier releases created the file a dangling
+    link pointed at.
+
 ## [0.9.1] - 2026-09-16
 
 ### Fixed

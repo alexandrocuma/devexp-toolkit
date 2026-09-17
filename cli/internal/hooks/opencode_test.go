@@ -1087,67 +1087,6 @@ func TestInstallOpencode_EntryOwnership(t *testing.T) {
 	}
 }
 
-func TestWriteFileAtomic(t *testing.T) {
-	noTemps := func(t *testing.T, dir string) {
-		t.Helper()
-		entries, _ := os.ReadDir(dir)
-		for _, e := range entries {
-			if strings.Contains(e.Name(), ".tmp-") {
-				t.Errorf("temp file %s left behind", e.Name())
-			}
-		}
-	}
-
-	t.Run("writes the bytes with the given mode and leaves no temp file", func(t *testing.T) {
-		dir := t.TempDir()
-		p := filepath.Join(dir, "devexp.js")
-		os.WriteFile(p, []byte("old"), 0600) //nolint:errcheck
-		if err := writeFileAtomic(p, []byte("new"), 0644); err != nil {
-			t.Fatalf("writeFileAtomic() error = %v", err)
-		}
-		fi, _ := os.Stat(p)
-		if got, _ := os.ReadFile(p); string(got) != "new" || fi.Mode().Perm() != 0644 {
-			t.Errorf("file = %q mode %v, want \"new\" 0644", got, fi.Mode().Perm())
-		}
-		noTemps(t, dir)
-	})
-
-	t.Run("a failed rename leaves the target and no temp file", func(t *testing.T) {
-		dir := t.TempDir()
-		p := filepath.Join(dir, "hooks.json")
-		os.MkdirAll(filepath.Join(p, "child"), 0755) //nolint:errcheck — a non-empty directory can't be renamed over
-		if err := writeFileAtomic(p, []byte("new"), 0644); err == nil {
-			t.Errorf("writeFileAtomic() error = nil, want the rename to fail")
-		}
-		if fi, err := os.Stat(filepath.Join(p, "child")); err != nil || !fi.IsDir() {
-			t.Errorf("target directory changed")
-		}
-		noTemps(t, dir)
-	})
-
-	t.Run("a symlink at the path is replaced, never written through", func(t *testing.T) {
-		dir := t.TempDir()
-		outside := filepath.Join(t.TempDir(), "precious")
-		os.WriteFile(outside, []byte("precious"), 0644) //nolint:errcheck
-		p := filepath.Join(dir, "utils.js")
-		os.Symlink(outside, p) //nolint:errcheck
-		if err := writeFileAtomic(p, []byte("new"), 0644); err != nil {
-			t.Fatalf("writeFileAtomic() error = %v", err)
-		}
-		if got, _ := os.ReadFile(outside); string(got) != "precious" {
-			t.Errorf("symlink target = %q, written through", got)
-		}
-		noTemps(t, dir)
-	})
-
-	t.Run("an unwritable directory fails without a partial file", func(t *testing.T) {
-		dir := filepath.Join(t.TempDir(), "missing")
-		if err := writeFileAtomic(filepath.Join(dir, "x.js"), []byte("new"), 0644); err == nil {
-			t.Errorf("writeFileAtomic() error = nil, want a temp-file error")
-		}
-	})
-}
-
 // TestInstallOpencode_LostManifest: with no recorded list, the plugin files
 // devexp recognises on disk are still removed when every hook is disabled, and
 // a normal install reports the full list again.
