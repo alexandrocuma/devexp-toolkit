@@ -33,7 +33,7 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
 | Shell wrappers | `install.sh`, `uninstall.sh`, `scripts/` | Build-if-missing and run the CLI; uninstall; remote install; stage the embedded assets | `install.sh` |
 | CLI commands | `cli/main.go`, `cli/cmd/` | Parse flags or run the wizard, resolve `installOpts`, run each target's install in order. Holds pure decision functions and thin I/O wrappers. No file, JSON or exec logic for a particular asset kind belongs here | `cli/cmd/targets.go`, `cli/cmd/paths.go` |
 | Asset installers | `cli/internal/{agents,skills,hooks,mcp}` | Install one asset kind into one target from explicit paths, returning what was installed. They don't read `$HOME` or config themselves | `cli/internal/hooks/installer.go` |
-| Support packages | `cli/internal/{repo,assets,config,manifest}` | Find the asset root (clone or embedded), embed assets, load config/dotenv, and record what was installed | `cli/internal/manifest/manifest.go` |
+| Support packages | `cli/internal/{repo,assets,config,manifest,fsutil}` | Find the asset root (clone or embedded), embed assets, load config/dotenv, record what was installed, and save every file atomically and symlink-safely (`fsutil.WriteFileAtomic`) | `cli/internal/manifest/manifest.go` |
 | Terminal UI | `cli/internal/ui` | Colored stdout output helpers and promptui prompts. The logic behind the prompts lives in pure helpers | `cli/internal/ui/output.go`, `cli/internal/ui/prompts.go` |
 
 ## Request / Job Flow
@@ -89,17 +89,21 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
           2. manifest  cli/cmd/backup.go loadOldManifest → cli/internal/manifest Load(~/.claude/.devexp-manifest.json)
                        (unreadable/corrupt → warn, treat as empty, so nothing is stale this run)
           3. agents    cli/cmd/backup.go backupExisting(*.md → ~/.claude/.devexp-backup-<YYYYMMDDTHHMMSS>)
-                       → cli/internal/agents/installer.go InstallClaude (copy; --model rewrites an existing model: line)
+                       → cli/internal/agents/installer.go InstallClaude (copy, atomic; --model rewrites an existing model: line;
+                         a symlinked agent file is kept as is, warned, still recorded)
                        → removeStale(old, new, staleFile, os.Remove): manifest.Stale(old, new), minus
                          case variants of / the same file as an installed name
                          (bare <name>.md regular files only; other entries and symlinks kept, warned)
-          4. skills    backupExistingDirs → cli/internal/skills/installer.go InstallClaude (CopyDir whole skill dir)
+          4. skills    backupExistingDirs → cli/internal/skills/installer.go InstallClaude (CopyDir whole skill dir;
+                         a symlinked skill dir, or file/dir inside one, is kept as is, warned)
                        → removeStale(..., staleDir, os.RemoveAll) (bare names, real directories only)
           5. hooks     cli/internal/hooks/installer.go LoadRegistry → InstallClaude(~/.claude/settings.json):
-                       keep unknown keys; pruneStaleHooks (under repoDir, script gone)
+                       keep unknown keys; pruneStaleHooks (script gone: under repoDir, or under another
+                         root holding a hooks/registry.json — isOrphanedDevexpHook)
                        + pruneForeignDevexpHooks (same registry script under another install root);
                        append {matcher, hooks:[{type: command, command: <repoDir>/hooks/claude-code/<name>.sh}]}
-                       for each enabled, non-disabled hook not already registered; write only if changed
+                       for each EnabledFor(claude_code), non-disabled hook not already registered;
+                       write only if changed (fsutil.WriteFileAtomic: temp + fsync + rename of the symlink's target)
           6. manifest  manifest.Save (skipped in dry-run)
   → cobra prints any returned error to stderr, exit 1
 ```
@@ -111,7 +115,7 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
 `runInstall` → `cli/cmd/install_opencode.go` `doInstallOpencode(opts)`, with paths from `opencodeTargetPaths($HOME)`:
 
 1. Warn that opencode gets a subset of features.
-2. `installMCPsOpencode` → `cli/internal/mcp/opencode.go` `InstallOpencode` writes the `mcp` map in `~/.config/opencode/config.json` (`type: local|remote`, updating entries in place when they differ).
+2. `installMCPsOpencode` → `cli/internal/mcp/opencode.go` `InstallOpencode` writes the `mcp` map in `~/.config/opencode/config.json` (`type: local|remote`, updating entries in place when they differ). A config that isn't strict JSON, or whose top level or `mcp` isn't an object, stops the install with the file untouched (`loadOpencodeConfig`). The file is re-encoded as 2-space JSON, and saved atomically through `fsutil.WriteFileAtomic`.
 3. `agents.InstallOpencode` → `transformForOpencode` drops `name`/`color`/`memory`, turns `tools` into an explicit `false` deny list over the 8 opencode tools, resolves model aliases and appends `mode: subagent`. `agents.InstallOpencodeExclusive` then installs `agents/opencode/*.md`, changing only the model. Stale agents from the previous manifest are then removed (`removeStale` with `staleFile`: bare `<name>.md` regular files only; other entries and symlinks are kept, with a warning).
 4. `skills.InstallOpencode` writes `~/.config/opencode/commands/<name>.md` from `SKILL.md` alone, with the top-level `name:` stripped. Stale commands are then removed (`removeStale` with `staleCommand`: entries are recorded as bare `<name>`, and only a regular `<name>.md` file is removed; a warning names a rejected entry as recorded).
 5. Hooks (skipped by `--agents-only`/`--skills-only`), in `cli/internal/hooks/opencode.go`:
@@ -181,7 +185,7 @@ Hook commands point into the install root, so editing a registered script in the
 ### Known gaps
 
 - **Disabled hooks behave differently per CLI.** Re-installing opencode removes a hook disabled since the last run; Claude Code keeps it registered in `settings.json` (`hooks.InstallClaude` never removes a registry hook; it only adds, re-quotes and updates matchers of enabled ones).
-- **`uninstall.sh` doesn't match the CLI.** It treats `~/.claude/skills` as "shared between both CLIs" (`uninstall.sh`, `SKILLS_DIR`), but the CLI writes opencode skills to `~/.config/opencode/commands/` (`cli/cmd/paths.go`). It doesn't remove `.devexp-manifest.json`. The opencode hook plugin is removed by the hidden `devexp uninstall --target opencode` (`cli/cmd/uninstall.go`), with the installer's own rules; without a `devexp` binary that has that command, `uninstall.sh` leaves the plugin in place (#109). Its opencode MCP removal is still python: it skips a symlinked or unwritable `config.json` and saves atomically, but rewrites the whole file with `json.dump(indent=2)` instead of preserving its bytes (#124).
+- **`uninstall.sh` doesn't match the CLI.** It treats `~/.claude/skills` as "shared between both CLIs" (`uninstall.sh`, `SKILLS_DIR`), but the CLI writes opencode skills to `~/.config/opencode/commands/` (`cli/cmd/paths.go`). It doesn't remove `.devexp-manifest.json`. The opencode hook plugin is removed by the hidden `devexp uninstall --target opencode` (`cli/cmd/uninstall.go`), with the installer's own rules; without a `devexp` binary that has that command, `uninstall.sh` leaves the plugin in place (#109). Its opencode MCP removal is still python. It cuts only the removed servers out of `config.json`'s bytes (#124), and skips a symlinked, unwritable or too-deeply-nested `config.json`. Install's MCP merge, by contrast, re-encodes the whole `config.json` (key order, indentation).
 - **Config schema is narrower than the loader.** `devexp.config.schema.json` `mcps.items` sets `additionalProperties: false` and requires `command`, but `mcp.MCP` also accepts `transport`, `url`, `headers` and `setup_instructions` (`cli/internal/mcp/types.go`). An HTTP/SSE MCP declared in config fails schema validation even though the installer supports it.
 
 ## Reference Implementation
