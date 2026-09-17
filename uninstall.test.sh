@@ -458,6 +458,12 @@ printf '{\n\t"model": "opus",\n\t"hooks": {\n\t\t"Stop": [\n\t\t\t{\n\t\t\t\t"ho
 printf '{\n\t"model": "opus",\n\t"hooks": {\n\t\t"Stop": [\n\t\t\t{\n\t\t\t\t"hooks": [\n\t\t\t\t\t{\n\t\t\t\t\t\t"type": "command",\n\t\t\t\t\t\t"command": "/usr/local/bin/notify"\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t}\n\t\t]\n\t}\n}\n' > "$TMP/tabs-want.json"
 expect_file "a tab-indented file keeps its indentation" "$TMP/tabs-in.json" "$TMP/tabs-want.json"
 
+# A repeated top-level hooks key: json.loads keeps the last, so the last one is
+# edited and the first stays as it was.
+printf '%s' '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"@MINE@"}]}]},"model":"x","hooks":{"Stop":[{"hooks":[{"type":"command","command":"@MINE@"},{"type":"command","command":"/u"}]}]}}' > "$TMP/dup-in.json"
+printf '%s' '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"@MINE@"}]}]},"model":"x","hooks":{"Stop":[{"hooks":[{"type":"command","command":"/u"}]}]}}' > "$TMP/dup-want.json"
+expect_file "a repeated hooks key: the last one is edited" "$TMP/dup-in.json" "$TMP/dup-want.json"
+
 # CRLF: text mode would turn every line ending into LF. Lines outside hooks keep
 # CRLF, and the rewritten hooks value is written with it too.
 printf '{\r\n  "model": "opus",\r\n  "hooks": {\r\n    "Stop": [\r\n      {\r\n        "hooks": [\r\n          {\r\n            "type": "command",\r\n            "command": "@MINE@"\r\n          },\r\n          {\r\n            "type": "command",\r\n            "command": "/usr/local/bin/notify"\r\n          }\r\n        ]\r\n      }\r\n    ]\r\n  },\r\n  "z": 1\r\n}\r\n' > "$TMP/crlf-in.json"

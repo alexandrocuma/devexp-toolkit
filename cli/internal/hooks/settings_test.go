@@ -103,6 +103,11 @@ const userSettings = `{
       }
     ],
     "Stop": [],
+    "Notification": [
+      {
+        "matcher": "idle"
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
@@ -220,6 +225,11 @@ const userSettingsInstalled = `{
       }
     ],
     "Stop": [],
+    "Notification": [
+      {
+        "matcher": "idle"
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
@@ -265,7 +275,8 @@ func fill(s, repoDir, foreign string) string {
 // owns. Every field of a user's hook — timeout, async, shell, if,
 // statusMessage, args, an http, prompt or mcp_tool handler's own fields, an
 // unknown field — survives install and re-install byte for byte, as do an
-// omitted matcher, an empty entry and event, and everything outside hooks.
+// omitted matcher, an empty entry and event, an entry without hooks, and
+// everything outside hooks.
 func TestInstallClaude_KeepsUserHookFields(t *testing.T) {
 	repoDir := testRepo(t, "repo")
 	foreign := filepath.Join(t.TempDir(), "cache")
@@ -297,7 +308,9 @@ func TestInstallClaude_KeepsUserHookFields(t *testing.T) {
 // TestInstallClaude_RequoteKeepsHandlerFields: re-quoting a devexp command
 // changes that command only — the handler keeps its other fields and their
 // order. An exec-form handler (args) naming the same kind of path is the
-// user's: never re-quoted, and not counted as the registration.
+// user's: never re-quoted, and not counted as the registration — nor as the
+// re-quoted command already being present, which would drop the legacy
+// spelling (and its fields) instead of rewriting it.
 func TestInstallClaude_RequoteKeepsHandlerFields(t *testing.T) {
 	repoDir := testRepo(t, "My Proj")
 	settingsPath := filepath.Join(t.TempDir(), "settings.json")
@@ -317,6 +330,13 @@ func TestInstallClaude_RequoteKeepsHandlerFields(t *testing.T) {
             "type": "command",
             "command": "REPO/hooks/claude-code/dangerous-cmd-guard.sh",
             "args": []
+          },
+          {
+            "type": "command",
+            "command": "'REPO/hooks/claude-code/secret-guard.sh'",
+            "args": [
+              "--strict"
+            ]
           }
         ]
       }
@@ -339,6 +359,13 @@ func TestInstallClaude_RequoteKeepsHandlerFields(t *testing.T) {
             "type": "command",
             "command": "REPO/hooks/claude-code/dangerous-cmd-guard.sh",
             "args": []
+          },
+          {
+            "type": "command",
+            "command": "'REPO/hooks/claude-code/secret-guard.sh'",
+            "args": [
+              "--strict"
+            ]
           }
         ]
       },
@@ -690,6 +717,40 @@ func TestInstallClaude_SyncsRegistryMatcher(t *testing.T) {
         ]
       }`),
 		},
+		"shared, twice: the first copy moves out": {
+			in: wrap(`
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/fmt-check",
+            "timeout": 20
+          },
+          {
+            "type": "command",
+            "command": "` + guard + `",
+            "statusMessage": "first"
+          },
+          {
+            "type": "command",
+            "command": "` + guard + `",
+            "statusMessage": "second"
+          }
+        ]
+      }`),
+			want: wrap(user, `
+      {
+        "matcher": "`+newMatcher+`",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "`+guard+`",
+            "statusMessage": "first"
+          }
+        ]
+      }`),
+		},
 		"shared and on its own: updated in place, removed from the shared entry": {
 			in: wrap(`
       {
@@ -829,5 +890,31 @@ func TestInstallClaude_SyncsRegistryMatcher(t *testing.T) {
 				t.Errorf("second install changed settings.json:\n%s\noutput:\n%s", again, out)
 			}
 		})
+	}
+}
+
+// TestInstallClaude_UnreadableSettings: a settings.json that exists but can't
+// be read is not taken for a missing one. Install fails naming it, and the
+// file — writable here, so a rewrite would succeed — keeps its content.
+func TestInstallClaude_UnreadableSettings(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a write-only file")
+	}
+	repoDir := testRepo(t, "repo")
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	const content = `{"model": "opus"}`
+	if err := os.WriteFile(settingsPath, []byte(content), 0o200); err != nil {
+		t.Fatal(err)
+	}
+	var err error
+	out := captureOutput(t, func() { err = InstallClaude(testRegistry(), repoDir, settingsPath, nil, false) })
+	if err == nil || !strings.Contains(err.Error(), "read "+settingsPath) {
+		t.Errorf("error = %v, want a read error naming %s\n%s", err, settingsPath, out)
+	}
+	if err := os.Chmod(settingsPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(settingsPath); string(got) != content {
+		t.Errorf("settings.json changed to:\n%s", got)
 	}
 }
