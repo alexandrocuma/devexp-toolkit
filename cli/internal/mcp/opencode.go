@@ -150,8 +150,6 @@ func (e *ConfigRefusedError) Error() string {
 	return fmt.Sprintf("mcp: %v — it was left untouched and no MCP servers were added; fix it and re-run", e.Reason)
 }
 
-func (e *ConfigRefusedError) Unwrap() error { return e.Reason }
-
 // loadOpencodeConfig reads config.json for merging MCP servers into it. A
 // missing or blank file is an empty config. Anything devexp can't merge into
 // without losing what is there is an error, never an empty config that would

@@ -427,19 +427,28 @@ func TestIsSymlink(t *testing.T) {
 }
 
 // TestWriteFileAtomic_TempNameTaken: the temp file is created exclusively. A
-// file already at the chosen name — another run's temp, or anything else — is
-// never opened or renamed over the target; the next name is tried.
+// file or symlink already at the chosen name — another run's leftover, or
+// anything else — is never opened, followed or renamed over the target; the
+// next name is tried, as many times as it takes.
 func TestWriteFileAtomic_TempNameTaken(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "config.json")
 	for _, existing := range []bool{false, true} {
 		t.Run(fmt.Sprintf("target exists=%v", existing), func(t *testing.T) {
+			dir := t.TempDir()
+			p := filepath.Join(dir, "config.json")
 			if existing {
 				write(t, p, "old", 0o644)
 			}
+			victim := filepath.Join(t.TempDir(), "victim")
+			write(t, victim, "victim", 0o644)
 			taken := filepath.Join(dir, ".config.json.tmp-taken")
 			write(t, taken, "someone else's", 0o600)
-			names := []string{"taken", "free"}
+			if err := os.Symlink(victim, filepath.Join(dir, ".config.json.tmp-link")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(dir, "nowhere"), filepath.Join(dir, ".config.json.tmp-dangling")); err != nil {
+				t.Fatal(err)
+			}
+			names := []string{"taken", "link", "dangling", "free"}
 			old := tempSuffix
 			tempSuffix = func() string { n := names[0]; names = names[1:]; return n }
 			t.Cleanup(func() { tempSuffix = old })
@@ -449,10 +458,53 @@ func TestWriteFileAtomic_TempNameTaken(t *testing.T) {
 			if got := read(t, taken); got != "someone else's" {
 				t.Errorf("taken temp name = %q, overwritten", got)
 			}
+			if got := read(t, victim); got != "victim" {
+				t.Errorf("a symlink at the temp name was followed: victim = %q", got)
+			}
+			if _, err := os.Lstat(filepath.Join(dir, "nowhere")); !os.IsNotExist(err) {
+				t.Errorf("a dangling symlink at the temp name was followed")
+			}
 			if got := read(t, p); got != "new" {
 				t.Errorf("target = %q, want new", got)
 			}
-			os.Remove(taken) //nolint:errcheck
+			if len(names) != 0 {
+				t.Errorf("%d names left untried, want all four tried", len(names))
+			}
 		})
+	}
+}
+
+// TestWriteFileAtomic_TempNamesGiveUp: retries are bounded; when every name is
+// taken the write fails, the target is untouched and nothing is created.
+func TestWriteFileAtomic_TempNamesGiveUp(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.json")
+	write(t, p, "old", 0o644)
+	write(t, filepath.Join(dir, ".config.json.tmp-taken"), "x", 0o600)
+	tries := 0
+	old := tempSuffix
+	tempSuffix = func() string { tries++; return "taken" }
+	t.Cleanup(func() { tempSuffix = old })
+	if err := WriteFileAtomic(p, []byte("new"), 0o644); err == nil {
+		t.Fatal("WriteFileAtomic() = nil, want an error once every temp name is taken")
+	}
+	if tries != 101 {
+		t.Errorf("tried %d names, want 101", tries)
+	}
+	if got := read(t, p); got != "old" {
+		t.Errorf("target = %q, want old", got)
+	}
+}
+
+// TestTempSuffix_Random: the default suffix differs from call to call, so two
+// runs (or a leftover temp) don't keep colliding on one name.
+func TestTempSuffix_Random(t *testing.T) {
+	seen := map[string]bool{}
+	for i := 0; i < 1000; i++ {
+		s := tempSuffix()
+		if s == "" || seen[s] {
+			t.Fatalf("suffix %q repeated or empty after %d calls", s, i)
+		}
+		seen[s] = true
 	}
 }
