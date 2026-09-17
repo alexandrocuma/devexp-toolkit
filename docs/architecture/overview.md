@@ -159,8 +159,8 @@ Hook commands point into the install root, so editing a registered script in the
 | `cli/internal/` | One package per asset kind or concern (see Layers) |
 | `cli/internal/assets/` | `assets.go` (`//go:embed all:agents all:skills all:hooks all:mcps devexp.config.json uninstall.sh`). The staged copies next to it are gitignored and produced by `scripts/stage-assets.sh`, and the package doesn't compile until they exist |
 | `cli/internal/agents/testdata/` | Agent fixtures for transformation tests |
-| `scripts/` | `stage-assets.sh` (rsync of assets into `cli/internal/assets/`), `remote-install.sh` |
-| `.github/workflows/` | `ci.yml` (Go tests, hook tests, installer script tests), `release.yml` (tag → goreleaser) |
+| `scripts/` | `stage-assets.sh` (rsync of assets into `cli/internal/assets/`), `remote-install.sh`, `govulncheck.sh` (govulncheck for every release platform, used by `ci.yml` and `release.yml`) |
+| `.github/workflows/` | `ci.yml` (Go tests, hook tests, installer script tests, govulncheck), `release.yml` (tag → govulncheck → goreleaser) |
 | `docs/` | All documentation; start at [`docs/README.md`](../README.md) |
 
 ## External Dependencies
