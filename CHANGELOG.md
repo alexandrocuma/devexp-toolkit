@@ -69,8 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hash later in the file no longer blocks, but key-like text on the header's
   line or just after it still does. Real PEM blocks still block, including
   escaped, concatenated, encrypted and PGP-armored ones and ones with a dash
-  rule under the header. A body wrapped far narrower than the usual PEM line
-  width, or written in pieces across several edits, isn't recognized as key
+  rule under the header. Other backslashes near a quoted header, as in Windows
+  paths, escaped code strings or LaTeX, don't count as key material. A body
+  wrapped far narrower than the usual PEM line width, written in pieces across
+  several edits, or starting far from its header, isn't recognized as key
   material; `docs/reference/hooks.md` lists this with the guard's other
   limits. The test fixtures now use a realistic PEM body.
 - **`secret-in-write-guard` decides in linear time (#143).** Each pattern is
@@ -78,8 +80,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rescan the rest of a long write from each retry. A write that repeated a
   prefix or a header could keep the guard busy for minutes, and a Claude Code
   hook that runs past its timeout lets the write through. Every repetition
-  that can reach past the next start is now bounded, with the same decisions
-  for real keys, and timing tests in both suites pin it.
+  that can reach past the next start is now bounded, and timing tests in both
+  suites pin it. Decisions are unchanged except for rare edge shapes that go
+  beyond the new bounds.
 - **Saving `settings.json`, the manifests and the opencode plugin files could
   leave a truncated file, and a plain atomic rename would have replaced a
   symlinked file with a regular one (#124).** `devexp install` wrote
