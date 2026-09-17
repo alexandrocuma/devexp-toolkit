@@ -83,6 +83,8 @@ OPENAI_ADMIN="${SK}-admin-$(rep FAKE_admin-body 8)"
 GH_U="${GH}u_$(rep 0FAKE 8)"
 GH_R="${GH}r_$(rep 0FAKE 8)"
 GH_PAT="${GHP}_pat_$(body 0FAKE 22)_$(body FAKE0 59)"
+# A stateless installation token: prefix, app id, _, then a JWT.
+GH_S_JWT="${GH}s_1536800_eyJ$(rep FAKE 9).eyJ$(rep FAKE_ 30).$(rep FAKE- 20)"
 SLACK_B="${XOX}b-1234567890-1234567890123-$(rep FAKE 6)"
 SLACK_P="${XOX}p-1234567890-1234567890-1234567890123-$(rep 0fake 6)"
 pem() { printf '%sBEGIN %s%s\nMIIEFAKEFAKEFAKE\n%sEND %s%s\n' "$D5" "$1" "$D5" "$D5" "$1" "$D5"; }
@@ -110,6 +112,7 @@ for tool in Write Edit MultiEdit NotebookEdit; do
   block "$tool" GitHub      "$GH_U"
   block "$tool" GitHub      "$GH_R"
   block "$tool" GitHub      "$GH_PAT"
+  block "$tool" GitHub      "$GH_S_JWT"
   block "$tool" Slack       "$SLACK_B"
   block "$tool" Slack       "$SLACK_P"
   block "$tool" 'private key' "$PK_RSA"
@@ -142,6 +145,11 @@ block Edit  AWS    "https://sts.example.com/?AccessKeyId%3D$AWS_TMP"
 block Write AWS    '{"id": "\u002F'"$AWS_TMP"'"}'
 block Write AWS    "id = '\\x2F$AWS_TMP'"
 block Edit  AWS    "${AWS_TMP}secretAccessKey"
+block Write GitHub "GITHUB_TOKEN_${GH_P}_rotated_weekly"
+block Edit  GitHub "export GITHUB_TOKEN=$GH_S_JWT"
+block Write GitHub "${GH}u_eyJ$(rep FAKE 5)"
+block Write GitHub "${GH}r_9_eyJ$(rep FAKE 5)"
+block Write GitHub "${GH}s_12_34_eyJ$(rep FAKE 5)"
 # A large write, secret first — once allowed silently (#101).
 block Write OpenAI        "$OPENAI"$'\n'"$FILLER"
 block Edit  'private key' "$PK_RSA$FILLER"
@@ -185,6 +193,13 @@ allow Edit  'github_pat_rotation_reminder_days_for_organization_members_with_adm
 allow Write 'const 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 = true;'
 allow Write 'const REGION = "ASIAPACIFICDATACENTER01";'
 allow Edit  'EURASIAPACIFICREGION024 = load_regions()'
+# Long snake_case names holding a GitHub prefix: right_ holds ght_, highs_ holds
+# ghs_. Joined at runtime, since the guard blocked them before (#143).
+allow Write "def test_blocks_ri${GH}t_token_when_a_write_holds_a_long_snake_case_name(): pass"
+allow Edit  "hi${GH}s_and_lows_for_every_region_in_the_dataset_since_2000 = {}"
+allow Write "const wei${GH}t_surveyJson_for_every_respondent_in_the_panel = load();"
+allow Edit  "ri${GH}t_eye_contact_duration_for_the_whole_recorded_session = 3"
+allow Write 'Installation tokens now look like ghs_APPID_JWT.'
 
 # ── length thresholds, pinned at the edge: one short allows, exact blocks ───
 allow Write "${SK}-ant-$(body FAKE_ant- 39)"
@@ -197,6 +212,9 @@ allow Write "${AS}$(body FAKE 15)"
 block Write AWS       "${AS}$(body FAKE 16)"
 allow Write "${GH}u_$(body 0FAKE 35)"
 block Write GitHub    "${GH}u_$(body 0FAKE 36)"
+allow Write "${GH}s_$(body 0FAKE 35)"
+block Write GitHub    "${GH}s_$(body 0FAKE 36)"
+allow Write "${GH}p_$(body 0FAKE 35)_$(body FAKE0 40)"
 allow Write "${GHP}_pat_$(body 0FAKE 21)_$(body FAKE0 59)"
 allow Write "${GHP}_pat_$(body 0FAKE 23)_$(body FAKE0 59)"
 allow Write "${GHP}_pat_$(body 0FAKE 22)_$(body FAKE0 58)"

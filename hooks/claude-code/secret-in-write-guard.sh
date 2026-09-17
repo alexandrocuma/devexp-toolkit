@@ -54,7 +54,16 @@ PATTERNS = [
     # \x5c is a backslash. A key run straight into more capitals or digits
     # reads as a longer word and is not matched.
     ('an AWS temporary Access Key ID (ASIA...)', r'(^|[^0-9A-Z]|%[0-9A-Fa-f]{2}|\x5cu[0-9A-Fa-f]{4}|\x5cx[0-9A-Fa-f]{2})ASIA[0-9A-Z]{16}([^0-9A-Z]|$)'),
-    ('a GitHub token (ghp_, ghs_, etc.)', r'gh[postaur]_[A-Za-z0-9_]{36,}'),
+    # Classic tokens: 36 or more alphanumerics, never _ (GitHub's token
+    # formats docs; gitleaks and Trivy match the same class), so snake_case
+    # names that contain a prefix like ght_ don't match.
+    ('a GitHub token (ghp_, ghs_, etc.)', r'gh[postaur]_[A-Za-z0-9]{36,}'),
+    # Stateless tokens (installation tokens since 2026-04-27, GITHUB_TOKEN
+    # included) are the prefix, an app id and _, then a JWT, and a JWT
+    # starts eyJ: github.blog/changelog/2026-05-15-github-app-installation-
+    # tokens-per-request-override-header. Any prefix, with any number of id
+    # segments, since GitHub says other token types may follow.
+    ('a GitHub token (ghp_, ghs_, etc.)', r'gh[postaur]_(?:[A-Za-z0-9]+_)*eyJ'),
     # Fine-grained tokens have a fixed shape: 22 alphanumerics, _, 59 more.
     # Anything looser blocks long snake_case names that start github_pat_.
     ('a GitHub token (ghp_, ghs_, etc.)', r'github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}'),

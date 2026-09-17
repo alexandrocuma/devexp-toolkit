@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`secret-in-write-guard` blocked long snake_case names that contain a
+  GitHub token prefix (#143).** A name like `test_blocks_right_token_…`
+  contains `ght_`, and the GitHub pattern accepted `_` in the token body, so a
+  long enough name was refused. Classic GitHub tokens (`ghp_`, `gho_`, `ghu_`,
+  `ghs_`, `ghr_`) now match only by their documented alphanumeric shape. GitHub
+  App installation tokens (`ghs_`, including Actions' `GITHUB_TOKEN`) have been
+  moving to a longer stateless format since 2026-04-27, and that format contains
+  `_`. It gets its own match, so those tokens are still blocked. Both twins
+  change together.
+
 ## [0.9.1] - 2026-09-16
 
 ### Fixed

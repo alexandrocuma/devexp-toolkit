@@ -58,6 +58,8 @@ const OPENAI_ADMIN = `${SK}-admin-${'FAKE_admin-body'.repeat(8)}`;
 const GH_U = `${GH}u_${'0FAKE'.repeat(8)}`;
 const GH_R = `${GH}r_${'0FAKE'.repeat(8)}`;
 const GH_PAT = `${GHP}_pat_${body('0FAKE', 22)}_${body('FAKE0', 59)}`;
+// A stateless installation token: prefix, app id, _, then a JWT.
+const GH_S_JWT = `${GH}s_1536800_eyJ${'FAKE'.repeat(9)}.eyJ${'FAKE_'.repeat(30)}.${'FAKE-'.repeat(20)}`;
 const SLACK_B = `${XOX}b-1234567890-1234567890123-${'FAKE'.repeat(6)}`;
 const SLACK_P = `${XOX}p-1234567890-1234567890-1234567890123-${'0fake'.repeat(6)}`;
 const pem = (kind) => `${D5}BEGIN ${kind}${D5}\nMIIEFAKEFAKEFAKE\n${D5}END ${kind}${D5}`;
@@ -84,6 +86,7 @@ for (const tool of ['write', 'edit', 'apply_patch']) {
     [tool, 'GitHub', GH_U],
     [tool, 'GitHub', GH_R],
     [tool, 'GitHub', GH_PAT],
+    [tool, 'GitHub', GH_S_JWT],
     [tool, 'Slack', SLACK_B],
     [tool, 'Slack', SLACK_P],
     [tool, 'private key', PK_RSA],
@@ -123,6 +126,11 @@ BLOCK.push(
   ['write', 'AWS', `{"id": "\\u002F${AWS_TMP}"}`],
   ['write', 'AWS', `id = '\\x2F${AWS_TMP}'`],
   ['edit', 'AWS', `${AWS_TMP}secretAccessKey`],
+  ['write', 'GitHub', `GITHUB_TOKEN_${GH_P}_rotated_weekly`],
+  ['edit', 'GitHub', `export GITHUB_TOKEN=${GH_S_JWT}`],
+  ['write', 'GitHub', `${GH}u_eyJ${'FAKE'.repeat(5)}`],
+  ['write', 'GitHub', `${GH}r_9_eyJ${'FAKE'.repeat(5)}`],
+  ['write', 'GitHub', `${GH}s_12_34_eyJ${'FAKE'.repeat(5)}`],
   // A large write, secret first — the shell twin once allowed these (#101).
   ['write', 'OpenAI', `${OPENAI}\n${FILLER}`],
   ['edit', 'private key', `${PK_RSA}${FILLER}`],
@@ -132,6 +140,7 @@ BLOCK.push(
   ['write', 'OpenAI', `${SK}-None-${body('0FAKE', 32)}`],
   ['write', 'AWS', `${AS}${body('FAKE', 16)}`],
   ['write', 'GitHub', `${GH}u_${body('0FAKE', 36)}`],
+  ['write', 'GitHub', `${GH}s_${body('0FAKE', 36)}`],
   ['write', 'GitHub', `${GHP}_pat_${body('0FAKE', 22)}_${body('FAKE0', 59)}`],
 );
 
@@ -176,12 +185,21 @@ const ALLOW = [
   ['write', 'const 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 = true;'],
   ['write', 'const REGION = "ASIAPACIFICDATACENTER01";'],
   ['edit', 'EURASIAPACIFICREGION024 = load_regions()'],
+  // Long snake_case names holding a GitHub prefix: right_ holds ght_, highs_ holds
+  // ghs_. Joined at runtime, since the guard blocked them before (#143).
+  ['write', `def test_blocks_ri${GH}t_token_when_a_write_holds_a_long_snake_case_name(): pass`],
+  ['edit', `hi${GH}s_and_lows_for_every_region_in_the_dataset_since_2000 = {}`],
+  ['write', `const wei${GH}t_surveyJson_for_every_respondent_in_the_panel = load();`],
+  ['edit', `ri${GH}t_eye_contact_duration_for_the_whole_recorded_session = 3`],
+  ['write', 'Installation tokens now look like ghs_APPID_JWT.'],
   // Length thresholds, one character short of blocking.
   ['write', `${SK}-ant-${body('FAKE_ant-', 39)}`],
   ['write', `${SK}-proj-${body('FAKE_proj-', 79)}`],
   ['write', `${SK}-None-${body('0FAKE', 31)}`],
   ['write', `${AS}${body('FAKE', 15)}`],
   ['write', `${GH}u_${body('0FAKE', 35)}`],
+  ['write', `${GH}s_${body('0FAKE', 35)}`],
+  ['write', `${GH}p_${body('0FAKE', 35)}_${body('FAKE0', 40)}`],
   ['write', `${GHP}_pat_${body('0FAKE', 21)}_${body('FAKE0', 59)}`],
   ['write', `${GHP}_pat_${body('0FAKE', 23)}_${body('FAKE0', 59)}`],
   ['write', `${GHP}_pat_${body('0FAKE', 22)}_${body('FAKE0', 58)}`],
