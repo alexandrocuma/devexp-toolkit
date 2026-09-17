@@ -63,9 +63,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`secret-in-write-guard` blocked a private-key header quoted on its own
   (#143).** Any `-----BEGIN … PRIVATE KEY` line was refused, including one
   named in documentation or matched in code. A header now blocks only when key
-  material follows it. Real PEM blocks still block, including escaped,
-  concatenated, encrypted and PGP-armored ones. The test fixtures now use a
-  realistic PEM body.
+  material follows it closely, before any `END` or `BEGIN` line. Text further
+  on in the same write doesn't count, so an identifier, fingerprint, path or
+  hash later in the file no longer blocks, but key-like text on the header's
+  line or just after it still does. Real PEM blocks still block, including
+  escaped, concatenated, encrypted and PGP-armored ones and ones with a dash
+  rule under the header. The test fixtures now use a realistic PEM body.
+- **`secret-in-write-guard` decides in linear time (#143).** Each pattern is
+  retried at every position in the text, and some of the new patterns could
+  rescan the rest of a long write from each retry. A write that repeated a
+  prefix or a header could keep the guard busy for minutes, and a Claude Code
+  hook that runs past its timeout lets the write through. Every repetition
+  that can reach past the next start is now bounded, with the same decisions
+  for real keys, and timing tests in both suites pin it.
 - **Re-installing removed stale agents and skills through a symlinked target
   directory (#128).** When `~/.claude/agents`, `~/.claude/skills`,
   `~/.config/opencode/agents` or `~/.config/opencode/commands` was a symlink

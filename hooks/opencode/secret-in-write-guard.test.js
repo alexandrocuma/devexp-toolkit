@@ -68,6 +68,9 @@ const SLACK_P = `${XOX}p-1234567890-1234567890-1234567890123-${'0fake'.repeat(6)
 const pem = (kind) => `${D5}BEGIN ${kind}${D5}\n${body('MIIEFAKE0+/fake', 64)}\n${D5}END ${kind}${D5}`;
 const PK_RSA = pem('RSA PRIVATE KEY');
 const FILLER = 'an ordinary line of prose in a large generated file\n'.repeat(5000); // ~260 KB
+// A few paragraphs of ordinary text, as the shell twin builds them (no final newline).
+const PROSE = 'This key is used by the deploy job to reach the staging hosts over SSH.\n'.repeat(8).slice(0, -1);
+const CODE = "  logger.debug('reading the key file for the deploy service');\n".repeat(10).slice(0, -1);
 
 // [tool, word the block message must name, payload, opts]
 const BLOCK = [];
@@ -179,6 +182,23 @@ BLOCK.push(
   ['write', 'private key', `Look for ${D5}BEGIN RSA PRIVATE KEY${D5} at the top.\n${PK_RSA}`],
   ['edit', 'private key', `${D5}BEGIN EC PRIVATE KEY${D5}\n${D5}END EC PRIVATE KEY${D5}\n${pem('EC PRIVATE KEY')}`],
   ['write', 'private key', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${body('FAKE0+/', 32)}\n${D5}END RSA PRIVATE KEY${D5}`],
+  // A dash rule between header and body doesn't end the search; only an END or
+  // BEGIN line does (#158).
+  ...['RSA PRIVATE KEY', 'PRIVATE KEY', 'EC PRIVATE KEY', 'DSA PRIVATE KEY', 'ENCRYPTED PRIVATE KEY', 'OPENSSH PRIVATE KEY', 'PGP PRIVATE KEY BLOCK', 'PGP SECRET KEY BLOCK']
+    .map((kind) => ['write', 'private key', `${D5}BEGIN ${kind}${D5}\n${D5}\n${body('MIIEFAKE0+/', 64)}\n${D5}END ${kind}${D5}`]),
+  // JSON that escapes every slash still carries the key material.
+  ['write', 'private key', `{"key": "${D5}BEGIN PRIVATE KEY${D5}\\n${body('MIIEFAKE0abcdefgh+\\/', 64)}\\n${body('fakeFAKE0123456+\\/', 64)}\\n${D5}END PRIVATE KEY${D5}"}`],
+  // Key-like text on the header's line, or just after it, still blocks.
+  ['edit', 'private key', `if (pem.startsWith("${D5}BEGIN PRIVATE KEY${D5}")) return parsePkcs8PrivateKeyFromPemEncodedString(pem);`],
+  // Bounded repetitions (#158), pinned at the edge (the one-past twins are in ALLOW).
+  ['write', 'private key', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${' '.repeat(494)}${body('FAKE0+/', 32)}`],
+  ['write', 'private key', `${D5}BEGIN ${body('ABC ', 40)}PRIVATE KEY${D5}\n${body('MIIEFAKE0+/', 64)}`],
+  ['write', 'Anthropic', `${SK}-ant-your${'-a'.repeat(25)}`],
+  ['write', 'OpenAI', `${SK}-proj-your${'-abc'.repeat(25)}`],
+  ['write', 'Slack', `${XOX}b-your${'-a'.repeat(25)}`],
+  ['write', 'OpenAI', `${SK}-service-${'ab-'.repeat(20)}${body('0FAKE', 48)}`],
+  ['write', 'OpenAI', `${SK}-service-${body('abcFAKE', 47)}-${body('0FAKE', 48)}`],
+  ['write', 'GitHub', `${GH}s_${'1_'.repeat(8)}eyJ${'FAKE'.repeat(5)}`],
   // Length thresholds, pinned at the edge (the one-short twins are in ALLOW).
   ['write', 'Anthropic', `${SK}-ant-${body('FAKE_ant-', 40)}`],
   ['write', 'OpenAI', `${SK}-proj-${body('FAKE_proj-', 80)}`],
@@ -273,6 +293,22 @@ const ALLOW = [
   ['write', `${D5}BEGIN RSA PRIVATE KEY${D5}\nMIIEpAIBAAKCAQEA...\n${D5}END RSA PRIVATE KEY${D5}`],
   ['edit', `${D5}BEGIN EC PRIVATE KEY${D5}\n${D5}END EC PRIVATE KEY${D5}`],
   ['write', `PEM_HEADER = '${D5}BEGIN PRIVATE KEY${D5}'\n${pem('CERTIFICATE')}`],
+  // A quoted header, whatever the rest of the write holds (#158). Only text near
+  // the header counts as its key material, and the search ends at an END or
+  // BEGIN line, so a later identifier, fingerprint, path or hash doesn't block.
+  ['write', `if (pem.startsWith("${D5}BEGIN PRIVATE KEY${D5}")) {\n${CODE}\n  return parsePkcs8PrivateKeyFromPemEncodedString(pem);\n}`],
+  ['edit', `Paste the key (it starts with ${D5}BEGIN OPENSSH PRIVATE KEY${D5}).\n\n${PROSE}\nThe host fingerprint is SHA256:${body('FAKEfake0+/', 43)}.`],
+  ['write', `Store the ${D5}BEGIN EC PRIVATE KEY${D5} file on the host.\n${PROSE}\nPath: /home/deploy/configuration/secrets/keys/`],
+  ['write', `${D5}BEGIN PRIVATE KEY${D5}\n<paste your private key here>\n${D5}END PRIVATE KEY${D5}\nchecksum: ${body('0123456789abcdef', 64)}`],
+  ['edit', `Header: ${D5}BEGIN RSA PRIVATE KEY${D5}\n\n${PROSE}${PROSE}\nFixed in commit ${body('0123456789abcdef', 40)}.`],
+  // Bounded repetitions (#158), one past the edge.
+  ['write', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${' '.repeat(495)}${body('FAKE0+/', 32)}`],
+  ['write', `${D5}BEGIN ${body('ABC ', 41)}PRIVATE KEY${D5}\n${body('MIIEFAKE0+/', 64)}`],
+  ['write', `${SK}-ant-your${'-a'.repeat(24)}`],
+  ['write', `${SK}-proj-your${'-abc'.repeat(24)}`],
+  ['write', `${XOX}b-your${'-a'.repeat(24)}`],
+  ['write', `${SK}-service-${'ab-'.repeat(21)}${body('0FAKE', 48)}`],
+  ['write', `${GH}s_${'1_'.repeat(9)}eyJ${'FAKE'.repeat(5)}`],
   // Length thresholds, one character short of blocking.
   ['write', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${body('FAKE0+/', 31)}\n${D5}END RSA PRIVATE KEY${D5}`],
   ['write', `${SK}-ant-${body('FAKE_ant-', 39)}`],
@@ -330,6 +366,59 @@ for (const [tool, args] of OTHER_TOOLS) {
   }
 }
 
-const total = BLOCK.length + ALLOW.length + OTHER_TOOLS.length;
+// ── Timing: every pattern decides in linear time (#158) ─────────────────────
+// opencode runs this handler synchronously, so a slow pattern stalls the
+// session. These writes repeat a prefix or a header so that an unbounded
+// repetition would rescan from every start. Each runs in a child process that
+// is killed at its budget, so a slow module fails instead of hanging the suite.
+// The 100 KB tier stops at its first failure; the 2 MB tier runs only when the
+// first tier passed. Budgets cover the handler only, not starting node.
+const TIMING_SHAPES = `
+  const rep = (unit, n) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
+  const D5 = '-'.repeat(5), SK = 's' + 'k', GH = 'g' + 'h';
+  export const SHAPES = {
+    'key-type words after a private-key header': (n) => D5 + 'BEGIN ' + rep('PRIVATE KEY ', n),
+    'private-key header, then spaced capitals': (n) => D5 + 'BEGIN PRIVATE KEY' + rep(' A', n),
+    'private-key headers between near-material runs': (n) => rep(D5 + 'BEGIN RSA PRIVATE KEY' + D5 + '\\n' + rep('A'.repeat(31) + '.', 600), n),
+    'repeated service-key prefix': (n) => rep(SK + '-service-', n),
+    'service-key prefixes with near-length name segments': (n) => rep(SK + '-service-' + rep('a'.repeat(47) + '-', 200), n),
+    'repeated Anthropic prefix and your-': (n) => rep(SK + '-ant-your-', n),
+    'repeated project-key prefix and your-': (n) => rep(SK + '-proj-your-', n),
+    'repeated GitHub prefix': (n) => rep(GH + 'p_', n),
+    'repeated GitHub prefix and id segment': (n) => rep(GH + 's_1_', n),
+  };`;
+const { spawnSync } = await import('node:child_process');
+const moduleUrl = new URL('./secret-in-write-guard.js', import.meta.url).href;
+const timeOne = (name, size) => {
+  const child = `
+    const { SHAPES } = await import('data:text/javascript,' + encodeURIComponent(${JSON.stringify(TIMING_SHAPES)}));
+    const { secretInWriteGuard } = await import(${JSON.stringify(moduleUrl)});
+    const h = (await secretInWriteGuard({}))['tool.execute.before'];
+    const content = SHAPES[${JSON.stringify(name)}](${size});
+    const t0 = performance.now();
+    try { await h({ tool: 'write' }, { args: { filePath: 'big.txt', content } }); } catch {}
+    process.stdout.write(String(performance.now() - t0));`;
+  return child;
+};
+const { SHAPES: TIMED } = await import('data:text/javascript,' + encodeURIComponent(TIMING_SHAPES));
+let timed = 0;
+let timingFail = 0;
+for (const [tier, size, budgetMs] of [['100 KB', 100_000, 250], ['2 MB', 2_000_000, 2000]]) {
+  for (const name of Object.keys(TIMED)) {
+    const p = spawnSync(process.execPath, ['--input-type=module', '-e', timeOne(name, size)], { timeout: budgetMs + 5000, encoding: 'utf8' });
+    const ms = Number(p.stdout);
+    timed++;
+    if (p.error || p.status !== 0 || !(ms <= budgetMs)) {
+      const why = p.error ? 'still running at the budget' : p.status !== 0 ? `exited ${p.status}: ${p.stderr.trim().slice(0, 200)}` : `took ${ms.toFixed(0)} ms`;
+      console.log(`FAIL timing ${tier}: ${name}: ${why}, budget ${budgetMs} ms`);
+      fail++;
+      timingFail++;
+      if (tier === '100 KB') break;
+    }
+  }
+  if (timingFail) break;
+}
+
+const total = BLOCK.length + ALLOW.length + OTHER_TOOLS.length + timed;
 console.log(`${total - fail} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

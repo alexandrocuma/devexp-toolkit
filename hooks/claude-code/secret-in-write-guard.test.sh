@@ -283,10 +283,49 @@ block Edit  'private key' "${D5}BEGIN PRIVATE KEY${D5}$(body MIIEFAKE0+/ 64)"
 block Write 'private key' "${D5}BEGIN OPENSSH PRIVATE KEY${D5}"$'\n'"$(body b3BlbnNzaFAKE0 70)"
 block Write 'private key' "Look for ${D5}BEGIN RSA PRIVATE KEY${D5} at the top."$'\n'"$PK_RSA"
 block Edit  'private key' "${D5}BEGIN EC PRIVATE KEY${D5}"$'\n'"${D5}END EC PRIVATE KEY${D5}"$'\n'"$PK_EC"
+# A dash rule between header and body doesn't end the search; only an END or
+# BEGIN line does (#158).
+for kind in 'RSA PRIVATE KEY' 'PRIVATE KEY' 'EC PRIVATE KEY' 'DSA PRIVATE KEY' 'ENCRYPTED PRIVATE KEY' 'OPENSSH PRIVATE KEY' 'PGP PRIVATE KEY BLOCK' 'PGP SECRET KEY BLOCK'; do
+  block Write 'private key' "${D5}BEGIN $kind${D5}"$'\n'"${D5}"$'\n'"$(body MIIEFAKE0+/ 64)"$'\n'"${D5}END $kind${D5}"
+done
+# JSON that escapes every slash still carries the key material.
+block Write 'private key' "{\"key\": \"${D5}BEGIN PRIVATE KEY${D5}\\n$(body 'MIIEFAKE0abcdefgh+\/' 64)\\n$(body 'fakeFAKE0123456+\/' 64)\\n${D5}END PRIVATE KEY${D5}\"}"
+# Key-like text on the header's line, or just after it, still blocks.
+block Edit  'private key' "if (pem.startsWith(\"${D5}BEGIN PRIVATE KEY${D5}\")) return parsePkcs8PrivateKeyFromPemEncodedString(pem);"
+
+# ── must ALLOW: a quoted header, whatever the rest of the write holds (#158) ─
+# Only text near the header counts as its key material, and the search ends at
+# an END or BEGIN line, so a later identifier, fingerprint, path or hash in the
+# same file doesn't block.
+PROSE="$(rep $'This key is used by the deploy job to reach the staging hosts over SSH.\n' 8)"
+CODE="$(rep $'  logger.debug(\'reading the key file for the deploy service\');\n' 10)"
+allow Write "if (pem.startsWith(\"${D5}BEGIN PRIVATE KEY${D5}\")) {"$'\n'"$CODE"$'\n'"  return parsePkcs8PrivateKeyFromPemEncodedString(pem);"$'\n'"}"
+allow Edit  "Paste the key (it starts with ${D5}BEGIN OPENSSH PRIVATE KEY${D5})."$'\n\n'"$PROSE"$'\n'"The host fingerprint is SHA256:$(body FAKEfake0+/ 43)."
+allow Write "Store the ${D5}BEGIN EC PRIVATE KEY${D5} file on the host."$'\n'"$PROSE"$'\n'"Path: /home/deploy/configuration/secrets/keys/"
+allow Write "${D5}BEGIN PRIVATE KEY${D5}"$'\n'"<paste your private key here>"$'\n'"${D5}END PRIVATE KEY${D5}"$'\n'"checksum: $(body 0123456789abcdef 64)"
+allow Edit  "Header: ${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n\n'"$PROSE$PROSE"$'\n'"Fixed in commit $(body 0123456789abcdef 40)."
 
 # ── length thresholds, pinned at the edge: one short allows, exact blocks ───
 allow Write "${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n'"$(body FAKE0+/ 31)"$'\n'"${D5}END RSA PRIVATE KEY${D5}"
 block Write 'private key' "${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n'"$(body FAKE0+/ 32)"$'\n'"${D5}END RSA PRIVATE KEY${D5}"
+# Bounded repetitions (#158), pinned at the edge: material that starts just
+# inside the search window after a header, the header's words, the words of a
+# your-... phrase, service-key name segments, and GitHub id segments.
+block Write 'private key' "${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n'"$(body ' ' 494)$(body FAKE0+/ 32)"
+allow Write "${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n'"$(body ' ' 495)$(body FAKE0+/ 32)"
+block Write 'private key' "${D5}BEGIN $(body 'ABC ' 40)PRIVATE KEY${D5}"$'\n'"$(body MIIEFAKE0+/ 64)"
+allow Write "${D5}BEGIN $(body 'ABC ' 41)PRIVATE KEY${D5}"$'\n'"$(body MIIEFAKE0+/ 64)"
+allow Write "${SK}-ant-your$(rep -a 24)"
+block Write Anthropic "${SK}-ant-your$(rep -a 25)"
+allow Write "${SK}-proj-your$(rep -abc 24)"
+block Write OpenAI    "${SK}-proj-your$(rep -abc 25)"
+allow Write "${XOX}b-your$(rep -a 24)"
+block Write Slack     "${XOX}b-your$(rep -a 25)"
+block Write OpenAI    "${SK}-service-$(rep ab- 20)$(body 0FAKE 48)"
+allow Write "${SK}-service-$(rep ab- 21)$(body 0FAKE 48)"
+block Write OpenAI    "${SK}-service-$(body abcFAKE 47)-$(body 0FAKE 48)"
+block Write GitHub    "${GH}s_$(rep 1_ 8)eyJ$(rep FAKE 5)"
+allow Write "${GH}s_$(rep 1_ 9)eyJ$(rep FAKE 5)"
 allow Write "${SK}-ant-$(body FAKE_ant- 39)"
 block Write Anthropic "${SK}-ant-$(body FAKE_ant- 40)"
 allow Write "${SK}-proj-$(body FAKE_proj- 79)"
@@ -333,6 +372,58 @@ sys.exit(0 if sys.argv[2] in [t.strip() for t in m.split("|")] else 1)' \
     fail=$((fail+1)); printf 'FAIL [not routed] registry matcher for secret-in-write-guard omits %s\n' "$tool"
   fi
 done
+
+# ── timing: every pattern decides in linear time (#158) ─────────────────────
+# A hook that runs past Claude Code's timeout doesn't block the call, so a slow
+# pattern lets the write through. These writes repeat a prefix or a header so
+# that an unbounded repetition would rescan from every start. The 100 KB tier
+# stops at its first failure so a slow guard fails fast; the 2 MB tier runs
+# only when the first tier passed. Budgets include starting the hook.
+timing=$(python3 - "$HOOK" <<'PY'
+import json, subprocess, sys, time
+hook = sys.argv[1]
+D5, SK, GH = '-' * 5, 's' + 'k', 'g' + 'h'
+def rep(unit, n):
+    return (unit * (n // len(unit) + 1))[:n]
+SHAPES = [
+    ('key-type words after a private-key header', lambda n: D5 + 'BEGIN ' + rep('PRIVATE KEY ', n)),
+    ('private-key header, then spaced capitals', lambda n: D5 + 'BEGIN PRIVATE KEY' + rep(' A', n)),
+    ('private-key headers between near-material runs', lambda n: rep(D5 + 'BEGIN RSA PRIVATE KEY' + D5 + '\n' + rep('A' * 31 + '.', 600), n)),
+    ('repeated service-key prefix', lambda n: rep(SK + '-service-', n)),
+    ('service-key prefixes with near-length name segments', lambda n: rep(SK + '-service-' + rep('a' * 47 + '-', 200), n)),
+    ('repeated Anthropic prefix and your-', lambda n: rep(SK + '-ant-your-', n)),
+    ('repeated project-key prefix and your-', lambda n: rep(SK + '-proj-your-', n)),
+    ('repeated GitHub prefix', lambda n: rep(GH + 'p_', n)),
+    ('repeated GitHub prefix and id segment', lambda n: rep(GH + 's_1_', n)),
+]
+ran = failed = 0
+for tier, size, budget in (('100 KB', 100000, 2.0), ('2 MB', 2000000, 8.0)):
+    for name, make in SHAPES:
+        envelope = json.dumps({'tool_name': 'Write', 'tool_input': {'file_path': 'big.txt', 'content': make(size)}})
+        start = time.monotonic()
+        try:
+            subprocess.run(['bash', hook], input=envelope, capture_output=True, text=True, timeout=budget)
+            took = time.monotonic() - start
+        except subprocess.TimeoutExpired:
+            took = None
+        ran += 1
+        if took is None or took > budget:
+            failed += 1
+            print('FAIL [timing %s] %s: %s, budget %.0f s' % (tier, name, 'still running at the budget' if took is None else 'took %.1f s' % took, budget))
+            if tier == '100 KB':
+                break
+    if failed:
+        break
+print('TIMING %d %d' % (ran, failed))
+PY
+)
+case "$timing" in
+  *TIMING*)
+    printf '%s' "${timing%TIMING*}"
+    read -r t_ran t_failed <<<"${timing##*TIMING }"
+    pass=$((pass + t_ran - t_failed)); fail=$((fail + t_failed)) ;;
+  *) fail=$((fail+1)); printf 'FAIL [timing] the timing check did not run: %s\n' "$timing" ;;
+esac
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
