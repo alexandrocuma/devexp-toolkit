@@ -84,7 +84,7 @@ hooks/
 |-------|-------------|
 | `name` | Unique hook identifier — used in `devexp.config.json` `hooks.disabled` list |
 | `claude_code.event` | `PreToolUse` or `PostToolUse` |
-| `claude_code.matcher` | Regex matched against tool name (e.g. `"Bash"`, `"Write\|Edit"`) |
+| `claude_code.matcher` | Tool-name matcher (e.g. `"Bash"`, `"Write\|Edit"`). A plain `\|`-separated list matches those exact names, so `Edit` doesn't match `MultiEdit` or `NotebookEdit`; a pattern with other regex characters is an unanchored regex |
 | `claude_code.script` | Path to the shell script, relative to repo root |
 | `opencode.event` | `tool.execute.before` or `file.edited` |
 | `opencode.module` | Path to the JS module, relative to repo root (`hooks/opencode/<hook-name>.js`) |
@@ -102,7 +102,7 @@ Every key other than `name`, `description` and `enabled` whose value is an objec
 | Hook | Event | Matcher | What it does |
 |------|-------|---------|--------------|
 | `secret-guard` | PreToolUse | `Read\|Bash` | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
-| `secret-in-write-guard` | PreToolUse | `Write\|Edit` | Hard-blocks writing content that contains secret patterns (API keys, GitHub tokens, private key blocks) |
+| `secret-in-write-guard` | PreToolUse | `Write\|Edit\|MultiEdit\|NotebookEdit` | Hard-blocks writing content that contains secret patterns (API keys, GitHub tokens, private key blocks); in opencode it scans `write`, `edit` and the lines `apply_patch` adds |
 | `dangerous-cmd-guard` | PreToolUse | `Bash` | Hard-blocks `rm -rf /`, unanchored wildcard deletes in sensitive dirs (`/tmp/*`, `~/.claude/.../*`), fork bombs, `DROP DATABASE`, `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
 | `large-file-guard` | PreToolUse | `Write` | Asks for confirmation before overwriting a file with >500 lines |
 | `lint-on-save` | PostToolUse | `Write\|Edit` | Runs the project linter on edited source files (JS/TS → biome/eslint, Python → ruff/flake8, Go → go vet, Ruby → rubocop) |
@@ -113,6 +113,8 @@ Every key other than `name`, `description` and `enabled` whose value is an objec
 | `graphify-grep-nudge` *(disabled)* | PreToolUse | `Bash\|Grep` | Soft-nudges toward `graphify query` (via `additionalContext`, never a block) when grep-like commands or the `Grep` tool run |
 
 The three `graphify-*` hooks ship with `enabled: false` — they're an **optional set** for projects that adopt the `graphify` skill and maintain a `graphify-out/` knowledge graph. All three self-gate on `graphify-out/graph.json` existing, so flipping them on is harmless even if a project hasn't built a graph yet (they simply no-op). Enable them in a fork by setting `"enabled": true` in `hooks/registry.json`. `devexp.config.json` can't enable them: it supports only `hooks.disabled` (`cli/internal/config/config.go`), and the installer skips any hook with `enabled: false` before it looks at config (`cli/internal/hooks/installer.go`). The install wizard lists only enabled hooks (`listHookNames` in `cli/cmd/registry.go`).
+
+**What `secret-in-write-guard` doesn't see** — it scans only the new text of a write, edit or patch, never the file text around it. A secret completed across text already in the file and an edit isn't seen. In opencode, `apply_patch` context lines are matched against the file loosely and written from the patch's own text, and those lines aren't scanned. The guard catches a secret written in one piece; it doesn't replace a secret scanner on the repository.
 
 **How `graphify-read-guard` paces itself** — rather than a flat "queried in the last N hours" timer (which re-arms mid-session and creates friction, or "gate once" which under-uses the graph), it runs a tapering cadence sourced from a small JSON state file (`graphify-out/.graphify_session`, shared with `graphify-session-sentinel`):
 
