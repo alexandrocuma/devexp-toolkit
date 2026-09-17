@@ -61,10 +61,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     component first.
   - `rm` now has to be a word of its own, and the wildcard-delete rule needs
     the target in the same simple command as that `rm`. A `--rm` option, a
-    longer word ending in `rm`, or a protected path after `;`, `&&`, `||` or
-    `&` in a later command no longer blocks (for example a container run that
-    removes itself and mounts `/tmp`). `rm` as an argument of another command
-    still counts. Upgrade to pick this up; rules:
+    longer word ending in `rm`, or a protected path after a real `;`, `&&`,
+    `||` or `&` in a later command no longer blocks (for example a container
+    run that removes itself and mounts `/tmp`). `rm` as an argument of another
+    command, `rm` followed at once by an expansion or redirect, and a `;` or
+    `&` that is quoted or inside a substitution still count. Upgrade to pick
+    this up; rules:
     `docs/reference/hooks.md#what-dangerous-cmd-guard-matches`.
 - **`dangerous-cmd-guard` could take a very long time on some crafted
   commands (#146).** Checks that could run slowly:
