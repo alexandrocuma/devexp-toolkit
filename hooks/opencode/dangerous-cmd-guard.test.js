@@ -270,6 +270,21 @@ const BLOCK = [
   'rm$(a;b) /tmp/*', // a substitution right after rm
   'rm${x#;} -f /tmp/*',
   'rm>&2 -f /tmp/*',
+  'rm ~/.claude', // no flags, home target
+  '{rm,echo} -f /tmp/*', // rm glued to , ? [
+  'rm? -f /tmp/*',
+  'rm[m] -f /tmp/*',
+  'rm -rf <(a;b) /tmp/*', // a process substitution holds ; or &
+  'rm -rf >(a&b) ~/.claude/*',
+  'rm -rf <(a && b) /tmp/*',
+  'rm -rf =(a;b) ~/.claude/*',
+  'rm -rf x<(a;b) /tmp/*',
+  'rm -rf x>(a&b) /tmp/*',
+  'rm -rf x=(a;b) ~/.claude/*',
+  'rm<(a;b) /tmp/*',
+  'rm>(a&b) ~/.claude/*',
+  'rm -f $[1&2] /tmp/*', // old-style arithmetic holds & too
+  'rm$[1&2] -f /tmp/*',
 
   // line by line, like the Claude Code hook's grep: CR is an ordinary character inside
   // a line, and NUL is dropped
@@ -381,6 +396,10 @@ const ALLOW = [
   'rm -f a >&&2 /tmp/*', // the & after >& has no > of its own
   'rm -f $x && cp y /tmp/$z', // a bare $ is no quote
   'rm -f "a;b" | ls /tmp/*', // the scan still ends at the next |
+  'rm=(a;b) /tmp/*', // an array assignment, not rm
+  'diff <(a) <(b) && ls /tmp/$x',
+  'rm -f x && diff <(a) /tmp/$y',
+  'x=(a;b) ls /tmp/*',
 
   // line by line, like the Claude Code hook's grep: a pattern begun on one line and
   // completed on a later one is not a match (backslash continuations are joined first)

@@ -96,17 +96,24 @@ function claudeGlob(line) {
  * `>` just before it when that character stands alone; otherwise it needs a `>` right after.
  * Joining backwards first leaves the most room, so this finds the end the pattern can reach.
  */
+const PIPE = 124; // |
+const SEMI = 59; // ;
+const AMP = 38; // &
+const LT = 60; // <
+const GT = 62; // >
+
 function commandEnd(line, start) {
+  const n = line.length;
   let i = start;
   let single = false; // the previous character is a `<` or `>` not yet joined to a `&`
-  while (i < line.length) {
-    const c = line[i];
-    if (c === '|' || c === ';') return i;
-    if (c === '&') {
+  while (i < n) {
+    const c = line.charCodeAt(i);
+    if (c === PIPE || c === SEMI) return i;
+    if (c === AMP) {
       if (single) {
         single = false;
         i += 1;
-      } else if (line[i + 1] === '>') {
+      } else if (i + 1 < n && line.charCodeAt(i + 1) === GT) {
         single = false;
         i += 2;
       } else {
@@ -114,24 +121,30 @@ function commandEnd(line, start) {
       }
       continue;
     }
-    single = c === '<' || c === '>';
+    single = c === LT || c === GT;
     i += 1;
   }
   return i;
 }
 
 /**
- * commandEnd, unless a quote, escape, backtick, `$(` or `${` opens before that end (`$'…'` starts
- * with a quote): it can hold a `;` or `&` that is data, so the scan runs on to the next `|`. The
+ * commandEnd, unless a quote, escape, backtick, `$(`, `${`, `$[` or a process substitution (`<(`, `>(`,
+ * zsh `=(`) opens before that end (`$'…'` starts with a quote): it can hold a `;` or `&` that is
+ * data, so the scan runs on to the next `|`. (The lookahead after `rm` never admits `=`.) The
  * grep pattern is `START_OPENER[^|]*` right after `rm`, or `SCAN(OPENER[^|]*)?` after the
  * character that follows it.
  */
 function commandEndQuoted(line, start) {
   const end = commandEnd(line, start);
   for (let i = start; i < end; i++) {
-    const c = line[i];
-    const next = line[i + 1];
-    if (c === '"' || c === "'" || c === '\\' || c === '`' || (c === '$' && (next === '(' || next === '{'))) {
+    const c = line.charCodeAt(i);
+    // " ' \ ` open at once; `${`, `$[`, and `$(` `<(` `>(` `=(`, open a substitution. Character codes keep
+    // this loop fast on long lines; past the end of the line charCodeAt gives NaN.
+    const next = line.charCodeAt(i + 1);
+    const opens = c === 34 || c === 39 || c === 92 || c === 96
+      || (c === 36 && (next === 123 || next === 91 || next === 40))
+      || ((c === LT || c === GT || c === 61) && next === 40);
+    if (opens) {
       const pipe = line.indexOf('|', end);
       return pipe < 0 ? line.length : pipe;
     }

@@ -343,6 +343,25 @@ expect allow 'rm -f a >&&2 /tmp/*'                            # the & after >& h
 expect block 'rm$(a;b) /tmp/*'                                # a substitution right after rm
 expect block 'rm${x#;} -f /tmp/*'
 expect block 'rm>&2 -f /tmp/*'
+expect block 'rm ~/.claude'                                   # no flags, home target
+expect block '{rm,echo} -f /tmp/*'                            # rm glued to , ? [
+expect block 'rm? -f /tmp/*'
+expect block 'rm[m] -f /tmp/*'
+expect block 'rm -rf <(a;b) /tmp/*'                           # a process substitution holds ; or &
+expect block 'rm -rf >(a&b) ~/.claude/*'
+expect block 'rm -rf <(a && b) /tmp/*'
+expect block 'rm -rf =(a;b) ~/.claude/*'
+expect block 'rm -rf x<(a;b) /tmp/*'
+expect block 'rm -rf x>(a&b) /tmp/*'
+expect block 'rm -rf x=(a;b) ~/.claude/*'
+expect block 'rm<(a;b) /tmp/*'
+expect block 'rm>(a&b) ~/.claude/*'
+expect block 'rm -f $[1&2] /tmp/*'                            # old-style arithmetic holds & too
+expect block 'rm$[1&2] -f /tmp/*'
+expect allow 'rm=(a;b) /tmp/*'                                # an array assignment, not rm
+expect allow 'diff <(a) <(b) && ls /tmp/$x'
+expect allow 'rm -f x && diff <(a) /tmp/$y'
+expect allow 'x=(a;b) ls /tmp/*'
 expect allow 'rm -f $x && cp y /tmp/$z'                       # a bare $ is no quote
 expect allow 'rm -f "a;b" | ls /tmp/*'                        # the scan still ends at the next |
 

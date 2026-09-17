@@ -563,14 +563,16 @@ fi
 # The target must follow `rm` in the same simple command: the scan (SCAN) stops
 # at `;`, `|` and a `&` that isn't part of a redirect (`2>&1`, `&>`), so
 # `rm -rf dist && cp out /tmp/$x` doesn't match. But a quote, an escape, a
-# backtick, `$(` or `${` can hold a `;` or `&` that is data (`$'…'` starts with
-# a quote), so once one of those opens (OPENER) the scan runs on to the next `|`.
+# backtick, `$(`, `${`, `$[` or a process substitution (`<(`, `>(`, zsh `=(`) can hold
+# a `;` or `&` that is data (`$'…'` starts with a quote), so once one of those
+# opens (OPENER) the scan runs on to the next `|`. Right after `rm` a `=(` is an
+# array assignment, not rm, so START_OPENER leaves it out.
 # `rm` itself may be followed by whitespace, a quote, an expansion, a brace or
 # glob character, or a redirect: the shell still runs `rm` with what follows.
 SENSITIVE='(\s["'\'']?/tmp["'\'']?/?'"$END"'|["'\'']?'"$HOME_RE"'["'\'']?/\.claude["'\'']?/?'"$END"'|\.claude\S*/\*)'
 SCAN='([^|;&]|[<>]&|&>)*'
-OPENER='(["'\''\\`]|\$[({])'
-START_OPENER='(["'\''`]|\$[({])'
+OPENER='(["'\''\\`]|[$<>=][(]|\$[{[])'
+START_OPENER='(["'\''`]|[$<>][(]|\$[{[])'
 AFTER_RM='([[:space:]<>${},*?[]|&>|[<>]&)'
 if matches -E "$RM_WORD"'(\s["'\'']?/tmp["'\'']?/?'"$END"'|('"$START_OPENER"'[^|]*|'"$AFTER_RM$SCAN"'('"$OPENER"'[^|]*)?)'"$SENSITIVE"')'; then
     echo "[devexp dangerous-cmd-guard] Blocked: unanchored wildcard delete in a sensitive directory (e.g. '/tmp/*' or '~/.claude/.../*'). Anchor the glob with a literal prefix (e.g. '/tmp/.deliver-<id>-*') so an empty variable cannot collapse it into a blanket wipe." >&2
