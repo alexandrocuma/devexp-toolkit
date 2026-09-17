@@ -30,6 +30,7 @@ func targetHome(home string) (string, error) {
 
 // claudePaths holds every destination the Claude Code install writes to.
 type claudePaths struct {
+	home     string // cleaned; stale removal resolves symlinks from here
 	agents   string
 	skills   string
 	settings string
@@ -46,6 +47,7 @@ func claudeTargetPaths(home string, now time.Time) (claudePaths, error) {
 		return claudePaths{}, err
 	}
 	return claudePaths{
+		home:     home,
 		agents:   filepath.Join(home, ".claude", "agents"),
 		skills:   filepath.Join(home, ".claude", "skills"),
 		settings: filepath.Join(home, ".claude", "settings.json"),
@@ -56,6 +58,7 @@ func claudeTargetPaths(home string, now time.Time) (claudePaths, error) {
 
 // opencodePaths holds every destination the opencode install writes to.
 type opencodePaths struct {
+	home     string // cleaned; stale removal resolves symlinks from here
 	agents   string
 	skills   string
 	plugins  string
@@ -71,6 +74,7 @@ func opencodeTargetPaths(home string) (opencodePaths, error) {
 		return opencodePaths{}, err
 	}
 	return opencodePaths{
+		home:     home,
 		agents:   filepath.Join(home, ".config", "opencode", "agents"),
 		skills:   filepath.Join(home, ".config", "opencode", "commands"),
 		plugins:  filepath.Join(home, ".config", "opencode", "plugins"),
