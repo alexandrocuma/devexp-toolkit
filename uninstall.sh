@@ -298,64 +298,233 @@ if $REMOVE_OPENCODE && [[ -f "$REPO_DIR/mcps/registry.json" ]]; then
     config_path="$HOME/.config/opencode/config.json"
     if [[ -f "$config_path" ]]; then
         info "Removing MCP servers (opencode)..."
-        python3 - "$REPO_DIR/mcps/registry.json" "$config_path" <<'PYEOF'
-import json, sys, os, tempfile
+        python3 - "$REPO_DIR/mcps/registry.json" "$config_path" <<'PYEOF' || warn "opencode MCP servers: the config.json step failed (see above) — remove the devexp MCP servers from $config_path by hand"
+import json, os, stat, sys, tempfile
 config_path = sys.argv[2]
+
+class WriteRefused(Exception):
+    pass
+
+def write_atomic(path, data):
+    # Replace the file at path with the bytes data, as fsutil.WriteFileAtomic
+    # does (cli/internal/fsutil/atomic.go; uninstall.test.sh keeps every copy of
+    # this function identical). A symlink is followed to the file it points at,
+    # which is replaced while the link stays. A dangling link, a target that
+    # isn't a regular file or isn't writable is refused. The new bytes go to a
+    # temp file next to the target, fsync'd and given its mode (a new file gets
+    # 0644 minus the umask), then renamed over it: an interrupted save leaves
+    # the old file or the new one, never a partial one, and no temp file.
+    # Replacing makes a new inode: hard links, xattrs, ACLs and setuid, setgid
+    # and sticky bits don't carry over. Raises WriteRefused with a message.
+    target = path
+    if os.path.islink(path):
+        try:
+            os.stat(path)
+        except FileNotFoundError:
+            raise WriteRefused(f"{path} is a symlink to a file that does not exist, so it was left untouched")
+        except OSError as e:
+            raise WriteRefused(f"{path} is a symlink that can't be resolved, so it was left untouched: {e}")
+        target = os.path.realpath(path)
+    try:
+        st = os.stat(target)
+    except FileNotFoundError:
+        st = None
+    except OSError as e:
+        raise WriteRefused(f"could not save {target}, so it was left untouched: {e}")
+    mode = None
+    if st is not None:
+        if not stat.S_ISREG(st.st_mode):
+            raise WriteRefused(f"{target} is not a regular file, so it was left untouched")
+        if not os.access(target, os.W_OK):
+            raise WriteRefused(f"{target} is not writable, so it was left untouched")
+        mode = st.st_mode & 0o777
+    directory = os.path.dirname(target) or '.'
+    tmp = None
+    try:
+        if mode is None:
+            # A new file: created with 0644 and never chmodded, so the umask
+            # applies (0600 under umask 077), as with a plain open().
+            # O_EXCL: a file or symlink already at the name is never opened or
+            # followed; the next name is tried, 101 names at most (as Go).
+            for attempt in range(101):
+                tmp = os.path.join(directory, '.' + os.path.basename(target) + '.tmp-' + os.urandom(8).hex())
+                try:
+                    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+                    break
+                except FileExistsError:
+                    tmp = None
+                    if attempt == 100:
+                        raise
+        else:
+            fd, tmp = tempfile.mkstemp(prefix='.' + os.path.basename(target) + '.tmp-', dir=directory)
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        if mode is not None:
+            os.chmod(tmp, mode)
+        os.replace(tmp, target)
+        tmp = None
+    except OSError as e:
+        raise WriteRefused(f"could not save {target}, so it was left untouched: {e}")
+    finally:
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+    try:
+        dfd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
+    except OSError:
+        pass
+
+# The deepest nesting either step edits. Deeper, the file is skipped whatever
+# python runs this: its json module raises RecursionError near 1,000 levels on
+# 3.9-3.11 (and in 3.12's indenting encoder), but not on 3.13+, so relying on
+# the error made the outcome depend on the version. Go's encoding/json, which
+# `devexp install` uses, allows 10,000; no version of python's json reaches
+# that reliably, so uninstall stops well below where any version fails. A file
+# nested 501-10,000 deep is edited by install but skipped here; skipping leaves
+# it byte for byte and says to edit it by hand, which is safe.
+MAX_DEPTH = 500
+
+def too_deep(text):
+    # Whether text nests arrays and objects more than MAX_DEPTH deep, counting
+    # brackets outside strings in one linear pass (no recursion).
+    depth = 0
+    in_string = escaped = False
+    for c in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif c == '\\':
+                escaped = True
+            elif c == '"':
+                in_string = False
+        elif c == '"':
+            in_string = True
+        elif c == '[' or c == '{':
+            depth += 1
+            if depth > MAX_DEPTH:
+                return True
+        elif c == ']' or c == '}':
+            depth -= 1
+    return False
+
 # Like the plugin step (removeLegacyConfigEntry), a symlinked config.json is
 # someone's dotfiles setup: never written through, never replaced.
 if os.path.islink(config_path):
     print(f"  [skip] {config_path} is a symlink, so it was left untouched — remove the devexp MCP servers from it by hand")
     sys.exit(0)
+
+def parse(text):
+    # NaN and Infinity compare unequal to themselves; read them as markers so
+    # the check below compares like with like. Nothing is ever re-encoded.
+    return json.loads(text, parse_constant=lambda name: ('constant', name))
+
 try:
     with open(sys.argv[1]) as f:
         mcps = json.load(f)
-    with open(config_path) as f:
-        config = json.load(f)
+    # newline='' keeps line endings exactly as they are.
+    with open(config_path, encoding='utf-8', newline='') as f:
+        text = f.read()
+    if too_deep(text):
+        print(f"  [skip] {config_path} is nested too deeply to edit (more than {MAX_DEPTH} levels), so it was left untouched — remove the devexp MCP servers from it by hand")
+        sys.exit(0)
+    config = parse(text)
+except RecursionError:
+    print(f"  [skip] {config_path} is nested too deeply to edit, so it was left untouched — remove the devexp MCP servers from it by hand")
+    sys.exit(0)
 except (OSError, ValueError) as e:
     print(f"  [skip] {config_path}: {e}")
     sys.exit(0)
 if not isinstance(config, dict) or not isinstance(config.get('mcp', {}), dict) or not isinstance(mcps, list):
     print(f"  [skip] {config_path}: unexpected shape")
     sys.exit(0)
-changed = False
+
+names = []
 for mcp in mcps:
     name = mcp.get('name') if isinstance(mcp, dict) else None
-    if not isinstance(name, str):
+    if not isinstance(name, str) or name in names:
         continue
     if name in config.get('mcp', {}):
-        del config['mcp'][name]
-        changed = True
-        print(f"  \033[0;31m-\033[0m {name}")
+        names.append(name)
     else:
         print(f"  [skip] {name} — not configured")
-if not changed:
+if not names:
     sys.exit(0)
-if not os.access(config_path, os.W_OK):
-    print(f"  [warn] {config_path} is not writable, so it was left untouched — remove the devexp MCP servers from it by hand")
-    sys.exit(0)
-# Replace atomically: a temp file in the same directory, fsync'd, given the
-# old file's mode, then renamed over it. An interrupted save leaves the old
-# file or the new one, never a truncated one, and no temp file.
-tmp = None
+
+def ws(text, i):
+    while i < len(text) and text[i] in ' \t\n\r':
+        i += 1
+    return i
+
+def object_members(text, i):
+    # The members of the object whose '{' is at text[i], as (key, key start,
+    # value start, value end), and the index of its closing '}'.
+    decoder = json.JSONDecoder(parse_constant=lambda name: None)
+    members = []
+    i = ws(text, i + 1)
+    if text[i] == '}':
+        return members, i
+    while True:
+        key_start = i
+        key, i = json.decoder.scanstring(text, i + 1)
+        i = ws(text, ws(text, i) + 1)  # past ':'
+        value_start = i
+        _, end = decoder.raw_decode(text, i)
+        members.append((key, key_start, value_start, end))
+        i = ws(text, end)
+        if text[i] != ',':
+            return members, i
+        i = ws(text, i + 1)
+
+def splice_out(text, name):
+    # text with every member called name removed from the "mcp" object that
+    # json.loads reads (the last "mcp" key), cutting only that member and the
+    # comma and whitespace that joined it to a neighbour: every other byte of
+    # config.json stays as it was.
+    while True:
+        top, _ = object_members(text, ws(text, 0))
+        mcp_start = [m for m in top if m[0] == 'mcp'][-1][2]
+        members, close = object_members(text, mcp_start)
+        found = [k for k, m in enumerate(members) if m[0] == name]
+        if not found:
+            return text
+        k = found[-1]
+        if len(members) == 1:
+            text = text[:mcp_start + 1] + text[close:]
+        elif k > 0:
+            text = text[:members[k - 1][3]] + text[members[k][3]:]
+        else:
+            text = text[:members[0][1]] + text[members[1][1]:]
+
+new_text = text
+expected = dict(config)
+expected['mcp'] = dict(config['mcp'])
 try:
-    mode = os.stat(config_path).st_mode & 0o7777
-    fd, tmp = tempfile.mkstemp(prefix='.config.json.tmp-', dir=os.path.dirname(config_path))
-    with os.fdopen(fd, 'w') as f:
-        json.dump(config, f, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
-    os.chmod(tmp, mode)
-    os.replace(tmp, config_path)
-    tmp = None
-except OSError as e:
-    print(f"  [warn] could not save {config_path}, so it was left untouched: {e}")
+    for name in names:
+        new_text = splice_out(new_text, name)
+        del expected['mcp'][name]
+    # By construction new_text is text minus those members, so this can't fail
+    # unless the splice has a bug: it is a guard.
+    same = parse(new_text) == expected
+except (ValueError, IndexError, RecursionError):
+    same = False
+if not same:
+    print(f"  [skip] {config_path}: removing the MCP servers would change more than them, so it was left untouched — remove them by hand")
     sys.exit(0)
-finally:
-    if tmp is not None:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+try:
+    write_atomic(config_path, new_text.encode('utf-8'))
+except WriteRefused as e:
+    print(f"  [warn] {e} — remove the devexp MCP servers from it by hand")
+    sys.exit(0)
+for name in names:
+    print(f"  \033[0;31m-\033[0m {name}")
 print(f"  Saved: {config_path}")
 PYEOF
         echo ""
@@ -367,8 +536,121 @@ if $REMOVE_CLAUDE; then
     settings_path="$HOME/.claude/settings.json"
     if [[ -f "$settings_path" && -f "$REPO_DIR/hooks/registry.json" ]]; then
         info "Removing hooks (Claude Code)..."
-        python3 - "$REPO_DIR" "$settings_path" <<'PYEOF'
-import json, math, sys, os
+        python3 - "$REPO_DIR" "$settings_path" <<'PYEOF' || warn "Claude Code hooks: the settings.json step failed (see above) — remove the devexp hooks from $settings_path by hand"
+import json, math, os, stat, sys, tempfile
+
+class WriteRefused(Exception):
+    pass
+
+def write_atomic(path, data):
+    # Replace the file at path with the bytes data, as fsutil.WriteFileAtomic
+    # does (cli/internal/fsutil/atomic.go; uninstall.test.sh keeps every copy of
+    # this function identical). A symlink is followed to the file it points at,
+    # which is replaced while the link stays. A dangling link, a target that
+    # isn't a regular file or isn't writable is refused. The new bytes go to a
+    # temp file next to the target, fsync'd and given its mode (a new file gets
+    # 0644 minus the umask), then renamed over it: an interrupted save leaves
+    # the old file or the new one, never a partial one, and no temp file.
+    # Replacing makes a new inode: hard links, xattrs, ACLs and setuid, setgid
+    # and sticky bits don't carry over. Raises WriteRefused with a message.
+    target = path
+    if os.path.islink(path):
+        try:
+            os.stat(path)
+        except FileNotFoundError:
+            raise WriteRefused(f"{path} is a symlink to a file that does not exist, so it was left untouched")
+        except OSError as e:
+            raise WriteRefused(f"{path} is a symlink that can't be resolved, so it was left untouched: {e}")
+        target = os.path.realpath(path)
+    try:
+        st = os.stat(target)
+    except FileNotFoundError:
+        st = None
+    except OSError as e:
+        raise WriteRefused(f"could not save {target}, so it was left untouched: {e}")
+    mode = None
+    if st is not None:
+        if not stat.S_ISREG(st.st_mode):
+            raise WriteRefused(f"{target} is not a regular file, so it was left untouched")
+        if not os.access(target, os.W_OK):
+            raise WriteRefused(f"{target} is not writable, so it was left untouched")
+        mode = st.st_mode & 0o777
+    directory = os.path.dirname(target) or '.'
+    tmp = None
+    try:
+        if mode is None:
+            # A new file: created with 0644 and never chmodded, so the umask
+            # applies (0600 under umask 077), as with a plain open().
+            # O_EXCL: a file or symlink already at the name is never opened or
+            # followed; the next name is tried, 101 names at most (as Go).
+            for attempt in range(101):
+                tmp = os.path.join(directory, '.' + os.path.basename(target) + '.tmp-' + os.urandom(8).hex())
+                try:
+                    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+                    break
+                except FileExistsError:
+                    tmp = None
+                    if attempt == 100:
+                        raise
+        else:
+            fd, tmp = tempfile.mkstemp(prefix='.' + os.path.basename(target) + '.tmp-', dir=directory)
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        if mode is not None:
+            os.chmod(tmp, mode)
+        os.replace(tmp, target)
+        tmp = None
+    except OSError as e:
+        raise WriteRefused(f"could not save {target}, so it was left untouched: {e}")
+    finally:
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+    try:
+        dfd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
+    except OSError:
+        pass
+
+# The deepest nesting either step edits. Deeper, the file is skipped whatever
+# python runs this: its json module raises RecursionError near 1,000 levels on
+# 3.9-3.11 (and in 3.12's indenting encoder), but not on 3.13+, so relying on
+# the error made the outcome depend on the version. Go's encoding/json, which
+# `devexp install` uses, allows 10,000; no version of python's json reaches
+# that reliably, so uninstall stops well below where any version fails. A file
+# nested 501-10,000 deep is edited by install but skipped here; skipping leaves
+# it byte for byte and says to edit it by hand, which is safe.
+MAX_DEPTH = 500
+
+def too_deep(text):
+    # Whether text nests arrays and objects more than MAX_DEPTH deep, counting
+    # brackets outside strings in one linear pass (no recursion).
+    depth = 0
+    in_string = escaped = False
+    for c in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif c == '\\':
+                escaped = True
+            elif c == '"':
+                in_string = False
+        elif c == '"':
+            in_string = True
+        elif c == '[' or c == '{':
+            depth += 1
+            if depth > MAX_DEPTH:
+                return True
+        elif c == ']' or c == '}':
+            depth -= 1
+    return False
 
 repo_dir      = sys.argv[1]
 settings_path = sys.argv[2]
@@ -400,7 +682,7 @@ try:
         legacy = set(own) | {
             '"' + p + '"' for p in own if not any(c in p for c in '$`\\"')
         }
-except (OSError, json.JSONDecodeError, KeyError, TypeError, AttributeError):
+except (OSError, ValueError, KeyError, TypeError, AttributeError, RecursionError):
     print("  [skip] could not read hooks/registry.json")
     sys.exit(0)
 
@@ -422,6 +704,53 @@ def command_path(cmd):
         return None
     return p
 
+def is_devexp_root(root):
+    # Whether root holds a devexp hooks registry: hooks/registry.json, a regular
+    # file holding a non-empty JSON array of objects, each with a non-empty
+    # string "name". Same test as isDevexpRoot in cli/internal/hooks.
+    p = os.path.join(root, 'hooks', 'registry.json')
+    try:
+        if not stat.S_ISREG(os.stat(p).st_mode):
+            return False
+        with open(p, encoding='utf-8') as f:
+            reg = json.load(f)
+    except (OSError, ValueError, RecursionError):
+        return False
+    return (isinstance(reg, list) and len(reg) > 0
+            and all(isinstance(h, dict) and isinstance(h.get('name'), str) and h['name'] for h in reg))
+
+roots = {}
+
+def is_orphaned(p):
+    # Whether p, the path a devexp-form command runs, is a script gone from
+    # <root>/hooks/claude-code/ of a devexp install root: this repo, or another
+    # checkout or asset cache devexp was installed from, whose registry has
+    # since dropped the hook (#150). The name can't be checked against a
+    # registry, so the root is. A user's hook directory has no registry; a root
+    # deleted outright can't be told from a user's and is left alone. Same rules
+    # as isStaleDevexpHook / isOrphanedDevexpHook in cli/internal/hooks.
+    # A clean absolute path, as filepath.Clean sees it: normpath keeps a
+    # leading '//' (POSIX allows it), Clean folds it, so it is refused here too.
+    if not p.startswith('/') or p.startswith('//') or os.path.normpath(p) != p:
+        return False
+    cut = p.rfind('/') + 1
+    directory, script = p[:cut], p[cut:]
+    if not script or not directory.endswith('/' + SCRIPT_DIR):
+        return False
+    root = directory[:-len('/' + SCRIPT_DIR)]
+    if not root:
+        return False
+    try:
+        os.stat(p)
+        return False
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return False
+    if root not in roots:
+        roots[root] = is_devexp_root(root)
+    return roots[root]
+
 def is_devexp_handler(h):
     # devexp registers only {"type": "command", "command": <path>}. A handler
     # with args is spawned without a shell (exec form), and one of another type
@@ -433,7 +762,7 @@ def is_devexp_hook(cmd):
     # A devexp-form command whose basename is a registry script, with
     # hooks/claude-code/ directly above it at a path-segment boundary (so
     # my-hooks/claude-code/ is not devexp's), or this repo's legacy unquoted
-    # registration.
+    # registration, or one whose script is gone from a devexp install root.
     if not isinstance(cmd, str):
         return False
     if cmd in legacy:
@@ -441,6 +770,8 @@ def is_devexp_hook(cmd):
     p = command_path(cmd)
     if p is None:
         return False
+    if is_orphaned(p):
+        return True
     base = os.path.basename(p)
     if base not in managed:
         return False
@@ -474,8 +805,15 @@ def load(text):
     # would be written back as Infinity, which isn't JSON).
     return json.loads(text, parse_constant=reject_constant, parse_float=finite_float)
 
+if too_deep(text):
+    print(f"  [skip] settings.json is nested too deeply to edit (more than {MAX_DEPTH} levels), so it was left untouched -- remove the devexp hooks from it by hand")
+    sys.exit(0)
+
 try:
     settings = load(text)
+except RecursionError:
+    print("  [skip] settings.json is nested too deeply to edit, so it was left untouched -- remove the devexp hooks from it by hand")
+    sys.exit(0)
 except NotPortable as e:
     print(f"  [skip] settings.json holds {e}, which uninstall can't write back as JSON, so it was left untouched -- remove the devexp hooks from it by hand")
     sys.exit(0)
@@ -564,7 +902,7 @@ try:
         value = json.dumps(hooks_section, ensure_ascii=False, allow_nan=False, separators=(',', ':'))
     else:
         value = json.dumps(hooks_section, ensure_ascii=False, allow_nan=False, indent=lead or '  ').replace('\n', eol + lead)
-except ValueError as e:
+except (ValueError, RecursionError) as e:
     print(f"  [skip] settings.json: {e}, so it was left untouched")
     sys.exit(0)
 new_text = text[:value_start] + value + text[value_end:]
@@ -572,14 +910,18 @@ new_text = text[:value_start] + value + text[value_end:]
 # can't fail unless top_level_member or the splice has a bug: it is a guard.
 try:
     same = load(new_text) == settings
-except ValueError:
+except (ValueError, RecursionError):
     same = False
 if not same:
     print("  [skip] settings.json: rewriting it would change more than its hooks, so it was left untouched")
     sys.exit(0)
-# newline='' again: text mode writes os.linesep, which isn't LF everywhere.
-with open(settings_path, 'w', encoding='utf-8', newline='') as f:
-    f.write(new_text)
+# Encoded here, so no text-mode newline translation applies. Atomic, and
+# through a symlinked settings.json to the file it points at (#124).
+try:
+    write_atomic(settings_path, new_text.encode('utf-8'))
+except WriteRefused as e:
+    print(f"  [warn] {e} -- remove the devexp hooks from it by hand")
+    sys.exit(0)
 print(f"  Saved: {settings_path}")
 PYEOF
         echo ""

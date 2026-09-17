@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"devexp/internal/fsutil"
 	"devexp/internal/ui"
 )
 
@@ -69,6 +70,10 @@ func InstallClaude(srcDir, targetDir, model string, disabled []string, dryRun bo
 			continue
 		}
 		dest := filepath.Join(targetDir, name)
+		if keepSymlinkedEntry(dest) {
+			installed = append(installed, name)
+			continue
+		}
 		if dryRun {
 			ui.DryRun(fmt.Sprintf("write %s", dest))
 			installed = append(installed, name)
@@ -85,7 +90,7 @@ func InstallClaude(srcDir, targetDir, model string, disabled []string, dryRun bo
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
 			return installed, err
 		}
-		if err := os.WriteFile(dest, content, 0644); err != nil {
+		if err := fsutil.WriteFileAtomic(dest, content, 0644); err != nil {
 			return installed, err
 		}
 		ui.Added(name)
@@ -126,6 +131,10 @@ func InstallOpencode(srcDir, targetDir, model string, disabled []string, dryRun 
 			continue
 		}
 		dest := filepath.Join(targetDir, name)
+		if keepSymlinkedEntry(dest) {
+			installed = append(installed, name)
+			continue
+		}
 		if dryRun {
 			ui.DryRun(fmt.Sprintf("transform + write %s", dest))
 			installed = append(installed, name)
@@ -134,7 +143,7 @@ func InstallOpencode(srcDir, targetDir, model string, disabled []string, dryRun 
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
 			return installed, err
 		}
-		if err := os.WriteFile(dest, []byte(transformed), 0644); err != nil {
+		if err := fsutil.WriteFileAtomic(dest, []byte(transformed), 0644); err != nil {
 			return installed, err
 		}
 		ui.Added(name)
@@ -171,6 +180,10 @@ func InstallOpencodeExclusive(srcDir, targetDir, model string, dryRun bool) ([]s
 			continue
 		}
 		dest := filepath.Join(targetDir, name)
+		if keepSymlinkedEntry(dest) {
+			installed = append(installed, name)
+			continue
+		}
 		if dryRun {
 			ui.DryRun(fmt.Sprintf("write %s (opencode-exclusive)", dest))
 			installed = append(installed, name)
@@ -179,7 +192,7 @@ func InstallOpencodeExclusive(srcDir, targetDir, model string, dryRun bool) ([]s
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
 			return installed, err
 		}
-		if err := os.WriteFile(dest, []byte(transformed), 0644); err != nil {
+		if err := fsutil.WriteFileAtomic(dest, []byte(transformed), 0644); err != nil {
 			return installed, err
 		}
 		ui.Added(fmt.Sprintf("%s (opencode-exclusive)", name))
@@ -262,4 +275,22 @@ func isDisabled(name string, disabled []string) bool {
 		}
 	}
 	return false
+}
+
+// keepSymlinkedEntry reports, with a warning, that dest — an agent file devexp
+// installs — is a symlink, which install leaves as it is (#124). Writing
+// through it would overwrite whatever it points at, such as a customised agent
+// in a dotfiles repo or the toolkit's own source file; replacing it would
+// silently undo the user's setup. The name stays in the install set, so the
+// manifest keeps tracking it and it is never reported as stale.
+//
+// The check and the later write are separate steps: a link created in between
+// is followed (fsutil.WriteFileAtomic replaces its target). Only a writer
+// running as the same user can do that.
+func keepSymlinkedEntry(dest string) bool {
+	if !fsutil.IsSymlink(dest) {
+		return false
+	}
+	ui.Warn(fmt.Sprintf("%q is a symlink, so it was left untouched — devexp never writes through or replaces a symlinked agent; replace the link with a regular file to install this release's copy", dest))
+	return true
 }

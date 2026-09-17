@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -451,4 +452,128 @@ func TestInstallOpencode(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestInstallOpencode_RefusesUnmergeableConfig (#124): a config.json the merge
+// can't read as an object used to be decoded with its error ignored and then
+// replaced by a file holding only the MCP servers (or, for null, crash the
+// install). It is now left byte for byte, with an error naming it.
+func TestInstallOpencode_RefusesUnmergeableConfig(t *testing.T) {
+	mcps := []MCP{{Name: "my-server", Command: "node", Args: []string{"server.js"}}}
+	tests := map[string]struct {
+		content string
+		wantMsg string
+	}{
+		"invalid JSON":              {content: `{"theme": "x",`, wantMsg: "not valid JSON"},
+		"JSON with comments":        {content: "{\n  // mine\n  \"theme\": \"x\"\n}\n", wantMsg: "not valid JSON"},
+		"trailing data":             {content: `{"theme": "x"} {}`, wantMsg: "trailing data"},
+		"null top level":            {content: `null`, wantMsg: "not a JSON object"},
+		"array top level":           {content: `[]`, wantMsg: "not a JSON object"},
+		"string mcp":                {content: `{"mcp": "x"}`, wantMsg: `"mcp" is not a JSON object`},
+		"array mcp":                 {content: `{"mcp": []}`, wantMsg: `"mcp" is not a JSON object`},
+		"deeply nested (max depth)": {content: strings.Repeat("[", 20000) + strings.Repeat("]", 20000), wantMsg: "not valid JSON"},
+	}
+	for name, tt := range tests {
+		for _, dryRun := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s dryRun=%v", name, dryRun), func(t *testing.T) {
+				configPath := filepath.Join(t.TempDir(), "config.json")
+				if err := os.WriteFile(configPath, []byte(tt.content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				var err error
+				_ = captureStdout(t, func() { err = InstallOpencode(mcps, map[string]string{}, configPath, dryRun, false) })
+				if err == nil || !strings.Contains(err.Error(), tt.wantMsg) || !strings.Contains(err.Error(), "left untouched") {
+					t.Errorf("InstallOpencode() error = %v, want %q and \"left untouched\"", err, tt.wantMsg)
+				}
+				if got, _ := os.ReadFile(configPath); string(got) != tt.content {
+					t.Errorf("config.json changed to %.80q", got)
+				}
+			})
+		}
+	}
+}
+
+// TestInstallOpencode_ConfigEdgeCases: what the merge still accepts, and how it
+// writes.
+func TestInstallOpencode_ConfigEdgeCases(t *testing.T) {
+	mcps := []MCP{{Name: "my-server", Command: "node", Args: []string{"server.js"}}}
+	run := func(t *testing.T, configPath string) {
+		t.Helper()
+		var err error
+		out := captureStdout(t, func() { err = InstallOpencode(mcps, map[string]string{}, configPath, false, false) })
+		if err != nil {
+			t.Fatalf("InstallOpencode() error = %v\n%s", err, out)
+		}
+	}
+	hasServer := func(t *testing.T, path string) map[string]interface{} {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var config map[string]interface{}
+		if err := json.Unmarshal(data, &config); err != nil {
+			t.Fatalf("config not valid JSON: %v\n%s", err, data)
+		}
+		if m, _ := config["mcp"].(map[string]interface{}); m["my-server"] == nil {
+			t.Errorf("my-server not added: %s", data)
+		}
+		return config
+	}
+
+	for name, content := range map[string]string{"blank file": " \n", "null mcp": `{"mcp": null}`} {
+		t.Run(name+" is merged into", func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "config.json")
+			os.WriteFile(p, []byte(content), 0o644) //nolint:errcheck
+			run(t, p)
+			hasServer(t, p)
+		})
+	}
+
+	t.Run("numbers are kept as written", func(t *testing.T) {
+		p := filepath.Join(t.TempDir(), "config.json")
+		os.WriteFile(p, []byte(`{"big": 12345678901234567890, "exp": 1e400}`), 0o644) //nolint:errcheck
+		run(t, p)
+		data, _ := os.ReadFile(p)
+		if !strings.Contains(string(data), "12345678901234567890") || !strings.Contains(string(data), "1e400") {
+			t.Errorf("numbers rewritten: %s", data)
+		}
+	})
+
+	t.Run("a symlinked config.json keeps its link; the target is updated with its mode", func(t *testing.T) {
+		dotfiles := filepath.Join(t.TempDir(), "config.json")
+		os.WriteFile(dotfiles, []byte(`{"theme": "x"}`), 0o600) //nolint:errcheck
+		os.Chmod(dotfiles, 0o600)                               //nolint:errcheck
+		p := filepath.Join(t.TempDir(), "config.json")
+		if err := os.Symlink(dotfiles, p); err != nil {
+			t.Fatal(err)
+		}
+		run(t, p)
+		if fi, err := os.Lstat(p); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("config.json symlink replaced")
+		}
+		if config := hasServer(t, dotfiles); config["theme"] != "x" {
+			t.Errorf("theme lost: %v", config)
+		}
+		if fi, _ := os.Stat(dotfiles); fi.Mode().Perm() != 0o600 {
+			t.Errorf("target mode = %v, want 0600", fi.Mode().Perm())
+		}
+	})
+
+	t.Run("a dangling symlink is refused and not created", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "dotfiles", "config.json")
+		os.MkdirAll(filepath.Dir(missing), 0o755) //nolint:errcheck
+		p := filepath.Join(t.TempDir(), "config.json")
+		if err := os.Symlink(missing, p); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		_ = captureStdout(t, func() { err = InstallOpencode(mcps, map[string]string{}, p, false, false) })
+		if err == nil || !strings.Contains(err.Error(), "does not exist") {
+			t.Errorf("InstallOpencode() error = %v, want a dangling-link refusal", err)
+		}
+		if _, statErr := os.Lstat(missing); !os.IsNotExist(statErr) {
+			t.Errorf("a file was created at the link's destination")
+		}
+	})
 }

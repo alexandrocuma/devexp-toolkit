@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"devexp/internal/fsutil"
 	"devexp/internal/removeguard"
 	"devexp/internal/ui"
 )
@@ -416,7 +417,7 @@ func pluginsHome(pluginsDir string) string {
 // plugins/ is a symlink or behind one, and nothing is ever removed through one.
 func warnLeftBehind(pluginsDir string, paths []string) {
 	why := "is a symlink"
-	if !removeguard.IsSymlink(pluginsDir) {
+	if !fsutil.IsSymlink(pluginsDir) {
 		why = "is behind a symlink"
 		if resolved, err := filepath.EvalSymlinks(pluginsDir); err == nil {
 			why += fmt.Sprintf(" (it resolves to %s)", resolved)
@@ -463,12 +464,12 @@ func writeIfChanged(pluginsDir, dest string, content []byte) error {
 	case err == nil && bytes.Equal(existing, content):
 		return nil
 	case err == nil:
-		if err := writeFileAtomic(p, content, 0644); err != nil {
+		if err := fsutil.WriteFileAtomic(p, content, 0644); err != nil {
 			return err
 		}
 		ui.Updated(dest)
 	case os.IsNotExist(err):
-		if err := writeFileAtomic(p, content, 0644); err != nil {
+		if err := fsutil.WriteFileAtomic(p, content, 0644); err != nil {
 			return err
 		}
 		ui.Added(dest)
@@ -476,37 +477,6 @@ func writeIfChanged(pluginsDir, dest string, content []byte) error {
 		return err
 	}
 	return nil
-}
-
-// writeFileAtomic replaces path with data through a temp file in the same
-// directory and a rename. An interrupted write leaves the old file or the new
-// one, never a truncated one, and the rename replaces whatever is at path
-// instead of writing through it. The temp file is removed on any failure.
-func writeFileAtomic(path string, data []byte, perm os.FileMode) (err error) {
-	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer func() {
-		if err != nil {
-			f.Close()      //nolint:errcheck
-			os.Remove(tmp) //nolint:errcheck
-		}
-	}()
-	if _, err = f.Write(data); err != nil {
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		return err
-	}
-	if err = f.Chmod(perm); err != nil {
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }
 
 // stalePlugins lists the plugin files devexp may remove because this run
@@ -845,7 +815,7 @@ func removeLegacyConfigEntry(configPath, entry string, dryRun bool) error {
 		ui.DryRun("remove " + msg)
 		return nil
 	}
-	if err := writeFileAtomic(configPath, out, fi.Mode().Perm()); err != nil {
+	if err := fsutil.WriteFileAtomic(configPath, out, fi.Mode().Perm()); err != nil {
 		return err
 	}
 	ui.Removed(msg)

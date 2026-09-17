@@ -94,20 +94,3 @@ func TestBehindSymlink_Errors(t *testing.T) {
 		})
 	}
 }
-
-func TestIsSymlink(t *testing.T) {
-	root := t.TempDir()
-	mkdir(t, filepath.Join(root, "dir"))
-	symlink(t, filepath.Join(root, "dir"), filepath.Join(root, "link"))
-	symlink(t, filepath.Join(root, "nowhere"), filepath.Join(root, "dangling"))
-	for path, want := range map[string]bool{
-		filepath.Join(root, "dir"):      false,
-		filepath.Join(root, "link"):     true,
-		filepath.Join(root, "dangling"): true,
-		filepath.Join(root, "missing"):  false,
-	} {
-		if got := IsSymlink(path); got != want {
-			t.Errorf("IsSymlink(%s) = %v, want %v", path, got, want)
-		}
-	}
-}
