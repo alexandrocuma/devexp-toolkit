@@ -232,5 +232,45 @@ for (const [want, c] of ENTRY) {
   if (got !== want) { console.log(`FAIL entry want ${want}, got ${got}:`, show(c)); fail++; }
 }
 
-console.log(`${BLOCK.length + ALLOW.length + ENTRY.length - fail} passed, ${fail} failed`);
+// #146: deciding stays fast on crafted long lines. Each input used to make a pattern (or the
+// masking pass) backtrack or rescan: at 50 KB the old module took about a second on the first
+// ones and minutes on the last. The first tier stops at its first failure so an old module
+// fails fast; the 1 MB tier runs only when the first tier passed.
+const rep = (unit, len) => unit.repeat(Math.ceil(len / unit.length)).slice(0, len);
+const RM = ['r', 'm'].join('');
+const crafted = (len) => [
+  ['rm -r…', `${RM} -${rep('r', len)}`],
+  ['rm -f…', `${RM} -${rep('f', len)}`],
+  ['fork opener then pipes', `:(){ ${rep('|', len)}`],
+  ['repeated rm', rep(`${RM} `, len)],
+  ['repeated git push', rep('git push ', len)],
+  ['long pipeline', rep('a|', len * 2)],
+  ['backtick comments', rep('`#` ', len)],
+  ['repeated rm.claude', rep(`${RM}.claude`, len)],
+  ['rm then .claude runs', `${RM} ${rep('.claude', len)}`],
+  ['repeated rm .claude|', rep(`${RM} .claude|`, len)],
+  ['git push then dashes', `git push ${rep('-', len)}`],
+  ['git clean -rrr', `git clean -${rep('r', len)}`],
+];
+let perfFail = 0;
+const timed = (tier, len, budgetMs, stopEarly) => {
+  let n = 0;
+  for (const [name, cmd] of crafted(len)) {
+    const t0 = performance.now();
+    blockReason(cmd);
+    const ms = performance.now() - t0;
+    n++;
+    if (ms > budgetMs) {
+      console.log(`FAIL ${tier}: ${name} (${cmd.length} chars) took ${ms.toFixed(0)} ms, budget ${budgetMs} ms`);
+      perfFail++;
+      fail++;
+      if (stopEarly) break;
+    }
+  }
+  return n;
+};
+let perfCases = timed('50 KB line', 50_000, 100, true);
+if (perfFail === 0) perfCases += timed('1 MB line', 1_000_000, 2000, false);
+
+console.log(`${BLOCK.length + ALLOW.length + ENTRY.length + perfCases - fail} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

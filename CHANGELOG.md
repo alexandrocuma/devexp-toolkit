@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     while deciding what text is inert, so a very long pipeline took time that
     grew with the square of its length. A 1 MB command took about 40 seconds
     in the Claude Code hook. That check now runs once per pipeline.
+  - The opencode module's patterns backtracked on some crafted long lines:
+    a few KB took seconds and longer lines minutes, delaying every guarded
+    command. Each rule now decides one line in time linear in its length,
+    about 200 ms at most for a 1 MB line. Decisions are unchanged.
   - Nesting of subshells and substitutions deeper than 100 levels is now
     scanned whole in both implementations. Before, the Claude Code hook fell
     back at Python's recursion limit and the opencode module much deeper, so

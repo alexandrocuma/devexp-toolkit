@@ -18,58 +18,148 @@
 // A target ends at whitespace, end of line, or a character that closes the word in shell
 // syntax: ' " ) ` ; & | — so `sh -c 'rm -rf /'`, `$(rm -rf ~)` and `git push --force;` match.
 // A letter, digit, '/', '.', '-' or '*' continues it.
+const END = String.raw`(?:\s|$|['"\x60);&|])`;
+const HOME = String.raw`(?:\$HOME|~)`;
+
+// Every rule decides one line at a time, as the Claude Code hook's line-by-line grep does
+// (blockReason splits the text; a backslash-continued command was joined by maskInert).
+// Within a line, `\s` is whitespace, CR included, as it is for grep's `\s`.
 //
-// Every pattern stays on one line, as the Claude Code hook's line-by-line grep does:
-// `[^\S\n]` is whitespace other than a newline (CR, tab, VT and FF count, as they do for
-// grep's `\s`), `[^\n]` stands in for `.` (which in JS would also stop at CR), and negated
-// classes exclude `\n`. A backslash-continued command is joined into one line by maskInert.
+// Each rule runs in time linear in the line (#146). JavaScript's regex engine backtracks,
+// so the grep patterns are not copied as they are:
+// - "rm, then -flags" names the first 'r' (or 'f') of the flags, so the letters are not
+//   split every possible way;
+// - "PREFIX, then any text without STOP, then SUFFIX" is decided by `sequence`: the first
+//   PREFIX of each STOP-separated segment is the only one that matters, and SUFFIX is
+//   searched for once, left to right, across all segments;
+// - `\.claude\S*\/\*` is decided by `claudeGlob` from one right-to-left pass.
+
+/** SUFFIX as a regex: does a match start in [from, to]? Calls must not move `from` back. */
+function leftmost(source, flags = '') {
+  const re = new RegExp(source, `g${flags}`);
+  return (line) => {
+    let searched = -1;
+    let at = -1;
+    return (from, to) => {
+      if (searched < 0 || (at >= 0 && at < from)) {
+        re.lastIndex = from;
+        const m = re.exec(line);
+        searched = from;
+        at = m ? m.index : -1;
+      }
+      return at >= 0 && at <= to;
+    };
+  };
+}
+
+/** `\.claude\S*\/\*`: does a match start in [from, to]? Calls must not move `from` back. */
+function claudeGlob(line) {
+  if (!line.includes('.claude')) return () => false;
+  let lastGlob = null;
+  const starts = [];
+  let k = 0;
+  return (from, to) => {
+    if (lastGlob === null) {
+      // lastGlob[i]: where the last '/*' begins that is reachable from i without whitespace, or -1.
+      const n = line.length;
+      lastGlob = new Int32Array(n + 1).fill(-1);
+      for (let i = n - 1; i >= 0; i--) {
+        if (/\s/.test(line[i])) continue;
+        if (lastGlob[i + 1] >= 0) lastGlob[i] = lastGlob[i + 1];
+        else if (line[i] === '/' && line[i + 1] === '*') lastGlob[i] = i;
+      }
+      for (let i = line.indexOf('.claude'); i >= 0; i = line.indexOf('.claude', i + 7)) starts.push(i);
+    }
+    while (k < starts.length && starts[k] < from) k++;
+    for (; k < starts.length && starts[k] <= to; k++) if (lastGlob[starts[k] + 7] >= 0) return true;
+    return false;
+  };
+}
+
+/** PREFIX, then any run of characters not in `stop`, then SUFFIX. `suffix(line)` gives a finder. */
+function sequence(prefix, stop, suffix, flags = '') {
+  const pre = new RegExp(prefix, `g${flags}`);
+  return (line) => {
+    const found = suffix(line);
+    let pos = 0;
+    for (;;) {
+      pre.lastIndex = pos;
+      const m = pre.exec(line);
+      if (!m) return false;
+      const start = m.index + m[0].length;
+      let end = start;
+      while (end < line.length && !stop.includes(line[end])) end += 1;
+      if (found(start, end)) return true;
+      if (end >= line.length) return false;
+      pos = end + 1;
+    }
+  };
+}
+
+const regex = (source, flags = '') => {
+  const re = new RegExp(source, flags);
+  return (line) => re.test(line);
+};
+const either = (...finders) => (line) => {
+  const fs = finders.map((f) => f(line));
+  return (from, to) => fs.some((f) => f(from, to));
+};
+
+const WIPE = "'rm -rf /' or 'rm -rf ~' would wipe your filesystem or home directory";
+const TABLE = 'DROP TABLE will permanently destroy table data';
+
 export const BLOCK_PATTERNS = [
   {
-    re: /rm[^\S\n]+-[a-z]*r[a-z]*f[^\S\n]+["']?(\/([^\S\n]|$|['"`);&|])|~\/?([^\S\n]|$|['"`);&|])|\$HOME([^\S\n]|$|['"`);&|]))/m,
-    label: "'rm -rf /' or 'rm -rf ~' would wipe your filesystem or home directory",
+    // rm -rf targeting filesystem root or home directory (optionally quoted)
+    test: regex(String.raw`rm\s+-[a-qs-z]*r[a-z]*f\s+["']?(?:\/|~\/?|\$HOME)${END}`),
+    label: WIPE,
   },
   {
-    re: /rm[^\S\n]+-[a-z]*f[a-z]*r[^\S\n]+["']?(\/([^\S\n]|$|['"`);&|])|~\/?([^\S\n]|$|['"`);&|])|\$HOME([^\S\n]|$|['"`);&|]))/m,
-    label: "'rm -rf /' or 'rm -rf ~' would wipe your filesystem or home directory",
+    test: regex(String.raw`rm\s+-[a-eg-z]*f[a-z]*r\s+["']?(?:\/|~\/?|\$HOME)${END}`),
+    label: WIPE,
   },
   {
     // Unanchored wildcard delete in a sensitive dir (/tmp/* , ~/.claude/.../* , or the dir
     // wholesale) — the blanket wipe an empty variable produces. Prefix-anchored globs like
     // /tmp/.deliver-PAY-123-* are allowed (no '*' right after the '/').
-    re: /rm\b[^|\n]*([^\S\n]["']?\/tmp["']?(\/\*|\/?([^\S\n]|$|['"`);&|]))|["']?(\$HOME|~)["']?\/\.claude(\S*\/\*|["']?\/?([^\S\n]|$|['"`);&|]))|\.claude\S*\/\*)/m,
+    test: sequence(
+      String.raw`rm\b`,
+      '|',
+      either(
+        leftmost(String.raw`\s["']?\/tmp["']?(?:\/\*|\/?${END})|["']?${HOME}["']?\/\.claude["']?\/?${END}`),
+        claudeGlob,
+      ),
+    ),
     label:
       "unanchored wildcard delete in a sensitive directory (e.g. '/tmp/*' or '~/.claude/.../*') — anchor the glob with a literal prefix like '/tmp/.deliver-<id>-*' so an empty variable cannot collapse it into a blanket wipe",
   },
   {
-    re: /:[^\S\n]*\([^\S\n]*\)[^\S\n]*\{[^\n]*\|[^\n]*:/m,
+    test: sequence(String.raw`:\s*\(\s*\)\s*\{`, '', (line) => (from) => {
+      const pipe = line.indexOf('|', from);
+      return pipe >= 0 && line.indexOf(':', pipe + 1) >= 0;
+    }),
     label: 'fork bomb pattern detected',
   },
   {
-    re: /DROP[^\S\n]+DATABASE/im,
+    test: regex(String.raw`DROP\s+DATABASE`, 'i'),
     label: 'DROP DATABASE would permanently destroy a database',
   },
   {
     // Force flag must be an argument of the same push command (no intervening ; | & ), so an
     // unrelated `-f` elsewhere (e.g. `rm -f` in a commit message) no longer false-positives.
-    re: /git[^\S\n]+push\b[^|&;\n]*[^\S\n](--force-with-lease|--force|-f)([^\S\n]|=|$|['"`);&|])/m,
+    test: sequence(String.raw`git\s+push\b`, '|&;', leftmost(String.raw`\s(?:--force-with-lease|--force|-f)(?:=|${END})`)),
     label: 'git push --force can overwrite remote history and affect other contributors',
   },
   {
-    re: /git[^\S\n]+reset\b[^\n]*?--hard/m,
+    test: sequence(String.raw`git\s+reset\b`, '', (line) => (from) => line.indexOf('--hard', from) >= 0),
     label: 'git reset --hard will permanently discard all uncommitted changes',
   },
   {
-    re: /git[^\S\n]+clean\b[^\n]*?-[a-z]*f/m,
+    test: sequence(String.raw`git\s+clean\b`, '', leftmost(String.raw`-[a-eg-z]*f`)),
     label: 'git clean -f will permanently delete untracked files',
   },
-  {
-    re: /DROP[^\S\n]+TABLE/im,
-    label: 'DROP TABLE will permanently destroy table data',
-  },
-  {
-    re: /TRUNCATE[^\S\n]+TABLE/im,
-    label: 'TRUNCATE TABLE will permanently destroy table data',
-  },
+  { test: regex(String.raw`DROP\s+TABLE`, 'i'), label: TABLE },
+  { test: regex(String.raw`TRUNCATE\s+TABLE`, 'i'), label: 'TRUNCATE TABLE will permanently destroy table data' },
 ];
 
 // ── Inert-text masking (#100) ─────────────────────────────────────────────────
@@ -536,8 +626,8 @@ export function maskInert(command) {
 
 /** blockReason — the label of the first pattern the command really invokes, or null. */
 export function blockReason(command) {
-  const text = maskInert(command);
-  for (const { re, label } of BLOCK_PATTERNS) if (re.test(text)) return label;
+  const lines = maskInert(command).split('\n');
+  for (const { test, label } of BLOCK_PATTERNS) for (const line of lines) if (test(line)) return label;
   return null;
 }
 
