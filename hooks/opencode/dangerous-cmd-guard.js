@@ -15,11 +15,19 @@
  * Tests: node hooks/opencode/dangerous-cmd-guard.test.js
  */
 
-// A target ends at whitespace, end of line, or a character that closes the word in shell
-// syntax: ' " ) ` ; & | — so `sh -c 'rm -rf /'`, `$(rm -rf ~)` and `git push --force;` match.
-// A letter, digit, '/', '.', '-' or '*' continues it.
-const END = String.raw`(?:\s|$|['"\x60);&|])`;
-const HOME = String.raw`(?:\$HOME|~)`;
+// Where a target ends (END). Whitespace, end of line, or a character that ends the word or
+// changes what it expands to:
+// - ' " ` ( ) ; & | < >  closes the word or starts a redirect, so `sh -c 'rm -rf /'`,
+//   `$(rm -rf ~)` and `git push --force;` match;
+// - $ { * [ :  and ?( @( +( !(  start an expansion that can leave the target itself: a
+//   parameter, command or ANSI-C expansion that may be empty or split the word, brace
+//   expansion, a glob, a zsh subscript or modifier, an extglob.
+// A letter, digit, '/', '.', '-' or '_' continues the target, so `./build`, `~/projects/$x`
+// and `/tmp/.deliver-$id-*` don't match.
+const END = String.raw`(?:\s|$|["':\x60();&|<>$*{[]|[?@+!]\()`;
+// The home directory (HOME), spelled `$HOME` (zsh `$~HOME`, `$=HOME`, `$^HOME`), `${HOME}`
+// with any operator, flags or modifier, `~` or `~name`.
+const HOME = String.raw`(?:\$[~=^]*HOME|\$\{[~=^]*(?:\([^()$\{\}]*\))?HOME(?:[-=?+#%/^,@:][^$\{\}]*)?\}|~(?:[A-Za-z_][A-Za-z0-9._-]*)?)`;
 
 // Every rule decides one line at a time, as the Claude Code hook's line-by-line grep does
 // (blockReason splits the text; a backslash-continued command was joined by maskInert).
@@ -111,11 +119,11 @@ const TABLE = 'DROP TABLE will permanently destroy table data';
 export const BLOCK_PATTERNS = [
   {
     // rm -rf targeting filesystem root or home directory (optionally quoted)
-    test: regex(String.raw`rm\s+-[a-qs-z]*r[a-z]*f\s+["']?(?:\/|~\/?|\$HOME)${END}`),
+    test: regex(String.raw`rm\s+-[a-qs-z]*r[a-z]*f\s+["']?(?:\/|${HOME}\/?)${END}`),
     label: WIPE,
   },
   {
-    test: regex(String.raw`rm\s+-[a-eg-z]*f[a-z]*r\s+["']?(?:\/|~\/?|\$HOME)${END}`),
+    test: regex(String.raw`rm\s+-[a-eg-z]*f[a-z]*r\s+["']?(?:\/|${HOME}\/?)${END}`),
     label: WIPE,
   },
   {
@@ -126,7 +134,7 @@ export const BLOCK_PATTERNS = [
       String.raw`rm\b`,
       '|',
       either(
-        leftmost(String.raw`\s["']?\/tmp["']?(?:\/\*|\/?${END})|["']?${HOME}["']?\/\.claude["']?\/?${END}`),
+        leftmost(String.raw`\s["']?\/tmp["']?\/?${END}|["']?${HOME}["']?\/\.claude["']?\/?${END}`),
         claudeGlob,
       ),
     ),

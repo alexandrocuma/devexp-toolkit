@@ -125,6 +125,55 @@ const BLOCK = [
   "sh -c 'git push origin main \\\n  --force'",
   'bash -c "rm -rf \\\n  ~"',
 
+  // #151: an expansion right after the target, or another home spelling (bash word-splits
+  // an unquoted expansion and zsh expands `~` after parameters)
+  'rm -rf /$IFS',
+  'rm -rf /${IFS}',
+  'rm -rf ~$x',
+  'rm -rf ~/$x',
+  'rm -rf $HOME$IFS',
+  'rm -rf $HOME/',
+  'rm -rf /$(true)',
+  "rm -rf /$'\\x20'",
+  'rm -rf /$1',
+  'rm -rf /{,}',
+  'rm -rf ~{,}',
+  'rm -rf /*',
+  'rm -rf ~/*',
+  'rm -rf /tmp*',
+  'rm -rf /tmp/$x',
+  'rm -rf /tmp/{,x}',
+  'rm -rf /tmp/?(x)',
+  'rm -rf /tmp>x',
+  'rm -rf /tmp(@)', // zsh glob qualifier
+  'rm -rf ~(/)',
+  'rm -rf ~/.claude$IFS',
+  'rm -rf ~/.claude*',
+  'rm -rf ${HOME}',
+  'rm -rf "${HOME}"',
+  'rm -rf ${HOME:-/x}',
+  'rm -rf ${HOME:0:1}',
+  'rm -rf ${HOME}/.claude',
+  'rm -rf "${HOME}"/.claude',
+  'rm -rf $~HOME',
+  'rm -rf ${=HOME}',
+  'rm -rf ${(L)HOME}',
+  'rm -rf $HOME:h',
+  'rm -rf $HOME[1]',
+  'rm -rf ~alice',
+  'rm -rf ~alice/.claude',
+  'x=$(rm -rf ${HOME})',
+  "sh -c 'rm -rf /$IFS'",
+  'git push -f$x',
+  'git push --force{,}',
+  'git push --force-with-lease>log',
+
+  // #146: the same decisions, reached in linear time; nesting deeper than 100 levels is
+  // scanned whole in both implementations
+  ':(){ :|:& };:',
+  'echo "`#`"; git reset --hard\necho done', // a comment inside backticks ends there
+  `echo "${'$(echo '.repeat(150)}x${')'.repeat(150)}" "git reset --hard"`,
+
   // line by line, like the Claude Code hook's grep: CR is an ordinary character inside
   // a line, and NUL is dropped
   'git reset x\r--hard',
@@ -166,6 +215,41 @@ const ALLOW = [
   'git push --follow-tags;',
   "ssh host 'git push origin main'",
   'git push origin \\\n  main',
+
+  // #151: a literal component after the protected prefix
+  'rm -rf ~/x$y',
+  'rm -rf ~/projects/$x',
+  'rm -rf ~/work-$x',
+  'rm -rf "$HOME/projects/$x"',
+  'rm -rf ${HOME}/projects/old',
+  'rm -rf ${HOME}x',
+  'rm -rf ${HOME}_x',
+  'rm -rf $HOMEDIR',
+  'rm -rf ${HOMEDIR}',
+  'rm -rf ${HOMER}',
+  'rm -rf $HOME_BACKUP',
+  'rm -rf ~+',
+  'rm -rf /tmp/.deliver-$id-*',
+  'rm -rf /tmp/.a-${id}',
+  'rm -rf /tmpx',
+  'rm -rf /tmp_old',
+  'rm -rf /var/tmp/$x',
+  'rm -rf ~/.claudex',
+  'rm -rf ~/.claude-backup',
+  'rm -f ~/.claude/agent-memory/x/$id.md',
+  'rm -rf ./*',
+  'git push --follow-tags$x',
+  'echo rm -rf ${HOME}',
+  'git commit -m "rm -rf /$IFS"',
+
+  // #146: the same decisions, reached in linear time — a protected target or force flag in
+  // another pipeline stage than the command; nesting within the limit is still masked
+  'rm -f a | cat ~/.claude | rm -f b',
+  'rm -f a | ls ~/.claude/x/*',
+  'rm -f ~/.claude/plans/x.md /tmp/.deliver-1/*',
+  'git push origin | grep -f pats | git push origin',
+  ':(){ :; } | cat',
+  `echo "${'$(echo '.repeat(50)}x${')'.repeat(50)}" "git reset --hard"`,
 
   // line by line, like the Claude Code hook's grep: a pattern begun on one line and
   // completed on a later one is not a match (backslash continuations are joined first)
@@ -233,9 +317,9 @@ for (const [want, c] of ENTRY) {
 }
 
 // #146: deciding stays fast on crafted long lines. Each input used to make a pattern (or the
-// masking pass) backtrack or rescan: at 50 KB the old module took about a second on the first
-// ones and minutes on the last. The first tier stops at its first failure so an old module
-// fails fast; the 1 MB tier runs only when the first tier passed.
+// masking pass) backtrack or rescan: at 100 KB the old module took seconds on the first ones
+// and far longer on the last; this module takes milliseconds. The first tier stops at its
+// first failure so an old module fails fast; the 1 MB tier runs only when the first passed.
 const rep = (unit, len) => unit.repeat(Math.ceil(len / unit.length)).slice(0, len);
 const RM = ['r', 'm'].join('');
 const crafted = (len) => [
@@ -243,6 +327,8 @@ const crafted = (len) => [
   ['rm -f…', `${RM} -${rep('f', len)}`],
   ['fork opener then pipes', `:(){ ${rep('|', len)}`],
   ['repeated rm', rep(`${RM} `, len)],
+  ['repeated rm, then a pipe', `${rep(`${RM} `, len)}|`],
+  ['repeated git push, then ;', `${rep('git push ', len)};`],
   ['repeated git push', rep('git push ', len)],
   ['long pipeline', rep('a|', len * 2)],
   ['backtick comments', rep('`#` ', len)],
@@ -251,6 +337,10 @@ const crafted = (len) => [
   ['repeated rm .claude|', rep(`${RM} .claude|`, len)],
   ['git push then dashes', `git push ${rep('-', len)}`],
   ['git clean -rrr', `git clean -${rep('r', len)}`],
+  ['repeated ${HOME:', `${RM} -rf ${rep('${HOME:', len)}`],
+  ['repeated ${(', `${RM} ${rep('${(', len)}`],
+  ['long ~name', `${RM} -rf ${rep('~a', 2)}${rep('a', len)}`],
+  ['repeated $~', `${RM} ${rep('$~', len)}`],
 ];
 let perfFail = 0;
 const timed = (tier, len, budgetMs, stopEarly) => {
@@ -269,7 +359,7 @@ const timed = (tier, len, budgetMs, stopEarly) => {
   }
   return n;
 };
-let perfCases = timed('50 KB line', 50_000, 100, true);
+let perfCases = timed('100 KB line', 100_000, 500, true);
 if (perfFail === 0) perfCases += timed('1 MB line', 1_000_000, 2000, false);
 
 console.log(`${BLOCK.length + ALLOW.length + ENTRY.length + perfCases - fail} passed, ${fail} failed`);

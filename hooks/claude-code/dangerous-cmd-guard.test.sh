@@ -164,6 +164,91 @@ expect allow 'git push --follow-tags;'
 expect allow "ssh host 'git push origin main'"
 expect allow $'git push origin \\\n  main'
 
+# ── #151 must BLOCK: an expansion right after the target, or another home spelling ──
+# bash word-splits an unquoted expansion and zsh expands `~` after parameters, so
+# a target followed by an expansion can still name the directory itself.
+expect block 'rm -rf /$IFS'
+expect block 'rm -rf /${IFS}'
+expect block 'rm -rf ~$x'
+expect block 'rm -rf ~/$x'
+expect block 'rm -rf $HOME$IFS'
+expect block 'rm -rf $HOME/'
+expect block 'rm -rf /$(true)'
+expect block "rm -rf /\$'\\x20'"
+expect block 'rm -rf /$1'
+expect block 'rm -rf /{,}'
+expect block 'rm -rf ~{,}'
+expect block 'rm -rf /*'
+expect block 'rm -rf ~/*'
+expect block 'rm -rf /tmp*'
+expect block 'rm -rf /tmp/$x'
+expect block 'rm -rf /tmp/{,x}'
+expect block 'rm -rf /tmp/?(x)'
+expect block 'rm -rf /tmp>x'
+expect block 'rm -rf /tmp(@)'                                # zsh glob qualifier
+expect block 'rm -rf ~(/)'
+expect block 'rm -rf ~/.claude$IFS'
+expect block 'rm -rf ~/.claude*'
+expect block 'rm -rf ${HOME}'
+expect block 'rm -rf "${HOME}"'
+expect block 'rm -rf ${HOME:-/x}'
+expect block 'rm -rf ${HOME:0:1}'
+expect block 'rm -rf ${HOME}/.claude'
+expect block 'rm -rf "${HOME}"/.claude'
+expect block 'rm -rf $~HOME'
+expect block 'rm -rf ${=HOME}'
+expect block 'rm -rf ${(L)HOME}'
+expect block 'rm -rf $HOME:h'
+expect block 'rm -rf $HOME[1]'
+expect block 'rm -rf ~alice'
+expect block 'rm -rf ~alice/.claude'
+expect block 'x=$(rm -rf ${HOME})'
+expect block "sh -c 'rm -rf /\$IFS'"
+expect block 'git push -f$x'
+expect block 'git push --force{,}'
+expect block 'git push --force-with-lease>log'
+
+# ── #151 must ALLOW: a literal component after the protected prefix ─────────
+expect allow 'rm -rf ~/x$y'
+expect allow 'rm -rf ~/projects/$x'
+expect allow 'rm -rf ~/work-$x'
+expect allow 'rm -rf "$HOME/projects/$x"'
+expect allow 'rm -rf ${HOME}/projects/old'
+expect allow 'rm -rf ${HOME}x'
+expect allow 'rm -rf ${HOME}_x'
+expect allow 'rm -rf $HOMEDIR'
+expect allow 'rm -rf ${HOMEDIR}'
+expect allow 'rm -rf ${HOMER}'
+expect allow 'rm -rf $HOME_BACKUP'
+expect allow 'rm -rf ~+'
+expect allow 'rm -rf /tmp/.deliver-$id-*'
+expect allow 'rm -rf /tmp/.a-${id}'
+expect allow 'rm -rf /tmpx'
+expect allow 'rm -rf /tmp_old'
+expect allow 'rm -rf /var/tmp/$x'
+expect allow 'rm -rf ~/.claudex'
+expect allow 'rm -rf ~/.claude-backup'
+expect allow 'rm -f ~/.claude/agent-memory/x/$id.md'
+expect allow 'rm -rf ./*'
+expect allow 'git push --follow-tags$x'
+expect allow 'echo rm -rf ${HOME}'
+expect allow 'git commit -m "rm -rf /$IFS"'
+
+# ── #146: the same decisions, reached in linear time ────────────────────────
+# A protected target or force flag in another pipeline stage than the command.
+expect allow 'rm -f a | cat ~/.claude | rm -f b'
+expect allow 'rm -f a | ls ~/.claude/x/*'
+expect allow 'rm -f ~/.claude/plans/x.md /tmp/.deliver-1/*'
+expect allow 'git push origin | grep -f pats | git push origin'
+expect block ':(){ :|:& };:'
+expect block $'echo "`#`"; git reset --hard\necho done'     # a comment inside backticks ends there
+expect allow ':(){ :; } | cat'
+# Nesting deeper than 100 levels is scanned whole in both implementations.
+open50=$(printf '$(echo %.0s' $(seq 50)); close50=$(printf ')%.0s' $(seq 50))
+open150=$(printf '$(echo %.0s' $(seq 150)); close150=$(printf ')%.0s' $(seq 150))
+expect allow "echo \"${open50}x${close50}\" \"git reset --hard\""
+expect block "echo \"${open150}x${close150}\" \"git reset --hard\""
+
 # ── Both implementations decide line by line (the Claude Code hook's grep) ──
 # A pattern begun on one line and completed on a later one is not a match; a
 # backslash continuation (above) is joined first. CR is an ordinary character

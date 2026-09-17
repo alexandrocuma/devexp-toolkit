@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`dangerous-cmd-guard` could miss a delete of a protected directory
+  (#151, security).** Both the Claude Code hook and the opencode module
+  decided where a target ends from literal characters only.
+  - A shell expansion right after the target didn't end it, although the
+    expansion could leave the directory itself: it may be empty, split the
+    word, or be a glob or brace expansion. Now any expansion right after a
+    target ends it, as a quote or a redirect already did. So do the
+    remaining redirection operators.
+  - Some spellings of the home directory weren't recognised. Every rule that
+    recognised `$HOME` or `~` now also recognises the other bash and zsh
+    spellings, and a trailing `/` after any of them.
+  - A path with a literal component after the protected directory is still
+    allowed. To delete under a protected directory by variable, put a literal
+    component first. Upgrade to pick this up; rules:
+    `docs/reference/hooks.md#what-dangerous-cmd-guard-matches`.
 - **`dangerous-cmd-guard` could take a very long time on some crafted
   commands (#146).** Checks that could run slowly:
   - Both implementations re-checked the rest of a pipeline for every stage

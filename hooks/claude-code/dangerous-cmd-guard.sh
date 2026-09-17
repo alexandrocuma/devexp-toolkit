@@ -529,13 +529,23 @@ matches() { # $1=grep flags  $2=pattern
 
 # ── Blocked patterns ───────────────────────────────────────────────────────────
 
-# A target ends at whitespace, end of line, or a character that closes the word
-# in shell syntax: ' " ) ` ; & | — so `sh -c 'rm -rf /'`, `$(rm -rf ~)` and
-# `git push --force;` match. A letter, digit, '/', '.', '-' or '*' continues it.
+# Where a target ends (END). Whitespace, end of line, or a character that ends
+# the word or changes what it expands to:
+# - ' " ` ( ) ; & | < >  closes the word or starts a redirect, so
+#   `sh -c 'rm -rf /'`, `$(rm -rf ~)` and `git push --force;` match;
+# - $ { * [ :  and ?( @( +( !(  start an expansion that can leave the target
+#   itself: a parameter, command or ANSI-C expansion that may be empty or split
+#   the word, brace expansion, a glob, a zsh subscript or modifier, an extglob.
+# A letter, digit, '/', '.', '-' or '_' continues the target, so `./build`,
+# `~/projects/$x` and `/tmp/.deliver-$id-*` don't match.
+END='(\s|$|["'\'':`();&|<>$*{[]|[?@+!]\()'
+# The home directory (HOME), spelled `$HOME` (zsh `$~HOME`, `$=HOME`, `$^HOME`),
+# `${HOME}` with any operator, flags or modifier, `~` or `~name`.
+HOME_RE='(\$[~=^]*HOME|\$[{][~=^]*(\([^()${}]*\))?HOME([-=?+#%/^,@:][^${}]*)?[}]|~([A-Za-z_][A-Za-z0-9._-]*)?)'
 
 # rm -rf targeting filesystem root or home directory (optionally quoted)
-if matches -E 'rm\s+-[a-z]*r[a-z]*f\s+["'\'']?(\/(\s|$|["'\''`);&|])|~\/?(\s|$|["'\''`);&|])|\$HOME(\s|$|["'\''`);&|]))' || \
-   matches -E 'rm\s+-[a-z]*f[a-z]*r\s+["'\'']?(\/(\s|$|["'\''`);&|])|~\/?(\s|$|["'\''`);&|])|\$HOME(\s|$|["'\''`);&|]))'; then
+if matches -E 'rm\s+-[a-z]*r[a-z]*f\s+["'\'']?(/|'"$HOME_RE"'/?)'"$END" || \
+   matches -E 'rm\s+-[a-z]*f[a-z]*r\s+["'\'']?(/|'"$HOME_RE"'/?)'"$END"; then
     echo "[devexp dangerous-cmd-guard] Blocked: 'rm -rf /' or 'rm -rf ~' would wipe your filesystem or home directory." >&2
     exit 2
 fi
@@ -545,7 +555,7 @@ fi
 # This is the blanket-wipe an empty variable produces — `rm -f /tmp/*"$id"*` with empty $id
 # collapses to `/tmp/*`, and the template itself contains `/tmp/*`. Prefix-anchored globs like
 # `/tmp/.deliver-PAY-123-*` are allowed (no '*' right after the '/').
-if matches -E 'rm\b[^|]*(\s["'\'']?/tmp["'\'']?(/\*|/?(\s|$|["'\''`);&|]))|["'\'']?(\$HOME|~)["'\'']?/\.claude(\S*/\*|["'\'']?/?(\s|$|["'\''`);&|]))|\.claude\S*/\*)'; then
+if matches -E 'rm\b[^|]*(\s["'\'']?/tmp["'\'']?/?'"$END"'|["'\'']?'"$HOME_RE"'["'\'']?/\.claude["'\'']?/?'"$END"'|\.claude\S*/\*)'; then
     echo "[devexp dangerous-cmd-guard] Blocked: unanchored wildcard delete in a sensitive directory (e.g. '/tmp/*' or '~/.claude/.../*'). Anchor the glob with a literal prefix (e.g. '/tmp/.deliver-<id>-*') so an empty variable cannot collapse it into a blanket wipe." >&2
     exit 2
 fi
@@ -564,7 +574,7 @@ fi
 
 # Force push — match the force flag only as an argument of the SAME push command (no intervening
 # ; | & ), so an unrelated `-f` elsewhere (e.g. `rm -f` in a commit message) no longer false-positives.
-if matches -E 'git\s+push\b[^|&;]*\s(--force-with-lease|--force|-f)(\s|=|$|["'\''`);&|])'; then
+if matches -E 'git\s+push\b[^|&;]*\s(--force-with-lease|--force|-f)(=|'"$END"')'; then
     echo "[devexp dangerous-cmd-guard] Blocked: git push --force can overwrite remote history and affect other contributors." >&2
     exit 2
 fi

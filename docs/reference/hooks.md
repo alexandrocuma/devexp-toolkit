@@ -156,11 +156,35 @@ These apply only when the command's output can't reach anything that runs it. It
 - a heredoc is still pending when a nested command ends
 - any word names a shell or interpreter that could run text read back from a file, the clipboard, git or GitHub (`sh`, `bash`, `zsh`, …, `eval`, `source`, `xargs`, `ssh`, `su`, `script`, `python`, `perl`, `ruby`, `node`, `php`, `awk`, `sed`, `osascript`, …)
 - the command word is `.`, a path, or not a plain literal (`$SHELL`, `"$x"`, `$(…)`)
+- subshells, `$(…)`, backticks or process substitutions are nested more than 100 levels deep
 - the parser raises for any other reason
 
-**Where a target ends.** Before matching, a trailing backslash plus newline is joined, so a command continued across lines matches as one line. A target (`/`, `~`, `$HOME`, `/tmp`, `~/.claude`, and the `--force`, `--force-with-lease` and `-f` flags) ends at whitespace, end of line, or a character that closes a shell word: `'`, `"`, `)`, a backtick, `;`, `&` or `|`. The root and home targets may also start with a quote (`rm -rf "/"`). So `sh -c 'rm -rf /'`, `eval "git push --force"`, `$(rm -rf ~)` and `git push -f&& …` block. A letter, digit, `/`, `.`, `-` or `*` continues the target, so `rm -rf ./build`, `rm -rf ~/projects/x` and `git push --follow-tags` don't match.
+**Where a target ends.** Before matching, a trailing backslash plus newline is joined, so a command continued across lines matches as one line. The targets are `/`, the home directory, `/tmp` and `~/.claude`, plus the `--force`, `--force-with-lease` and `-f` flags.
 
-**One line at a time.** Both implementations decide line by line. The Claude Code hook greps each line, and every opencode pattern is kept to a single line: its whitespace classes, negated classes and "any character" all stop at a newline. A pattern that starts on one line and ends on a later one is not a match, unless the lines were joined by a backslash continuation. Within a line, a carriage return counts as whitespace. NUL characters are dropped before matching.
+A target ends at whitespace or end of line. It also ends at a character that ends the word or can change what it expands to:
+
+- a character that closes the word or starts a redirect: `'`, `"`, a backtick, `(`, `)`, `;`, `&`, `|`, `<` or `>`
+- the start of an expansion: `$`, `{`, `*`, `[` or `:`, or an extglob `?(`, `@(`, `+(` or `!(`
+
+An expansion right after a target can leave the target itself. It may be empty, or split the word apart (bash splits an unquoted expansion; zsh expands `~` after parameters). It may also be a glob that matches the directory, a brace expansion with an empty alternative, or a zsh subscript or modifier. So `rm -rf ~/$dir`, `rm -f /tmp/$name` and `rm -rf /*` block, just as `rm -rf "/tmp/"$name` already did.
+
+The root and home targets may also start with a quote (`rm -rf "/"`). So `sh -c 'rm -rf /'`, `eval "git push --force"`, `$(rm -rf ~)` and `git push -f&& …` block.
+
+The home directory is recognised as `$HOME` (also zsh `$~HOME`, `$=HOME` and `$^HOME`), `${HOME}` with any operator, flags or modifier (`${HOME:-…}`, `${=HOME}`, `${(L)HOME}`), `~`, or `~name` (any user's home). A trailing `/` is allowed after every spelling.
+
+A letter, digit, `/`, `.`, `-` or `_` continues the target, so `rm -rf ./build`, `rm -rf ~/projects/$x`, `rm -f /tmp/.deliver-$id-*`, `rm -rf $HOMEDIR` and `git push --follow-tags` don't match. To delete something under a protected directory by variable, put a literal component right after the directory.
+
+**One line at a time.** Both implementations decide line by line: the Claude Code hook greps each line, and the opencode module splits the text at newlines before it tests its rules. A pattern that starts on one line and ends on a later one is not a match, unless the lines were joined by a backslash continuation. Within a line, a carriage return counts as whitespace. NUL characters are dropped before matching.
+
+**Time on long commands (#146).** Both implementations take time linear in the command's length, so a crafted command can't stall a guarded tool call. A crafted 1 MB line takes at most about 200 ms in the opencode module and at most about 1.5 s in the Claude Code hook (measured with BSD and GNU `grep`).
+
+The opencode rules are not copies of the grep patterns, because JavaScript's regex engine backtracks. Each rule is written in an equivalent form that doesn't backtrack:
+
+- `rm` flags are split at their first `r` or `f`.
+- A "prefix, then any text, then suffix" rule tries only the first prefix in each segment and searches for the suffix once, left to right.
+- The `.claude…/*` scan reads from a single table built right to left.
+
+The test suites run the same cases against both, and the opencode suite also times crafted 100 KB and 1 MB lines.
 
 In `dangerous-cmd-guard.sh`, all parsing happens in the `python3 -I` step, where the tool input is data on stdin. `grep` reads the result from a here-string, so no pipe writer is killed by SIGPIPE when `grep -q` exits early. Any interpreter or `grep` error blocks.
 
