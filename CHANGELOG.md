@@ -50,9 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `Write|Edit|MultiEdit|NotebookEdit` and the guard scans those fields. Text
     being replaced (`old_string`) is still not scanned. Re-run `devexp install`
     to apply the new matcher.
-  - Both: AWS temporary access key IDs (`ASIA…`) are blocked too. Real IDs are
-    exactly 20 characters, so the match must be bounded on both sides and
-    words like `ASIAPACIFICDATACENTER01` don't match.
+  - Both: AWS temporary access key IDs (`ASIA…`) are blocked too, including
+    right after an escape sequence or a percent-encoded character. The match
+    is bounded by characters that can't be part of an ID, so words like
+    `EURASIA…` and `ASIAPACIFICDATACENTER01` don't match.
 
 ### Security
 

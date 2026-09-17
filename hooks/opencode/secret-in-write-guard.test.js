@@ -116,12 +116,18 @@ BLOCK.push(
   ['write', 'OpenAI', `OPENAI_KEY_${OPENAI_ADMIN}`],
   ['write', 'OpenAI', `token-${OPENAI_PROJ}`],
   ['edit', 'OpenAI', `key1${OPENAI_SVC}`],
+  ['write', 'AWS', `{"creds": "id\\n${AWS_TMP}"}`],
+  ['edit', 'AWS', `https://sts.example.com/?AccessKeyId%3D${AWS_TMP}`],
+  ['write', 'AWS', `{"id": "\\u002F${AWS_TMP}"}`],
+  ['write', 'AWS', `id = '\\x2F${AWS_TMP}'`],
+  ['edit', 'AWS', `${AWS_TMP}secretAccessKey`],
   // A large write, secret first — the shell twin once allowed these (#101).
   ['write', 'OpenAI', `${OPENAI}\n${FILLER}`],
   ['edit', 'private key', `${PK_RSA}${FILLER}`],
   // Length thresholds, pinned at the edge (the one-short twins are in ALLOW).
   ['write', 'Anthropic', `${SK}-ant-${body('FAKE_ant-', 40)}`],
   ['write', 'OpenAI', `${SK}-proj-${body('FAKE_proj-', 80)}`],
+  ['write', 'AWS', `${AS}${body('FAKE', 16)}`],
 );
 
 const TEMPLATE = [
@@ -165,6 +171,7 @@ const ALLOW = [
   // Length thresholds, one character short of blocking.
   ['write', `${SK}-ant-${body('FAKE_ant-', 39)}`],
   ['write', `${SK}-proj-${body('FAKE_proj-', 79)}`],
+  ['write', `${AS}${body('FAKE', 15)}`],
   // Only the new text is scanned; an edit that takes a key out must not be refused.
   ['edit', 'OPENAI_API_KEY=process.env.OPENAI_API_KEY', { old: `OPENAI_API_KEY=${OPENAI}` }],
   // apply_patch writes only its "+" lines: removing a key, a key in unchanged

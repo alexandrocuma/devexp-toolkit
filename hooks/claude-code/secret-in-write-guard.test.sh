@@ -135,6 +135,11 @@ block Edit  OpenAI "https://example.com/callback?next=%2F&key%3D$OPENAI_SVC"
 block Write OpenAI "OPENAI_KEY_$OPENAI_ADMIN"
 block Write OpenAI "token-$OPENAI_PROJ"
 block Edit  OpenAI "key1$OPENAI_SVC"
+block Write AWS    '{"creds": "id\n'"$AWS_TMP"'"}'
+block Edit  AWS    "https://sts.example.com/?AccessKeyId%3D$AWS_TMP"
+block Write AWS    '{"id": "\u002F'"$AWS_TMP"'"}'
+block Write AWS    "id = '\\x2F$AWS_TMP'"
+block Edit  AWS    "${AWS_TMP}secretAccessKey"
 # A large write, secret first — once allowed silently (#101).
 block Write OpenAI        "$OPENAI"$'\n'"$FILLER"
 block Edit  'private key' "$PK_RSA$FILLER"
@@ -181,6 +186,8 @@ allow Write "${SK}-ant-$(body FAKE_ant- 39)"
 block Write Anthropic "${SK}-ant-$(body FAKE_ant- 40)"
 allow Write "${SK}-proj-$(body FAKE_proj- 79)"
 block Write OpenAI    "${SK}-proj-$(body FAKE_proj- 80)"
+allow Write "${AS}$(body FAKE 15)"
+block Write AWS       "${AS}$(body FAKE 16)"
 
 # ── must ALLOW: removing a secret, and empty writes ─────────────────────────
 # Only the new text is scanned; an Edit that takes a key out must not be refused.

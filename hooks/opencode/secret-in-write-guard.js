@@ -22,9 +22,14 @@ const SECRET_PATTERNS = [
   // boundary: a key can follow an escape, a %XX, a _, a - or a digit.
   { re: /sk-(proj|svcacct|admin)-[A-Za-z0-9_\-]{80,}/m, label: 'OpenAI API key (sk-...)' },
   { re: /AKIA[0-9A-Z]{16}/m,                     label: 'AWS Access Key ID' },
-  // Temporary (STS) key IDs are exactly 20 characters; bounding both ends
-  // keeps words like ASIAPACIFICDATACENTER01 from matching.
-  { re: /(^|[^A-Za-z0-9])ASIA[0-9A-Z]{16}([^A-Za-z0-9]|$)/m, label: 'AWS temporary Access Key ID' },
+  // Temporary (STS) key IDs are ASIA plus exactly 16 of [0-9A-Z], so a
+  // boundary is any character outside that set: EURASIA... and
+  // ASIAPACIFICDATACENTER01 don't match, while a key next to a lowercase
+  // letter (an escape like \n) does. On the left, an encoded character
+  // that ends in an uppercase hex digit (%2F, \u002F, \x2F) also counts;
+  // \x5c is a backslash. A key run straight into more capitals or digits
+  // reads as a longer word and is not matched.
+  { re: /(^|[^0-9A-Z]|%[0-9A-Fa-f]{2}|\x5cu[0-9A-Fa-f]{4}|\x5cx[0-9A-Fa-f]{2})ASIA[0-9A-Z]{16}([^0-9A-Z]|$)/m, label: 'AWS temporary Access Key ID' },
   { re: /gh[postaur]_[A-Za-z0-9_]{36,}/m,        label: 'GitHub token' },
   { re: /github_pat_[A-Za-z0-9_]{36,}/m,         label: 'GitHub token' },
   { re: /xox[baprs]-[0-9A-Za-z\-]{10,}/m,        label: 'Slack token' },
