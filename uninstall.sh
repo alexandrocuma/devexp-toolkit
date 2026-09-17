@@ -383,6 +383,13 @@ def command_path(cmd):
         return None
     return p
 
+def is_devexp_handler(h):
+    # devexp registers only {"type": "command", "command": <path>}. A handler
+    # with args is spawned without a shell (exec form), and one of another type
+    # runs no command: both are the user's, whatever path they name (#137).
+    return (isinstance(h, dict) and h.get('type') == 'command'
+            and 'args' not in h and is_devexp_hook(h.get('command')))
+
 def is_devexp_hook(cmd):
     # A devexp-form command whose basename is a registry script, with
     # hooks/claude-code/ directly above it at a path-segment boundary (so
@@ -401,48 +408,101 @@ def is_devexp_hook(cmd):
     head = p[:-len(base)]
     return head == SCRIPT_DIR or head.endswith('/' + SCRIPT_DIR)
 
-with open(settings_path) as f:
-    try:
-        settings = json.load(f)
-    except json.JSONDecodeError:
-        print("  [skip] settings.json is not valid JSON")
-        sys.exit(0)
+try:
+    with open(settings_path, encoding='utf-8') as f:
+        text = f.read()
+except (OSError, ValueError) as e:
+    print(f"  [skip] could not read settings.json: {e}")
+    sys.exit(0)
+try:
+    settings = json.loads(text)
+except ValueError:
+    print("  [skip] settings.json is not valid JSON")
+    sys.exit(0)
 
-hooks_section = settings.get('hooks', {})
+hooks_section = settings.get('hooks') if isinstance(settings, dict) else None
 if not hooks_section:
     print("  [skip] no hooks configured")
     sys.exit(0)
+if not isinstance(hooks_section, dict):
+    print("  [skip] settings.json: unexpected shape")
+    sys.exit(0)
 
+# Remove devexp's handlers and nothing else: every other handler and entry
+# keeps all its fields. An entry or event is dropped only when this emptied it;
+# one that was already empty is the user's.
 changed = False
 for event, hook_list in list(hooks_section.items()):
+    if not isinstance(hook_list, list):
+        continue
     filtered = []
     for entry in hook_list:
+        cmds = entry.get('hooks') if isinstance(entry, dict) else None
+        if not isinstance(cmds, list) or not cmds:
+            filtered.append(entry)
+            continue
         # Filter per command, not by entry['hooks'][0]: an entry may hold more
         # than one, and judging it by its first silently mishandles the rest.
         kept_cmds = []
-        for h in entry.get('hooks', []):
-            cmd = h.get('command', '')
-            if is_devexp_hook(cmd):
+        for h in cmds:
+            if is_devexp_handler(h):
+                cmd = h['command']
                 print(f"  \033[0;31m-\033[0m {event}: {os.path.basename(command_path(cmd) or cmd)}")
                 changed = True
             else:
                 kept_cmds.append(h)
-        if not entry.get('hooks'):
-            filtered.append(entry)
-        elif kept_cmds:
+        if kept_cmds:
             entry['hooks'] = kept_cmds
             filtered.append(entry)
-    hooks_section[event] = filtered
+    if filtered:
+        hooks_section[event] = filtered
+    elif hook_list:
+        del hooks_section[event]
 
-# Clean up empty event keys
-settings['hooks'] = {k: v for k, v in hooks_section.items() if v}
-
-if changed:
-    with open(settings_path, 'w') as f:
-        json.dump(settings, f, indent=2)
-    print(f"  Saved: {settings_path}")
-else:
+if not changed:
     print("  [skip] no devexp hooks found in settings.json")
+    sys.exit(0)
+
+def top_level_member(text, name):
+    # (key start, value start, value end) of the last top-level member called
+    # name -- the one json.loads keeps -- or None.
+    decoder = json.JSONDecoder()
+    def ws(i):
+        while i < len(text) and text[i] in ' \t\n\r':
+            i += 1
+        return i
+    found = None
+    i = ws(0) + 1  # past '{'
+    i = ws(i)
+    if text[i] == '}':
+        return None
+    while True:
+        key_start = i
+        key, i = json.decoder.scanstring(text, i + 1)
+        i = ws(ws(i) + 1)  # past ':'
+        _, end = decoder.raw_decode(text, i)
+        if key == name:
+            found = (key_start, i, end)
+        i = ws(end)
+        if text[i] != ',':
+            return found
+        i = ws(i + 1)
+
+# Only the hooks value is rewritten, in the layout of the line its key is on;
+# every other byte of settings.json stays as it was.
+key_start, value_start, value_end = top_level_member(text, 'hooks')
+lead = text[text.rfind('\n', 0, key_start) + 1:key_start]
+if lead.strip(' \t'):
+    value = json.dumps(hooks_section, ensure_ascii=False, separators=(',', ':'))
+else:
+    value = json.dumps(hooks_section, ensure_ascii=False, indent=lead or '  ').replace('\n', '\n' + lead)
+new_text = text[:value_start] + value + text[value_end:]
+if json.loads(new_text) != settings:
+    print("  [skip] settings.json: rewriting it would change more than its hooks, so it was left untouched")
+    sys.exit(0)
+with open(settings_path, 'w', encoding='utf-8') as f:
+    f.write(new_text)
+print(f"  Saved: {settings_path}")
 PYEOF
         echo ""
     fi

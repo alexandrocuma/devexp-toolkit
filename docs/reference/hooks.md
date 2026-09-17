@@ -4,7 +4,7 @@
 
 Hooks intercept tool calls automatically — no user action required. Some are safety guards that block or ask; others (`lint-on-save`, `format-on-save`, `test-on-save`, `graphify-grep-nudge`) are advisory and never block. Each hook has an implementation per CLI, and the installer installs both: the Claude Code scripts (`cli/cmd/install_claude.go`) and the opencode plugin (`cli/cmd/install_opencode.go`).
 
-**Claude Code** hooks are shell scripts registered in `~/.claude/settings.json` under `PreToolUse` or `PostToolUse` events. Claude Code calls the script with a JSON payload on stdin and reads the response:
+**Claude Code** hooks are shell scripts registered in `~/.claude/settings.json` under `PreToolUse` or `PostToolUse` events. devexp edits only its own handlers there; your hooks keep every field ([install guide](../guides/install.md#what-install-and-uninstall-change-in-settingsjson)). Claude Code calls the script with a JSON payload on stdin and reads the response:
 
 - **Hard block** — print reason to stderr, `exit 2`. Claude stops the tool call entirely.
 - **Soft block (ask)** — output `{"hookSpecificOutput": {"permissionDecision": "ask"}}` to stdout, `exit 0`. Claude pauses and asks the user.

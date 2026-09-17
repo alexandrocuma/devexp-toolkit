@@ -106,16 +106,6 @@ func (h Hook) EnabledFor(id string) bool {
 	return h.Enabled
 }
 
-type hookEntry struct {
-	Matcher string    `json:"matcher"`
-	Hooks   []hookCmd `json:"hooks"`
-}
-
-type hookCmd struct {
-	Type    string `json:"type"`
-	Command string `json:"command"`
-}
-
 func LoadRegistry(path string) (Registry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -138,15 +128,15 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 		return fmt.Errorf("hooks: repo dir %q is not an absolute path, so hook commands would be relative — refusing to register them", repoDir)
 	}
 
-	// Load existing settings as a raw map to preserve unknown fields
-	raw := map[string]json.RawMessage{}
-	if data, err := os.ReadFile(settingsPath); err == nil {
-		json.Unmarshal(data, &raw) //nolint:errcheck
+	// Only the hooks value is rewritten; every other byte of settings.json, and
+	// every field of a hook devexp doesn't own, is written back as read (#137).
+	data, err := os.ReadFile(settingsPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("hooks: read %s: %w", settingsPath, err)
 	}
-
-	hooksMap := map[string][]hookEntry{}
-	if hooksRaw, ok := raw["hooks"]; ok {
-		json.Unmarshal(hooksRaw, &hooksMap) //nolint:errcheck
+	doc, hooksMap, err := loadSettings(data)
+	if err != nil {
+		return fmt.Errorf("hooks: %s: %w — it was left untouched and no hooks were registered; fix it and re-run", settingsPath, err)
 	}
 
 	pruned := requoteDevexpHooks(hooksMap, registry, repoDir, dryRun)
@@ -186,7 +176,7 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 		alreadyIn := false
 		for _, e := range hooksMap[cc.Event] {
 			for _, h := range e.Hooks {
-				if h.Command == command {
+				if h.devexpForm() && h.Command == command {
 					alreadyIn = true
 					break
 				}
@@ -212,15 +202,9 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 		return nil
 	}
 
-	hooksBytes, err := json.Marshal(hooksMap)
+	out, err := doc.render(hooksMap)
 	if err != nil {
-		return err
-	}
-	raw["hooks"] = json.RawMessage(hooksBytes)
-
-	out, err := json.MarshalIndent(raw, "", "  ")
-	if err != nil {
-		return err
+		return fmt.Errorf("hooks: %s: %w — it was left untouched", settingsPath, err)
 	}
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
 		return err
@@ -232,25 +216,24 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 	return nil
 }
 
-// pruneStaleHooks removes registered hook commands that live under repoDir
-// (devexp-managed) but whose backing script no longer exists on disk — i.e.
-// the hook was removed from this version's registry. User-authored hooks
-// pointing elsewhere are left untouched. Returns whether anything was pruned.
-func pruneStaleHooks(hooksMap map[string][]hookEntry, repoDir string, dryRun bool) bool {
-	pruned := false
+// removeHookCmds calls drop for every handler, in place so drop may rewrite
+// it, and removes those it returns true for. An entry left with no handlers is
+// removed, and so is an event left with no entries; an entry or event that
+// had none to begin with is the user's and stays.
+func removeHookCmds(hooksMap map[string][]hookEntry, drop func(event string, h *hookCmd) bool) {
 	for event, entries := range hooksMap {
+		if len(entries) == 0 {
+			continue
+		}
 		var kept []hookEntry
 		for _, e := range entries {
+			if len(e.Hooks) == 0 {
+				kept = append(kept, e)
+				continue
+			}
 			var keptCmds []hookCmd
 			for _, h := range e.Hooks {
-				if isStaleDevexpHook(h.Command, repoDir) {
-					name := commandBase(h.Command)
-					if dryRun {
-						ui.DryRun(fmt.Sprintf("remove %s hook: %s (script no longer exists)", event, name))
-					} else {
-						ui.Removed(fmt.Sprintf("%s: %s (script no longer exists)", event, name))
-					}
-					pruned = true
+				if drop(event, &h) {
 					continue
 				}
 				keptCmds = append(keptCmds, h)
@@ -267,6 +250,27 @@ func pruneStaleHooks(hooksMap map[string][]hookEntry, repoDir string, dryRun boo
 			hooksMap[event] = kept
 		}
 	}
+}
+
+// pruneStaleHooks removes registered hook commands that live under repoDir
+// (devexp-managed) but whose backing script no longer exists on disk — i.e.
+// the hook was removed from this version's registry. User-authored hooks
+// pointing elsewhere are left untouched. Returns whether anything was pruned.
+func pruneStaleHooks(hooksMap map[string][]hookEntry, repoDir string, dryRun bool) bool {
+	pruned := false
+	removeHookCmds(hooksMap, func(event string, h *hookCmd) bool {
+		if !h.devexpForm() || !isStaleDevexpHook(h.Command, repoDir) {
+			return false
+		}
+		name := commandBase(h.Command)
+		if dryRun {
+			ui.DryRun(fmt.Sprintf("remove %s hook: %s (script no longer exists)", event, name))
+		} else {
+			ui.Removed(fmt.Sprintf("%s: %s (script no longer exists)", event, name))
+		}
+		pruned = true
+		return true
+	})
 	return pruned
 }
 
@@ -422,42 +426,29 @@ func isRelativeDevexpHook(cmd string, managed map[string]bool) bool {
 func pruneForeignDevexpHooks(hooksMap map[string][]hookEntry, registry Registry, repoDir string, dryRun bool) bool {
 	managed := managedScriptNames(registry)
 	pruned := false
-	for event, entries := range hooksMap {
-		var kept []hookEntry
-		for _, e := range entries {
-			var keptCmds []hookCmd
-			for _, h := range e.Hooks {
-				reason := ""
-				switch {
-				case isRelativeDevexpHook(h.Command, managed):
-					reason = "relative path"
-				case isForeignDevexpHook(h.Command, managed, repoDir):
-					reason = "duplicate from another install root"
-				}
-				if reason != "" {
-					msg := fmt.Sprintf("%s: %s (%s)", event, commandBase(h.Command), reason)
-					if dryRun {
-						ui.DryRun("remove " + msg)
-					} else {
-						ui.Removed(msg)
-					}
-					pruned = true
-					continue
-				}
-				keptCmds = append(keptCmds, h)
-			}
-			if len(keptCmds) == 0 {
-				continue
-			}
-			e.Hooks = keptCmds
-			kept = append(kept, e)
+	removeHookCmds(hooksMap, func(event string, h *hookCmd) bool {
+		if !h.devexpForm() {
+			return false
 		}
-		if len(kept) == 0 {
-			delete(hooksMap, event)
+		reason := ""
+		switch {
+		case isRelativeDevexpHook(h.Command, managed):
+			reason = "relative path"
+		case isForeignDevexpHook(h.Command, managed, repoDir):
+			reason = "duplicate from another install root"
+		}
+		if reason == "" {
+			return false
+		}
+		msg := fmt.Sprintf("%s: %s (%s)", event, commandBase(h.Command), reason)
+		if dryRun {
+			ui.DryRun("remove " + msg)
 		} else {
-			hooksMap[event] = kept
+			ui.Removed(msg)
 		}
-	}
+		pruned = true
+		return true
+	})
 	return pruned
 }
 
@@ -474,7 +465,7 @@ func pruneForeignDevexpHooks(hooksMap map[string][]hookEntry, registry Registry,
 // disabled hooks included), or dropped when the event already holds the
 // command it would become, so the script never runs twice. An entry left with
 // no commands is removed. A user's command never matches: other directories,
-// other scripts, arguments or any other quoting.
+// other scripts, arguments (in the string or as args) or any other quoting.
 func requoteDevexpHooks(hooksMap map[string][]hookEntry, registry Registry, repoDir string, dryRun bool) bool {
 	want := map[string]string{} // script path under repoDir -> command to register
 	for _, h := range registry {
@@ -491,62 +482,52 @@ func requoteDevexpHooks(hooksMap map[string][]hookEntry, registry Registry, repo
 		}
 	}
 
-	changed := false
+	present := map[string]map[string]bool{} // event -> devexp-form commands it holds
 	for event, entries := range hooksMap {
-		present := map[string]bool{}
+		present[event] = map[string]bool{}
 		for _, e := range entries {
 			for _, h := range e.Hooks {
-				present[h.Command] = true
+				if h.devexpForm() {
+					present[event][h.Command] = true
+				}
 			}
-		}
-		var kept []hookEntry
-		for _, e := range entries {
-			var keptCmds []hookCmd
-			for _, h := range e.Hooks {
-				p, ok := legacy[h.Command]
-				if !ok {
-					p, _ = commandPath(h.Command)
-				}
-				cmd, ok := want[p]
-				if !ok || cmd == h.Command {
-					keptCmds = append(keptCmds, h)
-					continue
-				}
-				if present[cmd] {
-					msg := fmt.Sprintf("%s: %s (duplicate of the registered command)", event, filepath.Base(p))
-					if dryRun {
-						ui.DryRun("remove " + msg)
-						keptCmds = append(keptCmds, h)
-						continue
-					}
-					ui.Removed(msg)
-					changed = true
-					continue
-				}
-				msg := fmt.Sprintf("%s: %s (command re-quoted for the shell)", event, filepath.Base(p))
-				if dryRun {
-					ui.DryRun("rewrite " + msg)
-					keptCmds = append(keptCmds, h)
-					continue
-				}
-				fmt.Printf("  \033[0;33m~\033[0m %s\n", msg)
-				h.Command = cmd
-				present[cmd] = true
-				keptCmds = append(keptCmds, h)
-				changed = true
-			}
-			if len(keptCmds) == 0 {
-				continue
-			}
-			e.Hooks = keptCmds
-			kept = append(kept, e)
-		}
-		if len(kept) == 0 {
-			delete(hooksMap, event)
-		} else {
-			hooksMap[event] = kept
 		}
 	}
+
+	changed := false
+	removeHookCmds(hooksMap, func(event string, h *hookCmd) bool {
+		if !h.devexpForm() {
+			return false
+		}
+		p, ok := legacy[h.Command]
+		if !ok {
+			p, _ = commandPath(h.Command)
+		}
+		cmd, ok := want[p]
+		if !ok || cmd == h.Command {
+			return false
+		}
+		if present[event][cmd] {
+			msg := fmt.Sprintf("%s: %s (duplicate of the registered command)", event, filepath.Base(p))
+			if dryRun {
+				ui.DryRun("remove " + msg)
+				return false
+			}
+			ui.Removed(msg)
+			changed = true
+			return true
+		}
+		msg := fmt.Sprintf("%s: %s (command re-quoted for the shell)", event, filepath.Base(p))
+		if dryRun {
+			ui.DryRun("rewrite " + msg)
+			return false
+		}
+		fmt.Printf("  \033[0;33m~\033[0m %s\n", msg)
+		h.Command = cmd
+		present[event][cmd] = true
+		changed = true
+		return false
+	})
 	return changed
 }
 

@@ -169,7 +169,7 @@ Hook commands point into the install root, so editing a registered script in the
 |------------|----------|-------------|
 | `claude` CLI | Detecting the install target; registering and removing MCPs (`claude mcp list/add/remove`) | `cli/cmd/targets.go` (`commandExists`), `cli/internal/mcp/claude.go` |
 | `opencode` CLI | Detecting the install target only (on PATH). Its config file is edited directly | `cli/cmd/targets.go`, `cli/internal/mcp/opencode.go` |
-| `~/.claude/settings.json` | Hook registration (other keys are preserved) | `cli/internal/hooks/installer.go` |
+| `~/.claude/settings.json` | Hook registration (only the `hooks` value is rewritten; other bytes and users' hook fields are kept) | `cli/internal/hooks/installer.go`, `cli/internal/hooks/settings.go` |
 | User cache dir (`os.UserCacheDir()/devexp/assets`, `…/assets-dev` for dev builds) | Assets extracted from the embedded FS when no clone is found | `cli/internal/repo/repo.go` |
 | cobra, viper, promptui | Commands; reading `devexp.config.json`; the interactive wizard (needs a TTY) | `cli/cmd/root.go`, `cli/internal/config/config.go`, `cli/internal/ui/prompts.go` |
 | `python3` | Parsing hook input at runtime; `uninstall.sh` JSON edits | `hooks/claude-code/*.sh`, `uninstall.sh` |

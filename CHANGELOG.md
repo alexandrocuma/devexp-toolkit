@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Rewriting `settings.json` dropped fields from users' hooks (#137).** devexp
+  read hooks into types holding only `matcher`, `type` and `command`, so when
+  `devexp install` rewrote `~/.claude/settings.json` every other field of a
+  user's hook was lost: `timeout`, `async`, `shell`, `if`, `statusMessage`,
+  `args` (turning an exec-form hook into a shell command), an `http`,
+  `mcp_tool` or `prompt` hook's own fields, and anything a later Claude Code
+  adds. The whole file was also re-sorted and re-indented, with `&`, `<` and `>`
+  written as `\u` escapes.
+  - Install now edits only devexp's own handlers. Every other handler and entry
+    keeps all its fields, in order; an entry without `matcher` doesn't gain one;
+    a re-quoted devexp command changes that value only.
+  - Only the top-level `hooks` value is rewritten, in the indentation of the
+    file around it. Every other byte of `settings.json` stays as it was. New
+    files and devexp's own entries are written as before.
+  - A handler with `args` (spawned without a shell) or of a type other than
+    `command` is the user's whatever path it names: never re-quoted, pruned,
+    removed or counted as devexp's registration.
+  - An entry or event that was already empty stays; one is removed only when
+    removing devexp's handlers emptied it.
+  - A `settings.json` that isn't valid JSON, or whose `hooks`, events, entries
+    or handlers have an unexpected shape, is left untouched and the install
+    stops with an error naming it. Earlier releases replaced it with a file
+    holding only the hooks.
+  - `uninstall.sh` applies the same rules: it keeps pre-existing empty events,
+    no longer escapes non-ASCII text, splices the new `hooks` value into the
+    original text, and skips entries and handlers that aren't objects instead
+    of failing with a traceback.
+
 ## [0.9.0] - 2026-09-16
 
 ### Added

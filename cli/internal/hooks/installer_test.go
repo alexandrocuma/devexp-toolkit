@@ -75,6 +75,21 @@ func readHooks(t *testing.T, settingsPath string) hooksMapT {
 			t.Fatalf("Unmarshal hooks error = %v", err)
 		}
 	}
+	return withoutFields(hooks)
+}
+
+// withoutFields drops the raw members hooks were read with, so they compare
+// equal to entries built in a test. Tests of the members themselves read the
+// file's bytes instead.
+func withoutFields(hooks hooksMapT) hooksMapT {
+	for _, entries := range hooks {
+		for i := range entries {
+			entries[i].fields = nil
+			for j := range entries[i].Hooks {
+				entries[i].Hooks[j].fields = nil
+			}
+		}
+	}
 	return hooks
 }
 
