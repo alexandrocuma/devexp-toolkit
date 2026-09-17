@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`secret-in-write-guard` detects OpenAI's older service keys (#152).**
+  Keys issued with the `sk-service-…` prefix can still be live, and public
+  scanners (Trivy, TruffleHog) still detect them. Both twins now block them.
+  The shape and length come from those scanners and are cited in the pattern
+  comment. Look-alike names that start with `sk-service-` are still allowed.
 - **CI scans the CLI for known vulnerabilities (#141).** A new `govulncheck`
   job in `ci.yml` runs on every pull request and push to `main`, and
   `release.yml` runs the same job before goreleaser, which now `needs:` it, so
@@ -75,6 +80,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     scanned whole in both implementations. Before, the Claude Code hook fell
     back at Python's recursion limit and the opencode module much deeper, so
     the two could decide differently.
+- **`secret-in-write-guard` blocked long snake_case names that contain a
+  GitHub token prefix (#143).** A name like `test_blocks_right_token_…`
+  contains `ght_`, and the GitHub pattern accepted `_` in the token body, so a
+  long enough name was refused. Classic GitHub tokens (`ghp_`, `gho_`, `ghu_`,
+  `ghs_`, `ghr_`) now match only by their documented alphanumeric shape. GitHub
+  App installation tokens (`ghs_`, including Actions' `GITHUB_TOKEN`) have been
+  moving to a longer stateless format since 2026-04-27, and that format contains
+  `_`. It gets its own match, so those tokens are still blocked; a rare name
+  in which a prefix is followed by a segment that starts like that token's
+  JWT is blocked too. Both twins change together.
+- **`secret-in-write-guard` blocked placeholders shaped like keys (#143).**
+  Documentation and templates use values such as a Slack prefix followed by
+  `your-token`, AWS's published example access key ID, or a body of repeated
+  `x`, and the guard refused them. A value that is entirely a placeholder is
+  now allowed. A real key next to a placeholder, or joined to one, still
+  blocks. Mirrored tests cover both.
+- **`secret-in-write-guard` blocked a private-key header quoted on its own
+  (#143).** Any `-----BEGIN … PRIVATE KEY` line was refused, including one
+  named in documentation or matched in code. A header now blocks only when key
+  material follows it closely, before any `END` or `BEGIN` line. Text further
+  on in the same write doesn't count, so an identifier, fingerprint, path or
+  hash later in the file no longer blocks, but key-like text on the header's
+  line or just after it still does. Real PEM blocks still block, including
+  escaped, concatenated, encrypted and PGP-armored ones and ones with a dash
+  rule under the header. Other backslashes near a quoted header, as in Windows
+  paths, escaped code strings or LaTeX, don't count as key material. A body
+  wrapped far narrower than the usual PEM line width, written in pieces across
+  several edits, or starting far from its header, isn't recognized as key
+  material; `docs/reference/hooks.md` lists this with the guard's other
+  limits. The test fixtures now use a realistic PEM body.
+- **`secret-in-write-guard` decides in linear time (#143).** Each pattern is
+  retried at every position in the text, and some of the new patterns could
+  rescan the rest of a long write from each retry. A write that repeated a
+  prefix or a header could keep the guard busy for minutes, and a Claude Code
+  hook that runs past its timeout lets the write through. Every repetition
+  that can reach past the next start is now bounded, and timing tests in both
+  suites pin it. Decisions are unchanged except for rare edge shapes that go
+  beyond the new bounds.
 - **Saving `settings.json`, the manifests and the opencode plugin files could
   leave a truncated file, and a plain atomic rename would have replaced a
   symlinked file with a regular one (#124).** `devexp install` wrote
