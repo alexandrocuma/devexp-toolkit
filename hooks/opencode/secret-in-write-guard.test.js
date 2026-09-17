@@ -3,7 +3,10 @@
  * Run: node hooks/opencode/secret-in-write-guard.test.js
  *
  * Drives the real `tool.execute.before` handler with opencode-shaped args:
- * write → { filePath, content }, edit → { filePath, oldString, newString }.
+ * write → { filePath, content }, edit → { filePath, oldString, newString },
+ * apply_patch → { patchText } (opencode's tool for GPT models).
+ * MultiEdit and NotebookEdit are Claude Code tools, so only the shell twin
+ * covers them.
  *
  * Every secret below is FAKE: a vendor prefix and a dummy body containing
  * "FAKE", joined at runtime. This file never holds a secret-shaped string
@@ -15,11 +18,20 @@ import { secretInWriteGuard } from './secret-in-write-guard.js';
 const handler = (await secretInWriteGuard({}))['tool.execute.before'];
 const PREFIX = '[devexp secret-in-write-guard] Blocked: content appears to contain';
 
+const patch = (...lines) => ['*** Begin Patch', ...lines, '*** End Patch'].join('\n');
+
+// The args each tool gets. For apply_patch the payload becomes a new file's
+// contents, unless opts.raw says it already is the whole patch.
+function argsFor(tool, payload, { file = 'src/config.ts', old = 'TODO', raw = false } = {}) {
+  if (tool === 'write') return { filePath: file, content: payload };
+  if (tool === 'edit') return { filePath: file, oldString: old, newString: payload };
+  if (raw) return { patchText: payload };
+  return { patchText: patch(`*** Add File: ${file}`, ...payload.split('\n').map((l) => `+${l}`)) };
+}
+
 // Resolves to the thrown error, or null when the guard allowed the call.
-async function run(tool, payload, { file = 'src/config.ts', old = 'TODO' } = {}) {
-  const args = tool === 'write'
-    ? { filePath: file, content: payload }
-    : { filePath: file, oldString: old, newString: payload };
+async function run(tool, payload, opts) {
+  const args = argsFor(tool, payload, opts);
   try {
     await handler({ tool }, { args });
     return null;
@@ -29,10 +41,11 @@ async function run(tool, payload, { file = 'src/config.ts', old = 'TODO' } = {})
 }
 
 // ── Fake secrets, one per shape the guard claims to detect ──────────────────
-const SK = 'sk', AK = 'AKIA', GH = 'gh', GHP = 'github', XOX = 'xox', D5 = '-----';
+const SK = 'sk', AK = 'AKIA', AS = 'ASIA', GH = 'gh', GHP = 'github', XOX = 'xox', D5 = '-----';
 const ANTHROPIC = `${SK}-ant-api03-${'FAKE_body-'.repeat(9)}AA`;
 const OPENAI = `${SK}-${'0FAKE'.repeat(10)}`;
 const AWS = `${AK}${'FAKE'.repeat(4)}`;
+const AWS_TMP = `${AS}${'FAKE'.repeat(4)}`;
 const GH_P = `${GH}p_${'0FAKE'.repeat(8)}`;
 const GH_O = `${GH}o_${'0FAKE'.repeat(8)}`;
 const GH_S = `${GH}s_${'0FAKE'.repeat(8)}`;
@@ -51,8 +64,8 @@ const FILLER = 'an ordinary line of prose in a large generated file\n'.repeat(50
 // [tool, word the block message must name, payload, opts]
 const BLOCK = [];
 
-// Each pattern, via write content and edit newString.
-for (const tool of ['write', 'edit']) {
+// Each pattern, via every tool the guard inspects.
+for (const tool of ['write', 'edit', 'apply_patch']) {
   BLOCK.push(
     [tool, 'Anthropic', ANTHROPIC],
     [tool, 'OpenAI', OPENAI],
@@ -60,6 +73,7 @@ for (const tool of ['write', 'edit']) {
     [tool, 'OpenAI', OPENAI_SVC],
     [tool, 'OpenAI', OPENAI_ADMIN],
     [tool, 'AWS', AWS],
+    [tool, 'AWS', AWS_TMP],
     [tool, 'GitHub', GH_P],
     [tool, 'GitHub', GH_O],
     [tool, 'GitHub', GH_S],
@@ -83,6 +97,14 @@ BLOCK.push(
   ['write', 'OpenAI', `line one\nline two\nOPENAI_API_KEY=${OPENAI}\nline four`],
   ['edit', 'AWS', `aws_access_key_id = ${AWS}`],
   ['write', 'OpenAI', `client = OpenAI(api_key='${OPENAI_PROJ}')`],
+  ['write', 'AWS', `AWS_ACCESS_KEY_ID=${AWS_TMP}`],
+  ['edit', 'AWS', `credentials = {'AccessKeyId': '${AWS_TMP}'}`],
+  // apply_patch: an added line in an update hunk, a heredoc-wrapped patch, CRLF line endings.
+  ['apply_patch', 'Anthropic', patch('*** Update File: src/config.ts', '@@ export const config = {',
+    '-  apiKey: process.env.ANTHROPIC_API_KEY,', `+  apiKey: "${ANTHROPIC}",`, ' };'), { raw: true }],
+  ['apply_patch', 'AWS', `cat <<'EOF'\n${patch('*** Add File: creds.ini', `+aws_access_key_id = ${AWS_TMP}`)}\nEOF`, { raw: true }],
+  ['apply_patch', 'private key', patch('*** Add File: id_rsa', ...PK_RSA.split('\n').map((l) => `+${l}`)).replace(/\n/g, '\r\n'), { raw: true }],
+  ['apply_patch', 'GitHub', patch('*** Update File: a.txt', '*** Move to: b.txt', '@@', '-old', `+${GH_PAT}`), { raw: true }],
   // A template is exempt only for what it holds, not for its name.
   ['write', 'GitHub', `GITHUB_TOKEN=${GH_P}`, { file: '.env.example' }],
   // Larger than a pipe buffer, secret first — the shell twin once allowed these (#101).
@@ -123,8 +145,17 @@ const ALLOW = [
   ['write', 'import sklearn  # a.k.a. sk-learn; see task-runner and risk-score'],
   ['write', '<div class="desk-admin-navigation-sidebar-collapsed-state-controller">'],
   ['edit', 'const route = "/task-proj-onboarding-checklist-and-welcome-email-sequence";'],
+  ['write', 'const REGION = "ASIAPACIFICDATACENTER01";'],
+  ['edit', 'EURASIAPACIFICREGION024 = load_regions()'],
   // Only the new text is scanned; an edit that takes a key out must not be refused.
   ['edit', 'OPENAI_API_KEY=process.env.OPENAI_API_KEY', { old: `OPENAI_API_KEY=${OPENAI}` }],
+  // apply_patch writes only its "+" lines: removing a key, a key in unchanged
+  // context, a deleted file and headers are not written content.
+  ['apply_patch', patch('*** Update File: .env', '@@', `-OPENAI_API_KEY=${OPENAI}`, '+OPENAI_API_KEY='), { raw: true }],
+  ['apply_patch', patch('*** Update File: .env', '@@', ` GITHUB_TOKEN=${GH_P}`, '+# rotated weekly'), { raw: true }],
+  ['apply_patch', patch('*** Delete File: secrets.pem'), { raw: true }],
+  ['apply_patch', TEMPLATE, { file: '.env.example' }],
+  ['apply_patch', 'const token = process.env.GITHUB_TOKEN;'],
   ['edit', ''],
   ['write', ''],
   ['write', FILLER],

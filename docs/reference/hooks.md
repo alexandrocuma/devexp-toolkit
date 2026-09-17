@@ -84,7 +84,7 @@ hooks/
 |-------|-------------|
 | `name` | Unique hook identifier — used in `devexp.config.json` `hooks.disabled` list |
 | `claude_code.event` | `PreToolUse` or `PostToolUse` |
-| `claude_code.matcher` | Regex matched against tool name (e.g. `"Bash"`, `"Write\|Edit"`) |
+| `claude_code.matcher` | Tool-name matcher (e.g. `"Bash"`, `"Write\|Edit"`). A plain `\|`-separated list matches those exact names, so `Edit` doesn't match `MultiEdit` or `NotebookEdit`; a pattern with other regex characters is an unanchored regex |
 | `claude_code.script` | Path to the shell script, relative to repo root |
 | `opencode.event` | `tool.execute.before` or `file.edited` |
 | `opencode.module` | Path to the JS module, relative to repo root (`hooks/opencode/<hook-name>.js`) |
@@ -102,7 +102,7 @@ Every key other than `name`, `description` and `enabled` whose value is an objec
 | Hook | Event | Matcher | What it does |
 |------|-------|---------|--------------|
 | `secret-guard` | PreToolUse | `Read\|Bash` | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
-| `secret-in-write-guard` | PreToolUse | `Write\|Edit` | Hard-blocks writing content that contains secret patterns (API keys, GitHub tokens, private key blocks) |
+| `secret-in-write-guard` | PreToolUse | `Write\|Edit\|MultiEdit\|NotebookEdit` | Hard-blocks writing content that contains secret patterns (API keys, GitHub tokens, private key blocks); in opencode it scans `write`, `edit` and the lines `apply_patch` adds |
 | `dangerous-cmd-guard` | PreToolUse | `Bash` | Hard-blocks `rm -rf /`, unanchored wildcard deletes in sensitive dirs (`/tmp/*`, `~/.claude/.../*`), fork bombs, `DROP DATABASE`, `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
 | `large-file-guard` | PreToolUse | `Write` | Asks for confirmation before overwriting a file with >500 lines |
 | `lint-on-save` | PostToolUse | `Write\|Edit` | Runs the project linter on edited source files (JS/TS → biome/eslint, Python → ruff/flake8, Go → go vet, Ruby → rubocop) |

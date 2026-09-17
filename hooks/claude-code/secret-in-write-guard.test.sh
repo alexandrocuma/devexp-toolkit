@@ -15,13 +15,22 @@ pass=0; fail=0
 
 # Feed the hook the real PreToolUse JSON envelope; sets rc and err.
 # The payload travels on stdin, not argv: Linux refuses one argument over 128 KB.
-run() { # $1=Write|Edit  $2=payload  $3=old_string (Edit)
+# The payload is the text the tool writes: Write content, Edit new_string, the
+# second of two MultiEdit edits, or NotebookEdit new_source.
+run() { # $1=Write|Edit|MultiEdit|NotebookEdit  $2=payload  $3=old_string (Edit, MultiEdit)
   printf '%s' "$2" | python3 -c '
 import json, sys
 tool, path, old = sys.argv[1], sys.argv[2], sys.argv[3]
 payload = sys.stdin.read()
 if tool == "Write":
     ti = {"file_path": path, "content": payload}
+elif tool == "MultiEdit":
+    ti = {"file_path": path, "edits": [
+        {"old_string": "first", "new_string": "an unrelated first edit"},
+        {"old_string": old, "new_string": payload},
+    ]}
+elif tool == "NotebookEdit":
+    ti = {"notebook_path": path, "cell_id": "cell-1", "new_source": payload}
 else:
     ti = {"file_path": path, "old_string": old, "new_string": payload}
 print(json.dumps({"tool_name": tool, "tool_input": ti}))' "$1" "${FILE:-src/config.ts}" "${3:-TODO}" \
@@ -31,7 +40,7 @@ print(json.dumps({"tool_name": tool, "tool_input": ti}))' "$1" "${FILE:-src/conf
 
 show() { local s="${1:0:80}"; printf '%s' "${s//$'\n'/ }"; }
 
-block() { # $1=Write|Edit  $2=word the block message must name  $3=payload
+block() { # $1=tool (see run)  $2=word the block message must name  $3=payload
   run "$1" "$3"
   if [ "$rc" != 2 ]; then
     fail=$((fail+1)); printf 'FAIL [want block, rc %s] %s %s: %s\n' "$rc" "$1" "${FILE:-src/config.ts}" "$(show "$3")"
@@ -44,7 +53,7 @@ block() { # $1=Write|Edit  $2=word the block message must name  $3=payload
   fi
 }
 
-allow() { # $1=Write|Edit  $2=payload  $3=old_string (Edit)
+allow() { # $1=tool (see run)  $2=payload  $3=old_string (Edit)
   run "$1" "$2" "${3:-}"
   if [ "$rc" = 0 ] && [ -z "$err" ]; then
     pass=$((pass+1))
@@ -57,10 +66,11 @@ allow() { # $1=Write|Edit  $2=payload  $3=old_string (Edit)
 rep() { python3 -c 'import sys; print(sys.argv[1] * int(sys.argv[2]), end="")' "$1" "$2"; }
 
 # ── Fake secrets, one per shape the guard claims to detect ──────────────────
-SK=sk; AK=AKIA; GH=gh; GHP=github; XOX=xox; D5=-----
+SK=sk; AK=AKIA; AS=ASIA; GH=gh; GHP=github; XOX=xox; D5=-----
 ANTHROPIC="${SK}-ant-api03-$(rep FAKE_body- 9)AA"
 OPENAI="${SK}-$(rep 0FAKE 10)"
 AWS="${AK}$(rep FAKE 4)"
+AWS_TMP="${AS}$(rep FAKE 4)"
 GH_P="${GH}p_$(rep 0FAKE 8)"
 GH_O="${GH}o_$(rep 0FAKE 8)"
 GH_S="${GH}s_$(rep 0FAKE 8)"
@@ -81,14 +91,15 @@ PK_ENCRYPTED="$(pem 'ENCRYPTED PRIVATE KEY')"
 PK_PGP="$(pem 'PGP PRIVATE KEY BLOCK')"
 FILLER="$(rep $'an ordinary line of prose in a large generated file\n' 5000)"  # ~260 KB
 
-# ── must BLOCK: each pattern, via Write content and Edit new_string ─────────
-for tool in Write Edit; do
+# ── must BLOCK: each pattern, via every tool routed to the guard ────────────
+for tool in Write Edit MultiEdit NotebookEdit; do
   block "$tool" Anthropic   "$ANTHROPIC"
   block "$tool" OpenAI      "$OPENAI"
   block "$tool" OpenAI      "$OPENAI_PROJ"
   block "$tool" OpenAI      "$OPENAI_SVC"
   block "$tool" OpenAI      "$OPENAI_ADMIN"
   block "$tool" AWS         "$AWS"
+  block "$tool" AWS         "$AWS_TMP"
   block "$tool" GitHub      "$GH_P"
   block "$tool" GitHub      "$GH_O"
   block "$tool" GitHub      "$GH_S"
@@ -109,6 +120,8 @@ done
 block Write Anthropic "const client = new Anthropic({ apiKey: \"$ANTHROPIC\" });"
 block Write OpenAI    $'line one\nline two\nOPENAI_API_KEY='"$OPENAI"$'\nline four'
 block Edit  AWS       "aws_access_key_id = $AWS"
+block Write AWS       "AWS_ACCESS_KEY_ID=$AWS_TMP"
+block Edit  AWS       "credentials = {'AccessKeyId': '$AWS_TMP'}"
 block Write OpenAI    "client = OpenAI(api_key='$OPENAI_PROJ')"
 # A template is exempt only for what it holds, not for its name: a real value
 # in a committed .env.example is the likeliest way a secret reaches git.
@@ -148,13 +161,34 @@ allow Write 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKE user@host'
 allow Write 'import sklearn  # a.k.a. sk-learn; see task-runner and risk-score'
 allow Write '<div class="desk-admin-navigation-sidebar-collapsed-state-controller">'
 allow Edit  'const route = "/task-proj-onboarding-checklist-and-welcome-email-sequence";'
+allow Write 'const REGION = "ASIAPACIFICDATACENTER01";'
+allow Edit  'EURASIAPACIFICREGION024 = load_regions()'
 
 # ── must ALLOW: removing a secret, and empty writes ─────────────────────────
 # Only the new text is scanned; an Edit that takes a key out must not be refused.
 allow Edit 'OPENAI_API_KEY=process.env.OPENAI_API_KEY' "OPENAI_API_KEY=$OPENAI"
+allow MultiEdit 'OPENAI_API_KEY=process.env.OPENAI_API_KEY' "OPENAI_API_KEY=$OPENAI"
+allow MultiEdit 'const token = process.env.GITHUB_TOKEN;'
+allow NotebookEdit 'import os\nclient = OpenAI(api_key=os.environ["OPENAI_API_KEY"])'
 allow Edit ''
 allow Write ''
 allow Write "$FILLER"
+
+# ── routing: every content-writing tool reaches the guard ───────────────────
+# Claude Code matches a plain "A|B" matcher by exact tool name, so "Write|Edit"
+# never runs the guard for MultiEdit or NotebookEdit.
+for tool in Write Edit MultiEdit NotebookEdit; do
+  if python3 -c '
+import json, sys
+reg = json.load(open(sys.argv[1]))
+m = next(h for h in reg if h["name"] == "secret-in-write-guard")["claude_code"]["matcher"]
+sys.exit(0 if sys.argv[2] in [t.strip() for t in m.split("|")] else 1)' \
+      "$(dirname "$HOOK")/../registry.json" "$tool"; then
+    pass=$((pass+1))
+  else
+    fail=$((fail+1)); printf 'FAIL [not routed] registry matcher for secret-in-write-guard omits %s\n' "$tool"
+  fi
+done
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

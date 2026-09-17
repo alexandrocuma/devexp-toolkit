@@ -40,6 +40,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   also blocks GitHub user-to-server (`ghu_`), refresh (`ghr_`) and fine-grained
   (`github_pat_`) tokens. Both twins change together, and nothing that blocked
   before is allowed now.
+- **`secret-in-write-guard` scans every tool that writes file content (#101).**
+  - opencode: `apply_patch` wasn't scanned at all. opencode offers GPT models
+    `apply_patch` instead of `write` and `edit`, so with those models nothing
+    was checked. The guard now scans the lines a patch adds (`+` lines, which
+    covers new-file bodies and added lines in update hunks). Removed lines,
+    unchanged context and `***`/`@@` headers aren't scanned, so a patch that
+    deletes a key is allowed.
+  - Claude Code: the matcher `Write|Edit` matches tool names exactly, so the
+    guard never ran for `NotebookEdit` (`new_source`) or for `MultiEdit`
+    (`edits[].new_string`, in older releases). The registry matcher is now
+    `Write|Edit|MultiEdit|NotebookEdit` and the guard scans those fields. Text
+    being replaced (`old_string`) is still not scanned. `devexp install` leaves
+    an existing registration's matcher as it is, so an install made before this
+    change keeps `Write|Edit` until the hook is uninstalled and installed again,
+    or the matcher in `~/.claude/settings.json` is edited by hand.
+  - Both: AWS temporary access key IDs (`ASIA…`) are blocked too. Real IDs are
+    exactly 20 characters, so the match must be bounded on both sides and
+    words like `ASIAPACIFICDATACENTER01` don't match.
 
 ## [0.9.0] - 2026-09-16
 
