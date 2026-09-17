@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     tokens, variables named `token`, `.example`/`.sample`/`.template`/`.dist`
     templates with placeholder values, public keys and certificates, and an
     Edit that removes a key are allowed silently.
+- **`secret-in-write-guard` misses no current OpenAI or GitHub token format
+  (#101).** It named both vendors but matched only their older formats. It now
+  also blocks OpenAI project, service-account and admin keys (`sk-proj-…`,
+  `sk-svcacct-…`, `sk-admin-…`), whose bodies contain `_` and `-`. The prefix
+  must start a word, so kebab-case names like `desk-admin-…` don't match. It
+  also blocks GitHub user-to-server (`ghu_`), refresh (`ghr_`) and fine-grained
+  (`github_pat_`) tokens. Both twins change together, and nothing that blocked
+  before is allowed now.
 
 ## [0.9.0] - 2026-09-16
 

@@ -57,13 +57,19 @@ allow() { # $1=Write|Edit  $2=payload  $3=old_string (Edit)
 rep() { python3 -c 'import sys; print(sys.argv[1] * int(sys.argv[2]), end="")' "$1" "$2"; }
 
 # ── Fake secrets, one per shape the guard claims to detect ──────────────────
-SK=sk; AK=AKIA; GH=gh; XOX=xox; D5=-----
+SK=sk; AK=AKIA; GH=gh; GHP=github; XOX=xox; D5=-----
 ANTHROPIC="${SK}-ant-api03-$(rep FAKE_body- 9)AA"
 OPENAI="${SK}-$(rep 0FAKE 10)"
 AWS="${AK}$(rep FAKE 4)"
 GH_P="${GH}p_$(rep 0FAKE 8)"
 GH_O="${GH}o_$(rep 0FAKE 8)"
 GH_S="${GH}s_$(rep 0FAKE 8)"
+OPENAI_PROJ="${SK}-proj-$(rep FAKE_proj-body 8)"
+OPENAI_SVC="${SK}-svcacct-$(rep FAKE_svc-body 8)"
+OPENAI_ADMIN="${SK}-admin-$(rep FAKE_admin-body 8)"
+GH_U="${GH}u_$(rep 0FAKE 8)"
+GH_R="${GH}r_$(rep 0FAKE 8)"
+GH_PAT="${GHP}_pat_$(rep 0FAKE 5)_$(rep FAKE0 12)"
 SLACK_B="${XOX}b-1234567890-1234567890123-$(rep FAKE 6)"
 SLACK_P="${XOX}p-1234567890-1234567890-1234567890123-$(rep 0fake 6)"
 pem() { printf '%sBEGIN %s%s\nMIIEFAKEFAKEFAKE\n%sEND %s%s\n' "$D5" "$1" "$D5" "$D5" "$1" "$D5"; }
@@ -79,10 +85,16 @@ FILLER="$(rep $'an ordinary line of prose in a large generated file\n' 5000)"  #
 for tool in Write Edit; do
   block "$tool" Anthropic   "$ANTHROPIC"
   block "$tool" OpenAI      "$OPENAI"
+  block "$tool" OpenAI      "$OPENAI_PROJ"
+  block "$tool" OpenAI      "$OPENAI_SVC"
+  block "$tool" OpenAI      "$OPENAI_ADMIN"
   block "$tool" AWS         "$AWS"
   block "$tool" GitHub      "$GH_P"
   block "$tool" GitHub      "$GH_O"
   block "$tool" GitHub      "$GH_S"
+  block "$tool" GitHub      "$GH_U"
+  block "$tool" GitHub      "$GH_R"
+  block "$tool" GitHub      "$GH_PAT"
   block "$tool" Slack       "$SLACK_B"
   block "$tool" Slack       "$SLACK_P"
   block "$tool" 'private key' "$PK_RSA"
@@ -97,6 +109,7 @@ done
 block Write Anthropic "const client = new Anthropic({ apiKey: \"$ANTHROPIC\" });"
 block Write OpenAI    $'line one\nline two\nOPENAI_API_KEY='"$OPENAI"$'\nline four'
 block Edit  AWS       "aws_access_key_id = $AWS"
+block Write OpenAI    "client = OpenAI(api_key='$OPENAI_PROJ')"
 # A template is exempt only for what it holds, not for its name: a real value
 # in a committed .env.example is the likeliest way a secret reaches git.
 FILE=.env.example block Write GitHub "GITHUB_TOKEN=$GH_P"
@@ -108,6 +121,7 @@ block Edit  'private key' "$PK_RSA$FILLER"
 allow Write 'Set your API key and bearer token in the environment. Never commit a secret, a password or a private key.'
 allow Write 'Anthropic keys start with sk-ant-, OpenAI keys with sk-, AWS key IDs with AKIA, GitHub tokens with ghp_ and Slack bot tokens with xoxb-.'
 allow Edit  'Rotate the token if it leaks; see docs/security.md.'
+allow Write 'OpenAI project keys start with sk-proj- and fine-grained GitHub tokens with github_pat_.'
 
 # ── must ALLOW: a variable named token holds no value ───────────────────────
 allow Write 'const token = process.env.GITHUB_TOKEN;'
@@ -132,6 +146,8 @@ allow Write "$(pem 'PUBLIC KEY')"
 allow Write "$(pem 'CERTIFICATE')"
 allow Write 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKE user@host'
 allow Write 'import sklearn  # a.k.a. sk-learn; see task-runner and risk-score'
+allow Write '<div class="desk-admin-navigation-sidebar-collapsed-state-controller">'
+allow Edit  'const route = "/task-proj-onboarding-checklist-and-welcome-email-sequence";'
 
 # ── must ALLOW: removing a secret, and empty writes ─────────────────────────
 # Only the new text is scanned; an Edit that takes a key out must not be refused.

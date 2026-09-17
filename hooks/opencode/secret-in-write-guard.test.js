@@ -29,13 +29,19 @@ async function run(tool, payload, { file = 'src/config.ts', old = 'TODO' } = {})
 }
 
 // ── Fake secrets, one per shape the guard claims to detect ──────────────────
-const SK = 'sk', AK = 'AKIA', GH = 'gh', XOX = 'xox', D5 = '-----';
+const SK = 'sk', AK = 'AKIA', GH = 'gh', GHP = 'github', XOX = 'xox', D5 = '-----';
 const ANTHROPIC = `${SK}-ant-api03-${'FAKE_body-'.repeat(9)}AA`;
 const OPENAI = `${SK}-${'0FAKE'.repeat(10)}`;
 const AWS = `${AK}${'FAKE'.repeat(4)}`;
 const GH_P = `${GH}p_${'0FAKE'.repeat(8)}`;
 const GH_O = `${GH}o_${'0FAKE'.repeat(8)}`;
 const GH_S = `${GH}s_${'0FAKE'.repeat(8)}`;
+const OPENAI_PROJ = `${SK}-proj-${'FAKE_proj-body'.repeat(8)}`;
+const OPENAI_SVC = `${SK}-svcacct-${'FAKE_svc-body'.repeat(8)}`;
+const OPENAI_ADMIN = `${SK}-admin-${'FAKE_admin-body'.repeat(8)}`;
+const GH_U = `${GH}u_${'0FAKE'.repeat(8)}`;
+const GH_R = `${GH}r_${'0FAKE'.repeat(8)}`;
+const GH_PAT = `${GHP}_pat_${'0FAKE'.repeat(5)}_${'FAKE0'.repeat(12)}`;
 const SLACK_B = `${XOX}b-1234567890-1234567890123-${'FAKE'.repeat(6)}`;
 const SLACK_P = `${XOX}p-1234567890-1234567890-1234567890123-${'0fake'.repeat(6)}`;
 const pem = (kind) => `${D5}BEGIN ${kind}${D5}\nMIIEFAKEFAKEFAKE\n${D5}END ${kind}${D5}`;
@@ -50,10 +56,16 @@ for (const tool of ['write', 'edit']) {
   BLOCK.push(
     [tool, 'Anthropic', ANTHROPIC],
     [tool, 'OpenAI', OPENAI],
+    [tool, 'OpenAI', OPENAI_PROJ],
+    [tool, 'OpenAI', OPENAI_SVC],
+    [tool, 'OpenAI', OPENAI_ADMIN],
     [tool, 'AWS', AWS],
     [tool, 'GitHub', GH_P],
     [tool, 'GitHub', GH_O],
     [tool, 'GitHub', GH_S],
+    [tool, 'GitHub', GH_U],
+    [tool, 'GitHub', GH_R],
+    [tool, 'GitHub', GH_PAT],
     [tool, 'Slack', SLACK_B],
     [tool, 'Slack', SLACK_P],
     [tool, 'private key', PK_RSA],
@@ -70,6 +82,7 @@ BLOCK.push(
   ['write', 'Anthropic', `const client = new Anthropic({ apiKey: "${ANTHROPIC}" });`],
   ['write', 'OpenAI', `line one\nline two\nOPENAI_API_KEY=${OPENAI}\nline four`],
   ['edit', 'AWS', `aws_access_key_id = ${AWS}`],
+  ['write', 'OpenAI', `client = OpenAI(api_key='${OPENAI_PROJ}')`],
   // A template is exempt only for what it holds, not for its name.
   ['write', 'GitHub', `GITHUB_TOKEN=${GH_P}`, { file: '.env.example' }],
   // Larger than a pipe buffer, secret first — the shell twin once allowed these (#101).
@@ -92,6 +105,7 @@ const ALLOW = [
   ['write', 'Set your API key and bearer token in the environment. Never commit a secret, a password or a private key.'],
   ['write', 'Anthropic keys start with sk-ant-, OpenAI keys with sk-, AWS key IDs with AKIA, GitHub tokens with ghp_ and Slack bot tokens with xoxb-.'],
   ['edit', 'Rotate the token if it leaks; see docs/security.md.'],
+  ['write', 'OpenAI project keys start with sk-proj- and fine-grained GitHub tokens with github_pat_.'],
   // A variable named token holds no value.
   ['write', 'const token = process.env.GITHUB_TOKEN;'],
   ['write', 'api_key = os.environ["OPENAI_API_KEY"]'],
@@ -107,6 +121,8 @@ const ALLOW = [
   ['write', pem('CERTIFICATE')],
   ['write', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKE user@host'],
   ['write', 'import sklearn  # a.k.a. sk-learn; see task-runner and risk-score'],
+  ['write', '<div class="desk-admin-navigation-sidebar-collapsed-state-controller">'],
+  ['edit', 'const route = "/task-proj-onboarding-checklist-and-welcome-email-sequence";'],
   // Only the new text is scanned; an edit that takes a key out must not be refused.
   ['edit', 'OPENAI_API_KEY=process.env.OPENAI_API_KEY', { old: `OPENAI_API_KEY=${OPENAI}` }],
   ['edit', ''],

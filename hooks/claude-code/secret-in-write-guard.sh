@@ -29,8 +29,12 @@ content = str(ti.get('content', '') or ti.get('new_string', '') or '')
 PATTERNS = [
     ('an Anthropic API key (sk-ant-...)', r'sk-ant-[A-Za-z0-9_-]{40,}'),
     ('an OpenAI API key (sk-...)',        r'sk-[A-Za-z0-9]{32,}'),
+    # Project, service-account and admin keys: the body has _ and -, so the
+    # prefix must start a word, or kebab-case ids like desk-admin-... match.
+    ('an OpenAI API key (sk-...)',        r'(^|[^A-Za-z0-9_-])sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{40,}'),
     ('an AWS Access Key ID (AKIA...)',    r'AKIA[0-9A-Z]{16}'),
-    ('a GitHub token (ghp_, ghs_, etc.)', r'gh[posta]_[A-Za-z0-9_]{36,}'),
+    ('a GitHub token (ghp_, ghs_, etc.)', r'gh[postaur]_[A-Za-z0-9_]{36,}'),
+    ('a GitHub token (ghp_, ghs_, etc.)', r'github_pat_[A-Za-z0-9_]{36,}'),
     ('a Slack token (xox...)',            r'xox[baprs]-[0-9A-Za-z-]{10,}'),
     ('a private key block',               r'-----BEGIN [A-Z ]*(PRIVATE|SECRET) KEY'),
 ]
