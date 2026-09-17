@@ -144,6 +144,56 @@ func TestSave(t *testing.T) {
 
 // A manifest with no plugins must stay byte-for-byte what it was before the
 // field existed: the Claude Code manifest never has plugins.
+// TestSave_Atomic (#124): Save replaces the manifest through a temp file, so a
+// symlinked manifest keeps its link and the file it points at keeps its mode;
+// a dangling link is refused and nothing is created.
+func TestSave_Atomic(t *testing.T) {
+	m := &Manifest{Agents: []string{"a.md"}, Skills: []string{"s"}}
+
+	t.Run("symlink kept, target replaced with its mode", func(t *testing.T) {
+		dotfiles := t.TempDir()
+		target := filepath.Join(dotfiles, "manifest.json")
+		if err := os.WriteFile(target, []byte(`{"agents":["old.md"],"skills":[]}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+		os.Chmod(target, 0600) //nolint:errcheck
+		path := filepath.Join(t.TempDir(), ".devexp-manifest.json")
+		if err := os.Symlink(target, path); err != nil {
+			t.Fatal(err)
+		}
+		if err := Save(path, m); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+		if fi, err := os.Lstat(path); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("manifest symlink replaced")
+		}
+		got, err := Load(target)
+		if err != nil || !reflect.DeepEqual(got, m) {
+			t.Errorf("target = %+v, %v; want %+v", got, err, m)
+		}
+		if fi, _ := os.Stat(target); fi.Mode().Perm() != 0600 {
+			t.Errorf("target mode = %v, want 0600", fi.Mode().Perm())
+		}
+		if entries, _ := os.ReadDir(dotfiles); len(entries) != 1 {
+			t.Errorf("dotfiles holds %d entries, want 1 (no temp file)", len(entries))
+		}
+	})
+
+	t.Run("dangling symlink refused", func(t *testing.T) {
+		missing := filepath.Join(t.TempDir(), "manifest.json")
+		path := filepath.Join(t.TempDir(), ".devexp-manifest.json")
+		if err := os.Symlink(missing, path); err != nil {
+			t.Fatal(err)
+		}
+		if err := Save(path, m); err == nil {
+			t.Errorf("Save() = nil, want a dangling-link refusal")
+		}
+		if _, err := os.Lstat(missing); !os.IsNotExist(err) {
+			t.Errorf("a manifest was created at the link's destination")
+		}
+	})
+}
+
 func TestSave_OmitsNilPlugins(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "manifest.json")
 	if err := Save(path, &Manifest{Agents: []string{"a.md"}, Skills: []string{"graphify"}}); err != nil {
