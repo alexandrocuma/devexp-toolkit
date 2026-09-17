@@ -69,10 +69,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (`os.Root`), so swapping the directory for a symlink mid-run can't redirect
     them.
   - Real directories are cleaned up as before.
-  - `uninstall.sh` follows the same rule. It removed agents and skills through
-    a symlinked `agents/` or `skills/` directory, and removed an entry that was
-    itself a symlink. It now leaves both in place and lists them before the
-    confirmation.
+  - `uninstall.sh` follows the same rules. It removed agents and skills through
+    an `agents/` or `skills/` directory that was a symlink or behind one, and
+    removed an entry that was itself a symlink. It now leaves both in place and
+    lists them before the confirmation, checks each entry again after the
+    confirmation, no longer says skills are kept for another CLI when they are
+    kept because of a symlink, and no longer counts a failed `rm` in
+    `Removed N item(s)`.
 
 ## [0.9.1] - 2026-09-16
 
