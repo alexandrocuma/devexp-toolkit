@@ -33,7 +33,7 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
 | Shell wrappers | `install.sh`, `uninstall.sh`, `scripts/` | Build-if-missing and run the CLI; uninstall; remote install; stage the embedded assets | `install.sh` |
 | CLI commands | `cli/main.go`, `cli/cmd/` | Parse flags or run the wizard, resolve `installOpts`, run each target's install in order. Holds pure decision functions and thin I/O wrappers. No file, JSON or exec logic for a particular asset kind belongs here | `cli/cmd/targets.go`, `cli/cmd/paths.go` |
 | Asset installers | `cli/internal/{agents,skills,hooks,mcp}` | Install one asset kind into one target from explicit paths, returning what was installed. They don't read `$HOME` or config themselves | `cli/internal/hooks/installer.go` |
-| Support packages | `cli/internal/{repo,assets,config,manifest,fsutil}` | Find the asset root (clone or embedded), embed assets, load config/dotenv, record what was installed, and save every file atomically and symlink-safely (`fsutil.WriteFileAtomic`) | `cli/internal/manifest/manifest.go` |
+| Support packages | `cli/internal/{repo,assets,config,manifest,fsutil,removeguard}` | Find the asset root (clone or embedded), embed assets, load config/dotenv, record what was installed, save every file atomically and symlink-safely (`fsutil.WriteFileAtomic`, `fsutil.IsSymlink`), and decide whether a target directory is a symlink or behind one, so nothing is removed through it (`removeguard`) | `cli/internal/manifest/manifest.go` |
 | Terminal UI | `cli/internal/ui` | Colored stdout output helpers and promptui prompts. The logic behind the prompts lives in pure helpers | `cli/internal/ui/output.go`, `cli/internal/ui/prompts.go` |
 
 ## Request / Job Flow
@@ -93,10 +93,14 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
                          a symlinked agent file is kept as is, warned, still recorded)
                        → removeStale(old, new, staleFile, os.Remove): manifest.Stale(old, new), minus
                          case variants of / the same file as an installed name
-                         (bare <name>.md regular files only; other entries and symlinks kept, warned)
+                         (bare <name>.md regular files only; other entries and symlinks kept, warned;
+                         exact listed name only; nothing removed through an agents/ that is a symlink
+                         or behind one (removeguard.BehindSymlink): listed, and kept in the manifest;
+                         removals go through os.Root)
           4. skills    backupExistingDirs → cli/internal/skills/installer.go InstallClaude (CopyDir whole skill dir;
-                         a symlinked skill dir, or file/dir inside one, is kept as is, warned)
-                       → removeStale(..., staleDir, os.RemoveAll) (bare names, real directories only)
+                         a symlinked skill dir, or file/dir inside one, is kept as is, warned, dry run too)
+                       → removeStale(..., staleDir, os.RemoveAll) (bare names, real directories only;
+                         same symlinked-directory rule)
           5. hooks     cli/internal/hooks/installer.go LoadRegistry → InstallClaude(~/.claude/settings.json):
                        keep unknown keys; pruneStaleHooks (script gone: under repoDir, or under another
                          root holding a hooks/registry.json — isOrphanedDevexpHook)
@@ -116,8 +120,8 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
 
 1. Warn that opencode gets a subset of features.
 2. `installMCPsOpencode` → `cli/internal/mcp/opencode.go` `InstallOpencode` writes the `mcp` map in `~/.config/opencode/config.json` (`type: local|remote`, updating entries in place when they differ). A config that isn't strict JSON, or whose top level or `mcp` isn't an object, is left untouched (`loadOpencodeConfig` → `mcp.ConfigRefusedError`): `doInstallOpencode` warns with the servers to add by hand and skips only the MCP step, while `--mcps-only` returns the error. The file is re-encoded as 2-space JSON, and saved atomically through `fsutil.WriteFileAtomic`.
-3. `agents.InstallOpencode` → `transformForOpencode` drops `name`/`color`/`memory`, turns `tools` into an explicit `false` deny list over the 8 opencode tools, resolves model aliases and appends `mode: subagent`. `agents.InstallOpencodeExclusive` then installs `agents/opencode/*.md`, changing only the model. Stale agents from the previous manifest are then removed (`removeStale` with `staleFile`: bare `<name>.md` regular files only; other entries and symlinks are kept, with a warning).
-4. `skills.InstallOpencode` writes `~/.config/opencode/commands/<name>.md` from `SKILL.md` alone, with the top-level `name:` stripped. Stale commands are then removed (`removeStale` with `staleCommand`: entries are recorded as bare `<name>`, and only a regular `<name>.md` file is removed; a warning names a rejected entry as recorded).
+3. `agents.InstallOpencode` → `transformForOpencode` drops `name`/`color`/`memory`, turns `tools` into an explicit `false` deny list over the 8 opencode tools, resolves model aliases and appends `mode: subagent`. `agents.InstallOpencodeExclusive` then installs `agents/opencode/*.md`, changing only the model. Stale agents from the previous manifest are then removed (`removeStale` with `staleFile`: bare `<name>.md` regular files only; other entries and symlinks are kept, with a warning; nothing is removed through a symlinked `agents/`, and what is left there stays in the manifest). A symlinked agent file is never written; it is kept, with a warning. A symlinked agent file is never written; it is kept, with a warning.
+4. `skills.InstallOpencode` writes `~/.config/opencode/commands/<name>.md` from `SKILL.md` alone, with the top-level `name:` stripped. Stale commands are then removed (`removeStale` with `staleCommand`: entries are recorded as bare `<name>`, and only a regular `<name>.md` file is removed; a warning names a rejected entry as recorded; same symlinked-directory rule). A symlinked `<name>.md` is never written; it is kept, with a warning. A symlinked `<name>.md` is never written; it is kept, with a warning.
 5. Hooks (skipped by `--agents-only`/`--skills-only`), in `cli/internal/hooks/opencode.go`:
    - `InstallOpencode` selects hooks with an `opencode.module` that are `EnabledFor(opencode)` and not in `resolveHookDisabled`.
    - It validates before touching anything:

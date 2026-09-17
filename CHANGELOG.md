@@ -114,6 +114,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     untouched with a warning.
   - The `settings.json` step also removes the orphaned registrations from any
     devexp install root that `devexp install` now prunes (#150).
+- **Re-installing removed stale agents and skills through a symlinked target
+  directory (#128).** When `~/.claude/agents`, `~/.claude/skills`,
+  `~/.config/opencode/agents` or `~/.config/opencode/commands` was a symlink
+  (for example into a dotfiles repo or a source checkout), `devexp install`
+  removed an agent or skill it no longer installs from the tree the link points
+  at, and a skill directory with everything in it.
+  - The same happened when the directory was behind a symlink: under a linked
+    `~/.claude`, `~/.config` or `~/.config/opencode`. That now counts too, for
+    opencode `plugins/` as well. A symlink above `HOME`, such as macOS `/var`,
+    doesn't.
+  - devexp still installs through such a link, but no longer removes anything
+    through it, the rule opencode `plugins/` already follows (#108). The output
+    lists what was left: `"<dir>" is a symlink — devexp never removes files
+    through it; remove these by hand: …`, or `is behind a symlink (it resolves
+    to …)`.
+  - Those entries stay in the manifest, once each, so a run after the link is
+    replaced with a real directory removes them. So does an entry that couldn't
+    be checked or removed (for example, permission denied): earlier releases
+    dropped it from the manifest and never tried again.
+  - An entry is now removed only under the exact name devexp recorded, as the
+    directory lists it. On a case-insensitive filesystem such as default APFS,
+    a recorded `retired-agent.md` used to remove a user's own
+    `Retired-Agent.md`; a spelling that differs in case or Unicode
+    normalization is now left alone, with a warning, and dropped from the
+    manifest.
+  - Removals go through a handle on the directory that was checked
+    (`os.Root`), so swapping the directory for a symlink mid-run can't redirect
+    them.
+  - Real directories are cleaned up as before.
+  - `uninstall.sh` follows the same rules. It removed agents and skills through
+    an `agents/` or `skills/` directory that was a symlink or behind one, and
+    removed an entry that was itself a symlink. It now leaves both in place and
+    lists them before the confirmation, checks each entry again after the
+    confirmation, no longer says skills are kept for another CLI when they are
+    kept because of a symlink, and no longer counts a failed `rm` in
+    `Removed N item(s)`.
 
 ## [0.9.1] - 2026-09-16
 

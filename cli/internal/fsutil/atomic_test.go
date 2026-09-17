@@ -400,3 +400,27 @@ func TestWriteFileAtomic_KilledMidWrite(t *testing.T) {
 		t.Errorf("temp files next to the target = %d, want the 1 the killed write left there (proving it was written beside the target, not the link)", temps)
 	}
 }
+
+// TestIsSymlink: the path itself, dangling or not; a path that can't be checked
+// is not one. removeguard's removal checks and the installers' write checks
+// share it.
+func TestIsSymlink(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "dir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.Symlink(filepath.Join(root, "dir"), filepath.Join(root, "link"))         //nolint:errcheck
+	os.Symlink(filepath.Join(root, "nowhere"), filepath.Join(root, "dangling")) //nolint:errcheck
+	write(t, filepath.Join(root, "file"), "x", 0o644)
+	for path, want := range map[string]bool{
+		filepath.Join(root, "dir"):      false,
+		filepath.Join(root, "file"):     false,
+		filepath.Join(root, "link"):     true,
+		filepath.Join(root, "dangling"): true,
+		filepath.Join(root, "missing"):  false,
+	} {
+		if got := IsSymlink(path); got != want {
+			t.Errorf("IsSymlink(%s) = %v, want %v", path, got, want)
+		}
+	}
+}

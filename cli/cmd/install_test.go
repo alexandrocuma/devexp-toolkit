@@ -468,7 +468,9 @@ func TestRemoveStale(t *testing.T) {
 			t.Fatalf("WriteFile() error = %v", err)
 		}
 
-		out := captureStdout(t, func() { removeStale(dir, []string{"stale.md"}, nil, staleFile, os.Remove, true) })
+		out := captureStdout(t, func() {
+			removeStale(filepath.Dir(dir), dir, []string{"stale.md"}, nil, staleFile, (*os.Root).Remove, true)
+		})
 
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("dry run should not remove %s, stat err = %v", path, err)
@@ -485,7 +487,7 @@ func TestRemoveStale(t *testing.T) {
 			t.Fatalf("WriteFile() error = %v", err)
 		}
 
-		removeStale(dir, []string{"stale.md"}, nil, staleFile, os.Remove, false)
+		removeStale(filepath.Dir(dir), dir, []string{"stale.md"}, nil, staleFile, (*os.Root).Remove, false)
 
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Errorf("expected %s to be removed, stat err = %v", path, err)
@@ -502,7 +504,7 @@ func TestRemoveStale(t *testing.T) {
 			t.Fatalf("WriteFile() error = %v", err)
 		}
 
-		removeStale(dir, []string{"old-skill"}, nil, staleDir, os.RemoveAll, false)
+		removeStale(filepath.Dir(dir), dir, []string{"old-skill"}, nil, staleDir, (*os.Root).RemoveAll, false)
 
 		if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
 			t.Errorf("expected %s to be removed, stat err = %v", skillDir, err)
@@ -512,7 +514,9 @@ func TestRemoveStale(t *testing.T) {
 	t.Run("tolerates already-missing entries", func(t *testing.T) {
 		dir := t.TempDir()
 
-		out := captureStdout(t, func() { removeStale(dir, []string{"already-gone.md"}, nil, staleFile, os.Remove, false) })
+		out := captureStdout(t, func() {
+			removeStale(filepath.Dir(dir), dir, []string{"already-gone.md"}, nil, staleFile, (*os.Root).Remove, false)
+		})
 		if out != "" {
 			t.Errorf("an entry already gone needs nothing, printed:\n%s", out)
 		}
@@ -573,17 +577,17 @@ func TestRemoveStale_TamperedEntries(t *testing.T) {
 	type layout struct{ root, target string }
 	tests := map[string]struct {
 		shape    staleShape
-		removeFn func(string) error
+		removeFn func(*os.Root, string) error
 		entries  func(l layout) []string
 	}{
-		"agent files": {shape: staleFile, removeFn: os.Remove, entries: func(l layout) []string {
+		"agent files": {shape: staleFile, removeFn: (*os.Root).Remove, entries: func(l layout) []string {
 			return []string{"../precious.md", filepath.Join(l.root, "precious.md"), "sub/../mine.md", "..", ".md", "mine",
 				"evil\n  - everything.md", "\x1b[2J\x1b[31mFAKE.md"}
 		}},
-		"skill directories": {shape: staleDir, removeFn: os.RemoveAll, entries: func(l layout) []string {
+		"skill directories": {shape: staleDir, removeFn: (*os.Root).RemoveAll, entries: func(l layout) []string {
 			return []string{"", ".", "..", "../precious", filepath.Join(l.root, "precious"), "mine/", "mine\n  - everything"}
 		}},
-		"opencode commands": {shape: staleCommand, removeFn: os.Remove, entries: func(l layout) []string {
+		"opencode commands": {shape: staleCommand, removeFn: (*os.Root).Remove, entries: func(l layout) []string {
 			return []string{"", ".", "../precious", filepath.Join(l.root, "precious"), "sub/../mine", "x.", "mine\x1b[2J"}
 		}},
 	}
@@ -604,7 +608,7 @@ func TestRemoveStale_TamperedEntries(t *testing.T) {
 				before := treeBytes(t, root)
 				entries := tt.entries(l)
 
-				out := captureStdout(t, func() { removeStale(l.target, entries, nil, tt.shape, tt.removeFn, dryRun) })
+				out := captureStdout(t, func() { removeStale(filepath.Dir(l.target), l.target, entries, nil, tt.shape, tt.removeFn, dryRun) })
 
 				if after := treeBytes(t, root); !reflect.DeepEqual(after, before) {
 					t.Errorf("tree changed:\n got %v\nwant %v\n%s", after, before, out)
@@ -631,27 +635,27 @@ func TestRemoveStale_TamperedEntries(t *testing.T) {
 func TestRemoveStale_EntryShape(t *testing.T) {
 	tests := map[string]struct {
 		shape    staleShape
-		removeFn func(string) error
+		removeFn func(*os.Root, string) error
 		setup    func(t *testing.T, root, target string) string // returns the kept entry name
 		wantWarn string
 	}{
-		"a symlinked agent file": {shape: staleFile, removeFn: os.Remove, wantWarn: "a symlink", setup: func(t *testing.T, root, target string) string {
+		"a symlinked agent file": {shape: staleFile, removeFn: (*os.Root).Remove, wantWarn: "a symlink", setup: func(t *testing.T, root, target string) string {
 			mustSymlink(t, filepath.Join(root, "outside.md"), filepath.Join(target, "linked.md"))
 			return "linked.md"
 		}},
-		"a symlinked skill directory": {shape: staleDir, removeFn: os.RemoveAll, wantWarn: "a symlink", setup: func(t *testing.T, root, target string) string {
+		"a symlinked skill directory": {shape: staleDir, removeFn: (*os.Root).RemoveAll, wantWarn: "a symlink", setup: func(t *testing.T, root, target string) string {
 			mustSymlink(t, filepath.Join(root, "outside"), filepath.Join(target, "linked"))
 			return "linked"
 		}},
-		"a directory where an agent file was": {shape: staleFile, removeFn: os.Remove, wantWarn: "a directory", setup: func(t *testing.T, root, target string) string {
+		"a directory where an agent file was": {shape: staleFile, removeFn: (*os.Root).Remove, wantWarn: "a directory", setup: func(t *testing.T, root, target string) string {
 			os.MkdirAll(filepath.Join(target, "empty.md"), 0o755) //nolint:errcheck
 			return "empty.md"
 		}},
-		"a symlinked opencode command": {shape: staleCommand, removeFn: os.Remove, wantWarn: "a symlink", setup: func(t *testing.T, root, target string) string {
+		"a symlinked opencode command": {shape: staleCommand, removeFn: (*os.Root).Remove, wantWarn: "a symlink", setup: func(t *testing.T, root, target string) string {
 			mustSymlink(t, filepath.Join(root, "outside.md"), filepath.Join(target, "linked.md"))
 			return "linked"
 		}},
-		"a file where a skill directory was": {shape: staleDir, removeFn: os.RemoveAll, wantWarn: "a file", setup: func(t *testing.T, root, target string) string {
+		"a file where a skill directory was": {shape: staleDir, removeFn: (*os.Root).RemoveAll, wantWarn: "a file", setup: func(t *testing.T, root, target string) string {
 			os.WriteFile(filepath.Join(target, "loose"), []byte("keep\n"), 0o644) //nolint:errcheck
 			return "loose"
 		}},
@@ -685,7 +689,9 @@ func TestRemoveStale_EntryShape(t *testing.T) {
 				os.WriteFile(onDisk(valid), []byte("old\n"), 0o644) //nolint:errcheck
 			}
 
-			out := captureStdout(t, func() { removeStale(target, []string{kept, valid}, nil, tt.shape, tt.removeFn, false) })
+			out := captureStdout(t, func() {
+				removeStale(filepath.Dir(target), target, []string{kept, valid}, nil, tt.shape, tt.removeFn, false)
+			})
 
 			if _, err := os.Lstat(onDisk(kept)); err != nil {
 				t.Errorf("%s removed, want kept: %v\n%s", kept, err, out)
@@ -760,13 +766,13 @@ func TestRemoveStale_InstalledTwin(t *testing.T) {
 					tt.setup(t, target)
 				}
 				var removed []string
-				removeFn := func(path string) error {
-					removed = append(removed, path)
-					return os.RemoveAll(path)
+				removeFn := func(root *os.Root, name string) error {
+					removed = append(removed, name)
+					return root.RemoveAll(name)
 				}
 
 				out := captureStdout(t, func() {
-					removeStale(target, []string{tt.stale, tt.installed}, []string{tt.installed}, tt.shape, removeFn, dryRun)
+					removeStale(filepath.Dir(target), target, []string{tt.stale, tt.installed}, []string{tt.installed}, tt.shape, removeFn, dryRun)
 				})
 
 				if len(removed) > 0 {
@@ -786,8 +792,9 @@ func TestRemoveStale_InstalledTwin(t *testing.T) {
 	}
 }
 
-// TestRemoveStale_LstatError: when the entry can't be checked, it is kept
-// with a warning; an entry already gone needs nothing.
+// TestRemoveStale_LstatError: when an entry listed in the directory can't be
+// checked, it is kept with a warning; one gone by the time it is checked needs
+// nothing.
 func TestRemoveStale_LstatError(t *testing.T) {
 	tests := map[string]struct {
 		shape    staleShape
@@ -807,18 +814,23 @@ func TestRemoveStale_LstatError(t *testing.T) {
 		for _, dryRun := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s dryRun=%v", name, dryRun), func(t *testing.T) {
 				dir := t.TempDir()
-				orig := lstat
-				lstat = func(path string) (os.FileInfo, error) {
-					return nil, &os.PathError{Op: "lstat", Path: path, Err: tt.lstatErr}
+				if tt.shape == staleDir {
+					writeTestFile(t, filepath.Join(dir, onDisk(tt.entry, tt.shape), "SKILL.md"), "old\n")
+				} else {
+					writeTestFile(t, filepath.Join(dir, onDisk(tt.entry, tt.shape)), "old\n")
 				}
-				t.Cleanup(func() { lstat = orig })
+				orig := rootLstat
+				rootLstat = func(_ *os.Root, name string) (os.FileInfo, error) {
+					return nil, &os.PathError{Op: "lstat", Path: name, Err: tt.lstatErr}
+				}
+				t.Cleanup(func() { rootLstat = orig })
 				var removed []string
-				removeFn := func(path string) error {
-					removed = append(removed, path)
+				removeFn := func(_ *os.Root, name string) error {
+					removed = append(removed, name)
 					return nil
 				}
 
-				out := captureStdout(t, func() { removeStale(dir, []string{tt.entry}, nil, tt.shape, removeFn, dryRun) })
+				out := captureStdout(t, func() { removeStale(filepath.Dir(dir), dir, []string{tt.entry}, nil, tt.shape, removeFn, dryRun) })
 
 				if len(removed) > 0 || strings.Contains(out, "[dry-run]") {
 					t.Errorf("removal attempted or previewed (removed %v):\n%s", removed, out)
@@ -1317,6 +1329,7 @@ func TestClaudeTargetPaths(t *testing.T) {
 	got, err := claudeTargetPaths("/home/u", now)
 
 	want := claudePaths{
+		home:     "/home/u",
 		agents:   "/home/u/.claude/agents",
 		skills:   "/home/u/.claude/skills",
 		settings: "/home/u/.claude/settings.json",
@@ -1341,6 +1354,7 @@ func TestOpencodeTargetPaths(t *testing.T) {
 	got, err := opencodeTargetPaths("/home/u")
 
 	want := opencodePaths{
+		home:   "/home/u",
 		agents: "/home/u/.config/opencode/agents",
 		// skills land in commands/, which is why the field and directory differ
 		skills:   "/home/u/.config/opencode/commands",
@@ -1510,9 +1524,9 @@ func TestRemoveStale_RemoveError(t *testing.T) {
 	// A real failure (not "already gone") is warned about and does not stop the
 	// remaining removals.
 	var attempted []string
-	removeFn := func(path string) error {
-		attempted = append(attempted, filepath.Base(path))
-		if strings.HasPrefix(filepath.Base(path), "boom") {
+	removeFn := func(_ *os.Root, name string) error {
+		attempted = append(attempted, name)
+		if strings.HasPrefix(name, "boom") {
 			return errors.New("permission denied")
 		}
 		return nil
@@ -1523,7 +1537,7 @@ func TestRemoveStale_RemoveError(t *testing.T) {
 		os.WriteFile(filepath.Join(dir, n), []byte("old\n"), 0o644) //nolint:errcheck
 	}
 	out := captureStdout(t, func() {
-		removeStale(dir, []string{"boom-one.md", "fine.md", "boom-two.md"}, nil, staleFile, removeFn, false)
+		removeStale(filepath.Dir(dir), dir, []string{"boom-one.md", "fine.md", "boom-two.md"}, nil, staleFile, removeFn, false)
 	})
 	if want := fmt.Sprintf("remove %q: permission denied", filepath.Join(dir, "boom-two.md")); !strings.Contains(out, want) {
 		t.Errorf("no warning %q:\n%s", want, out)
