@@ -53,7 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     spellings, and a trailing `/` after any of them.
   - A path with a literal component after the protected directory is still
     allowed. To delete under a protected directory by variable, put a literal
-    component first. Upgrade to pick this up; rules:
+    component first.
+  - `rm` now has to be a word of its own, and the wildcard-delete rule needs
+    the target in the same simple command as that `rm`. A `--rm` option, a
+    longer word ending in `rm`, or a protected path after `;`, `&&`, `||` or
+    `&` in a later command no longer blocks (for example a container run that
+    removes itself and mounts `/tmp`). `rm` as an argument of another command
+    still counts. Upgrade to pick this up; rules:
     `docs/reference/hooks.md#what-dangerous-cmd-guard-matches`.
 - **`dangerous-cmd-guard` could take a very long time on some crafted
   commands (#146).** Checks that could run slowly:
@@ -64,7 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The opencode module's patterns backtracked on some crafted long lines:
     a few KB took seconds and longer lines minutes, delaying every guarded
     command. Each rule now decides one line in time linear in its length,
-    about 200 ms at most for a 1 MB line. Decisions are unchanged.
+    a few hundred ms at most for a 1 MB line. Decisions are unchanged.
   - Nesting of subshells and substitutions deeper than 100 levels is now
     scanned whole in both implementations. Before, the Claude Code hook fell
     back at Python's recursion limit and the opencode module much deeper, so
