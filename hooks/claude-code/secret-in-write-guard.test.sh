@@ -64,6 +64,8 @@ allow() { # $1=tool (see run)  $2=payload  $3=old_string (Edit)
 }
 
 rep() { python3 -c 'import sys; print(sys.argv[1] * int(sys.argv[2]), end="")' "$1" "$2"; }
+# $1 repeated and cut to exactly $2 characters: a body of a given length.
+body() { python3 -c 'import sys; u, n = sys.argv[1], int(sys.argv[2]); print((u * n)[:n], end="")' "$1" "$2"; }
 
 # ── Fake secrets, one per shape the guard claims to detect ──────────────────
 SK=sk; AK=AKIA; AS=ASIA; GH=gh; GHP=github; XOX=xox; D5=-----
@@ -126,6 +128,13 @@ block Write OpenAI    "client = OpenAI(api_key='$OPENAI_PROJ')"
 # A template is exempt only for what it holds, not for its name: a real value
 # in a committed .env.example is the likeliest way a secret reaches git.
 FILE=.env.example block Write GitHub "GITHUB_TOKEN=$GH_P"
+# Serialized text puts a letter, digit, _ or - right before a key: an escape
+# in a quoted string, a percent-encoded character, a joined name.
+block Write OpenAI '{"keys": "old\n'"$OPENAI_PROJ"'"}'
+block Edit  OpenAI "https://example.com/callback?next=%2F&key%3D$OPENAI_SVC"
+block Write OpenAI "OPENAI_KEY_$OPENAI_ADMIN"
+block Write OpenAI "token-$OPENAI_PROJ"
+block Edit  OpenAI "key1$OPENAI_SVC"
 # A large write, secret first — once allowed silently (#101).
 block Write OpenAI        "$OPENAI"$'\n'"$FILLER"
 block Edit  'private key' "$PK_RSA$FILLER"
@@ -161,8 +170,17 @@ allow Write 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKE user@host'
 allow Write 'import sklearn  # a.k.a. sk-learn; see task-runner and risk-score'
 allow Write '<div class="desk-admin-navigation-sidebar-collapsed-state-controller">'
 allow Edit  'const route = "/task-proj-onboarding-checklist-and-welcome-email-sequence";'
+allow Write '<div class="sk-admin-navigation-sidebar-collapsed-state-controller">'
+allow Edit  't("sk-proj-onboarding-checklist-welcome-email-sequence-step-three-title")'
+allow Write 'sk-svcacct-rotation_reminder-banner-dismissed-at-timestamp-for-the-current-org: true'
 allow Write 'const REGION = "ASIAPACIFICDATACENTER01";'
 allow Edit  'EURASIAPACIFICREGION024 = load_regions()'
+
+# ── length thresholds, pinned at the edge: one short allows, exact blocks ───
+allow Write "${SK}-ant-$(body FAKE_ant- 39)"
+block Write Anthropic "${SK}-ant-$(body FAKE_ant- 40)"
+allow Write "${SK}-proj-$(body FAKE_proj- 79)"
+block Write OpenAI    "${SK}-proj-$(body FAKE_proj- 80)"
 
 # ── must ALLOW: removing a secret, and empty writes ─────────────────────────
 # Only the new text is scanned; an Edit that takes a key out must not be refused.

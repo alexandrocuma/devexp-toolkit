@@ -33,9 +33,11 @@ content = '\n'.join(str(p) for p in parts if p)
 PATTERNS = [
     ('an Anthropic API key (sk-ant-...)', r'sk-ant-[A-Za-z0-9_-]{40,}'),
     ('an OpenAI API key (sk-...)',        r'sk-[A-Za-z0-9]{32,}'),
-    # Project, service-account and admin keys: the body has _ and -, so the
-    # prefix must start a word, or kebab-case ids like desk-admin-... match.
-    ('an OpenAI API key (sk-...)',        r'(^|[^A-Za-z0-9_-])sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{40,}'),
+    # Project, service-account and admin keys: the body has _ and -, like a
+    # kebab-case id, so its length carries the signal. Real bodies are well
+    # over 100 characters; ids like desk-admin-... are far shorter. No left
+    # boundary: a key can follow an escape, a %XX, a _, a - or a digit.
+    ('an OpenAI API key (sk-...)',        r'sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{80,}'),
     ('an AWS Access Key ID (AKIA...)',    r'AKIA[0-9A-Z]{16}'),
     # Temporary (STS) key IDs are exactly 20 characters; bounding both ends
     # keeps words like ASIAPACIFICDATACENTER01 from matching.

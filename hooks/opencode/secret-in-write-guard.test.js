@@ -57,6 +57,8 @@ const GH_R = `${GH}r_${'0FAKE'.repeat(8)}`;
 const GH_PAT = `${GHP}_pat_${'0FAKE'.repeat(5)}_${'FAKE0'.repeat(12)}`;
 const SLACK_B = `${XOX}b-1234567890-1234567890123-${'FAKE'.repeat(6)}`;
 const SLACK_P = `${XOX}p-1234567890-1234567890-1234567890123-${'0fake'.repeat(6)}`;
+// unit repeated and cut to exactly n characters: a body of a given length.
+const body = (unit, n) => unit.repeat(n).slice(0, n);
 const pem = (kind) => `${D5}BEGIN ${kind}${D5}\nMIIEFAKEFAKEFAKE\n${D5}END ${kind}${D5}`;
 const PK_RSA = pem('RSA PRIVATE KEY');
 const FILLER = 'an ordinary line of prose in a large generated file\n'.repeat(5000); // ~260 KB
@@ -107,9 +109,19 @@ BLOCK.push(
   ['apply_patch', 'GitHub', patch('*** Update File: a.txt', '*** Move to: b.txt', '@@', '-old', `+${GH_PAT}`), { raw: true }],
   // A template is exempt only for what it holds, not for its name.
   ['write', 'GitHub', `GITHUB_TOKEN=${GH_P}`, { file: '.env.example' }],
+  // Serialized text puts a letter, digit, _ or - right before a key: an escape
+  // in a quoted string, a percent-encoded character, a joined name.
+  ['write', 'OpenAI', `{"keys": "old\\n${OPENAI_PROJ}"}`],
+  ['edit', 'OpenAI', `https://example.com/callback?next=%2F&key%3D${OPENAI_SVC}`],
+  ['write', 'OpenAI', `OPENAI_KEY_${OPENAI_ADMIN}`],
+  ['write', 'OpenAI', `token-${OPENAI_PROJ}`],
+  ['edit', 'OpenAI', `key1${OPENAI_SVC}`],
   // A large write, secret first — the shell twin once allowed these (#101).
   ['write', 'OpenAI', `${OPENAI}\n${FILLER}`],
   ['edit', 'private key', `${PK_RSA}${FILLER}`],
+  // Length thresholds, pinned at the edge (the one-short twins are in ALLOW).
+  ['write', 'Anthropic', `${SK}-ant-${body('FAKE_ant-', 40)}`],
+  ['write', 'OpenAI', `${SK}-proj-${body('FAKE_proj-', 80)}`],
 );
 
 const TEMPLATE = [
@@ -145,8 +157,14 @@ const ALLOW = [
   ['write', 'import sklearn  # a.k.a. sk-learn; see task-runner and risk-score'],
   ['write', '<div class="desk-admin-navigation-sidebar-collapsed-state-controller">'],
   ['edit', 'const route = "/task-proj-onboarding-checklist-and-welcome-email-sequence";'],
+  ['write', '<div class="sk-admin-navigation-sidebar-collapsed-state-controller">'],
+  ['edit', 't("sk-proj-onboarding-checklist-welcome-email-sequence-step-three-title")'],
+  ['write', 'sk-svcacct-rotation_reminder-banner-dismissed-at-timestamp-for-the-current-org: true'],
   ['write', 'const REGION = "ASIAPACIFICDATACENTER01";'],
   ['edit', 'EURASIAPACIFICREGION024 = load_regions()'],
+  // Length thresholds, one character short of blocking.
+  ['write', `${SK}-ant-${body('FAKE_ant-', 39)}`],
+  ['write', `${SK}-proj-${body('FAKE_proj-', 79)}`],
   // Only the new text is scanned; an edit that takes a key out must not be refused.
   ['edit', 'OPENAI_API_KEY=process.env.OPENAI_API_KEY', { old: `OPENAI_API_KEY=${OPENAI}` }],
   // apply_patch writes only its "+" lines: removing a key, a key in unchanged

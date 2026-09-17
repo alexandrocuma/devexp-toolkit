@@ -30,9 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`secret-in-write-guard` detects current OpenAI and GitHub token formats
   (#101).** It named both vendors but matched only their older formats. It now
   also blocks OpenAI project, service-account and admin keys (`sk-proj-…`,
-  `sk-svcacct-…`, `sk-admin-…`), whose bodies contain `_` and `-`. The prefix
-  must start a word, so kebab-case names like `desk-admin-…` don't match. It
-  also blocks GitHub user-to-server (`ghu_`), refresh (`ghr_`) and fine-grained
+  `sk-svcacct-…`, `sk-admin-…`), whose bodies contain `_` and `-`. A key is
+  found wherever it sits, including right after an escape sequence, a
+  percent-encoded character or a joined name, and only a body as long as a real
+  key's matches, so kebab-case names like `desk-admin-…` don't. It also blocks
+  GitHub user-to-server (`ghu_`), refresh (`ghr_`) and fine-grained
   (`github_pat_`) tokens. Both twins change together, and nothing that blocked
   before is allowed now.
 - **`secret-in-write-guard` scans every tool that writes file content (#101).**

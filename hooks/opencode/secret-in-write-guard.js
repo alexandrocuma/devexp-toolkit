@@ -16,9 +16,11 @@
 const SECRET_PATTERNS = [
   { re: /sk-ant-[A-Za-z0-9_\-]{40,}/m,          label: 'Anthropic API key (sk-ant-...)' },
   { re: /sk-[A-Za-z0-9]{32,}/m,                  label: 'OpenAI API key (sk-...)' },
-  // Project, service-account and admin keys: the body has _ and -, so the
-  // prefix must start a word, or kebab-case ids like desk-admin-... match.
-  { re: /(^|[^A-Za-z0-9_-])sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{40,}/m, label: 'OpenAI API key (sk-...)' },
+  // Project, service-account and admin keys: the body has _ and -, like a
+  // kebab-case id, so its length carries the signal. Real bodies are well
+  // over 100 characters; ids like desk-admin-... are far shorter. No left
+  // boundary: a key can follow an escape, a %XX, a _, a - or a digit.
+  { re: /sk-(proj|svcacct|admin)-[A-Za-z0-9_\-]{80,}/m, label: 'OpenAI API key (sk-...)' },
   { re: /AKIA[0-9A-Z]{16}/m,                     label: 'AWS Access Key ID' },
   // Temporary (STS) key IDs are exactly 20 characters; bounding both ends
   // keeps words like ASIAPACIFICDATACENTER01 from matching.
