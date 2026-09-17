@@ -101,21 +101,35 @@ const ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*(\[[^\]]*\])?\+?=/;
 const LITERAL = /^[A-Za-z0-9_./:@%+,=-]+$/;
 const REDIR = /([0-9]*)(&>>|&>|>>|>\||>&|>|<<<|<<-|<<|<&|<>|<)/y;
 const CASE = /\besac\b/;
+// Deeper nesting of (…), $(…), backticks and <(…) is scanned whole. The same
+// limit in both implementations keeps Python's recursion limit from deciding.
+const MAX_DEPTH = 100;
 
 class Parser {
   constructor(s) {
     this.s = s;
     this.n = s.length;
     this.pendingTotal = 0;
+    this.depth = 0;
+    this.found = new Map(); // ch -> [from, index]: the last indexOf, reused while still valid
   }
 
   at(i, tok) {
     return i + tok.length <= this.n && this.s.startsWith(tok, i);
   }
 
+  // Python's bounded str.find. indexOf cannot stop at this.n, so its answer is
+  // cached: a search from a later position before that answer returns it again.
   find(ch, i) {
-    const j = this.s.indexOf(ch, i);
-    return j >= this.n ? -1 : j;
+    const hit = this.found.get(ch);
+    let j;
+    if (hit && hit[0] <= i && (hit[1] < 0 || i <= hit[1])) {
+      j = hit[1];
+    } else {
+      j = this.s.indexOf(ch, i);
+      this.found.set(ch, [i, j]);
+    }
+    return j < 0 || j >= this.n ? -1 : j;
   }
 
   blanks(i) {
@@ -137,6 +151,16 @@ class Parser {
   }
 
   script(i, closer) {
+    this.depth += 1;
+    try {
+      if (this.depth > MAX_DEPTH) throw new Raw();
+      return this.parseScript(i, closer);
+    } finally {
+      this.depth -= 1;
+    }
+  }
+
+  parseScript(i, closer) {
     const s = this.s;
     const sc = { pipelines: [], comments: [] };
     let pending = [];
@@ -398,13 +422,25 @@ function bodyReader(st, k, name) {
   return false;
 }
 
-function downstreamOk(pipeline, idx) {
-  for (const st of pipeline.slice(idx + 1)) {
-    if (st.subshell || !stdoutOk(st)) return false;
-    const [k, name] = effective(st);
-    if (!SINKS.has(name) && !bodyReader(st, k, name)) return false;
+/**
+ * For each stage: can its output only reach text filters and body readers?
+ * Computed once per pipeline, from the last stage back, so a long pipeline
+ * costs linear time.
+ */
+function downstreamOk(pipeline) {
+  const ok = new Array(pipeline.length).fill(true);
+  let after = true;
+  for (let idx = pipeline.length - 1; idx >= 0; idx--) {
+    ok[idx] = after;
+    const st = pipeline[idx];
+    if (st.subshell || !stdoutOk(st)) {
+      after = false;
+    } else {
+      const [k, name] = effective(st);
+      after = after && (SINKS.has(name) || bodyReader(st, k, name));
+    }
   }
-  return true;
+  return ok;
 }
 
 function flagValues(args, [flags, attached]) {
@@ -429,19 +465,20 @@ function blank(out, s, a, b) {
 function walk(sc, ok, s, out) {
   if (ok) for (const [a, b] of sc.comments) blank(out, s, a, b);
   for (const pipeline of sc.pipelines) {
+    const downstream = downstreamOk(pipeline);
     pipeline.forEach((st, idx) => {
       if (st.subshell) walk(st.subshell, ok, s, out);
-      else walkSimple(st, pipeline, idx, ok, s, out);
+      else walkSimple(st, downstream[idx], ok, s, out);
     });
   }
 }
 
-function walkSimple(st, pipeline, idx, ok, s, out) {
+function walkSimple(st, downstream, ok, s, out) {
   const [k, name] = effective(st);
   if (DEFINERS.has(name) || (name === 'exec' && k === st.words.length - 1)) throw new Raw();
   if (st.words.some((w) => EXECUTORS.has(w.text.split('/').pop()))) throw new Raw();
   if (k < st.words.length && (name === null || name.includes('/') || name === '.')) throw new Raw();
-  const ctx = ok && name !== null && stdoutOk(st) && downstreamOk(pipeline, idx);
+  const ctx = ok && name !== null && stdoutOk(st) && downstream;
   let inert = new Set();
   if (ctx) {
     const args = st.words.slice(k + 1);
@@ -467,11 +504,12 @@ function walkSimple(st, pipeline, idx, ok, s, out) {
     }
   }
   for (const r of st.redirs) for (const [, , , sub] of r.target.subs) walk(sub, false, s, out);
+  const reads = ctx && st.heredocs.length > 0 && (SINKS.has(name) || bodyReader(st, k, name));
   for (const hd of st.heredocs) {
     const [a, b] = hd.body;
     const body = s.slice(a, b);
     const expands = body.includes('$(') || body.includes('`');
-    if (ctx && (SINKS.has(name) || bodyReader(st, k, name)) && (hd.quoted || !expands)) blank(out, s, a, b);
+    if (reads && (hd.quoted || !expands)) blank(out, s, a, b);
   }
 }
 

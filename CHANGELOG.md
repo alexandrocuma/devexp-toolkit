@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`dangerous-cmd-guard` could take a very long time on some crafted
+  commands (#146).** Checks that could run slowly:
+  - Both implementations re-checked the rest of a pipeline for every stage
+    while deciding what text is inert, so a very long pipeline took time that
+    grew with the square of its length. A 1 MB command took about 40 seconds
+    in the Claude Code hook. That check now runs once per pipeline.
+  - Nesting of subshells and substitutions deeper than 100 levels is now
+    scanned whole in both implementations. Before, the Claude Code hook fell
+    back at Python's recursion limit and the opencode module much deeper, so
+    the two could decide differently.
+
 ## [0.9.1] - 2026-09-16
 
 ### Fixed

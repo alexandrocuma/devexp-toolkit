@@ -55,6 +55,9 @@ ASSIGN = re.compile(r'[A-Za-z_][A-Za-z0-9_]*(\[[^\]]*\])?\+?=')
 LITERAL = re.compile(r'[A-Za-z0-9_./:@%+,=-]+')
 REDIR = re.compile(r'([0-9]*)(&>>|&>|>>|>\||>&|>|<<<|<<-|<<|<&|<>|<)')
 CASE = re.compile(r'\besac\b', re.A)
+# Deeper nesting of (…), $(…), backticks and <(…) is scanned whole. The same
+# limit in both implementations keeps Python's recursion limit from deciding.
+MAX_DEPTH = 100
 
 
 class Word:
@@ -89,7 +92,7 @@ class Script:
 
 class Parser:
     def __init__(self, s):
-        self.s, self.n, self.pending_total = s, len(s), 0
+        self.s, self.n, self.pending_total, self.depth = s, len(s), 0, 0
 
     def at(self, i, tok):
         return self.s.startswith(tok, i, self.n)
@@ -118,6 +121,15 @@ class Parser:
         raise Raw()
 
     def script(self, i, closer):
+        self.depth += 1
+        if self.depth > MAX_DEPTH:
+            raise Raw()
+        try:
+            return self.parse_script(i, closer)
+        finally:
+            self.depth -= 1
+
+    def parse_script(self, i, closer):
         s = self.s
         sc = Script()
         pending, pipeline, cur, pipe_open = [], [], None, False
@@ -382,14 +394,21 @@ def body_reader(st, k, name):
     return False
 
 
-def downstream_ok(pipeline, idx):
-    for st in pipeline[idx + 1:]:
+def downstream_ok(pipeline):
+    """For each stage: can its output only reach text filters and body readers?
+
+    Computed once per pipeline, from the last stage back, so a long pipeline
+    costs linear time."""
+    ok, after = [True] * len(pipeline), True
+    for idx in range(len(pipeline) - 1, -1, -1):
+        ok[idx] = after
+        st = pipeline[idx]
         if isinstance(st, Subshell) or not stdout_ok(st):
-            return False
-        k, name = effective(st)
-        if name not in SINKS and not body_reader(st, k, name):
-            return False
-    return True
+            after = False
+        else:
+            k, name = effective(st)
+            after = after and (name in SINKS or body_reader(st, k, name))
+    return ok
 
 
 def flag_values(args, spec):
@@ -418,14 +437,15 @@ def walk(sc, ok, s, out):
         for a, b in sc.comments:
             blank(out, s, a, b)
     for pipeline in sc.pipelines:
+        downstream = downstream_ok(pipeline)
         for idx, st in enumerate(pipeline):
             if isinstance(st, Subshell):
                 walk(st.script, ok, s, out)
             else:
-                walk_simple(st, pipeline, idx, ok, s, out)
+                walk_simple(st, downstream[idx], ok, s, out)
 
 
-def walk_simple(st, pipeline, idx, ok, s, out):
+def walk_simple(st, downstream, ok, s, out):
     k, name = effective(st)
     if name in DEFINERS or (name == 'exec' and k == len(st.words) - 1):
         raise Raw()
@@ -433,7 +453,7 @@ def walk_simple(st, pipeline, idx, ok, s, out):
         raise Raw()
     if k < len(st.words) and (name is None or '/' in name or name == '.'):
         raise Raw()
-    ctx = ok and name is not None and stdout_ok(st) and downstream_ok(pipeline, idx)
+    ctx = ok and name is not None and stdout_ok(st) and downstream
     inert = set()
     if ctx:
         args = st.words[k + 1:]
@@ -457,10 +477,11 @@ def walk_simple(st, pipeline, idx, ok, s, out):
     for r in st.redirs:
         for kind, a, b, sub in r.target.subs:
             walk(sub, False, s, out)
+    reads = ctx and bool(st.heredocs) and (name in SINKS or body_reader(st, k, name))
     for hd in st.heredocs:
         a, b = hd.body
         expands = '$(' in s[a:b] or '`' in s[a:b]
-        if ctx and (name in SINKS or body_reader(st, k, name)) and (hd.quoted or not expands):
+        if reads and (hd.quoted or not expands):
             blank(out, s, a, b)
 
 
