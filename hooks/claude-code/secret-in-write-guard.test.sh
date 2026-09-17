@@ -87,7 +87,8 @@ GH_PAT="${GHP}_pat_$(body 0FAKE 22)_$(body FAKE0 59)"
 GH_S_JWT="${GH}s_1536800_eyJ$(rep FAKE 9).eyJ$(rep FAKE_ 30).$(rep FAKE- 20)"
 SLACK_B="${XOX}b-1234567890-1234567890123-$(rep FAKE 6)"
 SLACK_P="${XOX}p-1234567890-1234567890-1234567890123-$(rep 0fake 6)"
-pem() { printf '%sBEGIN %s%s\nMIIEFAKEFAKEFAKE\n%sEND %s%s\n' "$D5" "$1" "$D5" "$D5" "$1" "$D5"; }
+# A block with one 64-character line of fake base64 material, as PEM wraps it.
+pem() { printf '%sBEGIN %s%s\n%s\n%sEND %s%s\n' "$D5" "$1" "$D5" "$(body MIIEFAKE0+/fake 64)" "$D5" "$1" "$D5"; }
 PK_RSA="$(pem 'RSA PRIVATE KEY')"
 PK_OPENSSH="$(pem 'OPENSSH PRIVATE KEY')"
 PK_EC="$(pem 'EC PRIVATE KEY')"
@@ -254,7 +255,27 @@ block Write Slack     "${XOX}b-your$(rep FAKEfake 2)"
 block Write Anthropic "${SK}-ant-fake0-$(rep x 60)"
 block Edit  OpenAI    "${SK}-proj-$(rep x 80)FAKE"
 
+# ── must ALLOW: a private-key header with no key material (#143) ────────────
+allow Write "Keys in PKCS#1 form start with \"${D5}BEGIN RSA PRIVATE KEY${D5}\"; see https://docs.example.com/security/private-keys.html"
+allow Edit  "if line.startswith('${D5}BEGIN OPENSSH PRIVATE KEY${D5}'):"$'\n'"    return True"
+allow Write "${D5}BEGIN PRIVATE KEY${D5}"$'\n'"<your private key>"$'\n'"${D5}END PRIVATE KEY${D5}"
+allow Write "${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n'"MIIEpAIBAAKCAQEA..."$'\n'"${D5}END RSA PRIVATE KEY${D5}"
+allow Edit  "${D5}BEGIN EC PRIVATE KEY${D5}"$'\n'"${D5}END EC PRIVATE KEY${D5}"
+allow Write "PEM_HEADER = '${D5}BEGIN PRIVATE KEY${D5}'"$'\n'"$(pem CERTIFICATE)"
+
+# ── must BLOCK: a header with key material, however it is written ───────────
+block Write 'private key' "\"${D5}BEGIN PRIVATE KEY${D5}\\n$(body MIIEFAKE0+/ 64)\\n${D5}END PRIVATE KEY${D5}\""
+block Edit  'private key' "${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n'"Proc-Type: 4,ENCRYPTED"$'\n'"DEK-Info: AES-128-CBC,FAKE"$'\n\n'"$(body MIIEFAKE0+/ 64)"
+block Write 'private key' "${D5}BEGIN PGP PRIVATE KEY BLOCK${D5}"$'\n'"Version: FAKE"$'\n'"Comment: exported by a fake key tool for the devexp guard tests, not a real key"$'\n\n'"$(body lQOYBFAKE0+/ 64)"
+block Write 'private key' "key = \"${D5}BEGIN RSA PRIVATE KEY${D5}\\n\" +"$'\n'"  \"$(body MIIEFAKE0+/ 64)\\n\""
+block Edit  'private key' "${D5}BEGIN PRIVATE KEY${D5}$(body MIIEFAKE0+/ 64)"
+block Write 'private key' "${D5}BEGIN OPENSSH PRIVATE KEY${D5}"$'\n'"$(body b3BlbnNzaFAKE0 70)"
+block Write 'private key' "Look for ${D5}BEGIN RSA PRIVATE KEY${D5} at the top."$'\n'"$PK_RSA"
+block Edit  'private key' "${D5}BEGIN EC PRIVATE KEY${D5}"$'\n'"${D5}END EC PRIVATE KEY${D5}"$'\n'"$PK_EC"
+
 # ── length thresholds, pinned at the edge: one short allows, exact blocks ───
+allow Write "${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n'"$(body FAKE0+/ 31)"$'\n'"${D5}END RSA PRIVATE KEY${D5}"
+block Write 'private key' "${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n'"$(body FAKE0+/ 32)"$'\n'"${D5}END RSA PRIVATE KEY${D5}"
 allow Write "${SK}-ant-$(body FAKE_ant- 39)"
 block Write Anthropic "${SK}-ant-$(body FAKE_ant- 40)"
 allow Write "${SK}-proj-$(body FAKE_proj- 79)"

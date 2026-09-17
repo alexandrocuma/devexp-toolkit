@@ -60,7 +60,12 @@ const SECRET_PATTERNS = [
   // Anything looser blocks long snake_case names that start github_pat_.
   { re: /github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}/m, label: 'GitHub token' },
   { re: /xox[baprs]-(?!(?:([0-9A-Za-z])(?:\1|-)*|(?:your|YOUR)(?:-[A-Za-z]+)+)(?![0-9A-Za-z-]))[0-9A-Za-z-]{10,}/m, label: 'Slack token' },
-  { re: /-----BEGIN [A-Z ]*(PRIVATE|SECRET) KEY/m, label: 'private key block' },
+  // A private key block is its header followed by key material: a run of
+  // 32 base64 characters before the next ----- line (PEM wraps lines at 64,
+  // OpenSSH at 70). Encrypted-PEM and PGP armor headers may sit in between.
+  // A header quoted alone, or with an elided or placeholder body, has no
+  // material and is allowed (#143).
+  { re: /-----BEGIN [A-Z ]*(PRIVATE|SECRET) KEY[A-Z ]*-*(?:(?!-----)[\s\S])*?[A-Za-z0-9+/]{32}/m, label: 'private key block' },
 ];
 
 // The file content an apply_patch call writes: every line starting with "+",

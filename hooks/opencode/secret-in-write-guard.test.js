@@ -62,7 +62,8 @@ const GH_PAT = `${GHP}_pat_${body('0FAKE', 22)}_${body('FAKE0', 59)}`;
 const GH_S_JWT = `${GH}s_1536800_eyJ${'FAKE'.repeat(9)}.eyJ${'FAKE_'.repeat(30)}.${'FAKE-'.repeat(20)}`;
 const SLACK_B = `${XOX}b-1234567890-1234567890123-${'FAKE'.repeat(6)}`;
 const SLACK_P = `${XOX}p-1234567890-1234567890-1234567890123-${'0fake'.repeat(6)}`;
-const pem = (kind) => `${D5}BEGIN ${kind}${D5}\nMIIEFAKEFAKEFAKE\n${D5}END ${kind}${D5}`;
+// A block with one 64-character line of fake base64 material, as PEM wraps it.
+const pem = (kind) => `${D5}BEGIN ${kind}${D5}\n${body('MIIEFAKE0+/fake', 64)}\n${D5}END ${kind}${D5}`;
 const PK_RSA = pem('RSA PRIVATE KEY');
 const FILLER = 'an ordinary line of prose in a large generated file\n'.repeat(5000); // ~260 KB
 
@@ -161,6 +162,16 @@ BLOCK.push(
   ['write', 'Slack', `${XOX}b-your${'FAKEfake'.repeat(2)}`],
   ['write', 'Anthropic', `${SK}-ant-fake0-${'x'.repeat(60)}`],
   ['edit', 'OpenAI', `${SK}-proj-${'x'.repeat(80)}FAKE`],
+  // A private-key header with key material, however it is written (#143).
+  ['write', 'private key', `"${D5}BEGIN PRIVATE KEY${D5}\\n${body('MIIEFAKE0+/', 64)}\\n${D5}END PRIVATE KEY${D5}"`],
+  ['edit', 'private key', `${D5}BEGIN RSA PRIVATE KEY${D5}\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,FAKE\n\n${body('MIIEFAKE0+/', 64)}`],
+  ['write', 'private key', `${D5}BEGIN PGP PRIVATE KEY BLOCK${D5}\nVersion: FAKE\nComment: exported by a fake key tool for the devexp guard tests, not a real key\n\n${body('lQOYBFAKE0+/', 64)}`],
+  ['write', 'private key', `key = "${D5}BEGIN RSA PRIVATE KEY${D5}\\n" +\n  "${body('MIIEFAKE0+/', 64)}\\n"`],
+  ['edit', 'private key', `${D5}BEGIN PRIVATE KEY${D5}${body('MIIEFAKE0+/', 64)}`],
+  ['write', 'private key', `${D5}BEGIN OPENSSH PRIVATE KEY${D5}\n${body('b3BlbnNzaFAKE0', 70)}`],
+  ['write', 'private key', `Look for ${D5}BEGIN RSA PRIVATE KEY${D5} at the top.\n${PK_RSA}`],
+  ['edit', 'private key', `${D5}BEGIN EC PRIVATE KEY${D5}\n${D5}END EC PRIVATE KEY${D5}\n${pem('EC PRIVATE KEY')}`],
+  ['write', 'private key', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${body('FAKE0+/', 32)}\n${D5}END RSA PRIVATE KEY${D5}`],
   // Length thresholds, pinned at the edge (the one-short twins are in ALLOW).
   ['write', 'Anthropic', `${SK}-ant-${body('FAKE_ant-', 40)}`],
   ['write', 'OpenAI', `${SK}-proj-${body('FAKE_proj-', 80)}`],
@@ -243,7 +254,15 @@ const ALLOW = [
   ['write', `SLACK_BOT_TOKEN=${XOX}b-<your-bot-token>`],
   ['edit', `ANTHROPIC_API_KEY=${SK}-ant-<your-key> OPENAI_API_KEY=${SK}-proj-<project-key>`],
   ['write', `AWS_ACCESS_KEY_ID=${AK}<ACCESS_KEY_ID>`],
+  // A private-key header with no key material (#143).
+  ['write', `Keys in PKCS#1 form start with "${D5}BEGIN RSA PRIVATE KEY${D5}"; see https://docs.example.com/security/private-keys.html`],
+  ['edit', `if line.startswith('${D5}BEGIN OPENSSH PRIVATE KEY${D5}'):\n    return True`],
+  ['write', `${D5}BEGIN PRIVATE KEY${D5}\n<your private key>\n${D5}END PRIVATE KEY${D5}`],
+  ['write', `${D5}BEGIN RSA PRIVATE KEY${D5}\nMIIEpAIBAAKCAQEA...\n${D5}END RSA PRIVATE KEY${D5}`],
+  ['edit', `${D5}BEGIN EC PRIVATE KEY${D5}\n${D5}END EC PRIVATE KEY${D5}`],
+  ['write', `PEM_HEADER = '${D5}BEGIN PRIVATE KEY${D5}'\n${pem('CERTIFICATE')}`],
   // Length thresholds, one character short of blocking.
+  ['write', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${body('FAKE0+/', 31)}\n${D5}END RSA PRIVATE KEY${D5}`],
   ['write', `${SK}-ant-${body('FAKE_ant-', 39)}`],
   ['write', `${SK}-proj-${body('FAKE_proj-', 79)}`],
   ['write', `${SK}-None-${body('0FAKE', 31)}`],

@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `x`, and the guard refused them. A value that is entirely a placeholder is
   now allowed. A real key next to a placeholder, or joined to one, still
   blocks. Mirrored tests cover both.
+- **`secret-in-write-guard` blocked a private-key header quoted on its own
+  (#143).** Any `-----BEGIN … PRIVATE KEY` line was refused, including one
+  named in documentation or matched in code. A header now blocks only when key
+  material follows it. Real PEM blocks still block, including escaped,
+  concatenated, encrypted and PGP-armored ones. The test fixtures now use a
+  realistic PEM body.
 
 ## [0.9.1] - 2026-09-16
 
