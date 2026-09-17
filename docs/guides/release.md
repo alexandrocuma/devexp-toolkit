@@ -38,7 +38,7 @@ gh run list --workflow release.yml --limit 1   # watch the tag-triggered run unt
 # CI runs: ./scripts/stage-assets.sh (goreleaser before-hook) → goreleaser release --clean   # source: .goreleaser.yaml:5-7, .github/workflows/release.yml:24-28
 ```
 
-Artifact: `devexp-toolkit_darwin_amd64.tar.gz`, `devexp-toolkit_darwin_arm64.tar.gz`, `devexp-toolkit_linux_amd64.tar.gz`, `devexp-toolkit_linux_arm64.tar.gz` (each holds a static `devexp` binary, `CGO_ENABLED=0`, built with `-trimpath` so it records no build paths, stripped with `-s -w`) plus `checksums.txt`, attached to the tag's GitHub Release (`.goreleaser.yaml:9-34,44-47`).
+Artifact: `devexp-toolkit_darwin_amd64.tar.gz`, `devexp-toolkit_darwin_arm64.tar.gz`, `devexp-toolkit_linux_amd64.tar.gz`, `devexp-toolkit_linux_arm64.tar.gz` (each holds a static `devexp` binary, `CGO_ENABLED=0`, built with `-trimpath` so it records no build paths, stripped with `-s -w`, compiled with the Go `toolchain` from `cli/go.mod` via `go-version-file` in `release.yml`; check a binary with `go version devexp`) plus `checksums.txt`, attached to the tag's GitHub Release (`.goreleaser.yaml:9-34,44-47`).
 
 ### Distribute
 

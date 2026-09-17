@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Pinned the Go toolchain to a patched release (#104).** Building `devexp`
+  with Go 1.26.0–1.26.3 left a standard-library advisory (GO-2026-5037) in code
+  the CLI calls. `cli/go.mod` now pins `toolchain go1.26.8`, and CI and the
+  release workflow read the Go version from that file, so local builds, CI and
+  release binaries all use the same patched toolchain. Released binaries up to
+  v0.9.0 were built with Go 1.25.14, which already includes the fix, but Go 1.25
+  no longer receives security updates.
+
 ## [0.9.0] - 2026-09-16
 
 ### Added

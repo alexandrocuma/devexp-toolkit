@@ -8,7 +8,7 @@ For **contributors** working on the toolkit from a clone: prerequisites, build, 
 
 | Tool | Version | Source |
 |------|---------|--------|
-| Go | 1.25 (`go 1.25.11` in the module; CI pins `"1.25"`) | `cli/go.mod:3`, `.github/workflows/ci.yml:15` |
+| Go | any Go 1.21+ on `PATH`. Builds use `toolchain go1.26.8` (minimum language version `go 1.25.11`). With the default `GOTOOLCHAIN=auto`, an older local Go downloads that toolchain and switches to it. CI and release read the same line (`go-version-file: cli/go.mod`) | `cli/go.mod:3-5`, `.github/workflows/ci.yml:15`, `.github/workflows/release.yml:21` |
 | bash | any — every script is `#!/usr/bin/env bash` | `install.sh:1`, `scripts/stage-assets.sh:1` |
 | rsync | not pinned — copies assets for embedding | `scripts/stage-assets.sh:16,19` |
 | python3 | not pinned — Claude Code hooks and their tests pipe the JSON envelope through it | `hooks/claude-code/secret-guard.test.sh:11`, `hooks/claude-code/fail-closed.test.sh:4-5` |

@@ -2,6 +2,8 @@ module devexp
 
 go 1.25.11
 
+toolchain go1.26.8
+
 require (
 	github.com/manifoldco/promptui v0.9.0
 	github.com/spf13/cobra v1.10.2
