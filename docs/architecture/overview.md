@@ -169,7 +169,7 @@ Hook commands point into the install root, so editing a registered script in the
 |------------|----------|-------------|
 | `claude` CLI | Detecting the install target; registering and removing MCPs (`claude mcp list/add/remove`) | `cli/cmd/targets.go` (`commandExists`), `cli/internal/mcp/claude.go` |
 | `opencode` CLI | Detecting the install target only (on PATH). Its config file is edited directly | `cli/cmd/targets.go`, `cli/internal/mcp/opencode.go` |
-| `~/.claude/settings.json` | Hook registration (other keys are preserved) | `cli/internal/hooks/installer.go` |
+| `~/.claude/settings.json` | Hook registration (only the `hooks` value is rewritten; other bytes and users' hook fields are kept) | `cli/internal/hooks/installer.go`, `cli/internal/hooks/settings.go` |
 | User cache dir (`os.UserCacheDir()/devexp/assets`, `…/assets-dev` for dev builds) | Assets extracted from the embedded FS when no clone is found | `cli/internal/repo/repo.go` |
 | cobra, viper, promptui | Commands; reading `devexp.config.json`; the interactive wizard (needs a TTY) | `cli/cmd/root.go`, `cli/internal/config/config.go`, `cli/internal/ui/prompts.go` |
 | `python3` | Parsing hook input at runtime; `uninstall.sh` JSON edits | `hooks/claude-code/*.sh`, `uninstall.sh` |
@@ -180,7 +180,7 @@ Hook commands point into the install root, so editing a registered script in the
 
 ### Known gaps
 
-- **Disabled hooks behave differently per CLI.** Re-installing opencode removes a hook disabled since the last run; Claude Code keeps it registered in `settings.json` (`hooks.InstallClaude` only adds).
+- **Disabled hooks behave differently per CLI.** Re-installing opencode removes a hook disabled since the last run; Claude Code keeps it registered in `settings.json` (`hooks.InstallClaude` never removes a registry hook; it only adds, re-quotes and updates matchers of enabled ones).
 - **`uninstall.sh` doesn't match the CLI.** It treats `~/.claude/skills` as "shared between both CLIs" (`uninstall.sh`, `SKILLS_DIR`), but the CLI writes opencode skills to `~/.config/opencode/commands/` (`cli/cmd/paths.go`). It doesn't remove `.devexp-manifest.json`. The opencode hook plugin is removed by the hidden `devexp uninstall --target opencode` (`cli/cmd/uninstall.go`), with the installer's own rules; without a `devexp` binary that has that command, `uninstall.sh` leaves the plugin in place (#109). Its opencode MCP removal is still python: it skips a symlinked or unwritable `config.json` and saves atomically, but rewrites the whole file with `json.dump(indent=2)` instead of preserving its bytes (#124).
 - **Config schema is narrower than the loader.** `devexp.config.schema.json` `mcps.items` sets `additionalProperties: false` and requires `command`, but `mcp.MCP` also accepts `transport`, `url`, `headers` and `setup_instructions` (`cli/internal/mcp/types.go`). An HTTP/SSE MCP declared in config fails schema validation even though the installer supports it.
 

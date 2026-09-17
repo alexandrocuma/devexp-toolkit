@@ -9,6 +9,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Rewriting `settings.json` dropped fields from users' hooks (#137).** devexp
+  read hooks into types holding only `matcher`, `type` and `command`, so when
+  `devexp install` rewrote `~/.claude/settings.json` every other field of a
+  user's hook was lost: `timeout`, `async`, `shell`, `if`, `statusMessage`,
+  `args` (turning an exec-form hook into a shell command), an `http`,
+  `mcp_tool` or `prompt` hook's own fields, and anything a later Claude Code
+  adds. The whole file was also re-sorted and re-indented, with `&`, `<` and `>`
+  written as `\u` escapes.
+  - Install now edits only devexp's own handlers. Every other handler and entry
+    keeps all its fields, in order; a user's entry without `matcher` doesn't
+    gain one; a re-quoted devexp command changes that value only.
+  - Only the top-level `hooks` value is rewritten, in the indentation and line
+    ending (LF or CRLF) of the file around it. Every byte outside it stays as
+    it was. Inside it, fields, their order and values are kept, but the value
+    is re-indented as a whole and escaped keys are re-encoded. New files and devexp's own entries are
+    written as before. A number no float64 holds (such as `1e400`) is kept as
+    written and doesn't stop the install.
+  - A handler with `args` (spawned without a shell) or of a type other than
+    `command` is the user's whatever path it names: never re-quoted, pruned,
+    removed or counted as devexp's registration.
+  - An entry or event that was already empty stays; one is removed only when
+    removing devexp's handlers emptied it.
+  - A `settings.json` that isn't valid JSON, or whose `hooks`, events, entries
+    or handlers have an unexpected shape, is left untouched and the install
+    stops with an error naming it. Earlier releases replaced it with a file
+    holding only the hooks.
+  - `uninstall.sh` applies the same rules: it keeps pre-existing empty events,
+    no longer escapes non-ASCII text, splices the new `hooks` value into the
+    original text in the file's own line ending (CRLF files stay CRLF), and
+    skips entries and handlers that aren't objects instead of failing with a
+    traceback. A `settings.json` holding `NaN`, `Infinity` or a number a float
+    can't hold (such as `1e400`, which python would write back as `Infinity`)
+    is left untouched with a message.
+- **Existing installs never picked up a registry matcher change.** `devexp
+  install` skipped a hook whose command was already registered, whatever
+  matcher its entry had, so a hook whose registry matcher grew (as when
+  `secret-guard` went from `Read` to `Read|Bash`) kept firing only for the old
+  tools.
+  - An enabled hook registered under another matcher is brought to the
+    registry's. An entry holding only that hook takes the new matcher in place,
+    keeping its other fields (a `matcher` key it lacked goes before `hooks`).
+    From an entry shared with other commands the handler moves into an entry
+    of its own, leaving the other commands and their matcher untouched.
+  - **Behaviour change:** install now enforces the registry's matcher on
+    devexp's own handlers, so a matcher you set by hand on one, or an entry
+    with no `matcher` (matching every tool), is reset on the next install. To
+    use a matcher of your own, disable the hook (`hooks.disabled` in
+    `devexp.config.json`), remove devexp's entry for it, and register your own
+    command for it, such as a wrapper script or the script with `"args": []`.
+  - A hook already under the registry's matcher, or disabled, is left as it
+    is, and a second install writes nothing. `uninstall.sh` is unchanged.
+- **Stale hook pruning removed users' commands under the repo dir (#138).**
+  `devexp install` treated any registered command whose string pointed under
+  the devexp repo/cache dir and wasn't an existing file as a stale devexp
+  hook, so a user's own hook such as `<dir>/hooks/x.sh --flag` was removed.
+  - Only devexp's own form is pruned now: the plain or single-quoted path of a
+    script directly in `<dir>/hooks/claude-code/` (or the bare path an earlier
+    install from that dir wrote), when the script no longer exists.
+  - A command with arguments, in another directory, double-quoted, chained or
+    using a variable is the user's and is never pruned, whether or not what it
+    names exists.
 - **`dangerous-cmd-guard` no longer blocks a mention of a destructive command
   (#100).** It matched its patterns anywhere in the command line, so an `echo`
   printing a recovery hint, a commit message, or an issue body that named one

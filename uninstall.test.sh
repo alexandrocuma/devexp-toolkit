@@ -287,6 +287,203 @@ syntax_result="$(python3 "$TMP/syntax_check.py" "$TMP/prune.py" "$REPO" "$TMP/se
 if [ "$syntax_result" = "ok" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL every SHELL_SYNTAX character\n%s\n' "$syntax_result"; fi
 
 
+# ── Fields devexp doesn't own (#137) ─────────────────────────────────────────
+# Only devexp's handlers are removed. Every other handler and entry keeps all
+# its fields, an empty entry or event stays, and every byte outside the hooks
+# value is as it was. A handler with args (exec form, no shell) or of another
+# type is the user's, whatever path it names.
+fill_paths() { # $1=template $2=output: @MINE@ and @FOREIGN@ replaced
+    python3 - "$1" "$2" "$MINE" "$FOREIGN" <<'PY'
+import sys
+src, dst, mine, foreign = sys.argv[1:5]
+text = open(src, encoding='utf-8', newline='').read().replace('@MINE@', mine).replace('@FOREIGN@', foreign)
+open(dst, 'w', encoding='utf-8', newline='').write(text)
+PY
+}
+expect_file() { # $1=label $2=input template $3=expected template
+    fill_paths "$2" "$TMP/settings.json"
+    fill_paths "$3" "$TMP/want.json"
+    if python3 "$TMP/prune.py" "$REPO" "$TMP/settings.json" > "$TMP/prune.out" 2>&1 \
+        && cmp -s "$TMP/settings.json" "$TMP/want.json"; then
+        pass=$((pass+1))
+    else
+        fail=$((fail+1))
+        printf 'FAIL %s\n' "$1"
+        cat "$TMP/prune.out"
+        diff "$TMP/want.json" "$TMP/settings.json" | sed 's/^/  | /'
+    fi
+}
+
+cat > "$TMP/fields-in.json" <<'JSON'
+{
+  "env": {"GREETING": "caf\u00e9 & <tea>"},
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /tmp && make lint",
+            "timeout": 30,
+            "async": true,
+            "shell": "bash",
+            "if": "Bash(git *)",
+            "statusMessage": "Linting…",
+            "x-future": {
+              "nested": [
+                1,
+                null
+              ]
+            }
+          },
+          {
+            "type": "command",
+            "command": "@MINE@"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Bash",
+        "x-note": "mine",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "@FOREIGN@",
+            "args": [
+              "--strict"
+            ]
+          },
+          {
+            "type": "prompt",
+            "command": "@MINE@",
+            "prompt": "Check $ARGUMENTS"
+          },
+          {
+            "type": "http",
+            "url": "http://localhost:8080/hooks",
+            "headers": {
+              "X-Trace": "on"
+            }
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": []
+      },
+      {
+        "matcher": "Read|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "@FOREIGN@",
+            "timeout": 9
+          }
+        ]
+      }
+    ],
+    "Stop": []
+  },
+  "statusLine": {"type": "command", "command": "~/.claude/statusline.sh"},
+  "cleanupPeriodDays": 30.0
+}
+JSON
+cat > "$TMP/fields-want.json" <<'JSON'
+{
+  "env": {"GREETING": "caf\u00e9 & <tea>"},
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /tmp && make lint",
+            "timeout": 30,
+            "async": true,
+            "shell": "bash",
+            "if": "Bash(git *)",
+            "statusMessage": "Linting…",
+            "x-future": {
+              "nested": [
+                1,
+                null
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Bash",
+        "x-note": "mine",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "@FOREIGN@",
+            "args": [
+              "--strict"
+            ]
+          },
+          {
+            "type": "prompt",
+            "command": "@MINE@",
+            "prompt": "Check $ARGUMENTS"
+          },
+          {
+            "type": "http",
+            "url": "http://localhost:8080/hooks",
+            "headers": {
+              "X-Trace": "on"
+            }
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": []
+      }
+    ],
+    "Stop": []
+  },
+  "statusLine": {"type": "command", "command": "~/.claude/statusline.sh"},
+  "cleanupPeriodDays": 30.0
+}
+JSON
+expect_file "keeps every field of user hooks and every byte outside hooks" "$TMP/fields-in.json" "$TMP/fields-want.json"
+
+printf '%s' '{"hooks":{"PreToolUse":["junk",{"hooks":[42,{"type":"command","command":"@MINE@"}]}],"Stop":[{"hooks":[{"type":"command","command":"@FOREIGN@"}]}]},"a":"\u0026"}' > "$TMP/compact-in.json"
+printf '%s' '{"hooks":{"PreToolUse":["junk",{"hooks":[42]}]},"a":"\u0026"}' > "$TMP/compact-want.json"
+expect_file "a compact file stays compact; entries and handlers that aren't objects stay" "$TMP/compact-in.json" "$TMP/compact-want.json"
+
+printf '{\n\t"model": "opus",\n\t"hooks": {\n\t\t"Stop": [\n\t\t\t{\n\t\t\t\t"hooks": [\n\t\t\t\t\t{\n\t\t\t\t\t\t"type": "command",\n\t\t\t\t\t\t"command": "@MINE@"\n\t\t\t\t\t},\n\t\t\t\t\t{\n\t\t\t\t\t\t"type": "command",\n\t\t\t\t\t\t"command": "/usr/local/bin/notify"\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t}\n\t\t]\n\t}\n}\n' > "$TMP/tabs-in.json"
+printf '{\n\t"model": "opus",\n\t"hooks": {\n\t\t"Stop": [\n\t\t\t{\n\t\t\t\t"hooks": [\n\t\t\t\t\t{\n\t\t\t\t\t\t"type": "command",\n\t\t\t\t\t\t"command": "/usr/local/bin/notify"\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t}\n\t\t]\n\t}\n}\n' > "$TMP/tabs-want.json"
+expect_file "a tab-indented file keeps its indentation" "$TMP/tabs-in.json" "$TMP/tabs-want.json"
+
+# A repeated top-level hooks key: json.loads keeps the last, so the last one is
+# edited and the first stays as it was.
+printf '%s' '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"@MINE@"}]}]},"model":"x","hooks":{"Stop":[{"hooks":[{"type":"command","command":"@MINE@"},{"type":"command","command":"/u"}]}]}}' > "$TMP/dup-in.json"
+printf '%s' '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"@MINE@"}]}]},"model":"x","hooks":{"Stop":[{"hooks":[{"type":"command","command":"/u"}]}]}}' > "$TMP/dup-want.json"
+expect_file "a repeated hooks key: the last one is edited" "$TMP/dup-in.json" "$TMP/dup-want.json"
+
+# CRLF: text mode would turn every line ending into LF. Lines outside hooks keep
+# CRLF, and the rewritten hooks value is written with it too.
+printf '{\r\n  "model": "opus",\r\n  "hooks": {\r\n    "Stop": [\r\n      {\r\n        "hooks": [\r\n          {\r\n            "type": "command",\r\n            "command": "@MINE@"\r\n          },\r\n          {\r\n            "type": "command",\r\n            "command": "/usr/local/bin/notify"\r\n          }\r\n        ]\r\n      }\r\n    ]\r\n  },\r\n  "z": 1\r\n}\r\n' > "$TMP/crlf-in.json"
+printf '{\r\n  "model": "opus",\r\n  "hooks": {\r\n    "Stop": [\r\n      {\r\n        "hooks": [\r\n          {\r\n            "type": "command",\r\n            "command": "/usr/local/bin/notify"\r\n          }\r\n        ]\r\n      }\r\n    ]\r\n  },\r\n  "z": 1\r\n}\r\n' > "$TMP/crlf-want.json"
+expect_file "a CRLF file keeps CRLF, inside and outside hooks" "$TMP/crlf-in.json" "$TMP/crlf-want.json"
+if [ "$(tr -cd '\r' < "$TMP/settings.json" | wc -c | tr -d ' ')" = 16 ] && [ "$(tr -cd '\n' < "$TMP/settings.json" | wc -c | tr -d ' ')" = 16 ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL the CRLF fixture really is CRLF after uninstall"; fi
+
+# A number python reads as non-finite (1e400 is inf) would be written back as
+# Infinity, which isn't JSON; NaN and Infinity aren't JSON to begin with. The
+# file is left untouched, saying why.
+for n in 1e400 -1e400 NaN Infinity -Infinity; do
+    printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"@MINE@"},{"type":"command","command":"/u","timeout":%s}]}]}}' "$n" > "$TMP/nonfinite.json"
+    expect_file "leaves a file holding $n untouched" "$TMP/nonfinite.json" "$TMP/nonfinite.json"
+    if grep -qF "settings.json holds $n," "$TMP/prune.out" && grep -qF "left untouched" "$TMP/prune.out"; then
+        pass=$((pass+1))
+    else
+        fail=$((fail+1)); printf 'FAIL says why a file holding %s is left untouched\n' "$n"; cat "$TMP/prune.out"
+    fi
+done
+
 # ── opencode (#109) ──────────────────────────────────────────────────────────
 
 ok() { pass=$((pass+1)); }
@@ -646,6 +843,81 @@ PY
     fi
 else
     echo "SKIP round trip with the real binary (needs go and ./scripts/stage-assets.sh)"
+fi
+
+# ── Claude Code round trip with the real binary (#137) ───────────────────────
+# User hooks carrying timeout, args, shell, async and an unknown field, plus an
+# exec-form handler naming a devexp script: `devexp install` adds devexp's
+# hooks and keeps them, a re-install changes nothing, and uninstall.sh takes
+# settings.json back to the exact bytes it started as.
+if command -v go >/dev/null 2>&1 && [ -d "$ROOT/cli/internal/assets/hooks" ]; then
+    new_env
+    R="$E/repo"; H="$E/h"; S="$H/.claude/settings.json"
+    mkdir -p "$R" "$H/.claude"
+    cp -R "$ROOT/.devexp-toolkit" "$ROOT/agents" "$ROOT/skills" "$ROOT/hooks" "$ROOT/mcps" "$ROOT/devexp.config.json" "$ROOT/uninstall.sh" "$R/"
+    printf '#!/bin/sh\nexit 0\n' > "$E/bin/claude"; chmod +x "$E/bin/claude"
+    python3 - "$S" "$R" <<'PY'
+import sys
+settings, repo = sys.argv[1:3]
+open(settings, 'w', encoding='utf-8').write('''{
+  "model": "opus",
+  "env": {"NOTE": "caf\\u00e9 & <tea>"},
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "REPO/hooks/claude-code/dangerous-cmd-guard.sh",
+            "args": [
+              "--strict"
+            ],
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "/usr/local/bin/audit-log",
+            "timeout": 30,
+            "async": true,
+            "shell": "bash",
+            "x-future": {
+              "level": 2
+            }
+          }
+        ]
+      }
+    ],
+    "Stop": []
+  }
+}
+'''.replace('REPO', repo))
+PY
+    cp "$S" "$E/before.json"
+    cc_install() { env -i HOME="$H" PATH="$E/bin:/usr/bin:/bin" DEVEXP_DIR="$R" "$E/devexp" install --reinstall-mcps > "$E/out" 2>&1; }
+    if (cd "$ROOT/cli" && go build -o "$E/devexp" .) > "$E/out" 2>&1 && cc_install; then
+        check "cc round trip: install keeps the user's handlers and adds devexp's" python3 - "$E/before.json" "$S" "$R" <<'PY'
+import json, sys
+before, after, repo = (json.load(open(sys.argv[1])), json.load(open(sys.argv[2])), sys.argv[3])
+user = before['hooks']['PreToolUse'][0]
+got = after['hooks']['PreToolUse']
+mine = [h['command'] for e in got[1:] for h in e['hooks']]
+sys.exit(0 if got[0] == user and after['hooks']['Stop'] == []
+         and repo + '/hooks/claude-code/dangerous-cmd-guard.sh' in mine
+         and {k: v for k, v in after.items() if k != 'hooks'} == {k: v for k, v in before.items() if k != 'hooks'} else 1)
+PY
+        cp "$S" "$E/installed.json"
+        if cc_install; then ok; else ko "cc round trip: re-install" "$(cat "$E/out")"; fi
+        check "cc round trip: re-install leaves settings.json byte for byte" cmp -s "$S" "$E/installed.json"
+        env -i HOME="$H" PATH="$E/bin:/usr/bin:/bin" /bin/bash "$R/uninstall.sh" --yes </dev/null > "$E/out" 2>&1
+        echo $? > "$E/rc"
+        check "cc round trip: uninstall exit 0" rc_is 0
+        check "cc round trip: uninstall restores settings.json byte for byte" cmp -s "$S" "$E/before.json"
+    else
+        ko "cc round trip: build or install failed" "$(cat "$E/out")"
+    fi
+else
+    echo "SKIP Claude Code round trip with the real binary (needs go and ./scripts/stage-assets.sh)"
 fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

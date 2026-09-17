@@ -75,6 +75,21 @@ func readHooks(t *testing.T, settingsPath string) hooksMapT {
 			t.Fatalf("Unmarshal hooks error = %v", err)
 		}
 	}
+	return withoutFields(hooks)
+}
+
+// withoutFields drops the raw members hooks were read with, so they compare
+// equal to entries built in a test. Tests of the members themselves read the
+// file's bytes instead.
+func withoutFields(hooks hooksMapT) hooksMapT {
+	for _, entries := range hooks {
+		for i := range entries {
+			entries[i].fields = nil
+			for j := range entries[i].Hooks {
+				entries[i].Hooks[j].fields = nil
+			}
+		}
+	}
 	return hooks
 }
 
@@ -114,6 +129,54 @@ func TestIsStaleDevexpHook(t *testing.T) {
 			cmd:  repoDir,
 			want: false,
 		},
+		"missing script under repoDir, single-quoted, is stale": {
+			cmd:  shellQuote(missingScript),
+			want: true,
+		},
+		// #138: only devexp's own form under repoDir is judged. Everything
+		// below names nothing on disk, and is the user's.
+		"user command under repoDir with an argument": {
+			cmd: filepath.Join(repoDir, "hooks", "x.sh") + " --flag",
+		},
+		"missing script under hooks/claude-code with an argument": {
+			cmd: missingScript + " --flag",
+		},
+		"quoted missing script with an argument": {
+			cmd: shellQuote(missingScript) + " --flag",
+		},
+		"missing script chained with another command": {
+			cmd: missingScript + ";true",
+		},
+		"missing script run through a wrapper": {
+			cmd: "bash " + missingScript,
+		},
+		"double-quoted missing script": {
+			cmd: `"` + missingScript + `"`,
+		},
+		"missing file in another repoDir directory": {
+			cmd: filepath.Join(repoDir, "bin", "tool"),
+		},
+		"missing file directly under hooks/": {
+			cmd: filepath.Join(repoDir, "hooks", "x.sh"),
+		},
+		"missing file nested below hooks/claude-code/": {
+			cmd: filepath.Join(repoDir, "hooks", "claude-code", "sub", "x.sh"),
+		},
+		"missing file under my-hooks/claude-code/": {
+			cmd: filepath.Join(repoDir, "my-hooks", "claude-code", "missing.sh"),
+		},
+		"missing script by an unclean path": {
+			cmd: repoDir + "/hooks/../hooks/claude-code/missing.sh",
+		},
+		"missing script through a variable": {
+			cmd: "$DEVEXP_DIR/hooks/claude-code/missing.sh",
+		},
+		"missing script by a relative path": {
+			cmd: "hooks/claude-code/missing.sh",
+		},
+		"missing script named by a glob": {
+			cmd: filepath.Join(repoDir, "hooks", "claude-code", "*.sh"),
+		},
 	}
 
 	for name, tt := range tests {
@@ -121,6 +184,54 @@ func TestIsStaleDevexpHook(t *testing.T) {
 			got := isStaleDevexpHook(tt.cmd, repoDir)
 			if got != tt.want {
 				t.Errorf("isStaleDevexpHook(%q, %q) = %v, want %v", tt.cmd, repoDir, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestInstallClaude_PrunesOnlyDevexpStaleHooks (#138): a removed script's
+// registration is pruned in every form devexp wrote it — plain, single-quoted,
+// or the bare path an install from a repo dir needing quotes wrote before
+// #135. A user's command under the repo dir that names nothing on disk (with
+// arguments, in another directory, with shell syntax) stays.
+func TestInstallClaude_PrunesOnlyDevexpStaleHooks(t *testing.T) {
+	for name, dir := range map[string]string{
+		"plain repo dir":          "repo",
+		"repo dir needing quotes": "My Proj/it's $x",
+	} {
+		t.Run(name, func(t *testing.T) {
+			repoDir := filepath.Join(t.TempDir(), dir)
+			registry := Registry{ccHook("secret-guard", true, "PreToolUse", "Read", "hooks/claude-code/secret-guard.sh")}
+			createScript(t, repoDir, "hooks/claude-code/secret-guard.sh")
+			removed := filepath.Join(repoDir, "hooks", "claude-code", "removed.sh")
+			stale := []string{hookCommand(removed), shellQuote(removed), removed}
+			user := []string{
+				filepath.Join(repoDir, "hooks", "x.sh") + " --flag",
+				shellQuote(removed) + " --flag",
+				shellQuote(removed) + "; true",
+				`"` + removed + `"`,
+				shellQuote(filepath.Join(repoDir, "bin", "tool")),
+				shellQuote(filepath.Join(repoDir, "hooks", "claude-code", "sub", "x.sh")),
+				"$DEVEXP_DIR/hooks/claude-code/removed.sh",
+			}
+			var cmds []hookCmd
+			for _, c := range append(append([]string(nil), user...), stale...) {
+				cmds = append(cmds, hookCmd{Type: "command", Command: c})
+			}
+			settingsPath := filepath.Join(t.TempDir(), "settings.json")
+			writeSettingsHooks(t, settingsPath, hooksMapT{"Stop": {{Hooks: cmds}}})
+
+			var err error
+			out := captureOutput(t, func() { err = InstallClaude(registry, repoDir, settingsPath, nil, false) })
+			if err != nil {
+				t.Fatalf("InstallClaude() error = %v\n%s", err, out)
+			}
+			var got []string
+			for _, h := range readHooks(t, settingsPath)["Stop"][0].Hooks {
+				got = append(got, h.Command)
+			}
+			if !reflect.DeepEqual(got, user) {
+				t.Errorf("Stop commands =\n%q\nwant the user's only\n%q\noutput:\n%s", got, user, out)
 			}
 		})
 	}
