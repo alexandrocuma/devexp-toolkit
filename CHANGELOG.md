@@ -140,6 +140,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `DEVEXP_DIR`, the checkout they were compiled from, or their bundled assets.
     A copied or linked dev binary still uses its own checkout. A `-trimpath`
     build has no recorded checkout and uses its bundled assets.
+  - A dev build uses the checkout it was compiled from only while that checkout
+    can be verified as the user's (Unix): the checkout and its `agents/`,
+    `skills/`, `mcps/` and `hooks/` directories must be owned by the user and
+    not writable by group or others, and the directory holding it must be owned
+    by the user or root and not writable by group or others unless it is
+    sticky. Otherwise install warns that the checkout can't be verified as
+    yours and uses the bundled assets; `chmod -R go-w` the checkout, or set
+    `DEVEXP_DIR`, to install from it.
   - Neither looks next to the binary or in the current directory or its
     parents any more.
   - A devexp-toolkit checkout is recognised by the committed `.devexp-toolkit`
@@ -153,7 +161,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     because the checkout lacks the marker or no longer exists, it warns and says
     how to fix it.
   - Dev builds re-extract their bundled assets on every run instead of reusing
-    a cached copy, since every dev build has the same version.
+    a cached copy, since every dev build has the same version, and they extract
+    to their own `devexp/assets-dev` directory, so a dev run never touches the
+    `devexp/assets` directory a release install registered hooks from.
+  - Extraction is atomic: assets are extracted into a new directory, which
+    replaces the previous one in a single rename. An interrupted extraction
+    leaves the previous assets in place, and concurrent runs always leave a
+    complete copy.
+  - Release binaries are built with `-trimpath`.
+  - **Clone users:** run `rm bin/devexp && ./install.sh`. `install.sh` never
+    rebuilds an existing `bin/devexp`, and a binary built before this change
+    keeps the old lookup until it is rebuilt.
 
 ## [0.8.0] - 2026-09-16
 

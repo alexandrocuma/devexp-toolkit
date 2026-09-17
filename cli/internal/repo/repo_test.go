@@ -2,12 +2,16 @@ package repo
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 // makeShapeDir creates dir with the toolkit's directory names — agents/,
@@ -205,6 +209,13 @@ func TestSourceRootOf(t *testing.T) {
 // repository, so its source root is the repository root, and the committed
 // marker makes it a checkout.
 func TestSourceRoot_RealCheckout(t *testing.T) {
+	if _, file, _, _ := runtime.Caller(0); !filepath.IsAbs(file) {
+		// Built with -trimpath: no source root is recorded.
+		if got := sourceRoot(); got != "" {
+			t.Errorf("sourceRoot() = %q under -trimpath, want \"\"", got)
+		}
+		return
+	}
 	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -217,14 +228,59 @@ func TestSourceRoot_RealCheckout(t *testing.T) {
 	}
 }
 
+// ownedByAnother makes ownerOf report every file named name as owned by a
+// different user.
+func ownedByAnother(t *testing.T, name string) {
+	t.Helper()
+	orig := ownerOf
+	ownerOf = func(fi os.FileInfo) (uint32, bool) {
+		if fi.Name() == name {
+			return uint32(currentUID() + 1), true
+		}
+		return orig(fi)
+	}
+	t.Cleanup(func() { ownerOf = orig })
+}
+
+// checkoutIn makes a checkout at dir/name, with dir created with mode perm.
+func checkoutIn(t *testing.T, perm os.FileMode, name string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "parent")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, perm); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) }) //nolint:errcheck
+	root := filepath.Join(dir, name)
+	makeRepoDir(t, root)
+	return root
+}
+
+// chmodIn makes a checkout and sets the mode of rel inside it.
+func chmodIn(t *testing.T, rel string, perm os.FileMode) string {
+	t.Helper()
+	d := t.TempDir()
+	makeRepoDir(t, d)
+	if err := os.Chmod(filepath.Join(d, rel), perm); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(filepath.Join(d, rel), 0o755) }) //nolint:errcheck
+	return d
+}
+
 // TestLocate_NoDevexpDir: without DEVEXP_DIR a dev build uses only the
-// checkout it was built from, and a tagged build only its bundled assets. A
-// checkout around the current directory is never used, whatever it holds.
+// checkout it was built from, and only while that checkout verifiably is the
+// user's; a tagged build uses only its bundled assets. A checkout around the
+// current directory is never used, whatever it holds.
 func TestLocate_NoDevexpDir(t *testing.T) {
 	const (
-		unmarkedWarning = "no valid .devexp-toolkit marker file, so it was skipped"
-		goneWarning     = "no longer exists"
+		unmarkedWarning   = "no valid .devexp-toolkit marker file, so it was skipped"
+		goneWarning       = "no longer exists"
+		unverifiedWarning = "can't be verified as yours"
 	)
+	checkout := func(t *testing.T) string { d := t.TempDir(); makeRepoDir(t, d); return d }
 	tests := map[string]struct {
 		version     string
 		source      func(t *testing.T) string // the build's source root
@@ -232,7 +288,115 @@ func TestLocate_NoDevexpDir(t *testing.T) {
 		wantWarning string                    // substring; "" = no warning
 	}{
 		"dev build, its source checkout": {
-			version: devBuild, source: func(t *testing.T) string { d := t.TempDir(); makeRepoDir(t, d); return d }, wantSource: true,
+			version: devBuild, source: checkout, wantSource: true,
+		},
+		"dev build, source checkout in a sticky shared dir": {
+			version: devBuild, source: func(t *testing.T) string { return checkoutIn(t, 0o777|os.ModeSticky, "toolkit") }, wantSource: true,
+		},
+		"dev build, source checkout reached through a symlink you own": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				link := filepath.Join(t.TempDir(), "link")
+				if err := os.Symlink(checkout(t), link); err != nil {
+					t.Fatal(err)
+				}
+				return link
+			},
+			wantSource: true,
+		},
+		"dev build, source checkout owned by another user": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				ownedByAnother(t, "theirs")
+				return checkoutIn(t, 0o755, "theirs")
+			},
+			wantWarning: unverifiedWarning,
+		},
+		"dev build, source checkout whose hooks/claude-code is another user's": {
+			version: devBuild, source: func(t *testing.T) string { ownedByAnother(t, "claude-code"); return checkout(t) }, wantWarning: unverifiedWarning,
+		},
+		"dev build, source checkout whose agents/ is another user's": {
+			version: devBuild, source: func(t *testing.T) string { ownedByAnother(t, "agents"); return checkout(t) }, wantWarning: unverifiedWarning,
+		},
+		"dev build, source checkout writable by group": {
+			version: devBuild, source: func(t *testing.T) string { return chmodIn(t, ".", 0o775) }, wantWarning: unverifiedWarning,
+		},
+		"dev build, source checkout whose hooks/ is writable by others": {
+			version: devBuild, source: func(t *testing.T) string { return chmodIn(t, "hooks", 0o757) }, wantWarning: unverifiedWarning,
+		},
+		"dev build, source checkout whose mcps/ is writable by group": {
+			version: devBuild, source: func(t *testing.T) string { return chmodIn(t, "mcps", 0o775) }, wantWarning: unverifiedWarning,
+		},
+		"dev build, source checkout with a symlinked hooks/": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				d := checkout(t)
+				os.RemoveAll(filepath.Join(d, "hooks")) //nolint:errcheck
+				if err := os.Symlink(t.TempDir(), filepath.Join(d, "hooks")); err != nil {
+					t.Fatal(err)
+				}
+				return d
+			},
+			wantWarning: unverifiedWarning,
+		},
+		"dev build, source checkout in a dir writable by others": {
+			version: devBuild, source: func(t *testing.T) string { return checkoutIn(t, 0o777, "toolkit") }, wantWarning: unverifiedWarning,
+		},
+		"dev build, source checkout in a dir writable by group": {
+			version: devBuild, source: func(t *testing.T) string { return checkoutIn(t, 0o775, "toolkit") }, wantWarning: unverifiedWarning,
+		},
+		"dev build, source checkout in a dir owned by another user": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				ownedByAnother(t, "parent")
+				return checkoutIn(t, 0o755, "toolkit")
+			},
+			wantWarning: unverifiedWarning,
+		},
+		"dev build, source checkout in a sticky dir owned by another user": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				ownedByAnother(t, "parent")
+				return checkoutIn(t, 0o777|os.ModeSticky, "toolkit")
+			},
+			wantWarning: unverifiedWarning,
+		},
+		"dev build, source path a symlink in a dir writable by others": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				dir := filepath.Join(t.TempDir(), "shared")
+				os.Mkdir(dir, 0o755)                       //nolint:errcheck
+				os.Chmod(dir, 0o777)                       //nolint:errcheck
+				t.Cleanup(func() { os.Chmod(dir, 0o755) }) //nolint:errcheck
+				link := filepath.Join(dir, "toolkit")
+				if err := os.Symlink(checkout(t), link); err != nil {
+					t.Fatal(err)
+				}
+				return link
+			},
+			wantWarning: unverifiedWarning,
+		},
+		"dev build, source path a symlink owned by another user": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				link := filepath.Join(t.TempDir(), "their-link")
+				if err := os.Symlink(checkout(t), link); err != nil {
+					t.Fatal(err)
+				}
+				ownedByAnother(t, "their-link")
+				return link
+			},
+			wantWarning: unverifiedWarning,
+		},
+		"dev build, file ownership unavailable": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				orig := currentUID
+				currentUID = func() int { return -1 }
+				t.Cleanup(func() { currentUID = orig })
+				return checkout(t)
+			},
+			wantWarning: "file ownership is not available",
 		},
 		"dev build, no source root (-trimpath)": {
 			version: devBuild, source: func(*testing.T) string { return "" },
@@ -297,7 +461,7 @@ func TestLocate_NoDevexpDir(t *testing.T) {
 				if err != nil {
 					t.Fatalf("locate() error = %v", err)
 				}
-				want := Source{RepoDir: filepath.Join(base, "devexp", "assets"), Embedded: true, Origin: OriginEmbedded}
+				want := Source{RepoDir: embeddedPath(base, tt.version), Embedded: true, Origin: OriginEmbedded}
 				if tt.wantSource {
 					want = Source{RepoDir: source, Origin: OriginSourceDir}
 				}
@@ -315,6 +479,14 @@ func TestLocate_NoDevexpDir(t *testing.T) {
 			})
 		}
 	}
+}
+
+// embeddedPath is where the embedded assets of version go under the cache base.
+func embeddedPath(base, version string) string {
+	if version == devBuild {
+		return filepath.Join(base, "devexp", "assets-dev")
+	}
+	return filepath.Join(base, "devexp", "assets")
 }
 
 // ── extractFS ─────────────────────────────────────────────────────────────────
@@ -488,7 +660,202 @@ func TestExtractEmbedded(t *testing.T) {
 		if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
 			t.Errorf("a version change should discard the old extraction, stat err = %v", err)
 		}
+		assertOneCompleteTree(t, dest, "v2.0.0")
 	})
+
+	t.Run("dev and tagged builds extract to separate directories", func(t *testing.T) {
+		base := withTempCache(t)
+
+		tagged, err := extractEmbedded("v1.0.0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		sentinel := filepath.Join(tagged, "sentinel.txt")
+		if err := os.WriteFile(sentinel, []byte("kept"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		dev, err := extractEmbedded(devBuild)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tagged != embeddedPath(base, "v1.0.0") || dev != embeddedPath(base, devBuild) || tagged == dev {
+			t.Errorf("dirs = %q (tagged), %q (dev); want %q and %q", tagged, dev, embeddedPath(base, "v1.0.0"), embeddedPath(base, devBuild))
+		}
+		if _, err := os.Stat(sentinel); err != nil {
+			t.Errorf("a dev extraction disturbed the tagged one: %v", err)
+		}
+		assertOneCompleteTree(t, tagged, "v1.0.0")
+		assertOneCompleteTree(t, dev, devBuild)
+	})
+
+	t.Run("an interrupted extraction leaves the previous tree intact", func(t *testing.T) {
+		for _, version := range []string{devBuild, "v2.0.0"} {
+			withTempCache(t)
+			prev := "v1.0.0"
+			if version == devBuild {
+				prev = devBuild
+			}
+			dest, err := extractEmbedded(prev)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sentinel := filepath.Join(dest, "sentinel.txt")
+			if err := os.WriteFile(sentinel, []byte("kept"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			orig := extractTree
+			extractTree = func(fsys fs.FS, dest string) error {
+				os.MkdirAll(filepath.Join(dest, "agents"), 0o755)                             //nolint:errcheck
+				os.WriteFile(filepath.Join(dest, "agents", "partial.md"), []byte("x"), 0o644) //nolint:errcheck
+				return errors.New("interrupted")
+			}
+			_, err = extractEmbedded(version)
+			extractTree = orig
+			if err == nil || !strings.Contains(err.Error(), "interrupted") {
+				t.Fatalf("extractEmbedded(%s) error = %v, want the interruption", version, err)
+			}
+			if _, err := os.Stat(sentinel); err != nil {
+				t.Errorf("%s: the previous tree was disturbed: %v", version, err)
+			}
+			assertOneCompleteTree(t, dest, prev)
+		}
+	})
+
+	t.Run("replaces a directory extracted in place by an older binary", func(t *testing.T) {
+		base := withTempCache(t)
+		dest := embeddedPath(base, "v2.0.0")
+		if err := os.MkdirAll(filepath.Join(dest, "agents"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(filepath.Join(dest, versionFile), []byte("v1.0.0"), 0o644)   //nolint:errcheck
+		os.WriteFile(filepath.Join(dest, "agents", "old.md"), []byte("x"), 0o644) //nolint:errcheck
+
+		if got, err := extractEmbedded("v2.0.0"); err != nil || got != dest {
+			t.Fatalf("extractEmbedded() = %q, %v", got, err)
+		}
+		if _, err := os.Stat(filepath.Join(dest, "agents", "old.md")); !os.IsNotExist(err) {
+			t.Errorf("the old in-place extraction is still there: %v", err)
+		}
+		assertOneCompleteTree(t, dest, "v2.0.0")
+	})
+
+	t.Run("removes old leftovers, keeps recent ones", func(t *testing.T) {
+		base := withTempCache(t)
+		dest, err := extractEmbedded("v1.0.0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		parent, name := filepath.Split(dest)
+		leftover := func(n string, age time.Duration) string {
+			p := filepath.Join(parent, "."+name+"."+n)
+			os.MkdirAll(filepath.Join(p, "agents"), 0o755) //nolint:errcheck
+			when := time.Now().Add(-age)
+			os.Chtimes(p, when, when) //nolint:errcheck
+			return p
+		}
+		old := leftover("old", 2*time.Hour)
+		recent := leftover("recent", time.Minute)
+		other := filepath.Join(base, "devexp", ".assets-dev.old")
+		os.MkdirAll(other, 0o755)                                                     //nolint:errcheck
+		os.Chtimes(other, time.Now().Add(-2*time.Hour), time.Now().Add(-2*time.Hour)) //nolint:errcheck
+
+		if _, err := extractEmbedded("v2.0.0"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(old); !os.IsNotExist(err) {
+			t.Errorf("old leftover kept: %v", err)
+		}
+		if _, err := os.Stat(recent); err != nil {
+			t.Errorf("recent leftover removed: %v", err)
+		}
+		if _, err := os.Stat(other); err != nil {
+			t.Errorf("another build's directory was swept: %v", err)
+		}
+		// The current tree is never swept, however old.
+		target, _ := os.Readlink(dest)
+		os.Chtimes(filepath.Join(parent, target), time.Now().Add(-2*time.Hour), time.Now().Add(-2*time.Hour)) //nolint:errcheck
+		sweepStale(parent, name)
+		if !isRepoDir(dest) {
+			t.Errorf("the current extraction was swept")
+		}
+	})
+
+	t.Run("concurrent runs leave a complete tree", func(t *testing.T) {
+		for _, version := range []string{devBuild, "v3.0.0"} {
+			withTempCache(t)
+			dest, err := extractEmbedded(version)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if version != devBuild {
+				// Force every run below to re-extract.
+				os.WriteFile(filepath.Join(dest, versionFile), []byte("stale"), 0o644) //nolint:errcheck
+			}
+			var wg sync.WaitGroup
+			errs := make(chan error, 16)
+			for i := 0; i < 8; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					if _, err := extractEmbedded(version); err != nil {
+						errs <- err
+					}
+				}()
+			}
+			wg.Wait()
+			close(errs)
+			for err := range errs {
+				t.Errorf("%s: concurrent extractEmbedded() error = %v", version, err)
+			}
+			if !isRepoDir(dest) {
+				t.Errorf("%s: the extraction is not a complete checkout", version)
+			}
+			if data, err := os.ReadFile(filepath.Join(dest, versionFile)); err != nil || (version != devBuild && string(data) == "stale") {
+				t.Errorf("%s: version file = %q, %v", version, data, err)
+			}
+			assertNoPartialTrees(t, dest)
+		}
+	})
+}
+
+// assertOneCompleteTree checks that dest is a symlink to a complete extraction
+// of version, and that nothing else is left next to it for dest.
+func assertOneCompleteTree(t *testing.T, dest, version string) {
+	t.Helper()
+	fi, err := os.Lstat(dest)
+	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("%s is not a symlink to an extraction: %v, %v", dest, fi, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dest, versionFile)); err != nil || string(data) != version {
+		t.Errorf("version file = %q, %v; want %q", data, err, version)
+	}
+	if !isRepoDir(dest) {
+		t.Errorf("%s is not a complete checkout", dest)
+	}
+	target, _ := os.Readlink(dest)
+	parent, name := filepath.Split(dest)
+	entries, _ := os.ReadDir(parent)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "."+name+".") && e.Name() != target {
+			t.Errorf("left behind next to %s: %s", name, e.Name())
+		}
+	}
+}
+
+// assertNoPartialTrees checks that every extraction left next to dest is
+// complete: no half-written tree survives, whatever the interleaving.
+func assertNoPartialTrees(t *testing.T, dest string) {
+	t.Helper()
+	parent, name := filepath.Split(dest)
+	entries, _ := os.ReadDir(parent)
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), "."+name+".") {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(parent, e.Name(), versionFile)); err != nil {
+			t.Errorf("partial extraction left behind: %s", e.Name())
+		}
+	}
 }
 
 // TestExtractEmbedded_NoUsableCacheDir: with no cache dir, or a relative one,
@@ -644,7 +1011,7 @@ func TestResolve(t *testing.T) {
 			cwd := t.TempDir()
 			makeRepoDir(t, cwd)
 			t.Chdir(cwd)
-			want := Source{RepoDir: filepath.Join(base, "devexp", "assets"), Embedded: true, Origin: OriginEmbedded}
+			want := Source{RepoDir: embeddedPath(base, tt.version), Embedded: true, Origin: OriginEmbedded}
 
 			calls := 0
 			got, err := Resolve(tt.version, func(s Source) {

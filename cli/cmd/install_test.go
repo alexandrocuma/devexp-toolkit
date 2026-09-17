@@ -2394,7 +2394,13 @@ func TestInstallCmd_AssetRoot(t *testing.T) {
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	sourceCheckout := filepath.Dir(filepath.Dir(filepath.Dir(thisFile))) // <root>/cli/cmd/install_test.go
+	// <root>/cli/cmd/install_test.go; under -trimpath the path is
+	// module-relative, no checkout is recorded and dev builds use the bundled
+	// assets too.
+	sourceCheckout := ""
+	if filepath.IsAbs(thisFile) {
+		sourceCheckout = filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))
+	}
 	tests := map[string]struct {
 		version string
 		marker  bool
@@ -2438,12 +2444,25 @@ func TestInstallCmd_AssetRoot(t *testing.T) {
 			}
 
 			wantRoot, wantOrigin := sourceCheckout, "the devexp-toolkit checkout this binary was built from"
-			if tt.version != "dev" {
+			// A checkout that isn't verifiably the user's (e.g. cloned with a
+			// group-writable umask) is skipped with a warning.
+			unverified := strings.Contains(out, "can't be verified as yours")
+			if unverified {
+				t.Logf("this checkout can't be verified as the user's; expecting the bundled assets:\n%s", out)
+			}
+			if tt.version != "dev" || sourceCheckout == "" || unverified {
+				if tt.version != "dev" && unverified {
+					t.Errorf("a tagged build checked a source checkout:\n%s", out)
+				}
 				cache, err := os.UserCacheDir()
 				if err != nil {
 					t.Fatal(err)
 				}
-				wantRoot, wantOrigin = filepath.Join(cache, "devexp", "assets"), "assets bundled in this binary, extracted to the user cache"
+				dir := "assets"
+				if tt.version == "dev" {
+					dir = "assets-dev"
+				}
+				wantRoot, wantOrigin = filepath.Join(cache, "devexp", dir), "assets bundled in this binary, extracted to the user cache"
 			}
 			announce := "Asset root: " + wantRoot + " (" + wantOrigin + ")"
 			at := strings.Index(out, announce)
