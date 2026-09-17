@@ -71,8 +71,8 @@ memory: user
 | `scaffold.md` | scaffold | Pattern-matched code generation for new modules, services, and components | "Scaffold a new payments service" |
 | `changelog.md` | changelog | Changelog and release notes generation from git history | "Generate the changelog since the last release" |
 | `docs-sync.md` | docs-sync | Syncs documentation surfaces (CLAUDE.md, README, authoring guides) with actual repo state after changes | "Sync the docs after these agent changes" |
-| `gen-indexer.md` | gen-indexer | Generates CLAUDE.md as a strict index into docs/ — rules, gotchas, ≤6 commands, pointers; ≤150 lines, no knowledge inlined | Invoked by `devxp` after the Development Kit, when CLAUDE.md is missing |
-| `update-indexer.md` | update-indexer | Refreshes CLAUDE.md drift and moves leaked knowledge out to the owning kit doc, leaving a pointer | Invoked by `devxp` when CLAUDE.md is stale or leaky |
+| `gen-indexer.md` | gen-indexer | Generates CLAUDE.md as a strict index into docs/ — rules, gotchas, ≤6 commands, pointers; ≤150 lines, no knowledge inlined; carries `devexp:preserve` blocks and adds matching parent `devexp:inherit` blocks | Invoked by `devxp` after the Development Kit, when CLAUDE.md is missing |
+| `update-indexer.md` | update-indexer | Refreshes CLAUDE.md drift and moves leaked knowledge out to the owning kit doc, leaving a pointer; never touches `devexp:preserve` blocks, adds missing matching `devexp:inherit` blocks | Invoked by `devxp` when CLAUDE.md is stale or leaky |
 | `gen-docs.md` | gen-docs | Writes new documentation and scaffolds the docs/ tree, including the Development Kit (setup, conventions, testing, overview, workflows, release) | Invoked by `devxp` for each missing kit doc |
 | `update-docs.md` | update-docs | Detects documentation — including kit docs — that's drifted from the code and refreshes it in place | Invoked by `devxp` for each stale kit doc |
 | `ci-cd.md` | ci-cd | CI/CD pipeline debugging, creation, and optimization | "Our GitHub Actions pipeline is failing, debug it" |

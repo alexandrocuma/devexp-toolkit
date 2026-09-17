@@ -122,7 +122,45 @@ The status column lets agents skip irrelevant files without opening them.
 | Layer map — paths + one-line roles, ≤8 rows (optional) | Full component catalogs, API reference → `reference/`, `api/` |
 | Where Things Are — "I need to… → docs/…" | ADR content → `architecture/adr/` |
 
-**Hard limits** (`gen-indexer` and `update-indexer` check them): ≤150 lines · no code blocks · no section over ~15 lines · every `docs/` pointer resolves. The test for every line: is it a rule, a gotcha, a command, or a pointer? If not, it belongs in docs/.
+**Hard limits** (`gen-indexer` and `update-indexer` check them): ≤150 lines · no code blocks · no section over ~15 lines · every `docs/` pointer resolves. The test for every line: is it a rule, a gotcha, a command, or a pointer? If not, it belongs in docs/. All of this applies outside `devexp:preserve` blocks — the one exception, below.
+
+---
+
+## The Exception: Preserve and Inherit Blocks
+
+Some directives are owned **outside the repo** — a rulebook shared by a family of repos, an organisation-wide policy. They can't be verified against this repo's `docs/`, and moving them there would fork them from their owner. Without a marker, a refresh would read such a section as leaked knowledge and move or drop it, and a freshly generated `CLAUDE.md` would never get it. Two HTML-comment markers handle this. They are invisible when the Markdown is rendered.
+
+### Preserve block — in the repo's `CLAUDE.md`
+
+```markdown
+<!-- devexp:preserve id="family-rulebook" -->
+## Rule 1 — Follow the family rulebook
+...any markdown...
+<!-- /devexp:preserve -->
+```
+
+- **`update-indexer`** never edits, rewrites, reorders, moves to `docs/` or removes anything from the opening marker line to the closing one. The block isn't classified as leaked or drifted, and it doesn't count toward the hard limits (line budget, code blocks, section length, citations). It stays at its position: normalising the file to the index shape may add sections around it, never through it. Repo-relative paths inside it are checked, and any that don't resolve are **reported, not fixed**. URLs and paths outside the repo (`../…`, absolute, `~`) aren't verified.
+- **`gen-indexer`**, when regenerating over an existing `CLAUDE.md`, carries every preserve block over verbatim, in the same relative position (for example right after top rules such as a "Rule 0"), one block per `id`.
+
+### Inherit block — in a parent directory's `CLAUDE.md`
+
+```markdown
+<!-- devexp:inherit id="family-rulebook" remote="gitlab.com[:/]acme/apps/" -->
+## Rule 1 — Follow the family rulebook
+The rulebook is cloned at `{{repo_to_parent}}/rulebook/`. Read its README first.
+<!-- /devexp:inherit -->
+```
+
+- **Where it's looked for:** the `CLAUDE.md` of every ancestor directory of the repo root, walking up from the parent and stopping at `$HOME` inclusive (at `/` for a repo outside `$HOME`). If several ancestors define the same `id`, the nearest wins.
+- **`remote`** (optional) is an extended regular expression (`grep -E`), matched unanchored against `git remote get-url origin`. The block applies when it matches, or when `remote` is absent. A repo with no `origin` only gets blocks without `remote`.
+- **`gen-indexer`** inserts each matching block into the generated `CLAUDE.md` as a **preserve** block with the same `id`, right after the title block. **`update-indexer`** does the same when the repo's `CLAUDE.md` has no preserve block with that `id`, and says so in its report. **An existing preserve block with the same `id` always wins.** It's never overwritten or merged, even when the parent's content has since changed, so a changed parent block reaches existing repos only if you delete their preserve block and refresh.
+- **`{{repo_to_parent}}`** is the only token. On insertion it's replaced with the relative path from the repo root to the directory holding the parent `CLAUDE.md`: `..` for the parent, `../..` for the grandparent. The inserted preserve block holds that literal path from then on.
+
+### Rules for both
+
+- Each marker sits alone on its own line. `id` is required and unique within a file, and blocks don't nest. A malformed block (unclosed, nested, or without an `id`) is reported, and the indexer won't write `CLAUDE.md` until it's fixed. It never guesses where a block ends.
+- Both indexers list preserve blocks in their plan and report: kept, added from an inherit block, skipped (remote didn't match, or the `id` already existed), and unresolved paths. `/devxp` measures leakage outside the blocks, and treats a matching inherit block that's missing from `CLAUDE.md` as a reason to refresh it.
+- Use the blocks sparingly. They exist for content whose owner is outside the repo. Knowledge this repo owns still goes in `docs/`.
 
 ---
 

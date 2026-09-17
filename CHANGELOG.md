@@ -203,6 +203,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `update-indexer` detects leaked knowledge and moves it into the owning kit
     doc (re-verified against code) before replacing it with a pointer.
 
+- **`devexp:preserve` and `devexp:inherit` blocks in CLAUDE.md.** A section
+  pointing at rules owned outside the repo (for example a rulebook shared by a
+  family of repos) can't be verified against in-repo docs, so `update-indexer`
+  could classify it as leaked knowledge and move or drop it, and `gen-indexer`
+  never wrote it for a new repo.
+  - `<!-- devexp:preserve id="…" -->` … `<!-- /devexp:preserve -->` marks content
+    `update-indexer` never edits, reorders, moves or removes, and that doesn't
+    count as leakage or against the 150-line budget. Repo-relative paths inside
+    it are checked and reported, never fixed. `gen-indexer` carries every
+    preserve block over verbatim, in the same relative position, when
+    regenerating.
+  - `<!-- devexp:inherit id="…" remote="<regex>" -->` in any ancestor
+    directory's `CLAUDE.md` (up to `$HOME`) is inserted as a preserve block with
+    the same `id` into every repo whose `origin` matches `remote`: by
+    `gen-indexer` on generation, and by `update-indexer` when the repo lacks
+    it. An existing preserve block with that `id` wins. `{{repo_to_parent}}` is
+    replaced with the relative path to the parent directory.
+  - Both indexers report kept, added and skipped blocks and unresolved paths.
+    `/devxp` measures leakage outside the blocks and refreshes a CLAUDE.md
+    that's missing a matching inherit block. `docs-sync` never edits inside a
+    preserve block. Documented in `docs/guides/docs-architecture.md`.
+
 ### Fixed
 
 - **opencode: `devexp install` now installs the hook plugin (#106, #107, #108).**
