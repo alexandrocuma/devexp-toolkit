@@ -118,7 +118,7 @@ Hooks report only on stderr, prefixed `[devexp <hook-name>]`, and print nothing 
 
 ## Style
 
-Nothing enforces style: no linter or formatter config exists, and CI runs only tests (`.github/workflows/ci.yml`). The Go code is gofmt-clean today (`gofmt -l cli` prints nothing for tracked files at this commit), and #97 records "go vet and gofmt clean" as a manual check (`06c45a1`). `//nolint:errcheck` marks errors that are ignored on purpose (`cli/cmd/backup.go`, `cli/internal/hooks/installer.go`, `cli/internal/mcp/opencode.go`).
+Nothing enforces style: no linter or formatter config exists, and CI runs only tests and a govulncheck scan (`.github/workflows/ci.yml`). The Go code is gofmt-clean today (`gofmt -l cli` prints nothing for tracked files at this commit), and #97 records "go vet and gofmt clean" as a manual check (`06c45a1`). `//nolint:errcheck` marks errors that are ignored on purpose (`cli/cmd/backup.go`, `cli/internal/hooks/installer.go`, `cli/internal/mcp/opencode.go`).
 
 Rules that no tool enforces:
 

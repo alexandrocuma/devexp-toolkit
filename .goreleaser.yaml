@@ -42,6 +42,11 @@ changelog:
       - "^chore:"
 
 release:
+  # /release creates the GitHub Release as a draft (docs/guides/release.md,
+  # Cut). goreleaser finds that draft by name ({{.Tag}}), keeps its notes,
+  # uploads the assets, then publishes it, so the release is never public
+  # without assets.
+  use_existing_draft: true
   github:
     owner: alexandrocuma
     name: devexp-toolkit
