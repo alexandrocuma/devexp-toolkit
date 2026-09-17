@@ -1,0 +1,17 @@
+name: zz-call-check
+
+# TEMPORARY, for PR #166 (#155) only — delete before merge.
+#
+# ci.yml's `workflow_call` path is otherwise only exercised by a tag, i.e. during
+# a release, which is the worst moment to discover the call is wrong. This calls
+# it exactly the way release.yml does (same job id, same read-only token, no
+# `with:` or `secrets:`) so the call is proven on a pull request instead.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
