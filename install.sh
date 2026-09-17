@@ -10,7 +10,9 @@ if [[ ! -x "$BIN" ]]; then
     mkdir -p "$REPO_DIR/bin"
     "$REPO_DIR/scripts/stage-assets.sh"
     (cd "$REPO_DIR/cli" && go build -o "$BIN" .) || {
-        echo "Build failed. Ensure Go is installed: https://go.dev/dl/"
+        toolchain="$(sed -n 's/^toolchain //p' "$REPO_DIR/cli/go.mod" 2>/dev/null || true)"
+        echo "Build failed. Ensure Go is installed: https://go.dev/dl/" >&2
+        echo "If your Go is older than ${toolchain:-the toolchain line in cli/go.mod}, the first build downloads that toolchain, which needs network access. Offline: install ${toolchain:-that version} or newer, or set GOTOOLCHAIN=local to build with the Go you have (at least the go line in cli/go.mod)." >&2
         exit 1
     }
     echo "Done."

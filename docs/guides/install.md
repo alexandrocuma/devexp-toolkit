@@ -26,7 +26,7 @@ You can also grab a binary manually from the [Releases page](https://github.com/
 
 ## install.sh (from a clone)
 
-If you're contributing to the toolkit — editing agents, skills, or hooks — clone the repo and use `install.sh`. `install.sh` is now a thin wrapper: if `bin/devexp` doesn't exist yet it stages the embedded assets and builds the `devexp` Go CLI from `cli/` (requires a local Go toolchain), then execs `devexp install` with whatever flags you pass through (`install.sh:7-20`). Because `devexp` prefers live files on disk over its embedded copies, asset edits never need a rebuild — only changes to the Go code under `cli/` do (see [Updating](#updating)).
+If you're contributing to the toolkit — editing agents, skills, or hooks — clone the repo and use `install.sh`. `install.sh` is now a thin wrapper: if `bin/devexp` doesn't exist yet it stages the embedded assets and builds the `devexp` Go CLI from `cli/` (requires a local Go toolchain), then execs `devexp install` with whatever flags you pass through (`install.sh:7-22`). Because `devexp` prefers live files on disk over its embedded copies, asset edits never need a rebuild — only changes to the Go code under `cli/` do (see [Updating](#updating)).
 
 The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed and, only when both are present, asks which to target (`cli/cmd/targets.go`). Supported CLIs: **Claude Code** and **opencode**.
 
