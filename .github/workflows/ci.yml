@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
       - name: stage assets
         run: ./scripts/stage-assets.sh
