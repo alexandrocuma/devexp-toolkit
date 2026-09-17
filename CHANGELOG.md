@@ -36,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written back as they were instead of through a float (`12345678901234567890`
   no longer becomes `12345678901234567000`). The save is atomic and keeps a
   symlinked `config.json`'s link.
+- **`devexp install` overwrote the file behind a symlinked agent, command or
+  skill (#124).** An installed agent file (`~/.claude/agents/<name>.md`,
+  opencode `agents/`), opencode command, skill directory, or file or directory
+  inside a skill that was a symlink had its target overwritten, which could be
+  a customised copy in a dotfiles repo or the toolkit's own source file.
+  **Behaviour change:** such an entry is now left untouched, with a warning
+  naming it, in a dry run too. Its name stays in the manifest. Replace the link
+  with a regular file to get the release's copy. Agent, command and skill
+  files are also written atomically now.
 
 ## [0.9.1] - 2026-09-16
 

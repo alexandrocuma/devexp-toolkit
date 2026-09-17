@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"devexp/internal/fsutil"
 	"devexp/internal/ui"
 )
 
@@ -33,6 +34,11 @@ func InstallClaude(srcDir, targetDir string, disabled []string, dryRun bool) ([]
 			continue
 		}
 		destDir := filepath.Join(targetDir, name)
+		if fsutil.IsSymlink(destDir) {
+			warnSymlinked(destDir)
+			installed = append(installed, name)
+			continue
+		}
 		if dryRun {
 			ui.DryRun(fmt.Sprintf("write %s/", destDir))
 			installed = append(installed, name)
@@ -48,6 +54,9 @@ func InstallClaude(srcDir, targetDir string, disabled []string, dryRun bool) ([]
 }
 
 // CopyDir recursively copies all files and subdirectories from src to dst.
+// Each file is written atomically. A file or directory in dst that is a
+// symlink is left untouched, with a warning, and nothing is written through it
+// (#124): it may point at a user's own copy or at the toolkit's source.
 func CopyDir(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -58,6 +67,13 @@ func CopyDir(src, dst string) error {
 			return err
 		}
 		dest := filepath.Join(dst, rel)
+		if fsutil.IsSymlink(dest) {
+			warnSymlinked(dest)
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if d.IsDir() {
 			return os.MkdirAll(dest, 0755)
 		}
@@ -65,8 +81,14 @@ func CopyDir(src, dst string) error {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(dest, content, 0644)
+		return fsutil.WriteFileAtomic(dest, content, 0644)
 	})
+}
+
+// warnSymlinked reports a skill destination left untouched because it is a
+// symlink.
+func warnSymlinked(dest string) {
+	ui.Warn(fmt.Sprintf("%q is a symlink, so it was left untouched — devexp never writes through or replaces a symlinked skill file or directory; replace the link to install this release's copy", dest))
 }
 
 // InstallOpencode copies skills as <name>.md into ~/.config/opencode/commands/
@@ -94,6 +116,11 @@ func InstallOpencode(srcDir, targetDir string, disabled []string, dryRun bool) (
 			continue
 		}
 		dest := filepath.Join(targetDir, name+".md")
+		if fsutil.IsSymlink(dest) {
+			warnSymlinked(dest)
+			installed = append(installed, name)
+			continue
+		}
 		if dryRun {
 			ui.DryRun(fmt.Sprintf("write %s", dest))
 			installed = append(installed, name)
@@ -106,7 +133,7 @@ func InstallOpencode(srcDir, targetDir string, disabled []string, dryRun bool) (
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
 			return installed, err
 		}
-		if err := os.WriteFile(dest, []byte(stripFrontMatterName(string(content))), 0644); err != nil {
+		if err := fsutil.WriteFileAtomic(dest, []byte(stripFrontMatterName(string(content))), 0644); err != nil {
 			return installed, err
 		}
 		ui.Added(fmt.Sprintf("%s.md", name))

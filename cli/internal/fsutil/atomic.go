@@ -151,3 +151,10 @@ func syncDir(dir string) {
 	d.Sync()  //nolint:errcheck
 	d.Close() //nolint:errcheck
 }
+
+// IsSymlink reports whether path itself, not what it resolves to, is a
+// symlink (dangling or not). An Lstat error counts as not a symlink.
+func IsSymlink(path string) bool {
+	fi, err := os.Lstat(path)
+	return err == nil && fi.Mode()&os.ModeSymlink != 0
+}
