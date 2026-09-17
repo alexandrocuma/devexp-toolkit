@@ -41,6 +41,8 @@ async function run(tool, payload, opts) {
 }
 
 // ── Fake secrets, one per shape the guard claims to detect ──────────────────
+// unit repeated and cut to exactly n characters: a body of a given length.
+const body = (unit, n) => unit.repeat(n).slice(0, n);
 const SK = 'sk', AK = 'AKIA', AS = 'ASIA', GH = 'gh', GHP = 'github', XOX = 'xox', D5 = '-----';
 const ANTHROPIC = `${SK}-ant-api03-${'FAKE_body-'.repeat(9)}AA`;
 const OPENAI = `${SK}-${'0FAKE'.repeat(10)}`;
@@ -54,11 +56,9 @@ const OPENAI_SVC = `${SK}-svcacct-${'FAKE_svc-body'.repeat(8)}`;
 const OPENAI_ADMIN = `${SK}-admin-${'FAKE_admin-body'.repeat(8)}`;
 const GH_U = `${GH}u_${'0FAKE'.repeat(8)}`;
 const GH_R = `${GH}r_${'0FAKE'.repeat(8)}`;
-const GH_PAT = `${GHP}_pat_${'0FAKE'.repeat(5)}_${'FAKE0'.repeat(12)}`;
+const GH_PAT = `${GHP}_pat_${body('0FAKE', 22)}_${body('FAKE0', 59)}`;
 const SLACK_B = `${XOX}b-1234567890-1234567890123-${'FAKE'.repeat(6)}`;
 const SLACK_P = `${XOX}p-1234567890-1234567890-1234567890123-${'0fake'.repeat(6)}`;
-// unit repeated and cut to exactly n characters: a body of a given length.
-const body = (unit, n) => unit.repeat(n).slice(0, n);
 const pem = (kind) => `${D5}BEGIN ${kind}${D5}\nMIIEFAKEFAKEFAKE\n${D5}END ${kind}${D5}`;
 const PK_RSA = pem('RSA PRIVATE KEY');
 const FILLER = 'an ordinary line of prose in a large generated file\n'.repeat(5000); // ~260 KB
@@ -128,6 +128,8 @@ BLOCK.push(
   ['write', 'Anthropic', `${SK}-ant-${body('FAKE_ant-', 40)}`],
   ['write', 'OpenAI', `${SK}-proj-${body('FAKE_proj-', 80)}`],
   ['write', 'AWS', `${AS}${body('FAKE', 16)}`],
+  ['write', 'GitHub', `${GH}u_${body('0FAKE', 36)}`],
+  ['write', 'GitHub', `${GHP}_pat_${body('0FAKE', 22)}_${body('FAKE0', 59)}`],
 );
 
 const TEMPLATE = [
@@ -166,12 +168,19 @@ const ALLOW = [
   ['write', '<div class="sk-admin-navigation-sidebar-collapsed-state-controller">'],
   ['edit', 't("sk-proj-onboarding-checklist-welcome-email-sequence-step-three-title")'],
   ['write', 'sk-svcacct-rotation_reminder-banner-dismissed-at-timestamp-for-the-current-org: true'],
+  ['edit', 'github_pat_rotation_reminder_days_for_organization_members_with_admin_access = 30'],
+  ['write', 'const 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 = true;'],
   ['write', 'const REGION = "ASIAPACIFICDATACENTER01";'],
   ['edit', 'EURASIAPACIFICREGION024 = load_regions()'],
   // Length thresholds, one character short of blocking.
   ['write', `${SK}-ant-${body('FAKE_ant-', 39)}`],
   ['write', `${SK}-proj-${body('FAKE_proj-', 79)}`],
   ['write', `${AS}${body('FAKE', 15)}`],
+  ['write', `${GH}u_${body('0FAKE', 35)}`],
+  ['write', `${GHP}_pat_${body('0FAKE', 21)}_${body('FAKE0', 59)}`],
+  ['write', `${GHP}_pat_${body('0FAKE', 23)}_${body('FAKE0', 59)}`],
+  ['write', `${GHP}_pat_${body('0FAKE', 22)}_${body('FAKE0', 58)}`],
+  ['write', `${GHP}_pat_${body('0FAKE', 81)}`],
   // Only the new text is scanned; an edit that takes a key out must not be refused.
   ['edit', 'OPENAI_API_KEY=process.env.OPENAI_API_KEY', { old: `OPENAI_API_KEY=${OPENAI}` }],
   // apply_patch writes only its "+" lines: removing a key, a key in unchanged

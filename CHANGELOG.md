@@ -35,8 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   percent-encoded character or a joined name, and only a body as long as a real
   key's matches, so kebab-case names like `desk-admin-…` don't. It also blocks
   GitHub user-to-server (`ghu_`), refresh (`ghr_`) and fine-grained
-  (`github_pat_`) tokens. Both twins change together, and nothing that blocked
-  before is allowed now.
+  (`github_pat_`) tokens, the last by their exact shape, so long snake_case
+  names that start with `github_pat_` don't match. Both twins change together,
+  and nothing that blocked before is allowed now.
 - **`secret-in-write-guard` scans every tool that writes file content (#101).**
   - opencode: `apply_patch` wasn't scanned at all. opencode offers GPT models
     `apply_patch` instead of `write` and `edit`, so with those models nothing

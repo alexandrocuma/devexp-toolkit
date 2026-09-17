@@ -48,7 +48,9 @@ PATTERNS = [
     # reads as a longer word and is not matched.
     ('an AWS temporary Access Key ID (ASIA...)', r'(^|[^0-9A-Z]|%[0-9A-Fa-f]{2}|\x5cu[0-9A-Fa-f]{4}|\x5cx[0-9A-Fa-f]{2})ASIA[0-9A-Z]{16}([^0-9A-Z]|$)'),
     ('a GitHub token (ghp_, ghs_, etc.)', r'gh[postaur]_[A-Za-z0-9_]{36,}'),
-    ('a GitHub token (ghp_, ghs_, etc.)', r'github_pat_[A-Za-z0-9_]{36,}'),
+    # Fine-grained tokens have a fixed shape: 22 alphanumerics, _, 59 more.
+    # Anything looser blocks long snake_case names that start github_pat_.
+    ('a GitHub token (ghp_, ghs_, etc.)', r'github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}'),
     ('a Slack token (xox...)',            r'xox[baprs]-[0-9A-Za-z-]{10,}'),
     ('a private key block',               r'-----BEGIN [A-Z ]*(PRIVATE|SECRET) KEY'),
 ]

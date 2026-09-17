@@ -31,7 +31,9 @@ const SECRET_PATTERNS = [
   // reads as a longer word and is not matched.
   { re: /(^|[^0-9A-Z]|%[0-9A-Fa-f]{2}|\x5cu[0-9A-Fa-f]{4}|\x5cx[0-9A-Fa-f]{2})ASIA[0-9A-Z]{16}([^0-9A-Z]|$)/m, label: 'AWS temporary Access Key ID' },
   { re: /gh[postaur]_[A-Za-z0-9_]{36,}/m,        label: 'GitHub token' },
-  { re: /github_pat_[A-Za-z0-9_]{36,}/m,         label: 'GitHub token' },
+  // Fine-grained tokens have a fixed shape: 22 alphanumerics, _, 59 more.
+  // Anything looser blocks long snake_case names that start github_pat_.
+  { re: /github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}/m, label: 'GitHub token' },
   { re: /xox[baprs]-[0-9A-Za-z\-]{10,}/m,        label: 'Slack token' },
   { re: /-----BEGIN [A-Z ]*(PRIVATE|SECRET) KEY/m, label: 'private key block' },
 ];

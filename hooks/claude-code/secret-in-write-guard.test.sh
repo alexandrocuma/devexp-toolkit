@@ -81,7 +81,7 @@ OPENAI_SVC="${SK}-svcacct-$(rep FAKE_svc-body 8)"
 OPENAI_ADMIN="${SK}-admin-$(rep FAKE_admin-body 8)"
 GH_U="${GH}u_$(rep 0FAKE 8)"
 GH_R="${GH}r_$(rep 0FAKE 8)"
-GH_PAT="${GHP}_pat_$(rep 0FAKE 5)_$(rep FAKE0 12)"
+GH_PAT="${GHP}_pat_$(body 0FAKE 22)_$(body FAKE0 59)"
 SLACK_B="${XOX}b-1234567890-1234567890123-$(rep FAKE 6)"
 SLACK_P="${XOX}p-1234567890-1234567890-1234567890123-$(rep 0fake 6)"
 pem() { printf '%sBEGIN %s%s\nMIIEFAKEFAKEFAKE\n%sEND %s%s\n' "$D5" "$1" "$D5" "$D5" "$1" "$D5"; }
@@ -178,6 +178,8 @@ allow Edit  'const route = "/task-proj-onboarding-checklist-and-welcome-email-se
 allow Write '<div class="sk-admin-navigation-sidebar-collapsed-state-controller">'
 allow Edit  't("sk-proj-onboarding-checklist-welcome-email-sequence-step-three-title")'
 allow Write 'sk-svcacct-rotation_reminder-banner-dismissed-at-timestamp-for-the-current-org: true'
+allow Edit  'github_pat_rotation_reminder_days_for_organization_members_with_admin_access = 30'
+allow Write 'const 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 = true;'
 allow Write 'const REGION = "ASIAPACIFICDATACENTER01";'
 allow Edit  'EURASIAPACIFICREGION024 = load_regions()'
 
@@ -188,6 +190,13 @@ allow Write "${SK}-proj-$(body FAKE_proj- 79)"
 block Write OpenAI    "${SK}-proj-$(body FAKE_proj- 80)"
 allow Write "${AS}$(body FAKE 15)"
 block Write AWS       "${AS}$(body FAKE 16)"
+allow Write "${GH}u_$(body 0FAKE 35)"
+block Write GitHub    "${GH}u_$(body 0FAKE 36)"
+allow Write "${GHP}_pat_$(body 0FAKE 21)_$(body FAKE0 59)"
+allow Write "${GHP}_pat_$(body 0FAKE 23)_$(body FAKE0 59)"
+allow Write "${GHP}_pat_$(body 0FAKE 22)_$(body FAKE0 58)"
+allow Write "${GHP}_pat_$(body 0FAKE 81)"
+block Write GitHub    "${GHP}_pat_$(body 0FAKE 22)_$(body FAKE0 59)"
 
 # ── must ALLOW: removing a secret, and empty writes ─────────────────────────
 # Only the new text is scanned; an Edit that takes a key out must not be refused.
