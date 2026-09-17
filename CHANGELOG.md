@@ -36,6 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     no longer escapes non-ASCII text, splices the new `hooks` value into the
     original text, and skips entries and handlers that aren't objects instead
     of failing with a traceback.
+- **Existing installs never picked up a registry matcher change.** `devexp
+  install` skipped a hook whose command was already registered, whatever
+  matcher its entry had, so a hook whose registry matcher grew (for example
+  `secret-in-write-guard` gaining `MultiEdit|NotebookEdit`) kept firing only
+  for the old tools.
+  - An enabled hook registered under another matcher is brought to the
+    registry's. An entry holding only that hook takes the new matcher in place,
+    keeping its other fields. From an entry shared with other commands the
+    handler moves into an entry of its own, leaving the other commands and
+    their matcher untouched.
+  - A hook already under the registry's matcher, or disabled, is left as it
+    is, and a second install writes nothing. `uninstall.sh` is unchanged.
 - **Stale hook pruning removed users' commands under the repo dir (#138).**
   `devexp install` treated any registered command whose string pointed under
   the devexp repo/cache dir and wasn't an existing file as a stale devexp

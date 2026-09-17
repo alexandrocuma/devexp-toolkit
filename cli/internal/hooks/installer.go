@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"devexp/internal/ui"
@@ -172,27 +173,17 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 			continue
 		}
 
-		// Skip if already registered
-		alreadyIn := false
-		for _, e := range hooksMap[cc.Event] {
-			for _, h := range e.Hooks {
-				if h.devexpForm() && h.Command == command {
-					alreadyIn = true
-					break
-				}
-			}
-		}
-		if alreadyIn {
-			ui.Skipped(fmt.Sprintf("%s: %s", cc.Event, filepath.Base(cc.Script)), "already registered")
+		name := fmt.Sprintf("%s: %s", cc.Event, filepath.Base(cc.Script))
+		switch registerHook(hooksMap, cc.Event, cc.Matcher, command) {
+		case hookRegistered:
+			ui.Skipped(name, "already registered")
 			continue
+		case hookMatcherUpdated:
+			fmt.Printf("  \033[0;33m~\033[0m %s (matcher now %q, as in the registry)\n", name, cc.Matcher)
+		case hookAdded:
+			fmt.Printf("  \033[0;32m+\033[0m %s\n", name)
 		}
-
-		hooksMap[cc.Event] = append(hooksMap[cc.Event], hookEntry{
-			Matcher: cc.Matcher,
-			Hooks:   []hookCmd{{Type: "command", Command: command}},
-		})
 		changed = true
-		fmt.Printf("  \033[0;32m+\033[0m %s: %s\n", cc.Event, filepath.Base(cc.Script))
 	}
 
 	if dryRun {
@@ -214,6 +205,75 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 	}
 	fmt.Printf("  Saved: %s\n", settingsPath)
 	return nil
+}
+
+// What registerHook did.
+const (
+	hookRegistered     = iota // already registered under the registry's matcher
+	hookMatcherUpdated        // registered before, now under the registry's matcher
+	hookAdded                 // newly registered
+)
+
+// registerHook makes devexp's command run for event under matcher, the
+// registry's current matcher. A command already registered under matcher is
+// left as it is. One registered only under other matchers — the registry
+// changed its matcher since the install that wrote it — is brought to matcher:
+// an entry holding nothing but that command takes matcher in place, keeping
+// its other fields; from an entry shared with other commands (a user's, say)
+// the handler moves out, fields and all, into an entry of its own, so no one
+// else's matcher changes. A command registered nowhere gets a new entry.
+func registerHook(hooksMap map[string][]hookEntry, event, matcher, command string) int {
+	entries := hooksMap[event]
+	ours := func(h hookCmd) bool { return h.devexpForm() && h.Command == command }
+	for _, e := range entries {
+		if e.Matcher == matcher && slices.ContainsFunc(e.Hooks, ours) {
+			return hookRegistered
+		}
+	}
+
+	var moved *hookCmd
+	updated := false
+	for i := range entries {
+		e := &entries[i]
+		switch n := countFunc(e.Hooks, ours); {
+		case n == 0:
+		case n == len(e.Hooks):
+			e.Matcher = matcher
+			updated = true
+		default:
+			var kept []hookCmd
+			for _, h := range e.Hooks {
+				if !ours(h) {
+					kept = append(kept, h)
+				} else if moved == nil {
+					moved = &h
+				}
+			}
+			e.Hooks = kept
+		}
+	}
+	switch {
+	case updated:
+		return hookMatcherUpdated
+	case moved != nil:
+		hooksMap[event] = append(entries, hookEntry{Matcher: matcher, Hooks: []hookCmd{*moved}})
+		return hookMatcherUpdated
+	}
+	hooksMap[event] = append(entries, hookEntry{
+		Matcher: matcher,
+		Hooks:   []hookCmd{{Type: "command", Command: command}},
+	})
+	return hookAdded
+}
+
+func countFunc[T any](s []T, f func(T) bool) int {
+	n := 0
+	for _, v := range s {
+		if f(v) {
+			n++
+		}
+	}
+	return n
 }
 
 // removeHookCmds calls drop for every handler, in place so drop may rewrite

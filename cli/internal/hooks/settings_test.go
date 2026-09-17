@@ -575,3 +575,211 @@ func TestInstallClaude_NewEventsSorted(t *testing.T) {
 		t.Errorf("events not in sorted order (PostToolUse, PreToolUse, Stop):\n%s", got)
 	}
 }
+
+// TestInstallClaude_SyncsRegistryMatcher: an existing install picks up a
+// matcher the registry changed. A devexp command registered under another
+// matcher is moved to the registry's: in place when its entry holds nothing
+// else, keeping the entry's and handler's other fields; out into an entry of
+// its own when it shares one, leaving the other handlers and their matcher as
+// they were. A second install writes nothing, and a disabled hook keeps its
+// old matcher.
+func TestInstallClaude_SyncsRegistryMatcher(t *testing.T) {
+	const newMatcher = "Write|Edit|MultiEdit|NotebookEdit"
+	registry := Registry{
+		ccHook("secret-in-write-guard", true, "PreToolUse", newMatcher, "hooks/claude-code/secret-in-write-guard.sh"),
+		ccHook("graphify-read-guard", false, "PreToolUse", "Read|Glob|Grep", "hooks/claude-code/graphify-read-guard.sh"),
+	}
+	const guard = "'REPO/hooks/claude-code/secret-in-write-guard.sh'"
+	const disabled = `
+      {
+        "matcher": "Read|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'REPO/hooks/claude-code/graphify-read-guard.sh'"
+          }
+        ]
+      }`
+	const user = `
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/fmt-check",
+            "timeout": 20
+          }
+        ]
+      }`
+	wrap := func(entries ...string) string {
+		return "{\n  \"hooks\": {\n    \"PreToolUse\": [" + strings.Join(entries, ",") + "\n    ]\n  }\n}"
+	}
+	tests := map[string]struct{ in, want string }{
+		"entry of its own, legacy bare spelling: matcher updated in place": {
+			in: wrap(`
+      {
+        "matcher": "Write|Edit",
+        "x-note": "kept",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "REPO/hooks/claude-code/secret-in-write-guard.sh",
+            "timeout": 5
+          }
+        ]
+      }`, disabled),
+			want: wrap(`
+      {
+        "matcher": "`+newMatcher+`",
+        "x-note": "kept",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "`+guard+`",
+            "timeout": 5
+          }
+        ]
+      }`, disabled),
+		},
+		"shared with a user command: moved out, user entry untouched": {
+			in: wrap(`
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/fmt-check",
+            "timeout": 20
+          },
+          {
+            "type": "command",
+            "command": "` + guard + `",
+            "statusMessage": "scanning"
+          }
+        ]
+      }`),
+			want: wrap(user, `
+      {
+        "matcher": "`+newMatcher+`",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "`+guard+`",
+            "statusMessage": "scanning"
+          }
+        ]
+      }`),
+		},
+		"shared and on its own: updated in place, removed from the shared entry": {
+			in: wrap(`
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/fmt-check",
+            "timeout": 20
+          },
+          {
+            "type": "command",
+            "command": "` + guard + `"
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "` + guard + `"
+          }
+        ]
+      }`),
+			want: wrap(user, `
+      {
+        "matcher": "`+newMatcher+`",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "`+guard+`"
+          }
+        ]
+      }`),
+		},
+		"already under the registry's matcher: nothing written": {
+			in: wrap(`
+      {
+        "matcher": "`+newMatcher+`",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "`+guard+`"
+          }
+        ]
+      }`, disabled),
+		},
+		"under the registry's matcher and in a user's entry: both left as they are": {
+			in: wrap(`
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/fmt-check"
+          },
+          {
+            "type": "command",
+            "command": "` + guard + `"
+          }
+        ]
+      },
+      {
+        "matcher": "` + newMatcher + `",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "` + guard + `"
+          }
+        ]
+      }`),
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			repoDir := filepath.Join(t.TempDir(), "My Proj")
+			createScript(t, repoDir, "hooks/claude-code/secret-in-write-guard.sh")
+			createScript(t, repoDir, "hooks/claude-code/graphify-read-guard.sh")
+			settingsPath := filepath.Join(t.TempDir(), "settings.json")
+			in := fill(tt.in, repoDir, "")
+			if err := os.WriteFile(settingsPath, []byte(in), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			install := func() (string, string) {
+				var err error
+				out := captureOutput(t, func() { err = InstallClaude(registry, repoDir, settingsPath, nil, false) })
+				if err != nil {
+					t.Fatalf("InstallClaude: %v\n%s", err, out)
+				}
+				data, _ := os.ReadFile(settingsPath)
+				return string(data), out
+			}
+
+			got, out := install()
+			want := in
+			if tt.want != "" {
+				want = fill(tt.want, repoDir, "")
+			}
+			if got != want {
+				t.Errorf("install wrote:\n%s\nwant:\n%s\noutput:\n%s", got, want, out)
+			}
+			if tt.want == "" && strings.Contains(out, "Saved:") {
+				t.Errorf("install wrote settings.json with nothing to change:\n%s", out)
+			}
+
+			again, out := install()
+			if again != got || strings.Contains(out, "Saved:") {
+				t.Errorf("second install changed settings.json:\n%s\noutput:\n%s", again, out)
+			}
+		})
+	}
+}
