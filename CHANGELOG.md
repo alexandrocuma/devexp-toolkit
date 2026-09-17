@@ -9,13 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **The vulnerability scan runs weekly (#155).** `ci.yml` gained a `schedule:`
-  trigger (Mondays 06:27 UTC), so an advisory published while `main` is quiet
-  no longer waits for the next push, pull request or tag. The schedule runs the
-  whole `ci` workflow rather than a second copy of the `govulncheck` job, and a
-  failure is a red `ci` run on `main`. It deliberately opens no issue: that
-  would mean a write-scoped token on a workflow whose point is a read-only one,
-  plus dedup so a standing advisory doesn't file one issue a week.
+- **The vulnerability scan runs weekly, and can be started by hand (#155).**
+  `ci.yml` gained a `schedule:` trigger (Mondays 06:27 UTC, off the hour where
+  GitHub drops scheduled runs less often), so an advisory published while
+  `main` is quiet no longer waits for the next push, pull request or tag. The
+  schedule runs the whole `ci` workflow rather than a second copy of the
+  `govulncheck` job, and a failure is a red `ci` run on `main`. It deliberately
+  opens no issue: that would mean a write-scoped token on a workflow whose
+  point is a read-only one, plus dedup so a standing advisory doesn't file one
+  issue a week. `workflow_dispatch:` came with it, because a public repo's
+  schedules are disabled after 60 days without activity and a schedule that
+  never fires raises no alarm — the manual trigger is how you confirm the scan
+  works again, or scan a new advisory without waiting for Monday.
 
 ### Changed
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Scans the devexp CLI with govulncheck (source mode) for every platform the
 # release ships: each GOOS x GOARCH in .goreleaser.yaml, with its CGO_ENABLED.
-# Used by .github/workflows/ci.yml, .github/workflows/release.yml and locally.
+# Used by .github/workflows/ci.yml (job `govulncheck`), which release.yml calls
+# on a tag, and locally.
 #
 # Exit status:
 #   0  no platform has a vulnerability in code the CLI calls
