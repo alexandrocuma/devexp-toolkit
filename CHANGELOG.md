@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release binaries all use the same patched toolchain. Released binaries up to
   v0.9.0 were built with Go 1.25.14, which already includes the fix, but Go 1.25
   no longer receives security updates.
+- **Updated `golang.org/x/text` to v0.39.0 (#104)** to pick up the fix for
+  advisory GO-2026-5970. The CLI doesn't call the affected code, but the old
+  version was compiled into the release binaries.
 
 ## [0.9.0] - 2026-09-16
 
