@@ -136,7 +136,7 @@ devexp owns only the hook handlers it registers: `{"type": "command", "command":
 
 Every file devexp edits or installs is saved the same way (`WriteFileAtomic` in `cli/internal/fsutil/atomic.go`; `write_atomic` in both python steps of `uninstall.sh`, #124): `settings.json`, the opencode `config.json`, both `.devexp-manifest.json` files, the opencode plugin files, and agent, skill and command files.
 
-- **Atomic.** The new contents go to a temp file in the same directory as the file being replaced, which is fsynced, given that file's permission bits (0644 for a new file) and renamed over it. An interrupted or failed save leaves the old file or the new one, never a partial one, and removes the temp file.
+- **Atomic.** The new contents go to a temp file in the same directory as the file being replaced, which is fsynced, given that file's permission bits and renamed over it. A new file gets its default mode (0644) minus your umask, as a plain write would, so under `umask 077` a new `config.json` holding MCP tokens is 0600. An interrupted or failed save leaves the old file or the new one, never a partial one, and removes the temp file.
 - **Symlinks.** A symlinked `settings.json`, `config.json` or manifest (dotfiles) is followed to the file it finally points at, and that file is replaced; the link, and every link in a chain, stays a link. Earlier releases wrote through the link without the temp file, and a plain rename would have turned the link into a regular file.
 - **Refused, file left as it is, with an error or warning naming it:**
   - a dangling link (nothing is created where it points);
@@ -150,7 +150,12 @@ Every file devexp edits or installs is saved the same way (`WriteFileAtomic` in 
   - `devexp uninstall` does the same for a symlinked manifest.
   - An installed agent, command or skill entry that is itself a symlink is never written (see [What gets overwritten vs. preserved](#what-gets-overwritten-vs-preserved)).
   - Plugin files must not be symlinks at all (see [Stale-file cleanup](#stale-file-cleanup)).
-- Ownership isn't copied: the saved file belongs to the user running devexp.
+- **Replacing makes a new file**, so what belonged to the old one doesn't carry over:
+  - ownership: the saved file belongs to the user running devexp;
+  - a hard link: the other name keeps the old contents;
+  - extended attributes and ACLs;
+  - the setuid, setgid and sticky bits: only the permission bits are kept.
+- The symlink checks and the write are separate steps, so a link created at the path between them is followed like any other. Only a program running as you can do that.
 
 ### Previewing an update
 

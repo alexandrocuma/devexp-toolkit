@@ -50,7 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - the new bytes go to a temp file next to the file being replaced, are
     fsynced, get that file's permission bits (not a fixed 0644) and are
     renamed over it, so an interrupted save leaves the old file or the new
-    one;
+    one. A new file still gets 0644 minus the umask (0600 under `umask 077`),
+    as before. Replacing breaks a hard link and drops xattrs, ACLs and
+    setuid/setgid/sticky bits;
   - a symlinked file (dotfiles) is followed to the file it finally points at,
     which is replaced; the link, and every link in a chain, stays;
   - a dangling link, a link loop, a directory, a file you can't write, a

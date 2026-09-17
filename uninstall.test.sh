@@ -662,6 +662,34 @@ else
     fail=$((fail+1)); printf 'FAIL write_atomic: a failed rename leaves the original and no temp file; a directory is refused\n'; cat "$TMP/wa.out"
 fi
 
+# A new file gets 0644 minus the umask (0600 under umask 077), like open();
+# a replaced file keeps its own bits whatever the umask (#157 review).
+python3 - "$TMP/prune.py" "$TMP/wa-umask" <<'PY' > "$TMP/wa.out" 2>&1
+import os, re, stat, sys, tempfile
+src = open(sys.argv[1]).read()
+start = src.index('class WriteRefused')
+end = re.compile(r'\n(?=\S)').search(src, src.index('def write_atomic')).start()
+exec(src[start:end])
+d = sys.argv[2]
+os.makedirs(d)
+os.umask(0o077)
+new = os.path.join(d, 'new.json')
+write_atomic(new, b'{"token": "x"}')
+old = os.path.join(d, 'old.json')
+open(old, 'w').write('old')
+os.chmod(old, 0o664)
+write_atomic(old, b'new')
+os.umask(0o022)
+new2 = os.path.join(d, 'new2.json')
+write_atomic(new2, b'x')
+print(oct(os.stat(new).st_mode & 0o777), oct(os.stat(old).st_mode & 0o777), oct(os.stat(new2).st_mode & 0o777), sorted(os.listdir(d)))
+PY
+if grep -qF "0o600 0o664 0o644 ['new.json', 'new2.json', 'old.json']" "$TMP/wa.out"; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1)); printf 'FAIL write_atomic: a new file honours the umask, a replaced one keeps its bits\n'; cat "$TMP/wa.out"
+fi
+
 # Read-only settings.json, or a directory where no temp file can be made: a
 # warning, exit 0, the file unchanged, nothing left behind.
 for ro in file dir; do

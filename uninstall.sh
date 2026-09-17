@@ -272,9 +272,11 @@ def write_atomic(path, data):
     # this function identical). A symlink is followed to the file it points at,
     # which is replaced while the link stays. A dangling link, a target that
     # isn't a regular file or isn't writable is refused. The new bytes go to a
-    # temp file next to the target, fsync'd and given its mode, then renamed
-    # over it: an interrupted save leaves the old file or the new one, never a
-    # partial one, and no temp file. Raises WriteRefused with a message.
+    # temp file next to the target, fsync'd and given its mode (a new file gets
+    # 0644 minus the umask), then renamed over it: an interrupted save leaves
+    # the old file or the new one, never a partial one, and no temp file.
+    # Replacing makes a new inode: hard links, xattrs, ACLs and setuid, setgid
+    # and sticky bits don't carry over. Raises WriteRefused with a message.
     target = path
     if os.path.islink(path):
         try:
@@ -290,7 +292,7 @@ def write_atomic(path, data):
         st = None
     except OSError as e:
         raise WriteRefused(f"could not save {target}, so it was left untouched: {e}")
-    mode = 0o644
+    mode = None
     if st is not None:
         if not stat.S_ISREG(st.st_mode):
             raise WriteRefused(f"{target} is not a regular file, so it was left untouched")
@@ -300,12 +302,24 @@ def write_atomic(path, data):
     directory = os.path.dirname(target) or '.'
     tmp = None
     try:
-        fd, tmp = tempfile.mkstemp(prefix='.' + os.path.basename(target) + '.tmp-', dir=directory)
+        if mode is None:
+            # A new file: created with 0644 and never chmodded, so the umask
+            # applies (0600 under umask 077), as with a plain open().
+            while True:
+                tmp = os.path.join(directory, '.' + os.path.basename(target) + '.tmp-' + os.urandom(8).hex())
+                try:
+                    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+                    break
+                except FileExistsError:
+                    tmp = None
+        else:
+            fd, tmp = tempfile.mkstemp(prefix='.' + os.path.basename(target) + '.tmp-', dir=directory)
         with os.fdopen(fd, 'wb') as f:
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
-        os.chmod(tmp, mode)
+        if mode is not None:
+            os.chmod(tmp, mode)
         os.replace(tmp, target)
         tmp = None
     except OSError as e:
@@ -455,9 +469,11 @@ def write_atomic(path, data):
     # this function identical). A symlink is followed to the file it points at,
     # which is replaced while the link stays. A dangling link, a target that
     # isn't a regular file or isn't writable is refused. The new bytes go to a
-    # temp file next to the target, fsync'd and given its mode, then renamed
-    # over it: an interrupted save leaves the old file or the new one, never a
-    # partial one, and no temp file. Raises WriteRefused with a message.
+    # temp file next to the target, fsync'd and given its mode (a new file gets
+    # 0644 minus the umask), then renamed over it: an interrupted save leaves
+    # the old file or the new one, never a partial one, and no temp file.
+    # Replacing makes a new inode: hard links, xattrs, ACLs and setuid, setgid
+    # and sticky bits don't carry over. Raises WriteRefused with a message.
     target = path
     if os.path.islink(path):
         try:
@@ -473,7 +489,7 @@ def write_atomic(path, data):
         st = None
     except OSError as e:
         raise WriteRefused(f"could not save {target}, so it was left untouched: {e}")
-    mode = 0o644
+    mode = None
     if st is not None:
         if not stat.S_ISREG(st.st_mode):
             raise WriteRefused(f"{target} is not a regular file, so it was left untouched")
@@ -483,12 +499,24 @@ def write_atomic(path, data):
     directory = os.path.dirname(target) or '.'
     tmp = None
     try:
-        fd, tmp = tempfile.mkstemp(prefix='.' + os.path.basename(target) + '.tmp-', dir=directory)
+        if mode is None:
+            # A new file: created with 0644 and never chmodded, so the umask
+            # applies (0600 under umask 077), as with a plain open().
+            while True:
+                tmp = os.path.join(directory, '.' + os.path.basename(target) + '.tmp-' + os.urandom(8).hex())
+                try:
+                    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+                    break
+                except FileExistsError:
+                    tmp = None
+        else:
+            fd, tmp = tempfile.mkstemp(prefix='.' + os.path.basename(target) + '.tmp-', dir=directory)
         with os.fdopen(fd, 'wb') as f:
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
-        os.chmod(tmp, mode)
+        if mode is not None:
+            os.chmod(tmp, mode)
         os.replace(tmp, target)
         tmp = None
     except OSError as e:

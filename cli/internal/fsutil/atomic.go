@@ -5,8 +5,10 @@ package fsutil
 import (
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"strconv"
 	"syscall"
 )
 
@@ -44,26 +46,41 @@ var (
 //     link itself (and any chain of links) stays as it is. A plain rename over
 //     path would turn a dotfiles-managed link into a regular file.
 //   - The new file is written to a temp file in the target's own directory,
-//     fsynced, given the target's permission bits (perm for a new file), and
-//     renamed over the target; the directory is then fsynced, best effort.
-//   - A missing path creates a new file with perm; its parent directory must
-//     exist. A dangling link, a target that is not a regular file, or one this
+//     fsynced, given the target's permission bits, and renamed over the target;
+//     the directory is then fsynced, best effort.
+//   - A missing path creates a new file with perm minus the umask, as
+//     os.WriteFile does: the temp file is created with perm and never chmodded,
+//     so under umask 077 a config holding tokens stays private. Its parent
+//     directory must exist. A dangling link, a target that is not a regular file, or one this
 //     user may not write is refused (ErrDanglingSymlink, ErrNotRegular,
 //     ErrReadOnly).
 //   - Any failure — no temp file in a read-only directory, a full disk, a rename
 //     the file system refuses (EXDEV/EBUSY for a bind-mounted file) — removes
 //     the temp file and leaves the target untouched.
 //
-// Ownership is not copied: the new file belongs to the user running devexp,
-// which is the owner of every file devexp edits under that user's HOME.
+// Replacing a file makes a new inode, so what belongs to the old inode doesn't
+// carry over: ownership (the new file belongs to the user running devexp, the
+// owner of every file devexp edits under that user's HOME), a hard link to the
+// old file (the other name keeps the old contents), extended attributes and
+// ACLs, and the setuid, setgid and sticky bits (only permission bits are kept).
+//
+// The symlink checks and the write are not one atomic step: a link created at
+// path between them is followed like any other. Only a writer running as the
+// same user can do that, and it could as well edit the file itself.
 func WriteFileAtomic(path string, data []byte, perm os.FileMode) (err error) {
-	target, mode, err := resolveTarget(path, perm)
+	target, mode, exists, err := resolveTarget(path)
 	if err != nil {
 		return err
 	}
 
 	dir := filepath.Dir(target)
-	f, err := os.CreateTemp(dir, "."+filepath.Base(target)+".tmp-*")
+	// A replacement starts private and takes the old file's bits below; a new
+	// file is created with perm, so the kernel applies the umask.
+	createPerm := perm.Perm()
+	if exists {
+		createPerm = 0600
+	}
+	f, err := createTemp(dir, filepath.Base(target), createPerm)
 	if err != nil {
 		return fmt.Errorf("%s: can't create a temp file next to it to replace it atomically, so it was left untouched: %w", target, err)
 	}
@@ -83,8 +100,10 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) (err error) {
 	if err = syncFile(f); err != nil {
 		return fmt.Errorf("%s: sync %s: %w — the file was left untouched", target, tmp, err)
 	}
-	if err = f.Chmod(mode); err != nil {
-		return fmt.Errorf("%s: chmod %s: %w — the file was left untouched", target, tmp, err)
+	if exists {
+		if err = f.Chmod(mode); err != nil {
+			return fmt.Errorf("%s: chmod %s: %w — the file was left untouched", target, tmp, err)
+		}
 	}
 	closed = true
 	if err = f.Close(); err != nil {
@@ -100,37 +119,50 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) (err error) {
 	return nil
 }
 
-// resolveTarget returns the file WriteFileAtomic replaces for path, and the
-// permission bits the new file gets.
-func resolveTarget(path string, perm os.FileMode) (string, os.FileMode, error) {
+// resolveTarget returns the file WriteFileAtomic replaces for path, its
+// permission bits, and whether it exists (false: a new file at path).
+func resolveTarget(path string) (string, os.FileMode, bool, error) {
 	li, err := os.Lstat(path)
 	if os.IsNotExist(err) {
-		return path, perm, nil
+		return path, 0, false, nil
 	}
 	if err != nil {
-		return "", 0, err
+		return "", 0, false, err
 	}
 	target := path
 	if li.Mode()&os.ModeSymlink != 0 {
 		target, err = filepath.EvalSymlinks(path)
 		if os.IsNotExist(err) {
-			return "", 0, fmt.Errorf("%s %w, so it was left untouched — create the file the link points at, or replace the link, and re-run", path, ErrDanglingSymlink)
+			return "", 0, false, fmt.Errorf("%s %w, so it was left untouched — create the file the link points at, or replace the link, and re-run", path, ErrDanglingSymlink)
 		}
 		if err != nil {
-			return "", 0, fmt.Errorf("%s is a symlink that can't be resolved, so it was left untouched: %w", path, err)
+			return "", 0, false, fmt.Errorf("%s is a symlink that can't be resolved, so it was left untouched: %w", path, err)
 		}
 	}
 	fi, err := os.Stat(target)
 	if err != nil {
-		return "", 0, err
+		return "", 0, false, err
 	}
 	if !fi.Mode().IsRegular() {
-		return "", 0, fmt.Errorf("%s %w, so it was left untouched", describe(path, target), ErrNotRegular)
+		return "", 0, false, fmt.Errorf("%s %w, so it was left untouched", describe(path, target), ErrNotRegular)
 	}
 	if syscall.Access(target, accessWriteOK) != nil {
-		return "", 0, fmt.Errorf("%s %w, so it was left untouched", describe(path, target), ErrReadOnly)
+		return "", 0, false, fmt.Errorf("%s %w, so it was left untouched", describe(path, target), ErrReadOnly)
 	}
-	return target, fi.Mode().Perm(), nil
+	return target, fi.Mode().Perm(), true, nil
+}
+
+// createTemp creates a new file named .<base>.tmp-<random> in dir, exclusively
+// and with perm (minus the umask), retrying on a name that already exists.
+func createTemp(dir, base string, perm os.FileMode) (*os.File, error) {
+	for try := 0; ; try++ {
+		name := filepath.Join(dir, "."+base+".tmp-"+strconv.FormatUint(rand.Uint64(), 36))
+		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+		if os.IsExist(err) && try < 100 {
+			continue
+		}
+		return f, err
+	}
 }
 
 // describe names path, and the file it resolves to when that differs.
