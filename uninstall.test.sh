@@ -6,11 +6,14 @@
 #    left by an earlier release-binary install lives elsewhere, so uninstalling
 #    stripped the working entries and left the stale ones running — strictly
 #    worse than doing nothing (issue #93). The block is embedded in uninstall.sh
-#    as a heredoc, so it is extracted and run directly against fixtures.
+#    as a heredoc, so it is extracted and run directly against fixtures. Also:
+#    registrations orphaned in another install root (#150), how the block saves
+#    (atomic, through a symlink, refusals; #124) and deeply nested JSON (#150).
 #
 # 2. The opencode wiring (issue #109): no top-level `local` (it aborted every
 #    opencode uninstall), the MCP block tolerating a bad config.json, detection
-#    of a plugin-only install, and delegation of plugin removal to
+#    of a plugin-only install, the MCP block's byte-preserving edit (#124),
+#    a python step that fails not ending the run, and delegation of plugin removal to
 #    `devexp uninstall --target opencode`. These run uninstall.sh itself with
 #    --yes, stdin closed, HOME in a temp dir, a minimal environment and stub
 #    devexp binaries, so it never touches real files. The removal rules are
@@ -484,6 +487,233 @@ for n in 1e400 -1e400 NaN Infinity -Infinity; do
     fi
 done
 
+# ── Registrations orphaned in another install root (#150) ───────────────────
+# A devexp-form command naming a script that is gone from <root>/hooks/
+# claude-code/, where <root> holds a devexp hooks registry, is devexp's even
+# though no registry names the script any more. Look-alikes stay: a root with no
+# registry (or a root that is gone), a script that exists, arguments, double
+# quotes, a nested directory, a wrapper, an exec-form handler.
+ORPHAN_ROOT="$TMP/Old Checkout"
+make_repo "$ORPHAN_ROOT"
+printf '#!/bin/sh\n' > "$ORPHAN_ROOT/hooks/claude-code/still-here.sh"
+NOREG_ROOT="$TMP/dotfiles"; mkdir -p "$NOREG_ROOT/hooks/claude-code"
+GONE="$ORPHAN_ROOT/hooks/claude-code/pre-tool-use.sh"
+PLAIN_ORPHAN_ROOT="$TMP/old-cache/devexp/assets"
+make_repo "$PLAIN_ORPHAN_ROOT"
+PLAIN_GONE="$PLAIN_ORPHAN_ROOT/hooks/claude-code/post-tool-use.sh"
+REPO="$REPO_PLAIN"
+expect "removes registrations of scripts gone from another devexp root, plain and quoted" \
+  "$(settings_with "$(q "$GONE")" "$PLAIN_GONE" "$(q "$PLAIN_GONE")")" \
+  ""
+expect "removes a script gone from this repo's own hooks/claude-code/" \
+  "$(settings_with "$REPO_PLAIN/hooks/claude-code/removed-long-ago.sh")" \
+  ""
+expect "keeps look-alikes of an orphaned registration" \
+  "$(settings_with \
+      "$NOREG_ROOT/hooks/claude-code/pre-tool-use.sh" \
+      "$TMP/deleted-root/hooks/claude-code/pre-tool-use.sh" \
+      "$(q "$ORPHAN_ROOT/hooks/claude-code/still-here.sh")" \
+      "$PLAIN_GONE --flag" \
+      "\"$PLAIN_GONE\"" \
+      "bash $PLAIN_GONE" \
+      "$PLAIN_ORPHAN_ROOT/hooks/claude-code/sub/gone.sh" \
+      "$PLAIN_ORPHAN_ROOT/hooks/gone.sh" \
+      "$PLAIN_ORPHAN_ROOT/my-hooks/claude-code/gone.sh" \
+      "$GONE")" \
+  "$NOREG_ROOT/hooks/claude-code/pre-tool-use.sh
+$TMP/deleted-root/hooks/claude-code/pre-tool-use.sh
+$(q "$ORPHAN_ROOT/hooks/claude-code/still-here.sh")
+$PLAIN_GONE --flag
+\"$PLAIN_GONE\"
+bash $PLAIN_GONE
+$PLAIN_ORPHAN_ROOT/hooks/claude-code/sub/gone.sh
+$PLAIN_ORPHAN_ROOT/hooks/gone.sh
+$PLAIN_ORPHAN_ROOT/my-hooks/claude-code/gone.sh
+$GONE"
+BAD_ROOT="$TMP/bad-registry"; mkdir -p "$BAD_ROOT/hooks/claude-code"
+for reg in '' '[]' '{"name":"a"}' '[{"name":""}]' '[{"name":"a"},{"x":1}]' '[{"name":1}]' '[null]' '[{"name":"a"'; do
+    printf '%s' "$reg" > "$BAD_ROOT/hooks/registry.json"
+    expect "keeps an orphan-shaped registration when the root's registry is $reg" \
+      "$(settings_with "$BAD_ROOT/hooks/claude-code/gone.sh")" \
+      "$BAD_ROOT/hooks/claude-code/gone.sh"
+done
+printf '[{"name":"a"},{"name":"b","enabled":false}]' > "$BAD_ROOT/hooks/registry.json"
+expect "removes it once the root's registry is valid" \
+  "$(settings_with "$BAD_ROOT/hooks/claude-code/gone.sh")" \
+  ""
+# The exec-form handler (args) naming an orphaned script is the user's.
+printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s","args":[]},{"type":"command","command":"%s"}]}]}}' "$PLAIN_GONE" "$PLAIN_GONE" > "$TMP/orphan-args-in.json"
+printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s","args":[]}]}]}}' "$PLAIN_GONE" > "$TMP/orphan-args-want.json"
+expect_file "keeps an exec-form handler naming an orphaned script" "$TMP/orphan-args-in.json" "$TMP/orphan-args-want.json"
+
+# ── Saving settings.json (#124) ──────────────────────────────────────────────
+# prune_run <path>: the hook-removal block on <path>; output in $TMP/prune.out,
+# exit code in $TMP/prune.rc.
+prune_run() {
+    python3 "$TMP/prune.py" "$REPO" "$1" > "$TMP/prune.out" 2>&1
+    echo $? > "$TMP/prune.rc"
+}
+mode_of() { python3 -c 'import os,sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777))' "$1"; }
+SETTINGS_BEFORE="$(settings_with "$MINE" "/usr/local/bin/notify")"
+SETTINGS_AFTER="$(python3 -c 'import json,sys; print(json.dumps({"hooks":{"PreToolUse":[{"matcher":"Read","hooks":[{"type":"command","command":"/usr/local/bin/notify"}]}]}}))')"
+
+# A symlinked settings.json (dotfiles) keeps its link; the file it points at is
+# replaced in its own directory, with its mode, and no temp file is left.
+D="$TMP/settings-link"; DOT="$TMP/settings-dotfiles"; mkdir -p "$D" "$DOT"
+printf '%s\n' "$SETTINGS_BEFORE" > "$DOT/settings.json"; chmod 600 "$DOT/settings.json"
+ln -s "../settings-dotfiles/settings.json" "$D/settings.json"
+prune_run "$D/settings.json"
+if [ "$(cat "$TMP/prune.rc")" = 0 ] && [ -L "$D/settings.json" ] \
+    && [ "$(readlink "$D/settings.json")" = "../settings-dotfiles/settings.json" ] \
+    && [ "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))))' "$DOT/settings.json")" = "$SETTINGS_AFTER" ] \
+    && [ "$(mode_of "$DOT/settings.json")" = 0o600 ] \
+    && [ "$(ls -A "$DOT")" = "settings.json" ] && [ "$(ls -A "$D")" = "settings.json" ] \
+    && grep -qF "Saved:" "$TMP/prune.out"; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1)); printf 'FAIL a symlinked settings.json keeps its link and the target is saved atomically\n'
+    cat "$TMP/prune.out"; ls -la "$D" "$DOT"
+fi
+
+# A chain of links: the final target is replaced, every link stays.
+D="$TMP/settings-chain"; mkdir -p "$D/real"
+printf '%s\n' "$SETTINGS_BEFORE" > "$D/real/settings.json"
+ln -s real/settings.json "$D/mid.json"; ln -s mid.json "$D/settings.json"
+prune_run "$D/settings.json"
+if [ "$(cat "$TMP/prune.rc")" = 0 ] && [ -L "$D/settings.json" ] && [ -L "$D/mid.json" ] \
+    && [ "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))))' "$D/real/settings.json")" = "$SETTINGS_AFTER" ]; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1)); printf 'FAIL a chain of links to settings.json: links kept, final target saved\n'; cat "$TMP/prune.out"
+fi
+
+# A dangling link is never followed into creating a file.
+D="$TMP/settings-dangling"; mkdir -p "$D"
+ln -s "$TMP/settings-nowhere/settings.json" "$D/settings.json"
+prune_run "$D/settings.json"
+if [ "$(cat "$TMP/prune.rc")" = 0 ] && [ -L "$D/settings.json" ] && [ ! -e "$TMP/settings-nowhere" ] \
+    && grep -qF "[skip]" "$TMP/prune.out" && ! grep -qF "Traceback" "$TMP/prune.out"; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1)); printf 'FAIL a dangling settings.json link is skipped and nothing is created\n'; cat "$TMP/prune.out"
+fi
+
+# The writer itself refuses a dangling link (the bash -f check and the read
+# normally skip it first).
+python3 - "$TMP/prune.py" "$TMP/wa-dangling" <<'PY' > "$TMP/wa.out" 2>&1
+import os, stat, sys, tempfile
+src = open(sys.argv[1]).read()
+start = src.index('class WriteRefused')
+import re
+end = re.compile(r'\n(?=\S)').search(src, src.index('def write_atomic')).start()
+exec(src[start:end])
+d = sys.argv[2]
+os.makedirs(d)
+os.symlink(os.path.join(d, 'missing', 'x.json'), os.path.join(d, 'x.json'))
+try:
+    write_atomic(os.path.join(d, 'x.json'), b'new')
+    print('WROTE')
+except WriteRefused as e:
+    print('REFUSED', e)
+print(sorted(os.listdir(d)), os.path.exists(os.path.join(d, 'missing')))
+PY
+if grep -qF "REFUSED" "$TMP/wa.out" && grep -qF "does not exist" "$TMP/wa.out" && grep -qF "['x.json'] False" "$TMP/wa.out"; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1)); printf 'FAIL write_atomic refuses a dangling link and creates nothing\n'; cat "$TMP/wa.out"
+fi
+
+# A save that fails after the temp file exists (here, the rename) leaves the
+# original bytes and no temp file.
+python3 - "$TMP/prune.py" "$TMP/wa-fail" <<'PY' > "$TMP/wa.out" 2>&1
+import os, re, stat, sys, tempfile
+src = open(sys.argv[1]).read()
+start = src.index('class WriteRefused')
+end = re.compile(r'\n(?=\S)').search(src, src.index('def write_atomic')).start()
+exec(src[start:end])
+d = sys.argv[2]
+os.makedirs(d)
+p = os.path.join(d, 'settings.json')
+open(p, 'w').write('original')
+def boom(a, b):
+    raise OSError(28, 'No space left on device')
+os.replace = boom
+try:
+    write_atomic(p, b'new and longer contents')
+    print('WROTE')
+except WriteRefused as e:
+    print('REFUSED', e)
+print(sorted(os.listdir(d)), open(p).read())
+os.mkdir(os.path.join(d, 'adir'))
+os.symlink(os.path.join(d, 'adir'), os.path.join(d, 'link-to-dir'))
+for name in ('adir', 'link-to-dir'):
+    try:
+        write_atomic(os.path.join(d, name), b'new')
+        print('WROTE', name)
+    except WriteRefused as e:
+        print('REFUSED', e)
+print(sorted(os.listdir(d)), os.listdir(os.path.join(d, 'adir')))
+PY
+if grep -qF "REFUSED could not save" "$TMP/wa.out" && grep -qF "['settings.json'] original" "$TMP/wa.out" \
+    && [ "$(grep -c 'is not a regular file' "$TMP/wa.out")" = 2 ] && ! grep -qF WROTE "$TMP/wa.out" \
+    && grep -qF "['adir', 'link-to-dir', 'settings.json'] []" "$TMP/wa.out"; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1)); printf 'FAIL write_atomic: a failed rename leaves the original and no temp file; a directory is refused\n'; cat "$TMP/wa.out"
+fi
+
+# Read-only settings.json, or a directory where no temp file can be made: a
+# warning, exit 0, the file unchanged, nothing left behind.
+for ro in file dir; do
+    D="$TMP/settings-ro-$ro"; mkdir -p "$D"
+    printf '%s\n' "$SETTINGS_BEFORE" > "$D/settings.json"
+    if [ "$ro" = file ]; then chmod 444 "$D/settings.json"; else chmod 555 "$D"; fi
+    if [ "$ro" = dir ] && ( : > "$D/.probe" ) 2>/dev/null; then
+        rm -f "$D/.probe"; chmod 755 "$D"
+        echo "SKIP settings.json in a read-only $ro (permissions not enforced, running as root?)"
+        continue
+    fi
+    prune_run "$D/settings.json"
+    files="$(ls -A "$D" | tr '\n' ' ')"
+    chmod 755 "$D"; chmod 644 "$D/settings.json"
+    if [ "$(cat "$TMP/prune.rc")" = 0 ] && [ "$(cat "$D/settings.json")" = "$SETTINGS_BEFORE" ] \
+        && [ "$files" = "settings.json " ] && grep -qF "[warn]" "$TMP/prune.out" \
+        && grep -qF "left untouched" "$TMP/prune.out" && ! grep -qF "Traceback" "$TMP/prune.out" \
+        && ! grep -qF "Saved:" "$TMP/prune.out"; then
+        pass=$((pass+1))
+    else
+        fail=$((fail+1)); printf 'FAIL settings.json in a read-only %s: warning, exit 0, untouched\n' "$ro"
+        printf 'rc=%s files=%s\n' "$(cat "$TMP/prune.rc")" "$files"; cat "$TMP/prune.out"
+    fi
+done
+
+# Deeply nested JSON makes python's json raise RecursionError, which isn't a
+# ValueError: the block used to crash (exit 1, and set -e ended the uninstall).
+# It is skipped with a message, the file untouched. Nesting inside hooks, and
+# outside it.
+deep() { python3 -c 'import sys; n=int(sys.argv[1]); print("[" * n + "]" * n, end="")' "$1"; }
+for where in hooks top; do
+    for depth in 3000 100000; do
+        D="$TMP/settings-deep-$where-$depth"; mkdir -p "$D"
+        if [ "$where" = hooks ]; then
+            printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s"}]}],"X":%s}}' "$MINE" "$(deep $depth)" > "$D/settings.json"
+        else
+            printf '{"deep":%s,"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s"}]}]}}' "$(deep $depth)" "$MINE" > "$D/settings.json"
+        fi
+        cp "$D/settings.json" "$D.before"
+        prune_run "$D/settings.json"
+        if [ "$(cat "$TMP/prune.rc")" = 0 ] && cmp -s "$D/settings.json" "$D.before" \
+            && grep -qF "[skip]" "$TMP/prune.out" && grep -qF "left untouched" "$TMP/prune.out" \
+            && ! grep -qF "Traceback" "$TMP/prune.out" && [ "$(ls -A "$D")" = "settings.json" ]; then
+            pass=$((pass+1))
+        else
+            fail=$((fail+1)); printf 'FAIL settings.json nested %s deep (%s): skipped, untouched, exit 0\n' "$depth" "$where"
+            printf 'rc=%s\n' "$(cat "$TMP/prune.rc")"; head -c 600 "$TMP/prune.out"; echo
+        fi
+    done
+done
+REPO="$REPO_PLAIN"
+
 # ── opencode (#109) ──────────────────────────────────────────────────────────
 
 ok() { pass=$((pass+1)); }
@@ -582,6 +812,73 @@ else
             ko "MCP block with a read-only $ro warns, exits 0 and leaves config.json alone" "rc=$(cat "$D.rc") files=$files $(cat "$D.out")"
         fi
     done
+fi
+
+# ── The opencode MCP block edits config.json in place (#124) ─────────────────
+# Only the removed servers' members, and the comma and whitespace joining each
+# to a neighbour, are cut; every other byte (key order, indentation, CRLF,
+# escapes, numbers, the other servers) stays.
+if [ -s "$TMP/mcp.py" ]; then
+    printf '%s' '[{"name": "context7"}, {"name": "github"}, {"name": "context7"}, "junk", {"name": 3}]' > "$TMP/mcp-registry2.json"
+    mcp_splice() { # $1=label $2=input (printf format) $3=expected (printf format)
+        D="$TMP/mcp-splice-$((pass+fail))"; mkdir -p "$D"
+        printf "$2" > "$D/config.json"; printf "$3" > "$D/want.json"
+        python3 "$TMP/mcp.py" "$TMP/mcp-registry2.json" "$D/config.json" > "$D.out" 2>&1
+        if [ $? = 0 ] && cmp -s "$D/config.json" "$D/want.json" && [ "$(ls -A "$D" | tr '\n' ' ')" = "config.json want.json " ]; then
+            ok
+        else
+            ko "MCP block splice: $1" "$(cat "$D.out"; diff "$D/want.json" "$D/config.json")"
+        fi
+    }
+    mcp_splice "first, middle and last of several, indented" \
+        '{\n  "$schema": "https://opencode.ai/config.json",\n  "mcp": {\n    "context7": {\n      "type": "remote"\n    },\n    "mine": {"type": "local", "command": ["a"]},\n    "github": {"type": "remote"},\n    "zeta": {}\n  },\n  "theme": "caf\\u00e9 & <x>", "n": 1.50e3\n}\n' \
+        '{\n  "$schema": "https://opencode.ai/config.json",\n  "mcp": {\n    "mine": {"type": "local", "command": ["a"]},\n    "zeta": {}\n  },\n  "theme": "caf\\u00e9 & <x>", "n": 1.50e3\n}\n'
+    mcp_splice "the last one" \
+        '{"mcp": {"mine": 1, "github": {}}, "x": 2}' \
+        '{"mcp": {"mine": 1}, "x": 2}'
+    mcp_splice "the only ones" \
+        '{\n  "mcp": {\n    "context7": {},\n    "github": {}\n  }\n}' \
+        '{\n  "mcp": {}\n}'
+    mcp_splice "CRLF" \
+        '{\r\n  "mcp": {\r\n    "context7": {},\r\n    "mine": {}\r\n  },\r\n  "z": 1\r\n}\r\n' \
+        '{\r\n  "mcp": {\r\n    "mine": {}\r\n  },\r\n  "z": 1\r\n}\r\n'
+    mcp_splice "a repeated server key, and a repeated mcp key (the last one is what opencode reads)" \
+        '{"mcp": {"context7": 0}, "x": 1, "mcp": {"context7": 1, "mine": 2, "context7": 3}}' \
+        '{"mcp": {"context7": 0}, "x": 1, "mcp": {"mine": 2}}'
+    mcp_splice "NaN and a float python reads as inf elsewhere in the file" \
+        '{"a": NaN, "b": 1e400, "mcp": {"github": {}, "mine": {}}}' \
+        '{"a": NaN, "b": 1e400, "mcp": {"mine": {}}}'
+    D="$TMP/mcp-splice-none"; mkdir -p "$D"
+    printf '{ "mcp" : { "mine" : {} } }' > "$D/config.json"
+    python3 "$TMP/mcp.py" "$TMP/mcp-registry2.json" "$D/config.json" > "$D.out" 2>&1
+    if [ $? = 0 ] && [ "$(cat "$D/config.json")" = '{ "mcp" : { "mine" : {} } }' ] && ! grep -qF "Saved" "$D.out" \
+        && grep -qF "[skip] context7 — not configured" "$D.out"; then ok; else ko "MCP block with nothing to remove writes nothing" "$(cat "$D.out")"; fi
+
+    # Nested too deeply for python's json: skipped, untouched, exit 0.
+    for depth in 3000 100000; do
+        D="$TMP/mcp-deep-$depth"; mkdir -p "$D"
+        printf '{"mcp":{"context7":{}},"deep":%s}' "$(deep $depth)" > "$D/config.json"
+        cp "$D/config.json" "$D.before"
+        mcp_run "$D"
+        if [ "$(cat "$D.rc")" = 0 ] && cmp -s "$D/config.json" "$D.before" && grep -qF "nested too deeply" "$D.out" \
+            && ! grep -qF "Traceback" "$D.out"; then ok; else ko "MCP block with config.json nested $depth deep: skipped, untouched, exit 0" "rc=$(cat "$D.rc") $(head -c 400 "$D.out")"; fi
+    done
+fi
+
+# ── Every copy of write_atomic is the same code ──────────────────────────────
+wa_body() { python3 - "$1" <<'PY'
+import re, sys
+src = open(sys.argv[1]).read()
+start = src.index('class WriteRefused')
+end = re.compile(r'\n(?=\S)').search(src, src.index('def write_atomic')).start()
+print(src[start:end])
+PY
+}
+if [ -s "$TMP/mcp.py" ] && [ "$(wa_body "$TMP/prune.py")" = "$(wa_body "$TMP/mcp.py")" ] \
+    && [ "$(grep -c '^def write_atomic' "$ROOT/uninstall.sh")" = 2 ]; then
+    ok
+else
+    ko "the settings and MCP blocks carry the same write_atomic" "$(diff <(wa_body "$TMP/prune.py") <(wa_body "$TMP/mcp.py"))"
 fi
 
 # ── Harness: uninstall.sh in a temp HOME with stub devexp binaries ───────────
@@ -774,6 +1071,67 @@ check "malformed config.json: no top-level local error" out_lacks "can only be u
 check "malformed config.json: no python traceback" out_lacks "Traceback"
 check "malformed config.json: left as it was" test "$(cat "$E/h/.config/opencode/config.json")" = "{not json"
 check "malformed config.json: the run reaches the end" out_has "Uninstall complete."
+
+# Deeply nested settings.json and config.json (#150): each python step skips
+# with a message and leaves its file as it was, and the uninstall carries on to
+# the end instead of dying on a RecursionError under set -e.
+new_env
+mkdir -p "$E/r/hooks/claude-code" "$E/h/.claude/agents" "$E/h/.config/opencode/agents"
+printf '[{"name": "secret-guard", "enabled": true, "claude_code": {"event": "PreToolUse", "matcher": "Read", "script": "hooks/claude-code/secret-guard.sh"}}]' > "$E/r/hooks/registry.json"
+printf '[{"name": "context7"}]' > "$E/r/mcps/registry.json"
+printf '# agent\n' > "$E/r/agents/some-agent.md"
+printf '# agent\n' > "$E/h/.claude/agents/some-agent.md"
+printf '# agent\n' > "$E/h/.config/opencode/agents/some-agent.md"
+printf '{"hooks":{"PreToolUse":[{"matcher":"Read","hooks":[{"type":"command","command":"%s/hooks/claude-code/secret-guard.sh"}]}]},"deep":%s}' "$E/r" "$(deep 50000)" > "$E/h/.claude/settings.json"
+printf '{"mcp":{"context7":{}},"deep":%s}' "$(deep 50000)" > "$E/h/.config/opencode/config.json"
+cp "$E/h/.claude/settings.json" "$E/settings.before"; cp "$E/h/.config/opencode/config.json" "$E/config.before"
+make_stub "$E/stubs/a" A
+printf '3\n' > "$E/menu"
+STDIN_FILE="$E/menu" run_uninstall DEVEXP_BIN="$E/stubs/a"
+check "deeply nested JSON: exit 0" rc_is 0
+check "deeply nested JSON: no traceback" out_lacks "Traceback"
+check "deeply nested JSON: settings step says why it skipped" out_has "settings.json is nested too deeply to edit"
+check "deeply nested JSON: MCP step says why it skipped" out_has "config.json is nested too deeply to edit"
+check "deeply nested JSON: settings.json untouched" cmp -s "$E/h/.claude/settings.json" "$E/settings.before"
+check "deeply nested JSON: config.json untouched" cmp -s "$E/h/.config/opencode/config.json" "$E/config.before"
+check "deeply nested JSON: agents still removed" test ! -e "$E/h/.claude/agents/some-agent.md" -a ! -e "$E/h/.config/opencode/agents/some-agent.md"
+check "deeply nested JSON: the run reaches the end" out_has "Uninstall complete."
+
+# A symlinked ~/.claude/settings.json (#124): uninstall.sh removes devexp's hooks
+# from the file it points at and keeps the link.
+new_env
+mkdir -p "$E/r/hooks/claude-code" "$E/h/.claude/agents" "$E/dotfiles"
+printf '[{"name": "secret-guard", "enabled": true, "claude_code": {"event": "PreToolUse", "matcher": "Read", "script": "hooks/claude-code/secret-guard.sh"}}]' > "$E/r/hooks/registry.json"
+printf '# agent\n' > "$E/r/agents/some-agent.md"
+printf '# agent\n' > "$E/h/.claude/agents/some-agent.md"
+printf '{\n  "model": "opus",\n  "hooks": {"PreToolUse":[{"matcher":"Read","hooks":[{"type":"command","command":"%s/hooks/claude-code/secret-guard.sh"}]}]}\n}\n' "$E/r" > "$E/dotfiles/settings.json"
+ln -s "$E/dotfiles/settings.json" "$E/h/.claude/settings.json"
+run_uninstall
+check "symlinked settings.json: exit 0" rc_is 0
+check "symlinked settings.json: still a link to the dotfiles copy" test -L "$E/h/.claude/settings.json" -a "$(readlink "$E/h/.claude/settings.json")" = "$E/dotfiles/settings.json"
+check "symlinked settings.json: devexp's hook removed from the target, the rest kept" \
+    test "$(cat "$E/dotfiles/settings.json")" = "$(printf '{\n  "model": "opus",\n  "hooks": {}\n}')"
+check "symlinked settings.json: no temp file left" test "$(ls -A "$E/dotfiles")" = "settings.json"
+
+# A python step that fails for any other reason no longer ends the uninstall:
+# it warns, and the later steps still run (a python3 that always exits 1).
+new_env
+mkdir -p "$E/r/hooks/claude-code" "$E/h/.claude/agents" "$E/h/.config/opencode/agents"
+printf '[{"name": "secret-guard", "enabled": true, "claude_code": {"event": "PreToolUse", "matcher": "Read", "script": "hooks/claude-code/secret-guard.sh"}}]' > "$E/r/hooks/registry.json"
+printf '[{"name": "context7"}]' > "$E/r/mcps/registry.json"
+printf '# agent\n' > "$E/r/agents/some-agent.md"
+printf '# agent\n' > "$E/h/.claude/agents/some-agent.md"
+printf '# agent\n' > "$E/h/.config/opencode/agents/some-agent.md"
+printf '{"hooks":{}}' > "$E/h/.claude/settings.json"
+printf '{"mcp":{"context7":{}}}' > "$E/h/.config/opencode/config.json"
+printf '#!/bin/sh\ncat >/dev/null\necho "python crashed" >&2\nexit 1\n' > "$E/bin/python3"; chmod +x "$E/bin/python3"
+make_stub "$E/stubs/a" A
+printf '3\n' > "$E/menu"
+STDIN_FILE="$E/menu" run_uninstall DEVEXP_BIN="$E/stubs/a"
+check "python step failing: exit 0" rc_is 0
+check "python step failing: warns about the MCP step" out_has "the config.json step failed"
+check "python step failing: warns about the settings step" out_has "the settings.json step failed"
+check "python step failing: the run reaches the end" out_has "Uninstall complete."
 
 # ── HOME refusal (#126) ──────────────────────────────────────────────────────
 # With HOME unset, empty or relative, every path would point at / or under the

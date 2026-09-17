@@ -59,6 +59,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Claude Code hook registration uses `EnabledFor(claude_code)`, as opencode
     already did: a hook's `claude_code.enabled` overrides the top-level
     `enabled` either way.
+- **`uninstall.sh`: crashes on deeply nested JSON, writes that weren't atomic,
+  and a reformatted `config.json` (#124, #150).**
+  - Both python steps skip a `settings.json` or `config.json` nested too
+    deeply for python's `json` (a `RecursionError`, which isn't a
+    `ValueError`), with a message and the file untouched. The uninstall used
+    to stop there under `set -e`. Any other failure of either step now prints
+    a warning and the uninstall carries on.
+  - The `settings.json` step saves atomically with the same rules as
+    `devexp install` (a symlinked `settings.json` keeps its link, the file it
+    points at is replaced; dangling links, unwritable files and directories
+    are refused with a warning). It used to truncate and rewrite the file in
+    place.
+  - The opencode MCP step cuts only the removed servers' members out of
+    `config.json`, so key order, indentation, CRLF line endings, escapes,
+    numbers and the other servers stay byte for byte. It used to rewrite the
+    whole file as 2-space JSON. A symlinked `config.json` is still left
+    untouched with a warning.
+  - The `settings.json` step also removes the orphaned registrations from any
+    devexp install root that `devexp install` now prunes (#150).
 
 ## [0.9.1] - 2026-09-16
 
