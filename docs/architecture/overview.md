@@ -33,7 +33,7 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
 | Shell wrappers | `install.sh`, `uninstall.sh`, `scripts/` | Build-if-missing and run the CLI; uninstall; remote install; stage the embedded assets | `install.sh` |
 | CLI commands | `cli/main.go`, `cli/cmd/` | Parse flags or run the wizard, resolve `installOpts`, run each target's install in order. Holds pure decision functions and thin I/O wrappers. No file, JSON or exec logic for a particular asset kind belongs here | `cli/cmd/targets.go`, `cli/cmd/paths.go` |
 | Asset installers | `cli/internal/{agents,skills,hooks,mcp}` | Install one asset kind into one target from explicit paths, returning what was installed. They don't read `$HOME` or config themselves | `cli/internal/hooks/installer.go` |
-| Support packages | `cli/internal/{repo,assets,config,manifest}` | Find the asset root (clone or embedded), embed assets, load config/dotenv, and record what was installed | `cli/internal/manifest/manifest.go` |
+| Support packages | `cli/internal/{repo,assets,config,manifest,removeguard}` | Find the asset root (clone or embedded), embed assets, load config/dotenv, record what was installed, and decide whether a target directory is a symlink or behind one, so nothing is removed through it | `cli/internal/manifest/manifest.go` |
 | Terminal UI | `cli/internal/ui` | Colored stdout output helpers and promptui prompts. The logic behind the prompts lives in pure helpers | `cli/internal/ui/output.go`, `cli/internal/ui/prompts.go` |
 
 ## Request / Job Flow
@@ -93,7 +93,9 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
                        → removeStale(old, new, staleFile, os.Remove): manifest.Stale(old, new), minus
                          case variants of / the same file as an installed name
                          (bare <name>.md regular files only; other entries and symlinks kept, warned;
-                         nothing removed through a symlinked agents/: listed, and kept in the manifest)
+                         exact listed name only; nothing removed through an agents/ that is a symlink
+                         or behind one (removeguard.BehindSymlink): listed, and kept in the manifest;
+                         removals go through os.Root)
           4. skills    backupExistingDirs → cli/internal/skills/installer.go InstallClaude (CopyDir whole skill dir)
                        → removeStale(..., staleDir, os.RemoveAll) (bare names, real directories only;
                          same symlinked-directory rule)

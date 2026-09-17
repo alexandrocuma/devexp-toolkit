@@ -72,7 +72,7 @@ func doInstallOpencode(opts *installOpts) error {
 		fmt.Println()
 
 		// What couldn't be removed stays recorded, so a later run can finish.
-		kept := removeStale(agentsTarget, old.Agents, allInstalledAgents, staleFile, os.Remove, opts.dryRun)
+		kept := removeStale(p.home, agentsTarget, old.Agents, allInstalledAgents, staleFile, (*os.Root).Remove, opts.dryRun)
 		newManifest.Agents = append(allInstalledAgents, kept...)
 	}
 
@@ -90,7 +90,7 @@ func doInstallOpencode(opts *installOpts) error {
 		ui.Success(fmt.Sprintf("Installed %d skill(s).", len(installedSkills)))
 		fmt.Println()
 
-		kept := removeStale(skillsTarget, old.Skills, installedSkills, staleCommand, os.Remove, opts.dryRun)
+		kept := removeStale(p.home, skillsTarget, old.Skills, installedSkills, staleCommand, (*os.Root).Remove, opts.dryRun)
 		newManifest.Skills = append(installedSkills, kept...)
 	}
 

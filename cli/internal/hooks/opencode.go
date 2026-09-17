@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"devexp/internal/removeguard"
 	"devexp/internal/ui"
 )
 
@@ -349,11 +350,13 @@ func UninstallOpencode(registry Registry, pluginsDir string, recorded []string, 
 }
 
 // checkPluginRoots checks the two directories every plugin write and removal
-// happens in, and reports whether plugins/ is a symlink.
+// happens in, and reports whether plugins/ is a symlink or behind one.
 //
-//   - plugins/ may be a symlink to a directory (a dotfiles setup). devexp
-//     writes through it, but never removes anything through it (linked=true;
-//     the removal paths check this).
+//   - plugins/ may be a symlink to a directory (a dotfiles setup), or sit under
+//     a symlinked ~/.config or ~/.config/opencode (removeguard.BehindSymlink,
+//     resolved from pluginsHome). devexp writes through it, but never removes
+//     anything through it (linked=true; the removal paths check this). One
+//     that can't be resolved counts as linked too.
 //   - plugins/ that is a dangling link, a link to a non-directory, or not a
 //     directory at all is refused.
 //   - plugins/devexp/ must be a real directory when it exists. A symlink is
@@ -374,6 +377,9 @@ func checkPluginRoots(pluginsDir string) (linked bool, err error) {
 		linked = true
 	case !fi.IsDir():
 		return false, fmt.Errorf("%s exists and is not a directory — move it aside and re-run", pluginsDir)
+	default:
+		_, behind, err := behindSymlink(pluginsHome(pluginsDir), pluginsDir)
+		linked = behind || err != nil
 	}
 
 	dir := filepath.Join(pluginsDir, opencodeDir)
@@ -391,10 +397,32 @@ func checkPluginRoots(pluginsDir string) (linked bool, err error) {
 	return linked, nil
 }
 
+// behindSymlink is removeguard.BehindSymlink; tests swap it to inject errors.
+var behindSymlink = removeguard.BehindSymlink
+
+// pluginsHome is the home directory pluginsDir is resolved from when checking
+// whether it is behind a symlink. devexp installs plugins only at
+// <home>/.config/opencode/plugins (cli/cmd/paths.go); for any other path only
+// plugins/ itself is checked.
+func pluginsHome(pluginsDir string) string {
+	suffix := string(filepath.Separator) + filepath.Join(".config", "opencode", "plugins")
+	if home, ok := strings.CutSuffix(filepath.Clean(pluginsDir), suffix); ok && home != "" {
+		return home
+	}
+	return filepath.Dir(pluginsDir)
+}
+
 // warnLeftBehind reports files devexp would have removed but didn't, because
-// plugins/ is a symlink and nothing is ever removed through one.
+// plugins/ is a symlink or behind one, and nothing is ever removed through one.
 func warnLeftBehind(pluginsDir string, paths []string) {
-	ui.Warn(fmt.Sprintf("%s is a symlink — devexp never removes files through it; remove these by hand: %s", pluginsDir, strings.Join(paths, ", ")))
+	why := "is a symlink"
+	if !removeguard.IsSymlink(pluginsDir) {
+		why = "is behind a symlink"
+		if resolved, err := filepath.EvalSymlinks(pluginsDir); err == nil {
+			why += fmt.Sprintf(" (it resolves to %s)", resolved)
+		}
+	}
+	ui.Warn(fmt.Sprintf("%s %s — devexp never removes files through it; remove these by hand: %s", pluginsDir, why, strings.Join(paths, ", ")))
 }
 
 // checkPluginDest refuses destinations that are not plain files devexp may
@@ -651,8 +679,8 @@ func removePluginFiles(pluginsDir string, stale []string, reason string, dryRun 
 // it is a real directory: os.Remove on a symlink deletes the link whatever it
 // points at, while on a directory it refuses unless the directory is empty.
 func pruneOpencodeDir(pluginsDir string, dryRun bool) {
-	if fi, err := os.Lstat(pluginsDir); err != nil || fi.Mode()&os.ModeSymlink != 0 {
-		return // never remove through a symlinked plugins/
+	if linked, err := checkPluginRoots(pluginsDir); err != nil || linked {
+		return // never remove through a symlinked plugins/, or one behind a symlink
 	}
 	dir := filepath.Join(pluginsDir, opencodeDir)
 	if fi, err := os.Lstat(dir); dryRun || err != nil || !fi.IsDir() {

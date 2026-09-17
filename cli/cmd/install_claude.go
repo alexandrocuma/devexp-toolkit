@@ -63,7 +63,7 @@ func doInstallClaude(opts *installOpts) error {
 		fmt.Println()
 
 		// What couldn't be removed stays recorded, so a later run can finish.
-		kept := removeStale(agentsTarget, old.Agents, installedAgents, staleFile, os.Remove, opts.dryRun)
+		kept := removeStale(p.home, agentsTarget, old.Agents, installedAgents, staleFile, (*os.Root).Remove, opts.dryRun)
 		newManifest.Agents = append(installedAgents, kept...)
 	}
 
@@ -82,7 +82,7 @@ func doInstallClaude(opts *installOpts) error {
 		ui.Success(fmt.Sprintf("Installed %d skill(s).", len(installedSkills)))
 		fmt.Println()
 
-		kept := removeStale(skillsTarget, old.Skills, installedSkills, staleDir, os.RemoveAll, opts.dryRun)
+		kept := removeStale(p.home, skillsTarget, old.Skills, installedSkills, staleDir, (*os.Root).RemoveAll, opts.dryRun)
 		newManifest.Skills = append(installedSkills, kept...)
 	}
 
