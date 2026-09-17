@@ -52,8 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ghs_`, `ghr_`) now match only by their documented alphanumeric shape. GitHub
   App installation tokens (`ghs_`, including Actions' `GITHUB_TOKEN`) have been
   moving to a longer stateless format since 2026-04-27, and that format contains
-  `_`. It gets its own match, so those tokens are still blocked. Both twins
-  change together.
+  `_`. It gets its own match, so those tokens are still blocked; a rare name
+  in which a prefix is followed by a segment that starts like that token's
+  JWT is blocked too. Both twins change together.
 - **`secret-in-write-guard` blocked placeholders shaped like keys (#143).**
   Documentation and templates use values such as a Slack prefix followed by
   `your-token`, AWS's published example access key ID, or a body of repeated

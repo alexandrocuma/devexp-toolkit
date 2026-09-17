@@ -227,6 +227,7 @@ allow Write "GITHUB_TOKEN=${GH}p_$(rep x 40)"
 allow Write "OPENAI_API_KEY=${SK}-$(rep x 48)"
 allow Edit  "OPENAI_API_KEY=${SK}-None-$(rep X 48)"
 allow Write "ANTHROPIC_API_KEY=${SK}-ant-api03-$(rep x 95)"
+allow Edit  "ANTHROPIC_ADMIN_KEY=${SK}-ant-admin01-$(rep x 95)"
 allow Write "ANTHROPIC_API_KEY=${SK}-ant-$(rep X_ 30)"
 allow Edit  "ANTHROPIC_API_KEY=${SK}-ant-your-anthropic-api-key-goes-here-and-stays-out-of-git"
 allow Write "ANTHROPIC_API_KEY=${SK}-ant-YOUR_ANTHROPIC_API_KEY_GOES_HERE_PLEASE_THANKS"
@@ -264,6 +265,13 @@ block Edit  Anthropic "${SK}-ant-your$(rep FAKEfake 6)"
 block Write OpenAI    "${SK}-proj-YOUR$(rep FAKEfake 12)"
 block Write Slack     "${XOX}b-your$(rep FAKEfake 2)"
 block Write Anthropic "${SK}-ant-fake0-$(rep x 60)"
+# A repeated run followed by a separator isn't the whole body (#158).
+block Edit  OpenAI    "${SK}-service-$(rep x 4)-$(body 0FAKE 48)"
+# A stateless GitHub token's id segment may hold letters (#158).
+block Write GitHub    "${GH}s_Iv23liFAKE_eyJ$(rep FAKE 5)"
+# Known and kept: a gh?_ fragment followed by a segment starting eyJ reads as a
+# stateless token, since GitHub's JWT starts that way (#158).
+block Write GitHub    "hi${GH}s_eyJson_parser_for_every_region = 1"
 block Edit  OpenAI    "${SK}-proj-$(rep x 80)FAKE"
 
 # ── must ALLOW: a private-key header with no key material (#143) ────────────

@@ -171,6 +171,13 @@ BLOCK.push(
   ['write', 'OpenAI', `${SK}-proj-YOUR${'FAKEfake'.repeat(12)}`],
   ['write', 'Slack', `${XOX}b-your${'FAKEfake'.repeat(2)}`],
   ['write', 'Anthropic', `${SK}-ant-fake0-${'x'.repeat(60)}`],
+  // A repeated run followed by a separator isn't the whole body (#158).
+  ['edit', 'OpenAI', `${SK}-service-${'x'.repeat(4)}-${body('0FAKE', 48)}`],
+  // A stateless GitHub token's id segment may hold letters (#158).
+  ['write', 'GitHub', `${GH}s_Iv23liFAKE_eyJ${'FAKE'.repeat(5)}`],
+  // Known and kept: a gh?_ fragment followed by a segment starting eyJ reads as a
+  // stateless token, since GitHub's JWT starts that way (#158).
+  ['write', 'GitHub', `hi${GH}s_eyJson_parser_for_every_region = 1`],
   ['edit', 'OpenAI', `${SK}-proj-${'x'.repeat(80)}FAKE`],
   // A private-key header with key material, however it is written (#143).
   ['write', 'private key', `"${D5}BEGIN PRIVATE KEY${D5}\\n${body('MIIEFAKE0+/', 64)}\\n${D5}END PRIVATE KEY${D5}"`],
@@ -276,6 +283,7 @@ const ALLOW = [
   ['write', `OPENAI_API_KEY=${SK}-${'x'.repeat(48)}`],
   ['edit', `OPENAI_API_KEY=${SK}-None-${'X'.repeat(48)}`],
   ['write', `ANTHROPIC_API_KEY=${SK}-ant-api03-${'x'.repeat(95)}`],
+  ['edit', `ANTHROPIC_ADMIN_KEY=${SK}-ant-admin01-${'x'.repeat(95)}`],
   ['write', `ANTHROPIC_API_KEY=${SK}-ant-${'X_'.repeat(30)}`],
   ['edit', `ANTHROPIC_API_KEY=${SK}-ant-your-anthropic-api-key-goes-here-and-stays-out-of-git`],
   ['write', `ANTHROPIC_API_KEY=${SK}-ant-YOUR_ANTHROPIC_API_KEY_GOES_HERE_PLEASE_THANKS`],
