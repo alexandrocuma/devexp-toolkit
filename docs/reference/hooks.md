@@ -158,6 +158,8 @@ These apply only when the command's output can't reach anything that runs it. It
 
 **Where a target ends.** Before matching, a trailing backslash plus newline is joined, so a command continued across lines matches as one line. A target (`/`, `~`, `$HOME`, `/tmp`, `~/.claude`, and the `--force`, `--force-with-lease` and `-f` flags) ends at whitespace, end of line, or a character that closes a shell word: `'`, `"`, `)`, a backtick, `;`, `&` or `|`. The root and home targets may also start with a quote (`rm -rf "/"`). So `sh -c 'rm -rf /'`, `eval "git push --force"`, `$(rm -rf ~)` and `git push -f&& …` block. A letter, digit, `/`, `.`, `-` or `*` continues the target, so `rm -rf ./build`, `rm -rf ~/projects/x` and `git push --follow-tags` don't match.
 
+**One line at a time.** Both implementations decide line by line. The Claude Code hook greps each line, and every opencode pattern is kept to a single line: its whitespace classes, negated classes and "any character" all stop at a newline. A pattern that starts on one line and ends on a later one is not a match, unless the lines were joined by a backslash continuation. Within a line, a carriage return counts as whitespace. NUL characters are dropped before matching.
+
 In `dangerous-cmd-guard.sh`, all parsing happens in the `python3 -I` step, where the tool input is data on stdin. `grep` reads the result from a here-string, so no pipe writer is killed by SIGPIPE when `grep -q` exits early. Any interpreter or `grep` error blocks.
 
 ---

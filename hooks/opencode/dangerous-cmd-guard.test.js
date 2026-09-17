@@ -125,6 +125,12 @@ const BLOCK = [
   "sh -c 'git push origin main \\\n  --force'",
   'bash -c "rm -rf \\\n  ~"',
 
+  // line by line, like the Claude Code hook's grep: CR is an ordinary character inside
+  // a line, and NUL is dropped
+  'git reset x\r--hard',
+  'git push origin\r--force',
+  'rm -rf \0/',
+
   // #100: what the parser cannot classify is scanned whole
   'echo "git reset --hard', // unbalanced quote
   'echo "$(git reset --hard"', // unbalanced substitution
@@ -160,6 +166,15 @@ const ALLOW = [
   'git push --follow-tags;',
   "ssh host 'git push origin main'",
   'git push origin \\\n  main',
+
+  // line by line, like the Claude Code hook's grep: a pattern begun on one line and
+  // completed on a later one is not a match (backslash continuations are joined first)
+  'git push origin\ngit status --force',
+  'git push\n--force',
+  'rm -rf\n/',
+  'rm\nfoo /tmp/*',
+  'rm -rf /home/x\n/tmp/*',
+  'git push origin \\\r\n  --force', // CRLF after a backslash is no continuation
 
   // #100: a mention is not an invocation
   'echo "  LOCAL ONLY — remote untouched. Tag still revertible:"\necho "    git reset --hard origin/main"     # <- text inside a quoted echo',

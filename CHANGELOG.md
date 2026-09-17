@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   module now match these forms, and a matching error blocks instead of
   allowing. Upgrade to pick this up; rules:
   `docs/reference/hooks.md#what-dangerous-cmd-guard-matches`.
+- **The opencode `dangerous-cmd-guard` blocked some multi-line commands that
+  the Claude Code hook allowed.** Its patterns could match across line
+  breaks, while the Claude Code hook matches one line at a time. The opencode
+  module now matches one line at a time too. Continued lines are still joined
+  first, so a continued command is still checked as one line.
 
 ### Security
 

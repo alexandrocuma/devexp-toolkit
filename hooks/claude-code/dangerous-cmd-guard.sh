@@ -474,7 +474,9 @@ def scan_text(cmd):
             out = ''.join(chars)
         except Exception:
             out = cmd
-    return out.replace('\\\n', '  ')
+    # Continuations are joined so a continued command matches as one grep line.
+    # NUL is dropped here rather than by bash's $(...), which the opencode twin mirrors.
+    return out.replace('\\\n', '  ').replace('\0', '')
 
 
 d = json.load(sys.stdin)

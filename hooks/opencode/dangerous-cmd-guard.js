@@ -18,51 +18,56 @@
 // A target ends at whitespace, end of line, or a character that closes the word in shell
 // syntax: ' " ) ` ; & | — so `sh -c 'rm -rf /'`, `$(rm -rf ~)` and `git push --force;` match.
 // A letter, digit, '/', '.', '-' or '*' continues it.
+//
+// Every pattern stays on one line, as the Claude Code hook's line-by-line grep does:
+// `[^\S\n]` is whitespace other than a newline (CR, tab, VT and FF count, as they do for
+// grep's `\s`), `[^\n]` stands in for `.` (which in JS would also stop at CR), and negated
+// classes exclude `\n`. A backslash-continued command is joined into one line by maskInert.
 export const BLOCK_PATTERNS = [
   {
-    re: /rm\s+-[a-z]*r[a-z]*f\s+["']?(\/(\s|$|['"`);&|])|~\/?(\s|$|['"`);&|])|\$HOME(\s|$|['"`);&|]))/m,
+    re: /rm[^\S\n]+-[a-z]*r[a-z]*f[^\S\n]+["']?(\/([^\S\n]|$|['"`);&|])|~\/?([^\S\n]|$|['"`);&|])|\$HOME([^\S\n]|$|['"`);&|]))/m,
     label: "'rm -rf /' or 'rm -rf ~' would wipe your filesystem or home directory",
   },
   {
-    re: /rm\s+-[a-z]*f[a-z]*r\s+["']?(\/(\s|$|['"`);&|])|~\/?(\s|$|['"`);&|])|\$HOME(\s|$|['"`);&|]))/m,
+    re: /rm[^\S\n]+-[a-z]*f[a-z]*r[^\S\n]+["']?(\/([^\S\n]|$|['"`);&|])|~\/?([^\S\n]|$|['"`);&|])|\$HOME([^\S\n]|$|['"`);&|]))/m,
     label: "'rm -rf /' or 'rm -rf ~' would wipe your filesystem or home directory",
   },
   {
     // Unanchored wildcard delete in a sensitive dir (/tmp/* , ~/.claude/.../* , or the dir
     // wholesale) — the blanket wipe an empty variable produces. Prefix-anchored globs like
     // /tmp/.deliver-PAY-123-* are allowed (no '*' right after the '/').
-    re: /rm\b[^|]*(\s["']?\/tmp["']?(\/\*|\/?(\s|$|['"`);&|]))|["']?(\$HOME|~)["']?\/\.claude(\S*\/\*|["']?\/?(\s|$|['"`);&|]))|\.claude\S*\/\*)/m,
+    re: /rm\b[^|\n]*([^\S\n]["']?\/tmp["']?(\/\*|\/?([^\S\n]|$|['"`);&|]))|["']?(\$HOME|~)["']?\/\.claude(\S*\/\*|["']?\/?([^\S\n]|$|['"`);&|]))|\.claude\S*\/\*)/m,
     label:
       "unanchored wildcard delete in a sensitive directory (e.g. '/tmp/*' or '~/.claude/.../*') — anchor the glob with a literal prefix like '/tmp/.deliver-<id>-*' so an empty variable cannot collapse it into a blanket wipe",
   },
   {
-    re: /:\s*\(\s*\)\s*\{.*\|.*:/m,
+    re: /:[^\S\n]*\([^\S\n]*\)[^\S\n]*\{[^\n]*\|[^\n]*:/m,
     label: 'fork bomb pattern detected',
   },
   {
-    re: /DROP\s+DATABASE/im,
+    re: /DROP[^\S\n]+DATABASE/im,
     label: 'DROP DATABASE would permanently destroy a database',
   },
   {
     // Force flag must be an argument of the same push command (no intervening ; | & ), so an
     // unrelated `-f` elsewhere (e.g. `rm -f` in a commit message) no longer false-positives.
-    re: /git\s+push\b[^|&;]*\s(--force-with-lease|--force|-f)(\s|=|$|['"`);&|])/m,
+    re: /git[^\S\n]+push\b[^|&;\n]*[^\S\n](--force-with-lease|--force|-f)([^\S\n]|=|$|['"`);&|])/m,
     label: 'git push --force can overwrite remote history and affect other contributors',
   },
   {
-    re: /git\s+reset\b.*?--hard/m,
+    re: /git[^\S\n]+reset\b[^\n]*?--hard/m,
     label: 'git reset --hard will permanently discard all uncommitted changes',
   },
   {
-    re: /git\s+clean\b.*?-[a-z]*f/m,
+    re: /git[^\S\n]+clean\b[^\n]*?-[a-z]*f/m,
     label: 'git clean -f will permanently delete untracked files',
   },
   {
-    re: /DROP\s+TABLE/im,
+    re: /DROP[^\S\n]+TABLE/im,
     label: 'DROP TABLE will permanently destroy table data',
   },
   {
-    re: /TRUNCATE\s+TABLE/im,
+    re: /TRUNCATE[^\S\n]+TABLE/im,
     label: 'TRUNCATE TABLE will permanently destroy table data',
   },
 ];
@@ -472,8 +477,9 @@ function walkSimple(st, pipeline, idx, ok, s, out) {
 
 /**
  * maskInert — the command with every provably non-executing region replaced
- * by spaces (newlines kept), and line continuations joined. Anything the
- * parser cannot classify comes back unmasked.
+ * by spaces (newlines kept), line continuations joined and NUL dropped (as
+ * the Claude Code hook's text reaches grep). Anything the parser cannot
+ * classify comes back unmasked.
  */
 export function maskInert(command) {
   let out = command;
@@ -487,7 +493,7 @@ export function maskInert(command) {
       out = command;
     }
   }
-  return out.split('\\\n').join('  ');
+  return out.split('\\\n').join('  ').split('\0').join('');
 }
 
 /** blockReason — the label of the first pattern the command really invokes, or null. */

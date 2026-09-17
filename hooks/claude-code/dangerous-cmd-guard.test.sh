@@ -7,8 +7,9 @@ HOOK="$(cd "$(dirname "$0")" && pwd)/dangerous-cmd-guard.sh"
 pass=0; fail=0
 
 # Feed a command to the hook as the real PreToolUse JSON envelope; return its exit code.
+# An argument cannot hold a NUL byte, so "<NUL>" stands for one.
 run() {
-  python3 -c 'import json,sys; print(json.dumps({"tool_input":{"command":sys.argv[1]}}))' "$1" \
+  python3 -c 'import json,sys; print(json.dumps({"tool_input":{"command":sys.argv[1].replace("<NUL>", "\0")}}))' "$1" \
     | bash "$HOOK" >/dev/null 2>&1
   echo $?
 }
@@ -162,6 +163,20 @@ expect allow 'bash -c "rm -rf /var/tmp/build"'
 expect allow 'git push --follow-tags;'
 expect allow "ssh host 'git push origin main'"
 expect allow $'git push origin \\\n  main'
+
+# ── Both implementations decide line by line (the Claude Code hook's grep) ──
+# A pattern begun on one line and completed on a later one is not a match; a
+# backslash continuation (above) is joined first. CR is an ordinary character
+# inside a line, and NUL is dropped. The opencode twin mirrors these cases.
+expect allow $'git push origin\ngit status --force'
+expect allow $'git push\n--force'
+expect allow $'rm -rf\n/'
+expect allow $'rm\nfoo /tmp/*'
+expect allow $'rm -rf /home/x\n/tmp/*'
+expect allow $'git push origin \\\r\n  --force'              # CRLF after a backslash is no continuation
+expect block $'git reset x\r--hard'
+expect block $'git push origin\r--force'
+expect block 'rm -rf <NUL>/'
 
 # ── #100 must BLOCK: what the parser cannot classify is scanned whole ───────
 expect block 'echo "git reset --hard'                        # unbalanced quote
