@@ -37,6 +37,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   breaks, while the Claude Code hook matches one line at a time. The opencode
   module now matches one line at a time too. Continued lines are still joined
   first, so a continued command is still checked as one line.
+- **`secret-in-write-guard` let secrets through without saying anything (#101).**
+  The guard had no behavior test, and the one added here found ways a
+  secret reached disk while the guard exited 0:
+  - Claude Code: some kinds of secret, and large writes, were never checked.
+    The way the shell guard ran its pattern match read some failures as
+    "no match", so the write went through. Matching now happens inside the
+    guard's Python step, which already fails closed. Patterns, labels and
+    messages are unchanged.
+  - opencode: edits were never scanned. The guard read `new_string`, but
+    opencode's `edit` tool passes `newString`, so only `write` was checked.
+  - New mirrored tests: `hooks/claude-code/secret-in-write-guard.test.sh` and
+    `hooks/opencode/secret-in-write-guard.test.js`. They check that every
+    pattern is blocked in Write/Edit content, in code, on a later line, in a
+    `.env.example` and in a 260 KB write, and that the block message names
+    the kind of secret without repeating it. They check that prose mentioning
+    tokens, variables named `token`, `.example`/`.sample`/`.template`/`.dist`
+    templates with placeholder values, public keys and certificates, and an
+    Edit that removes a key are allowed silently.
+- **`secret-in-write-guard` detects current OpenAI and GitHub token formats
+  (#101).** It named both vendors but matched only their older formats. It now
+  also blocks OpenAI project, service-account and admin keys (`sk-proj-…`,
+  `sk-svcacct-…`, `sk-admin-…`), whose bodies contain `_` and `-`. A key is
+  found wherever it sits, including right after an escape sequence, a
+  percent-encoded character or a joined name, and only a body as long as a real
+  key's matches, so kebab-case names like `desk-admin-…` don't. Legacy user keys
+  issued as `sk-None-…`, which can still be live, are blocked too. It also
+  blocks GitHub user-to-server (`ghu_`), refresh (`ghr_`) and fine-grained
+  (`github_pat_`) tokens, the last by their exact shape, so long snake_case
+  names that start with `github_pat_` don't match. Both twins change together,
+  and nothing that blocked before is allowed now.
+- **`secret-in-write-guard` scans every tool that writes file content (#101).**
+  - opencode: `apply_patch` wasn't scanned at all. opencode offers GPT models
+    `apply_patch` instead of `write` and `edit`, so with those models nothing
+    was checked. The guard now scans the lines a patch adds (`+` lines, which
+    covers new-file bodies and added lines in update hunks). Removed lines,
+    unchanged context and `***`/`@@` headers aren't scanned, so a patch that
+    deletes a key is allowed.
+  - Claude Code: the matcher `Write|Edit` matches tool names exactly, so the
+    guard never ran for `NotebookEdit` (`new_source`) or for `MultiEdit`
+    (`edits[].new_string`, in older releases). The registry matcher is now
+    `Write|Edit|MultiEdit|NotebookEdit` and the guard scans those fields. Text
+    being replaced (`old_string`) is still not scanned. Re-run `devexp install`
+    to apply the new matcher.
+  - Both: AWS temporary access key IDs (`ASIA…`) are blocked too, including
+    right after an escape sequence or a percent-encoded character. The match
+    is bounded by characters that can't be part of an ID, so words like
+    `EURASIA…` and `ASIAPACIFICDATACENTER01` don't match.
+  - Known limitation, now documented in both guards and
+    `docs/reference/hooks.md`: only the new text of a write is scanned, not
+    the file text around it, so a secret completed across existing file text
+    and an edit isn't seen.
 
 ### Security
 
