@@ -77,10 +77,23 @@ check graphify-read-guard       '{"tool_name":"Read","tool_input":{"file_path":"
 check graphify-session-sentinel '{"tool_name":"Bash","tool_input":{"command":"graphify query \"x\""}}'
 check graphify-grep-nudge       '{"tool_name":"Grep","tool_input":{"pattern":"x"}}'
 
-# Every hook that starts a Python interpreter must be covered above.
-for f in "$DIR"/*.sh; do
-  case "$f" in *.test.sh) continue ;; esac
-  name=$(basename "$f" .sh)
+# Every hook that starts a Python interpreter must be covered above. A hook is a
+# script hooks/registry.json registers; a helper the hooks source — scan-budget.sh
+# — has no envelope of its own and is covered through them: every check above runs
+# it from the crowded working directory as well, so a module it picked up there
+# would show in the sentinel.
+scripts=$(python3 -I -c '
+import json, os, sys
+for hook in json.load(open(sys.argv[1])):
+    script = hook.get("claude_code", {}).get("script", "")
+    if script:
+        print(os.path.basename(script)[:-3])
+' "$DIR/../registry.json") || { echo "FAIL could not read the hook registry"; exit 1; }
+for name in $scripts; do
+  f="$DIR/$name.sh"
+  if [ ! -f "$f" ]; then
+    fail=$((fail+1)); printf 'FAIL %-26s is registered but has no script\n' "$name"; continue
+  fi
   grep -q python3 "$f" || continue
   if ! grep -q "^check $name " "$0"; then
     fail=$((fail+1)); printf 'FAIL %-26s runs python3 but is not covered by this test\n' "$name"

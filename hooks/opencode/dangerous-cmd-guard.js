@@ -12,8 +12,13 @@
  * reach a shell. Everything else is scanned as before. Anything the parser
  * cannot classify is scanned whole. Mirrors hooks/claude-code/dangerous-cmd-guard.sh.
  *
+ * The scan runs under a wall-clock budget and refuses the call when it is
+ * exceeded (#162) — see startScanBudget in utils.js.
+ *
  * Tests: node hooks/opencode/dangerous-cmd-guard.test.js
  */
+
+import { startScanBudget } from './utils.js';
 
 // Where a target ends (END). Whitespace, end of line, or a character that ends the word or
 // changes what it expands to:
@@ -724,10 +729,23 @@ export function maskInert(command) {
   return out.split('\\\n').join('  ').split('\0').join('');
 }
 
-/** blockReason — the label of the first pattern the command really invokes, or null. */
-export function blockReason(command) {
+/**
+ * blockReason — the label of the first pattern the command really invokes, or null.
+ *
+ * `overBudget` is called before the masking pass and at each rule, and sampled
+ * across a rule's lines; it throws once the scan budget is spent. Sampled
+ * rather than called per line because reading the clock costs real time, and a
+ * command can hold hundreds of thousands of lines.
+ */
+export function blockReason(command, overBudget = () => {}) {
+  overBudget();
   const lines = maskInert(command).split('\n');
-  for (const { test, label } of BLOCK_PATTERNS) for (const line of lines) if (test(line)) return label;
+  for (const { test, label } of BLOCK_PATTERNS) {
+    for (let i = 0; i < lines.length; i++) {
+      if ((i & 1023) === 0) overBudget();
+      if (test(lines[i])) return label;
+    }
+  }
   return null;
 }
 
@@ -735,11 +753,13 @@ export async function dangerousCmdGuard(_ctx) {
   return {
     'tool.execute.before': async (input, output) => {
       if (input.tool !== 'bash') return;
+      const overBudget = startScanBudget('dangerous-cmd-guard');
+      overBudget();
 
       const command = output.args?.command ?? '';
       if (!command) return;
 
-      const reason = blockReason(String(command));
+      const reason = blockReason(String(command), overBudget);
       if (reason) throw new Error(`[devexp dangerous-cmd-guard] Blocked: ${reason}.`);
     },
   };

@@ -20,9 +20,14 @@
  * secrets written in one piece; it does not replace a secret scanner on the
  * repository.
  *
+ * The scan runs under a wall-clock budget and refuses the call when it is
+ * exceeded (#162) — see startScanBudget in utils.js.
+ *
  * Tests: node hooks/opencode/secret-in-write-guard.test.js
  * Mirror: hooks/claude-code/secret-in-write-guard.sh — keep the patterns in lockstep.
  */
+
+import { startScanBudget } from './utils.js';
 
 // Placeholders (#143). The (?!...) right after a prefix skips a body that is
 // only a placeholder: one character repeated (separators aside), a your-...
@@ -116,10 +121,16 @@ export async function secretInWriteGuard(_ctx) {
     'tool.execute.before': async (input, output) => {
       if (input.tool !== 'write' && input.tool !== 'edit' && input.tool !== 'apply_patch') return;
 
+      // The budget starts before the text is even assembled: reading a patch
+      // apart is work too, and a guard that runs long must block, not linger.
+      const overBudget = startScanBudget('secret-in-write-guard');
+      overBudget();
+
       const content = writtenText(input.tool, output.args ?? {});
       if (!content) return;
 
       for (const { re, label } of SECRET_PATTERNS) {
+        overBudget();
         if (re.test(content)) {
           throw new Error(
             `[devexp secret-in-write-guard] Blocked: content appears to contain ${label}. ` +

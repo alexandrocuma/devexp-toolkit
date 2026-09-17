@@ -25,6 +25,19 @@
 
 set -euo pipefail
 
+# The whole scan runs under a wall-clock budget and blocks when it is exceeded:
+# a slow scan must never let a tool call through unchecked (#162). The helper is
+# found without running anything: an external command that is missing would end
+# the guard with a status Claude Code reads as a non-blocking error, which is
+# the fail-open this guards against. Failing to load it blocks.
+devexp_dir="${BASH_SOURCE[0]%/*}"
+if [ "$devexp_dir" = "${BASH_SOURCE[0]}" ]; then devexp_dir="."; fi
+if ! . "$devexp_dir/scan-budget.sh"; then
+    echo "[devexp secret-in-write-guard] internal error -- the scan budget could not be loaded, so the guard did not run. Blocking to be safe." >&2
+    exit 2
+fi
+devexp_scan_budget secret-in-write-guard "$@"
+
 input=$(cat)
 
 label=$(echo "$input" | python3 -I -c "

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A slow security guard no longer lets a tool call through unscanned (#162).**
+  Claude Code does not block a tool call when a *command* hook times out — the
+  call continues through the normal permission flow — and its default timeout
+  for one is 600 seconds, so a guard that was slow on some input failed **open**
+  after a long wait. No hook field expresses "block on timeout", so each
+  `fail_closed` guard now enforces its own wall-clock scan budget and blocks
+  when it is exceeded, in both twins.
+
+  The budget is `DEVEXP_SCAN_BUDGET_MS`, 15 seconds by default, shared by
+  `secret-guard`, `secret-in-write-guard` and `dangerous-cmd-guard`. It is sized
+  from the worst cases the timing tests measure — around a second for a
+  multi-megabyte input, under 0.1 s for ordinary input — with room for a much
+  slower machine, so ordinary work never meets it. In Claude Code a shared
+  `hooks/claude-code/scan-budget.sh` runs the guard under a watchdog that covers
+  the whole hook, every interpreter and `grep` included, and exits 2 at the
+  deadline; a run whose status is neither allow nor block, and a watchdog that
+  cannot start at all, block as well. In opencode, where a plugin hook has no
+  timeout and runs in the server process, the deadline is checked at every unit
+  of the scan and the check refuses the call.
+
 ## [0.9.2] - 2026-09-17
 
 ### Added
