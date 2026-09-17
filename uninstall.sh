@@ -340,31 +340,65 @@ settings_path = sys.argv[2]
 # cache -- see issue #93. Disabled hooks are included: their foreign-root
 # copies must go too.
 SCRIPT_DIR = 'hooks/claude-code/'
-# A command with any of these is more than a plain path (arguments, env
-# assignments, expansions, quoting): devexp never registered one, so it is
-# the user's. Same rule as isManagedScriptPath in cli/internal/hooks.
+# A path with any of these is more than a plain path (arguments, env
+# assignments, expansions, quoting), so devexp registers it single-quoted
+# (#135). Same rules as commandPath/isManagedScriptPath in cli/internal/hooks.
 SHELL_SYNTAX = set(' \t\n\r$~\'"`\\;&|<>()*?[]{}!#')
 try:
     with open(os.path.join(repo_dir, 'hooks', 'registry.json')) as f:
-        managed = {
-            os.path.basename(h['claude_code']['script'])
+        scripts = [
+            h['claude_code']['script']
             for h in json.load(f)
             if h.get('claude_code', {}).get('script')
+        ]
+        managed = {os.path.basename(s) for s in scripts}
+        # Other spellings of this repo's own scripts: the joined path verbatim,
+        # as an install wrote it before paths were quoted (the shell splits it
+        # when it needs quoting), and that path in double quotes, the natural
+        # hand fix, when it has no $, backquote, \ or " (so the quotes are
+        # literal). Same rules as requoteDevexpHooks in cli/internal/hooks.
+        own = [os.path.normpath(os.path.join(repo_dir, s)) for s in scripts]
+        legacy = set(own) | {
+            '"' + p + '"' for p in own if not any(c in p for c in '$`\\"')
         }
-except (OSError, json.JSONDecodeError, KeyError):
+except (OSError, json.JSONDecodeError, KeyError, TypeError, AttributeError):
     print("  [skip] could not read hooks/registry.json")
     sys.exit(0)
 
+def shell_quote(s):
+    return "'" + s.replace("'", "'\\''") + "'"
+
+def command_path(cmd):
+    # The path cmd runs, if cmd is a form devexp writes: a plain path with no
+    # shell syntax, or exactly one single-quoted absolute path that re-quotes
+    # to itself. Anything else (double quotes, arguments, '/a'b) is the user's.
+    if not cmd:
+        return None
+    if not any(c in SHELL_SYNTAX for c in cmd):
+        return cmd
+    if len(cmd) < 2 or cmd[0] != "'" or cmd[-1] != "'":
+        return None
+    p = cmd[1:-1].replace("'\\''", "'")
+    if not p.startswith('/') or shell_quote(p) != cmd:
+        return None
+    return p
+
 def is_devexp_hook(cmd):
-    # A plain path whose basename is a registry script, with hooks/claude-code/
-    # directly above it at a path-segment boundary (so my-hooks/claude-code/
-    # is not devexp's).
-    if not cmd or any(c in SHELL_SYNTAX for c in cmd):
+    # A devexp-form command whose basename is a registry script, with
+    # hooks/claude-code/ directly above it at a path-segment boundary (so
+    # my-hooks/claude-code/ is not devexp's), or this repo's legacy unquoted
+    # registration.
+    if not isinstance(cmd, str):
         return False
-    base = os.path.basename(cmd)
+    if cmd in legacy:
+        return True
+    p = command_path(cmd)
+    if p is None:
+        return False
+    base = os.path.basename(p)
     if base not in managed:
         return False
-    head = cmd[:-len(base)]
+    head = p[:-len(base)]
     return head == SCRIPT_DIR or head.endswith('/' + SCRIPT_DIR)
 
 with open(settings_path) as f:
@@ -389,7 +423,7 @@ for event, hook_list in list(hooks_section.items()):
         for h in entry.get('hooks', []):
             cmd = h.get('command', '')
             if is_devexp_hook(cmd):
-                print(f"  \033[0;31m-\033[0m {event}: {os.path.basename(cmd)}")
+                print(f"  \033[0;31m-\033[0m {event}: {os.path.basename(command_path(cmd) or cmd)}")
                 changed = True
             else:
                 kept_cmds.append(h)

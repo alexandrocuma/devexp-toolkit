@@ -152,6 +152,141 @@ expect "keeps a my-hooks/claude-code/ hook, relative and absolute" \
   "my-hooks/claude-code/secret-guard.sh
 $OTHER/my-hooks/claude-code/secret-guard.sh"
 
+# ── Paths that need shell quoting (#135) ─────────────────────────────────────
+# devexp registers a path with a space or shell syntax as one single-quoted
+# word. Those are devexp's; so is the unquoted path an earlier install from
+# this repo wrote. Other quoting, arguments or concatenation stay the user's.
+
+q() { # POSIX single-quote $1, written independently of the code under test
+    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+settings_with() { # commands... -> settings json with one entry holding them all
+    python3 -c 'import json,sys; print(json.dumps({"hooks":{"PreToolUse":[{"matcher":"Read","hooks":[{"type":"command","command":c} for c in sys.argv[1:]]}]}}))' "$@"
+}
+
+SPACED="$TMP/My Proj/it's \$x;&clone"
+SPACED_OTHER="$TMP/Other Root/cache"
+mkdir -p "$SPACED/hooks/claude-code"
+cp "$REPO/hooks/registry.json" "$SPACED/hooks/registry.json"
+SP_MINE="$SPACED/hooks/claude-code/secret-guard.sh"
+SP_FOREIGN="$SPACED_OTHER/hooks/claude-code/secret-guard.sh"
+SP_FOREIGN_DISABLED="$SPACED_OTHER/hooks/claude-code/graphify-read-guard.sh"
+
+# The helper really is shell quoting: sh reads each quoted path back unchanged.
+for p in "$SP_MINE" "$SP_FOREIGN"; do
+    if [ "$(sh -c "printf '%s' $(q "$p")")" = "$p" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL q() does not round-trip %s\n' "$p"; fi
+done
+
+REPO_PLAIN="$REPO"
+REPO="$SPACED"
+
+expect "removes the repo's own quoted hook (space, ', \$, ;, &)" \
+  "$(settings_with "$(q "$SP_MINE")")" \
+  ""
+
+expect "removes the repo's legacy unquoted hook" \
+  "$(settings_with "$SP_MINE")" \
+  ""
+
+expect "removes quoted hooks from a foreign root, disabled ones too" \
+  "$(settings_with "$(q "$SP_FOREIGN")" "$(q "$SP_FOREIGN_DISABLED")" "$(q "$FOREIGN")")" \
+  ""
+
+expect "keeps user commands that quote or wrap a devexp path another way" \
+  "$(settings_with \
+      "\"$SP_MINE\"" \
+      "$(q "$SP_FOREIGN") --flag" \
+      "$(q "$SP_FOREIGN"); true" \
+      "$(q "$SPACED_OTHER/setup");$(q "$SP_FOREIGN")" \
+      "'$TMP/it'\"'\"'s/hooks/claude-code/secret-guard.sh'" \
+      "bash $(q "$SP_FOREIGN")" \
+      "$(q "$SPACED_OTHER/hooks/claude-code/")secret-guard.sh" \
+      "'$SPACED_OTHER/hooks/claude-code/secret-guard.sh" \
+      "$(q "hooks/claude-code/secret-guard.sh")" \
+      "$(q "$SPACED_OTHER/my-hooks/claude-code/secret-guard.sh")" \
+      "$(q "$SPACED_OTHER/hooks/claude-code/format-check.sh")")" \
+  "\"$SP_MINE\"
+$(q "$SP_FOREIGN") --flag
+$(q "$SP_FOREIGN"); true
+$(q "$SPACED_OTHER/setup");$(q "$SP_FOREIGN")
+'$TMP/it'\"'\"'s/hooks/claude-code/secret-guard.sh'
+bash $(q "$SP_FOREIGN")
+$(q "$SPACED_OTHER/hooks/claude-code/")secret-guard.sh
+'$SPACED_OTHER/hooks/claude-code/secret-guard.sh
+$(q "hooks/claude-code/secret-guard.sh")
+$(q "$SPACED_OTHER/my-hooks/claude-code/secret-guard.sh")
+$(q "$SPACED_OTHER/hooks/claude-code/format-check.sh")"
+
+# Another root's legacy unquoted path can't be told apart from a user command
+# that takes arguments, so it is left for that root's own install to fix.
+expect "keeps another root's unquoted path that needs quoting" \
+  "$(settings_with "$SP_FOREIGN")" \
+  "$SP_FOREIGN"
+
+REPO="$REPO_PLAIN"
+
+# A hand fix wraps this repo's path in double quotes. When the path has no $,
+# backquote, \ or ", those quotes are literal: it is devexp's (removed). With
+# any of them, or with arguments, or for another root, it is the user's.
+make_repo() { mkdir -p "$1/hooks/claude-code" && cp "$REPO_PLAIN/hooks/registry.json" "$1/hooks/registry.json"; }
+
+REPO="$REPO_PLAIN"
+expect "removes the repo's own double-quoted plain path" \
+  "$(settings_with "\"$MINE\"" "\"$MINE\" --strict" "\"$FOREIGN\"")" \
+  "\"$MINE\" --strict
+\"$FOREIGN\""
+
+DQ_REPO="$TMP/Dq Proj/it's (x) & y"
+make_repo "$DQ_REPO"
+REPO="$DQ_REPO"
+DQ_MINE="$DQ_REPO/hooks/claude-code/secret-guard.sh"
+DQ_DISABLED="$DQ_REPO/hooks/claude-code/graphify-read-guard.sh"
+expect "removes the repo's own double-quoted path that needs quoting, disabled ones too" \
+  "$(settings_with "\"$DQ_MINE\"" "\"$DQ_DISABLED\"" "\"$DQ_MINE\" --strict" "\"$DQ_REPO/hooks/claude-code/mine.sh\"" "\"$SP_FOREIGN\"")" \
+  "\"$DQ_MINE\" --strict
+\"$DQ_REPO/hooks/claude-code/mine.sh\"
+\"$SP_FOREIGN\""
+
+for special in '$' '`' '\'; do
+    SPECIAL_REPO="$TMP/special/a${special}b"
+    make_repo "$SPECIAL_REPO"
+    REPO="$SPECIAL_REPO"
+    expect "keeps a double-quoted own path holding $special (not literal in double quotes)" \
+      "$(settings_with "\"$SPECIAL_REPO/hooks/claude-code/secret-guard.sh\"")" \
+      "\"$SPECIAL_REPO/hooks/claude-code/secret-guard.sh\""
+done
+REPO="$REPO_PLAIN"
+
+# Every character in SHELL_SYNTAX: a bare path from another root holding it is
+# not a plain path, so it is the user's; its single-quoted form is devexp's.
+# Dropping any character from SHELL_SYNTAX fails this. (Go's shellSyntax is
+# held to the same set by TestShellSyntax_MatchesUninstallScript.)
+syntax_chars=(' ' $'\t' $'\n' $'\r' '$' '~' "'" '"' '`' '\' ';' '&' '|' '<' '>' '(' ')' '*' '?' '[' ']' '{' '}' '!' '#')
+plain_cmds=(); quoted_cmds=()
+for c in "${syntax_chars[@]}"; do
+    p="$OTHER/a${c}b/hooks/claude-code/secret-guard.sh"
+    plain_cmds+=("$p"); quoted_cmds+=("$(q "$p")")
+done
+cat > "$TMP/syntax_check.py" <<'PY'
+import json, subprocess, sys
+prune, repo, settings, n = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
+plain, quoted = sys.argv[5:5 + n], sys.argv[5 + n:]
+with open(settings, 'w') as f:
+    json.dump({"hooks": {"PreToolUse": [{"matcher": "Read", "hooks": [
+        {"type": "command", "command": c} for c in plain + quoted]}]}}, f)
+subprocess.run([sys.executable, prune, repo, settings], capture_output=True, check=True)
+with open(settings) as f:
+    kept = [h['command'] for e in json.load(f).get('hooks', {}).get('PreToolUse', []) for h in e['hooks']]
+if kept == plain:
+    print("ok")
+else:
+    print("wrongly removed:", [c for c in plain if c not in kept])
+    print("wrongly kept:", [c for c in kept if c not in plain])
+PY
+syntax_result="$(python3 "$TMP/syntax_check.py" "$TMP/prune.py" "$REPO" "$TMP/settings.json" "${#plain_cmds[@]}" "${plain_cmds[@]}" "${quoted_cmds[@]}")"
+if [ "$syntax_result" = "ok" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL every SHELL_SYNTAX character\n%s\n' "$syntax_result"; fi
+
+
 # ── opencode (#109) ──────────────────────────────────────────────────────────
 
 ok() { pass=$((pass+1)); }

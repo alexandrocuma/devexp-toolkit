@@ -30,7 +30,7 @@ hooks/
 ```
 
 The installer reads `registry.json` and:
-- Registers each enabled `.sh` script in `~/.claude/settings.json` with the correct event and matcher, by absolute path into the install root (`cli/internal/hooks/installer.go`)
+- Registers each enabled `.sh` script in `~/.claude/settings.json` with the correct event and matcher, by absolute path into the install root. Claude Code runs the command through `sh -c`, so a path with spaces or shell syntax is registered single-quoted (`hookCommand` in `cli/internal/hooks/installer.go`; see [Hook commands](../guides/install.md#hook-commands-claude-code)).
 - Installs the opencode plugin: copies `opencode/devexp-plugin.js` to `~/.config/opencode/plugins/devexp.js`, copies each selected hook's `opencode.module` plus `utils.js` and `package.json` into `plugins/devexp/`, and writes `plugins/devexp/hooks.json` (`cli/internal/hooks/opencode.go`). It copies by the registry list, so a module without an `opencode` mapping is never installed and `*.test.js` never ships.
 
 ---
