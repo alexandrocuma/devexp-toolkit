@@ -46,22 +46,17 @@ jobs:
 
   govulncheck:
     runs-on: ubuntu-latest
-    env:
-      # Keep in sync with .github/workflows/release.yml.
-      GOVULNCHECK_VERSION: v1.8.0
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
-      - name: stage assets
-        run: ./scripts/stage-assets.sh
-      - name: install govulncheck
-        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
-      # Fails (exit 3) only on vulnerabilities in code the CLI calls;
-      # -show verbose also lists uncalled findings without failing.
-      # setup-go puts $(go env GOPATH)/bin on PATH.
+      # Pinned version, platforms and exit codes live in the script:
+      # 3 = called vulnerability, any other failure = infrastructure.
       - name: govulncheck
-        working-directory: cli
-        run: govulncheck -show verbose ./...
+        run: ./scripts/govulncheck.sh

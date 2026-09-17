@@ -70,27 +70,30 @@ Gotchas when running tests:
 
 ## Vulnerability Scan
 
-The `govulncheck` job in `ci.yml` stages assets, sets up Go from `cli/go.mod` (so it checks the go1.26.8 standard library the release is built with), installs govulncheck at the pinned `GOVULNCHECK_VERSION` and runs `govulncheck -show verbose ./...` in `cli/`. `release.yml` runs the same steps before goreleaser, so a finding also stops a tag from publishing (see [`../guides/release.md`](../guides/release.md#build)).
+`scripts/govulncheck.sh` is the one place the scan is defined: the pinned govulncheck version (`GOVULNCHECK_VERSION`), the platforms and the exit codes. It stages assets, installs govulncheck into a temporary `GOBIN` it removes on exit, then runs `govulncheck -show verbose ./...` in `cli/` once for every platform the release ships: each `goos` × `goarch` in `.goreleaser.yaml` with its `CGO_ENABLED=0`. Reachability differs per platform (darwin builds `fsnotify`'s kqueue backend and `crypto/x509/root_darwin.go`, linux the inotify and `root_linux.go` files), so a scan of the runner's linux/amd64 alone could miss a call that ships in the darwin binary.
 
-Policy — govulncheck's own exit status, unchanged:
+The `govulncheck` job in `ci.yml` and the `govulncheck` job in `release.yml` both set up Go from `cli/go.mod` (so the go1.26.8 standard library the release is built with is scanned) and run the script. In `release.yml`, goreleaser `needs:` that job, so a failed scan publishes nothing (see [`../guides/release.md`](../guides/release.md#build)).
 
-- **Called** (a vulnerable function is reachable from the CLI's code, listed under `=== Symbol Results ===` with an example trace): exit 3, the job fails.
-- **Not called** (the vulnerable package is imported or the module is required, but nothing reaches the affected symbols — `=== Package Results ===` / `=== Module Results ===`): printed by `-show verbose`, exit 0, the job passes. Fix these in the next dependency bump; they still ship in the binary.
+Exit status:
 
-Run it locally the way CI does (nothing is installed on `PATH`; `go run` exits 1 instead of 3 on a finding):
+- **0 — nothing called.** Findings in packages the CLI imports or modules it requires, where nothing reaches the affected symbols (`=== Package Results ===` / `=== Module Results ===`), are printed but don't fail. Fix these in the next dependency bump; they still ship in the binary.
+- **3 — called vulnerability** on at least one platform: a vulnerable function is reachable from the CLI's code, listed under `=== Symbol Results ===` with an example trace. The last line names the platforms. The job fails; fix it (below).
+- **Anything else (1) — infrastructure, not a finding**: staging or installing govulncheck failed, `.goreleaser.yaml` couldn't be read, or govulncheck couldn't finish — usually a fetch or network error such as `govulncheck: fetching vulnerabilities: Get "https://vuln.go.dev/…"` or a module proxy error, with no `=== Symbol Results ===`. The last line says `infrastructure failure, not a finding`. Nothing in the code needs fixing: re-run the failed job with `gh run rerun <run-id> --failed` (the run ID is in `gh run list --workflow ci.yml` or `release.yml`).
+
+Run it locally exactly as CI does (nothing is installed on `PATH`):
 
 ```bash
-./scripts/stage-assets.sh && (cd cli && go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -show verbose ./...)
+./scripts/govulncheck.sh
 ```
 
-When it fails:
+When it exits 3:
 
-1. Read the finding: the advisory ID, `Found in` / `Fixed in`, and the trace showing which of our calls reaches it.
+1. Read the finding: the advisory ID, `Found in` / `Fixed in`, and the trace showing which of our calls reaches it, on which platform.
 2. **Standard library** (`Found in: <pkg>@go1.x.y`): bump only the `toolchain` line in `cli/go.mod` to a supported patch at or above `Fixed in` (see [`../guides/workflows.md`](../guides/workflows.md), Go toolchain). **Module**: `cd cli && go get <module>@<fixed version> && go mod tidy`, commit `go.mod` and `go.sum` together.
-3. Re-run the command above until the symbol results are clear, run the Go tests, and land the bump as its own `fix:` commit naming the advisory, with a `CHANGELOG.md` entry.
+3. Re-run `./scripts/govulncheck.sh` until it exits 0, run the Go tests, and land the bump as its own `fix:` commit naming the advisory, with a `CHANGELOG.md` entry.
 4. No fixed version yet: don't disable the job. Record the advisory in an issue; if the called path can be avoided in our code, do that.
 
-To bump govulncheck itself, change `GOVULNCHECK_VERSION` in both `ci.yml` and `release.yml`. CI runs with `GOTOOLCHAIN=local`, so the new version's `go` directive must not be newer than the `toolchain` in `cli/go.mod` (v1.8.0 needs Go 1.26.0).
+To bump govulncheck itself, change `GOVULNCHECK_VERSION` in `scripts/govulncheck.sh`. CI runs with `GOTOOLCHAIN=local`, so the new version's `go` directive must not be newer than the `toolchain` in `cli/go.mod` (v1.8.0 needs Go 1.26.0).
 
 ## Before Every Commit
 
@@ -100,7 +103,7 @@ Mirror CI — it runs all of these on the PR:
 - [ ] `for f in hooks/claude-code/*.test.sh; do bash "$f" || exit 1; done`
 - [ ] `for f in hooks/opencode/*.test.js; do node "$f" || exit 1; done`
 - [ ] `for f in ./*.test.sh; do bash "$f" || exit 1; done`
-- [ ] Touched `cli/go.mod`/`go.sum` or the Go toolchain? Run the [vulnerability scan](#vulnerability-scan) — CI fails on a called finding.
+- [ ] Touched `cli/go.mod`/`go.sum`, the Go toolchain or `.goreleaser.yaml` platforms? `./scripts/govulncheck.sh` — CI fails on a called finding (see [vulnerability scan](#vulnerability-scan)).
 - [ ] Lint: not enforced — no lint job in `ci.yml`, no linter config. `(cd cli && go vet ./... && gofmt -l .)` is clean at this commit and was run by hand for #97 (`CHANGELOG.md:147`).
 - [ ] Type check: N/A — covered by `go test`/`go vet` for Go; none configured for shell/JS.
 - [ ] Changed an agent, skill or hook? `./install.sh` and exercise it in Claude Code/opencode (see [`setup.md`](setup.md#commands)).
