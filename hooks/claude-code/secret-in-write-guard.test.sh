@@ -259,6 +259,8 @@ block Edit  Anthropic "${SK}-ant-your-key-FAKE0-$(body FAKE0 40)"
 block Write Anthropic "${SK}-ant-your-key-here-$ANTHROPIC"
 block Write OpenAI    "${SK}-proj-your-project-key-$(rep FAKE0_ 16)FAKE0"
 block Write AWS       "id = ${AS}EXAMPLE$(body FAKE 9)"
+# A service-key name may hold an empty segment (a doubled separator) (#158).
+block Edit  OpenAI    "${SK}-service-svc--$(body 0FAKE 48)"
 # Only the whole body counts: "your" glued to more letters, or an unknown
 # key-type segment before a repeated run, is not a placeholder.
 block Edit  Anthropic "${SK}-ant-your$(rep FAKEfake 6)"
@@ -298,6 +300,9 @@ for kind in 'RSA PRIVATE KEY' 'PRIVATE KEY' 'EC PRIVATE KEY' 'DSA PRIVATE KEY' '
 done
 # JSON that escapes every slash still carries the key material.
 block Write 'private key' "{\"key\": \"${D5}BEGIN PRIVATE KEY${D5}\\n$(body 'MIIEFAKE0abcdefgh+\/' 64)\\n$(body 'fakeFAKE0123456+\/' 64)\\n${D5}END PRIVATE KEY${D5}\"}"
+# An escaped body wrapped narrower than usual: escaped newlines join its lines.
+block Edit  'private key' "{\"key\": \"${D5}BEGIN PRIVATE KEY${D5}\\n$(body MIIEFAKE0abcdefghijklmn 24)\\n$(body opqrstuFAKE0123456789ab 24)\\n${D5}END PRIVATE KEY${D5}\"}"
+block Write 'private key' "\"${D5}BEGIN RSA PRIVATE KEY${D5}\\r\\n$(body MIIEFAKE0abcdefg 16)\\r\\n$(body hijklmnFAKE01234 16)\\r\\n${D5}END RSA PRIVATE KEY${D5}\""
 # Key-like text on the header's line, or just after it, still blocks.
 block Edit  'private key' "if (pem.startsWith(\"${D5}BEGIN PRIVATE KEY${D5}\")) return parsePkcs8PrivateKeyFromPemEncodedString(pem);"
 
@@ -312,10 +317,24 @@ allow Edit  "Paste the key (it starts with ${D5}BEGIN OPENSSH PRIVATE KEY${D5}).
 allow Write "Store the ${D5}BEGIN EC PRIVATE KEY${D5} file on the host."$'\n'"$PROSE"$'\n'"Path: /home/deploy/configuration/secrets/keys/"
 allow Write "${D5}BEGIN PRIVATE KEY${D5}"$'\n'"<paste your private key here>"$'\n'"${D5}END PRIVATE KEY${D5}"$'\n'"checksum: $(body 0123456789abcdef 64)"
 allow Edit  "Header: ${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n\n'"$PROSE$PROSE"$'\n'"Fixed in commit $(body 0123456789abcdef 40)."
+# Backslashes near a quoted header that aren't an escaped key body (#158):
+# Windows paths, escapes in code strings, \u escapes, escaped prose, LaTeX.
+allow Write 'Save the '"${D5}BEGIN RSA PRIVATE KEY${D5}"' file as C:\ProgramData\ContosoDeploy\Certificates\Private\server.pem'
+allow Edit  'Header '"${D5}BEGIN OPENSSH PRIVATE KEY${D5}"'. Key path: C:\Users\Administrator\AppData\Roaming\SshAgent\keys\id_ed25519'
+allow Write 'const body = pem.replace("'"${D5}BEGIN PRIVATE KEY${D5}"'", "").replace(/\\r\\n|\\n|\\r|\\s+/g, "");'
+allow Edit  'if (pem.includes("'"${D5}BEGIN PRIVATE KEY${D5}"'")) {'$'\n''  log("found a key header\\nstripping\\nand\\ndecoding\\nthe\\nbody");'$'\n''}'
+allow Write 'const HEADER = "'"${D5}BEGIN PRIVATE KEY${D5}"'"; const LABEL = "\u0050\u0072\u0069\u0076\u0061\u0074\u0065";'
+allow Write '{"hint":"'"${D5}BEGIN PRIVATE KEY${D5}"'\n<paste your key here>\n'"${D5}END PRIVATE KEY${D5}"'"}'
+allow Edit  '{"text":"Keys start with \"'"${D5}BEGIN RSA PRIVATE KEY${D5}"'\".\n\nThen\nsee\nthe\ndocs\nfor\nmore\ninfo\nabout\nit."}'
+allow Write 'The header \texttt{'"${D5}BEGIN PRIVATE KEY${D5}"'} \\ \textbackslash\textbackslash\newline\newline'
 
 # ── length thresholds, pinned at the edge: one short allows, exact blocks ───
 allow Write "${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n'"$(body FAKE0+/ 31)"$'\n'"${D5}END RSA PRIVATE KEY${D5}"
 block Write 'private key' "${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n'"$(body FAKE0+/ 32)"$'\n'"${D5}END RSA PRIVATE KEY${D5}"
+# Two escaped lines join only when both hold at least 16 characters.
+allow Write "\"${D5}BEGIN RSA PRIVATE KEY${D5}\\n$(body FAKE0abcdefghijk 15)\\n$(body FAKE0abcdefghijk 16)\\n${D5}END RSA PRIVATE KEY${D5}\""
+allow Write "\"${D5}BEGIN RSA PRIVATE KEY${D5}\\n$(body FAKE0abcdefghijk 16)\\n$(body FAKE0abcdefghijk 15)\\n${D5}END RSA PRIVATE KEY${D5}\""
+block Write 'private key' "\"${D5}BEGIN RSA PRIVATE KEY${D5}\\n$(body FAKE0abcdefghijk 16)\\n$(body FAKE0abcdefghijk 16)\\n${D5}END RSA PRIVATE KEY${D5}\""
 # Bounded repetitions (#158), pinned at the edge: material that starts just
 # inside the search window after a header, the header's words, the words of a
 # your-... phrase, service-key name segments, and GitHub id segments.
@@ -397,6 +416,7 @@ SHAPES = [
     ('key-type words after a private-key header', lambda n: D5 + 'BEGIN ' + rep('PRIVATE KEY ', n)),
     ('private-key header, then spaced capitals', lambda n: D5 + 'BEGIN PRIVATE KEY' + rep(' A', n)),
     ('private-key headers between near-material runs', lambda n: rep(D5 + 'BEGIN RSA PRIVATE KEY' + D5 + '\n' + rep('A' * 31 + '.', 600), n)),
+    ('private-key headers between short escaped lines', lambda n: rep(D5 + 'BEGIN RSA PRIVATE KEY' + D5 + '\\n' + rep('A' * 15 + '\\r\\n', 600), n)),
     ('repeated service-key prefix', lambda n: rep(SK + '-service-', n)),
     ('service-key prefixes with near-length name segments', lambda n: rep(SK + '-service-' + rep('a' * 47 + '-', 200), n)),
     ('repeated Anthropic prefix and your-', lambda n: rep(SK + '-ant-your-', n)),

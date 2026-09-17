@@ -14,8 +14,9 @@
  * and an edit is not seen. For apply_patch, opencode matches context lines
  * against the file loosely and writes the patch's own text for them, so what
  * lands on disk for a context line isn't scanned either. A private-key body
- * wrapped far narrower than the usual PEM line width, or written in pieces
- * across several edits, isn't recognized as key material. The guard catches
+ * wrapped far narrower than the usual PEM line width, written in pieces
+ * across several edits, or starting far from its header, isn't recognized as
+ * key material. The guard catches
  * secrets written in one piece; it does not replace a secret scanner on the
  * repository.
  *
@@ -83,9 +84,12 @@ const SECRET_PATTERNS = [
   // -----BEGIN line. That window leaves room for encrypted-PEM and PGP armor
   // headers. A header quoted alone, or with an elided or placeholder body,
   // has no material and is allowed (#143); key-like text on the header's
-  // line or just after it still blocks. A backslash (\x5c) counts as
-  // material, so escaped slashes and newlines in JSON don't split a line.
-  { re: /-----BEGIN [A-Z ]{0,40}(PRIVATE|SECRET) KEY(?:(?!-----(?:END|BEGIN))[\s\S]){0,500}?[A-Za-z0-9+/\x5c]{32}/m, label: 'private key block' },
+  // line or just after it still blocks. Escaped bodies (JSON, code strings)
+  // count too: an escaped slash (\x5c/) is part of a line, and an escaped
+  // newline (\x5cn, \x5cr\x5cn) joins two lines of 16 or more characters.
+  // Other backslashes, as in Windows paths or \x5cu escapes, split a run,
+  // and an escape's letter never starts one.
+  { re: /-----BEGIN [A-Z ]{0,40}(PRIVATE|SECRET) KEY(?:(?!-----(?:END|BEGIN))[\s\S]){0,500}?(?<!\x5c)(?:(?:[A-Za-z0-9+/]|\x5c\/){32}|(?:[A-Za-z0-9+/]|\x5c\/){16,31}(?:\x5cr)?\x5cn(?:[A-Za-z0-9+/]|\x5c\/){16})/m, label: 'private key block' },
 ];
 
 // The file content an apply_patch call writes: every line starting with "+",

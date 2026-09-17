@@ -165,6 +165,8 @@ BLOCK.push(
   ['write', 'Anthropic', `${SK}-ant-your-key-here-${ANTHROPIC}`],
   ['write', 'OpenAI', `${SK}-proj-your-project-key-${'FAKE0_'.repeat(16)}FAKE0`],
   ['write', 'AWS', `id = ${AS}EXAMPLE${body('FAKE', 9)}`],
+  // A service-key name may hold an empty segment (a doubled separator) (#158).
+  ['edit', 'OpenAI', `${SK}-service-svc--${body('0FAKE', 48)}`],
   // Only the whole body counts: "your" glued to more letters, or an unknown
   // key-type segment before a repeated run, is not a placeholder.
   ['edit', 'Anthropic', `${SK}-ant-your${'FAKEfake'.repeat(6)}`],
@@ -195,6 +197,12 @@ BLOCK.push(
     .map((kind) => ['write', 'private key', `${D5}BEGIN ${kind}${D5}\n${D5}\n${body('MIIEFAKE0+/', 64)}\n${D5}END ${kind}${D5}`]),
   // JSON that escapes every slash still carries the key material.
   ['write', 'private key', `{"key": "${D5}BEGIN PRIVATE KEY${D5}\\n${body('MIIEFAKE0abcdefgh+\\/', 64)}\\n${body('fakeFAKE0123456+\\/', 64)}\\n${D5}END PRIVATE KEY${D5}"}`],
+  // An escaped body wrapped narrower than usual: escaped newlines join its lines.
+  ['edit', 'private key', `{"key": "${D5}BEGIN PRIVATE KEY${D5}\\n${body('MIIEFAKE0abcdefghijklmn', 24)}\\n${body('opqrstuFAKE0123456789ab', 24)}\\n${D5}END PRIVATE KEY${D5}"}`],
+  ['write', 'private key', `"${D5}BEGIN RSA PRIVATE KEY${D5}\\r\\n${body('MIIEFAKE0abcdefg', 16)}\\r\\n${body('hijklmnFAKE01234', 16)}\\r\\n${D5}END RSA PRIVATE KEY${D5}"`],
+  // Two escaped lines join only when both hold at least 16 characters (the
+  // shorter twins are in ALLOW).
+  ['write', 'private key', `"${D5}BEGIN RSA PRIVATE KEY${D5}\\n${body('FAKE0abcdefghijk', 16)}\\n${body('FAKE0abcdefghijk', 16)}\\n${D5}END RSA PRIVATE KEY${D5}"`],
   // Key-like text on the header's line, or just after it, still blocks.
   ['edit', 'private key', `if (pem.startsWith("${D5}BEGIN PRIVATE KEY${D5}")) return parsePkcs8PrivateKeyFromPemEncodedString(pem);`],
   // Bounded repetitions (#158), pinned at the edge (the one-past twins are in ALLOW).
@@ -309,6 +317,19 @@ const ALLOW = [
   ['write', `Store the ${D5}BEGIN EC PRIVATE KEY${D5} file on the host.\n${PROSE}\nPath: /home/deploy/configuration/secrets/keys/`],
   ['write', `${D5}BEGIN PRIVATE KEY${D5}\n<paste your private key here>\n${D5}END PRIVATE KEY${D5}\nchecksum: ${body('0123456789abcdef', 64)}`],
   ['edit', `Header: ${D5}BEGIN RSA PRIVATE KEY${D5}\n\n${PROSE}${PROSE}\nFixed in commit ${body('0123456789abcdef', 40)}.`],
+  // Backslashes near a quoted header that aren't an escaped key body (#158):
+  // Windows paths, escapes in code strings, \u escapes, escaped prose, LaTeX.
+  ['write', String.raw`Save the ${D5}BEGIN RSA PRIVATE KEY${D5} file as C:\ProgramData\ContosoDeploy\Certificates\Private\server.pem`],
+  ['edit', String.raw`Header ${D5}BEGIN OPENSSH PRIVATE KEY${D5}. Key path: C:\Users\Administrator\AppData\Roaming\SshAgent\keys\id_ed25519`],
+  ['write', String.raw`const body = pem.replace("${D5}BEGIN PRIVATE KEY${D5}", "").replace(/\\r\\n|\\n|\\r|\\s+/g, "");`],
+  ['edit', `if (pem.includes("${D5}BEGIN PRIVATE KEY${D5}")) {\n` + String.raw`  log("found a key header\\nstripping\\nand\\ndecoding\\nthe\\nbody");` + '\n}'],
+  ['write', String.raw`const HEADER = "${D5}BEGIN PRIVATE KEY${D5}"; const LABEL = "\u0050\u0072\u0069\u0076\u0061\u0074\u0065";`],
+  ['write', String.raw`{"hint":"${D5}BEGIN PRIVATE KEY${D5}\n<paste your key here>\n${D5}END PRIVATE KEY${D5}"}`],
+  ['edit', String.raw`{"text":"Keys start with \"${D5}BEGIN RSA PRIVATE KEY${D5}\".\n\nThen\nsee\nthe\ndocs\nfor\nmore\ninfo\nabout\nit."}`],
+  ['write', String.raw`The header \texttt{${D5}BEGIN PRIVATE KEY${D5}} \\ \textbackslash\textbackslash\newline\newline`],
+  // Two escaped lines join only when both hold at least 16 characters.
+  ['write', `"${D5}BEGIN RSA PRIVATE KEY${D5}\\n${body('FAKE0abcdefghijk', 15)}\\n${body('FAKE0abcdefghijk', 16)}\\n${D5}END RSA PRIVATE KEY${D5}"`],
+  ['write', `"${D5}BEGIN RSA PRIVATE KEY${D5}\\n${body('FAKE0abcdefghijk', 16)}\\n${body('FAKE0abcdefghijk', 15)}\\n${D5}END RSA PRIVATE KEY${D5}"`],
   // Bounded repetitions (#158), one past the edge.
   ['write', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${' '.repeat(495)}${body('FAKE0+/', 32)}`],
   ['write', `${D5}BEGIN ${body('ABC ', 41)}PRIVATE KEY${D5}\n${body('MIIEFAKE0+/', 64)}`],
@@ -388,6 +409,7 @@ const TIMING_SHAPES = `
     'key-type words after a private-key header': (n) => D5 + 'BEGIN ' + rep('PRIVATE KEY ', n),
     'private-key header, then spaced capitals': (n) => D5 + 'BEGIN PRIVATE KEY' + rep(' A', n),
     'private-key headers between near-material runs': (n) => rep(D5 + 'BEGIN RSA PRIVATE KEY' + D5 + '\\n' + rep('A'.repeat(31) + '.', 600), n),
+    'private-key headers between short escaped lines': (n) => rep(D5 + 'BEGIN RSA PRIVATE KEY' + D5 + '\\\\n' + rep('A'.repeat(15) + '\\\\r\\\\n', 600), n),
     'repeated service-key prefix': (n) => rep(SK + '-service-', n),
     'service-key prefixes with near-length name segments': (n) => rep(SK + '-service-' + rep('a'.repeat(47) + '-', 200), n),
     'repeated Anthropic prefix and your-': (n) => rep(SK + '-ant-your-', n),
