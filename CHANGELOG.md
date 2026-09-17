@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`secret-in-write-guard` let secrets through without saying anything (#101).**
+  The guard had no behavior test, and the one added here found three ways a
+  secret reached disk while the guard exited 0:
+  - Claude Code: a private key block was never caught. The shell guard ran
+    `grep -qE "$pattern"`, and grep parsed the private-key pattern, which
+    starts with dashes, as an unknown option. grep's error read as "no match",
+    and every allowed write printed grep's usage text to stderr.
+  - Claude Code: a write larger than the pipe buffer (about 60 KB) was never
+    caught. Under `pipefail`, `grep -q` exiting on the first match killed the
+    `echo` feeding it with SIGPIPE, and the pipeline's failure also read as
+    "no match". Matching now happens inside the guard's Python step, which
+    already fails closed, so neither the pipe nor grep is involved. Patterns,
+    labels and messages are unchanged.
+  - opencode: edits were never scanned. The guard read `new_string`, but
+    opencode's `edit` tool passes `newString`, so only `write` was checked.
+  - New mirrored tests: `hooks/claude-code/secret-in-write-guard.test.sh` and
+    `hooks/opencode/secret-in-write-guard.test.js`. They check that every
+    pattern is blocked in Write/Edit content, in code, on a later line, in a
+    `.env.example` and in a 260 KB write, and that the block message names
+    the kind of secret without repeating it. They check that prose mentioning
+    tokens, variables named `token`, `.example`/`.sample`/`.template`/`.dist`
+    templates with placeholder values, public keys and certificates, and an
+    Edit that removes a key are allowed silently.
+
 ## [0.9.0] - 2026-09-16
 
 ### Added

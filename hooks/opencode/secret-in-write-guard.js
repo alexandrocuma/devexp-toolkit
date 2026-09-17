@@ -5,6 +5,9 @@
  *
  * Scans the content being written for high-signal secret patterns.
  * Complements secret-guard which checks filenames on read.
+ *
+ * Tests: node hooks/opencode/secret-in-write-guard.test.js
+ * Mirror: hooks/claude-code/secret-in-write-guard.sh — keep the patterns in lockstep.
  */
 
 const SECRET_PATTERNS = [
@@ -21,7 +24,8 @@ export async function secretInWriteGuard(_ctx) {
     'tool.execute.before': async (input, output) => {
       if (input.tool !== 'write' && input.tool !== 'edit') return;
 
-      const content = output.args?.content ?? output.args?.new_string ?? '';
+      // opencode's edit tool passes camelCase `newString`; `new_string` is Claude Code's name.
+      const content = output.args?.content ?? output.args?.newString ?? output.args?.new_string ?? '';
       if (!content) return;
 
       for (const { re, label } of SECRET_PATTERNS) {
