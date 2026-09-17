@@ -21,8 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     keeps all its fields, in order; a user's entry without `matcher` doesn't
     gain one; a re-quoted devexp command changes that value only.
   - Only the top-level `hooks` value is rewritten, in the indentation and line
-    ending (LF or CRLF) of the file around it. Every other byte of
-    `settings.json` stays as it was. New files and devexp's own entries are
+    ending (LF or CRLF) of the file around it. Every byte outside it stays as
+    it was. Inside it, fields, their order and values are kept, but the value
+    is re-indented as a whole and escaped keys are re-encoded. New files and devexp's own entries are
     written as before. A number no float64 holds (such as `1e400`) is kept as
     written and doesn't stop the install.
   - A handler with `args` (spawned without a shell) or of a type other than
@@ -55,8 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     devexp's own handlers, so a matcher you set by hand on one, or an entry
     with no `matcher` (matching every tool), is reset on the next install. To
     use a matcher of your own, disable the hook (`hooks.disabled` in
-    `devexp.config.json`) and register your own command for it, such as a
-    wrapper script or the script with `"args": []`.
+    `devexp.config.json`), remove devexp's entry for it, and register your own
+    command for it, such as a wrapper script or the script with `"args": []`.
   - A hook already under the registry's matcher, or disabled, is left as it
     is, and a second install writes nothing. `uninstall.sh` is unchanged.
 - **Stale hook pruning removed users' commands under the repo dir (#138).**
