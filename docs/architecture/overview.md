@@ -50,8 +50,10 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
                          $DEVEXP_DIR (must be a checkout, else error — no fallback)
                          → dev builds only (version == "dev"): sourceCheckout(), the checkout
                            compiled in via runtime.Caller (none under -trimpath), used only if
-                           ownedCheckout() verifies it as the user's (owner + no group/other
-                           write on it, agents/ skills/ mcps/ hooks/…, and its parent); if it
+                           ownedCheckout() verifies it as the user's: root, root files and every
+                           entry under agents/ skills/ mcps/ hooks/ owned by the user, no
+                           symlinks, no other-write, group-write only via the user's private
+                           group; parent owned by user/root, same write rule unless sticky; if it
                            lacks the marker, is gone or can't be verified → Source.Warning,
                            fall through
                          a checkout = .devexp-toolkit marker (regular file, first line
@@ -61,9 +63,13 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
           → announce(Source): install.go prints the warning, then
                          "Asset root: <dir> (<origin>)" — before any write
           → if embedded, extractEmbedded(): assets.FS (marker included) → a fresh sibling
-                         .assets.<rand>/, then a symlink renamed over that dir (atomic);
-                         reused while .devexp-version == a tagged version (dev builds always
-                         re-extract); *.sh written 0755
+                         .assets.<rand>/ (dirs made one level at a time, so a tree swept
+                         mid-run fails), then a symlink renamed over that dir (atomic; a
+                         failed swap puts a moved-aside in-place dir back); the retired tree
+                         is kept (mtime refreshed) and sweepStale removes unlinked siblings
+                         older than 1h, after an extraction or a reuse; reused while
+                         .devexp-version == a tagged version (dev builds always re-extract);
+                         *.sh written 0755
           → Source{RepoDir, Embedded, Origin, Warning}; every installer below — and the
                          wizard's Remove (runRemove) — reads RepoDir on disk
       → cli/internal/config/config.go Load(<repo>/devexp.config.json)   (missing → ui.Warn + defaults; --model overrides)

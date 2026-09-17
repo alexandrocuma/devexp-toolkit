@@ -4,9 +4,12 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"os/user"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -228,18 +231,57 @@ func TestSourceRoot_RealCheckout(t *testing.T) {
 	}
 }
 
-// ownedByAnother makes ownerOf report every file named name as owned by a
+// ownedByAnother makes fileIDs report every file named name as owned by a
 // different user.
 func ownedByAnother(t *testing.T, name string) {
 	t.Helper()
-	orig := ownerOf
-	ownerOf = func(fi os.FileInfo) (uint32, bool) {
+	orig := fileIDs
+	fileIDs = func(fi os.FileInfo) (uint32, uint32, bool) {
+		uid, gid, ok := orig(fi)
 		if fi.Name() == name {
-			return uint32(currentUID() + 1), true
+			uid = uint32(currentUID() + 1)
 		}
-		return orig(fi)
+		return uid, gid, ok
 	}
-	t.Cleanup(func() { ownerOf = orig })
+	t.Cleanup(func() { fileIDs = orig })
+}
+
+// withPrivateGroup makes privateGroup report gid as the user's private group,
+// or no private group when ok is false.
+func withPrivateGroup(t *testing.T, gid uint32, ok bool) {
+	t.Helper()
+	orig := privateGroup
+	privateGroup = func() (uint32, bool) { return gid, ok }
+	t.Cleanup(func() { privateGroup = orig })
+}
+
+// gidOf returns the group that owns path.
+func gidOf(t *testing.T, path string) uint32 {
+	t.Helper()
+	fi, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, gid, ok := statIDs(fi)
+	if !ok {
+		t.Skip("file ownership is not available on this platform")
+	}
+	return gid
+}
+
+// writeIn makes a checkout and writes rel inside it with mode perm.
+func writeIn(t *testing.T, rel string, perm os.FileMode) string {
+	t.Helper()
+	d := t.TempDir()
+	makeRepoDir(t, d)
+	p := filepath.Join(d, rel)
+	if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(p, perm); err != nil {
+		t.Fatal(err)
+	}
+	return d
 }
 
 // checkoutIn makes a checkout at dir/name, with dir created with mode perm.
@@ -268,6 +310,27 @@ func chmodIn(t *testing.T, rel string, perm os.FileMode) string {
 	}
 	t.Cleanup(func() { os.Chmod(filepath.Join(d, rel), 0o755) }) //nolint:errcheck
 	return d
+}
+
+// TestLookupPrivateGroup: the user's primary group counts as a private group
+// only when it has the user's name.
+func TestLookupPrivateGroup(t *testing.T) {
+	u, err := user.Current()
+	if err != nil {
+		if _, ok := lookupPrivateGroup(); ok {
+			t.Errorf("lookupPrivateGroup() ok with no current user (%v)", err)
+		}
+		return
+	}
+	g, gerr := user.LookupGroupId(u.Gid)
+	wantOK := gerr == nil && g.Name == u.Username
+	gid, ok := lookupPrivateGroup()
+	if ok != wantOK {
+		t.Errorf("lookupPrivateGroup() ok = %v, want %v (user %q, primary group %v, %v)", ok, wantOK, u.Username, g, gerr)
+	}
+	if ok && strconv.FormatUint(uint64(gid), 10) != u.Gid {
+		t.Errorf("lookupPrivateGroup() = %d, want %s", gid, u.Gid)
+	}
 }
 
 // TestLocate_NoDevexpDir: without DEVEXP_DIR a dev build uses only the
@@ -388,6 +451,110 @@ func TestLocate_NoDevexpDir(t *testing.T) {
 			},
 			wantWarning: unverifiedWarning,
 		},
+		"dev build, source checkout writable by its user's private group": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				d := chmodIn(t, ".", 0o775)
+				withPrivateGroup(t, gidOf(t, d), true)
+				return d
+			},
+			wantSource: true,
+		},
+		"dev build, hook script and hooks/ writable by the user's private group": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				d := writeIn(t, filepath.Join("hooks", "claude-code", "guard.sh"), 0o775)
+				os.Chmod(filepath.Join(d, "hooks"), 0o775) //nolint:errcheck
+				withPrivateGroup(t, gidOf(t, d), true)
+				return d
+			},
+			wantSource: true,
+		},
+		"dev build, source checkout writable by a shared group": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				d := chmodIn(t, ".", 0o775)
+				withPrivateGroup(t, gidOf(t, d)+1, true)
+				return d
+			},
+			wantWarning: unverifiedWarning,
+		},
+		"dev build, source checkout group-writable, private group lookup failed": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				d := chmodIn(t, ".", 0o775)
+				withPrivateGroup(t, gidOf(t, d), false)
+				return d
+			},
+			wantWarning: unverifiedWarning,
+		},
+		"dev build, source checkout writable by others, even with a private group": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				d := chmodIn(t, ".", 0o757)
+				withPrivateGroup(t, gidOf(t, d), true)
+				return d
+			},
+			wantWarning: unverifiedWarning,
+		},
+		"dev build, source checkout in a dir writable by the user's private group": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				root := checkoutIn(t, 0o775, "toolkit")
+				withPrivateGroup(t, gidOf(t, filepath.Dir(root)), true)
+				return root
+			},
+			wantSource: true,
+		},
+		"dev build, source checkout in a dir writable by others, even with a private group": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				root := checkoutIn(t, 0o777, "toolkit")
+				withPrivateGroup(t, gidOf(t, filepath.Dir(root)), true)
+				return root
+			},
+			wantWarning: unverifiedWarning,
+		},
+		"dev build, a hook script writable by others": {
+			version: devBuild, source: func(t *testing.T) string { return writeIn(t, filepath.Join("hooks", "claude-code", "guard.sh"), 0o757) }, wantWarning: unverifiedWarning,
+		},
+		"dev build, a hook script writable by a shared group": {
+			version: devBuild, source: func(t *testing.T) string { return writeIn(t, filepath.Join("hooks", "claude-code", "guard.sh"), 0o775) }, wantWarning: unverifiedWarning,
+		},
+		"dev build, hooks registry owned by another user": {
+			version: devBuild, source: func(t *testing.T) string { ownedByAnother(t, "registry.json"); return checkout(t) }, wantWarning: unverifiedWarning,
+		},
+		"dev build, an agent file owned by another user": {
+			version: devBuild, source: func(t *testing.T) string {
+				ownedByAnother(t, "a.md")
+				return writeIn(t, filepath.Join("agents", "a.md"), 0o644)
+			}, wantWarning: unverifiedWarning,
+		},
+		"dev build, a skill file that is a symlink": {
+			version: devBuild,
+			source: func(t *testing.T) string {
+				d := checkout(t)
+				target := filepath.Join(t.TempDir(), "SKILL.md")
+				os.WriteFile(target, []byte("x"), 0o644) //nolint:errcheck
+				if err := os.Symlink(target, filepath.Join(d, "skills", "SKILL.md")); err != nil {
+					t.Fatal(err)
+				}
+				return d
+			},
+			wantWarning: unverifiedWarning,
+		},
+		"dev build, an MCP registry writable by group": {
+			version: devBuild, source: func(t *testing.T) string { return writeIn(t, filepath.Join("mcps", "registry.json"), 0o664) }, wantWarning: unverifiedWarning,
+		},
+		"dev build, uninstall.sh owned by another user": {
+			version: devBuild, source: func(t *testing.T) string { ownedByAnother(t, "uninstall.sh"); return writeIn(t, "uninstall.sh", 0o755) }, wantWarning: unverifiedWarning,
+		},
+		"dev build, devexp.config.json writable by others": {
+			version: devBuild, source: func(t *testing.T) string { return writeIn(t, "devexp.config.json", 0o646) }, wantWarning: unverifiedWarning,
+		},
+		"dev build, marker owned by another user": {
+			version: devBuild, source: func(t *testing.T) string { ownedByAnother(t, markerFile); return checkout(t) }, wantWarning: unverifiedWarning,
+		},
 		"dev build, file ownership unavailable": {
 			version: devBuild,
 			source: func(t *testing.T) string {
@@ -454,6 +621,7 @@ func TestLocate_NoDevexpDir(t *testing.T) {
 				base := withTempCache(t)
 				t.Setenv("DEVEXP_DIR", "")
 				t.Chdir(cwd(t))
+				withPrivateGroup(t, 0, false) // cases opt in to a private group
 				source := tt.source(t)
 				withSourceRoot(t, source)
 
@@ -654,13 +822,126 @@ func TestExtractEmbedded(t *testing.T) {
 			t.Fatalf("WriteFile sentinel error = %v", err)
 		}
 
+		previous, _ := os.Readlink(dest)
 		if _, err := extractEmbedded("v2.0.0"); err != nil {
 			t.Fatalf("upgrade extractEmbedded() error = %v", err)
 		}
 		if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
-			t.Errorf("a version change should discard the old extraction, stat err = %v", err)
+			t.Errorf("a version change should replace the old extraction, stat err = %v", err)
+		}
+		assertOneCompleteTree(t, dest, "v2.0.0", previous)
+	})
+
+	t.Run("keeps the retired tree through the grace period, then sweeps it", func(t *testing.T) {
+		withTempCache(t)
+		dest, err := extractEmbedded("v1.0.0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		parent := filepath.Dir(dest)
+		previous, _ := os.Readlink(dest)
+		retired := filepath.Join(parent, previous)
+		// Aged as if extracted long ago: the swap must refresh it.
+		old := time.Now().Add(-3 * time.Hour)
+		os.Chtimes(retired, old, old) //nolint:errcheck
+
+		if _, err := extractEmbedded("v2.0.0"); err != nil {
+			t.Fatal(err)
+		}
+		fi, err := os.Stat(filepath.Join(retired, "hooks"))
+		if err != nil || !fi.IsDir() {
+			t.Fatalf("the retired tree was removed at the swap: %v", err)
+		}
+		if info, _ := os.Stat(retired); time.Since(info.ModTime()) > time.Minute {
+			t.Errorf("the retired tree's mtime was not refreshed: %v", info.ModTime())
+		}
+		assertOneCompleteTree(t, dest, "v2.0.0", previous)
+
+		// Reusing the extraction sweeps too, once the grace period is over.
+		if _, err := extractEmbedded("v2.0.0"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(retired); err != nil {
+			t.Errorf("the retired tree was swept within the grace period: %v", err)
+		}
+		os.Chtimes(retired, old, old) //nolint:errcheck
+		if _, err := extractEmbedded("v2.0.0"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(retired); !os.IsNotExist(err) {
+			t.Errorf("the retired tree outlived the grace period: %v", err)
 		}
 		assertOneCompleteTree(t, dest, "v2.0.0")
+	})
+
+	t.Run("a stalled extraction whose tree was swept fails and swaps nothing in", func(t *testing.T) {
+		// Each tree is removed when "a" is read, as a sweep by another run
+		// would; what comes next must not recreate it: a directory, or a file.
+		for name, next := range map[string]fstest.MapFile{
+			"b/c/y.txt": {Data: []byte("y")},
+			"z.txt":     {Data: []byte("z")},
+		} {
+			withTempCache(t)
+			dest, err := extractEmbedded("v1.0.0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			sentinel := filepath.Join(dest, "sentinel.txt")
+			os.WriteFile(sentinel, []byte("kept"), 0o644) //nolint:errcheck
+			orig := extractTree
+			var removed string
+			extractTree = func(_ fs.FS, tree string) error {
+				fsys := fstest.MapFS{"a": {Mode: fs.ModeDir | 0o755}, name: &next}
+				return orig(removeOnOpen{FS: fsys, name: "a", remove: func() { removed = tree; os.RemoveAll(tree) }}, tree) //nolint:errcheck
+			}
+			_, err = extractEmbedded("v2.0.0")
+			extractTree = orig
+			if err == nil {
+				t.Errorf("%s: extractEmbedded() succeeded after its tree was removed mid-extraction", name)
+			}
+			if removed == "" {
+				t.Fatalf("%s: the extraction never reached a/", name)
+			}
+			if _, err := os.Stat(removed); !os.IsNotExist(err) {
+				t.Errorf("%s: the removed tree was partially recreated: %v", name, err)
+			}
+			if _, err := os.Stat(sentinel); err != nil {
+				t.Errorf("%s: the previous tree was disturbed: %v", name, err)
+			}
+			assertOneCompleteTree(t, dest, "v1.0.0")
+		}
+	})
+
+	t.Run("a failed swap puts a directory extracted in place back", func(t *testing.T) {
+		base := withTempCache(t)
+		dest := embeddedPath(base, "v2.0.0")
+		if err := os.MkdirAll(filepath.Join(dest, "agents"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(filepath.Join(dest, versionFile), []byte("v1.0.0"), 0o644)   //nolint:errcheck
+		os.WriteFile(filepath.Join(dest, "agents", "old.md"), []byte("x"), 0o644) //nolint:errcheck
+		orig := rename
+		t.Cleanup(func() { rename = orig })
+		rename = func(from, to string) error {
+			if to == dest && strings.HasSuffix(from, ".link") {
+				return errors.New("swap failed")
+			}
+			return orig(from, to)
+		}
+
+		if _, err := extractEmbedded("v2.0.0"); err == nil || !strings.Contains(err.Error(), "swap failed") {
+			t.Fatalf("extractEmbedded() error = %v, want the swap failure", err)
+		}
+		fi, err := os.Lstat(dest)
+		if err != nil || !fi.IsDir() {
+			t.Fatalf("%s is not the in-place directory any more: %v, %v", dest, fi, err)
+		}
+		if data, err := os.ReadFile(filepath.Join(dest, "agents", "old.md")); err != nil || string(data) != "x" {
+			t.Errorf("the in-place tree was not put back intact: %q, %v", data, err)
+		}
+		if left := siblings(t, dest); len(left) != 0 {
+			t.Errorf("left behind: %v", left)
+		}
 	})
 
 	t.Run("dev and tagged builds extract to separate directories", func(t *testing.T) {
@@ -734,9 +1015,22 @@ func TestExtractEmbedded(t *testing.T) {
 			t.Fatalf("extractEmbedded() = %q, %v", got, err)
 		}
 		if _, err := os.Stat(filepath.Join(dest, "agents", "old.md")); !os.IsNotExist(err) {
-			t.Errorf("the old in-place extraction is still there: %v", err)
+			t.Errorf("the old in-place extraction is still reachable: %v", err)
 		}
-		assertOneCompleteTree(t, dest, "v2.0.0")
+		target, _ := os.Readlink(dest)
+		var retired []string
+		for _, n := range siblings(t, dest) {
+			if n != target {
+				retired = append(retired, n)
+			}
+		}
+		if len(retired) != 1 {
+			t.Fatalf("retired trees = %v, want the moved-aside directory", retired)
+		}
+		if _, err := os.Stat(filepath.Join(filepath.Dir(dest), retired[0], "assets", "agents", "old.md")); err != nil {
+			t.Errorf("the moved-aside directory was removed at the swap: %v", err)
+		}
+		assertOneCompleteTree(t, dest, "v2.0.0", retired...)
 	})
 
 	t.Run("removes old leftovers, keeps recent ones", func(t *testing.T) {
@@ -819,8 +1113,9 @@ func TestExtractEmbedded(t *testing.T) {
 }
 
 // assertOneCompleteTree checks that dest is a symlink to a complete extraction
-// of version, and that nothing else is left next to it for dest.
-func assertOneCompleteTree(t *testing.T, dest, version string) {
+// of version, and that the only other extractions next to it are the retired
+// trees named in kept (base names, or "*" for any number).
+func assertOneCompleteTree(t *testing.T, dest, version string, kept ...string) {
 	t.Helper()
 	fi, err := os.Lstat(dest)
 	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
@@ -833,13 +1128,40 @@ func assertOneCompleteTree(t *testing.T, dest, version string) {
 		t.Errorf("%s is not a complete checkout", dest)
 	}
 	target, _ := os.Readlink(dest)
-	parent, name := filepath.Split(dest)
-	entries, _ := os.ReadDir(parent)
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), "."+name+".") && e.Name() != target {
-			t.Errorf("left behind next to %s: %s", name, e.Name())
+	for _, n := range siblings(t, dest) {
+		if n != target && !slices.Contains(kept, n) {
+			t.Errorf("left behind next to %s: %s", filepath.Base(dest), n)
 		}
 	}
+}
+
+// siblings lists the extraction directories next to dest.
+func siblings(t *testing.T, dest string) []string {
+	t.Helper()
+	parent, name := filepath.Split(dest)
+	entries, _ := os.ReadDir(parent)
+	var out []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "."+name+".") {
+			out = append(out, e.Name())
+		}
+	}
+	return out
+}
+
+// removeOnOpen is an fs.FS that runs remove the first time name is opened,
+// standing in for another run sweeping a stalled extraction's tree.
+type removeOnOpen struct {
+	fs.FS
+	name   string
+	remove func()
+}
+
+func (r removeOnOpen) Open(name string) (fs.File, error) {
+	if name == r.name && r.remove != nil {
+		r.remove()
+	}
+	return r.FS.Open(name)
 }
 
 // assertNoPartialTrees checks that every extraction left next to dest is

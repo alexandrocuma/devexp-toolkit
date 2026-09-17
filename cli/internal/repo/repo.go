@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -172,7 +174,7 @@ func sourceCheckout() (dir, warning string) {
 		return "", ""
 	case isRepoDir(root):
 		if err := ownedCheckout(root); err != nil {
-			return "", fmt.Sprintf("the checkout this binary was built from, %s, can't be verified as yours (%v) — using the assets bundled in this binary instead; to install from it, make it owned by you and not writable by group or others, or set DEVEXP_DIR to it", root, err)
+			return "", fmt.Sprintf("the checkout this binary was built from, %s, can't be verified as yours (%v) — using the assets bundled in this binary instead; to install from it, make its files owned by you, not symlinks, and not writable by others or by a group other than your own, or set DEVEXP_DIR to it", root, err)
 		}
 		return root, ""
 	}
@@ -185,38 +187,103 @@ func sourceCheckout() (dir, warning string) {
 	return "", ""
 }
 
-// ownerOf and currentUID are indirected so tests can stand in for files owned
-// by someone else.
+// fileIDs, currentUID and privateGroup are indirected so tests can stand in
+// for files owned by someone else and for other group setups.
 var (
-	ownerOf    = statOwner
-	currentUID = os.Getuid
+	fileIDs      = statIDs
+	currentUID   = os.Getuid
+	privateGroup = lookupPrivateGroup
 )
 
-// ownedDirs are the parts of a checkout ownedCheckout requires to be the
-// user's: the root, what is installed from it, and where hook scripts and the
-// hooks registry live. Entries marked optional may be absent.
-var ownedDirs = []struct {
-	rel      string
-	optional bool
-}{
-	{rel: "."},
-	{rel: "agents"},
-	{rel: "skills"},
-	{rel: "mcps"},
-	{rel: "hooks", optional: true},
-	{rel: filepath.Join("hooks", "claude-code"), optional: true},
-	{rel: filepath.Join("hooks", "opencode"), optional: true},
+// lookupPrivateGroup returns the gid of the current user's private group: the
+// user's primary group, when that group has the user's name (the "user private
+// group" convention, where a umask of 002 is the default). ok is false when
+// the primary group is named otherwise or a lookup fails.
+func lookupPrivateGroup() (gid uint32, ok bool) {
+	u, err := user.Current()
+	if err != nil || u.Username == "" {
+		return 0, false
+	}
+	g, err := user.LookupGroupId(u.Gid)
+	if err != nil || g.Name != u.Username {
+		return 0, false
+	}
+	id, err := strconv.ParseUint(u.Gid, 10, 32)
+	if err != nil {
+		return 0, false
+	}
+	return uint32(id), true
+}
+
+// checkoutWalks are the trees of a checkout ownedCheckout checks entry by
+// entry: what is installed from it and where hook scripts and the hooks
+// registry live. checkoutFiles are files at the root that are read or run.
+// Entries marked optional may be absent.
+var (
+	checkoutWalks = []struct {
+		rel      string
+		optional bool
+	}{
+		{rel: "agents"},
+		{rel: "skills"},
+		{rel: "mcps"},
+		{rel: "hooks", optional: true},
+	}
+	checkoutFiles = []string{markerFile, "devexp.config.json", "uninstall.sh"}
+)
+
+// ownership holds what ownedCheckout compares files against.
+type ownership struct {
+	uid      uint32
+	upg      uint32 // the user's private group, when upgOK
+	upgOK    bool
+	upgKnown bool
+}
+
+// groupWriteOK reports whether group write on a file with gid is acceptable:
+// only when gid is the user's private group, which no one else is in.
+func (o *ownership) groupWriteOK(gid uint32) bool {
+	if !o.upgKnown {
+		o.upg, o.upgOK = privateGroup()
+		o.upgKnown = true
+	}
+	return o.upgOK && gid == o.upg
+}
+
+// check verifies one entry: not a symlink, owned by the user, not writable by
+// others, and writable by group only through the user's private group.
+func (o *ownership) check(path string, fi os.FileInfo) error {
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%s is a symlink", path)
+	}
+	uid, gid, ok := fileIDs(fi)
+	if !ok || uid != o.uid {
+		return fmt.Errorf("%s is not owned by you", path)
+	}
+	return o.checkWrite(path, fi, gid)
+}
+
+func (o *ownership) checkWrite(path string, fi os.FileInfo, gid uint32) error {
+	perm := fi.Mode().Perm()
+	if perm&0o002 != 0 || perm&0o020 != 0 && !o.groupWriteOK(gid) {
+		return fmt.Errorf("%s is writable by group or others", path)
+	}
+	return nil
 }
 
 // ownedCheckout verifies that the checkout at root (a path recorded when the
 // binary was built) is the user's, so a different directory that appeared at
 // that path since is not used. Unix only; elsewhere it always fails.
 //
-//   - With symlinks resolved, the root and each of ownedDirs must be a real
-//     directory, owned by the current user and not writable by group or others.
+//   - With symlinks resolved, the root, every entry under agents/, skills/,
+//     mcps/ and hooks/, and the root files in checkoutFiles must not be
+//     symlinks, must be owned by the current user, must not be writable by
+//     others, and may be writable by group only when that group is the user's
+//     private group (lookupPrivateGroup).
 //   - The directory holding the resolved root must be owned by the user or by
-//     root, and either not writable by group or others or sticky (so nobody else
-//     can rename or replace the entry).
+//     root, and not writable by others or by a group other than the user's
+//     private group — unless it is sticky, so nobody else can rename or
+//     replace the entry.
 //   - If the recorded root is itself a symlink, the link must be owned by the
 //     user or by root, and the directory holding it must pass the same check.
 func ownedCheckout(root string) error {
@@ -224,15 +291,16 @@ func ownedCheckout(root string) error {
 	if uid < 0 {
 		return fmt.Errorf("file ownership is not available on this platform")
 	}
+	o := &ownership{uid: uint32(uid)}
 	link, err := os.Lstat(root)
 	if err != nil {
 		return err
 	}
 	if link.Mode()&os.ModeSymlink != 0 {
-		if owner, ok := ownerOf(link); !ok || (owner != uint32(uid) && owner != 0) {
+		if owner, _, ok := fileIDs(link); !ok || (owner != o.uid && owner != 0) {
 			return fmt.Errorf("%s is a symlink owned by someone else", root)
 		}
-		if err := safeParent(filepath.Dir(root), uint32(uid)); err != nil {
+		if err := o.safeParent(filepath.Dir(root)); err != nil {
 			return err
 		}
 	}
@@ -240,44 +308,67 @@ func ownedCheckout(root string) error {
 	if err != nil {
 		return err
 	}
-	if err := safeParent(filepath.Dir(resolved), uint32(uid)); err != nil {
+	if err := o.safeParent(filepath.Dir(resolved)); err != nil {
 		return err
 	}
-	for _, d := range ownedDirs {
-		p := filepath.Join(resolved, d.rel)
+	fi, err := os.Lstat(resolved)
+	if err != nil {
+		return err
+	}
+	if err := o.check(resolved, fi); err != nil {
+		return err
+	}
+	for _, name := range checkoutFiles {
+		p := filepath.Join(resolved, name)
 		fi, err := os.Lstat(p)
-		switch {
-		case d.optional && os.IsNotExist(err):
+		if os.IsNotExist(err) && name != markerFile {
 			continue
-		case err != nil:
+		}
+		if err != nil {
 			return err
-		case !fi.IsDir():
-			return fmt.Errorf("%s is not a directory", p)
 		}
-		if owner, ok := ownerOf(fi); !ok || owner != uint32(uid) {
-			return fmt.Errorf("%s is not owned by you", p)
+		if err := o.check(p, fi); err != nil {
+			return err
 		}
-		if fi.Mode().Perm()&0o022 != 0 {
-			return fmt.Errorf("%s is writable by group or others", p)
+	}
+	for _, w := range checkoutWalks {
+		top := filepath.Join(resolved, w.rel)
+		if _, err := os.Lstat(top); w.optional && os.IsNotExist(err) {
+			continue
+		}
+		err := filepath.WalkDir(top, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			fi, err := d.Info()
+			if err != nil {
+				return err
+			}
+			return o.check(p, fi)
+		})
+		if err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// safeParent checks the directory holding a checkout: owned by uid or root,
-// and not writable by group or others unless it is sticky.
-func safeParent(dir string, uid uint32) error {
+// safeParent checks the directory holding a checkout: owned by the user or
+// root, and not writable by others or by a group other than the user's private
+// group, unless it is sticky.
+func (o *ownership) safeParent(dir string) error {
 	fi, err := os.Stat(dir)
 	if err != nil {
 		return err
 	}
-	if owner, ok := ownerOf(fi); !ok || (owner != uid && owner != 0) {
+	owner, gid, ok := fileIDs(fi)
+	if !ok || (owner != o.uid && owner != 0) {
 		return fmt.Errorf("%s is not owned by you or root", dir)
 	}
-	if fi.Mode().Perm()&0o022 != 0 && fi.Mode()&os.ModeSticky == 0 {
-		return fmt.Errorf("%s is writable by group or others", dir)
+	if fi.Mode()&os.ModeSticky != 0 {
+		return nil
 	}
-	return nil
+	return o.checkWrite(dir, fi, gid)
 }
 
 // isRepoDir reports whether dir is a devexp-toolkit checkout: it holds the
@@ -344,14 +435,15 @@ func extractEmbedded(version string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	parent, name := filepath.Split(dest)
 	if version != devBuild {
 		data, err := os.ReadFile(filepath.Join(dest, versionFile))
 		if err == nil && strings.TrimSpace(string(data)) == version {
+			sweepStale(parent, name)
 			return dest, nil
 		}
 	}
 
-	parent, name := filepath.Split(dest)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return "", err
 	}
@@ -383,37 +475,63 @@ func extractEmbedded(version string) (string, error) {
 	if err := os.Symlink(filepath.Base(tree), link); err != nil {
 		return "", err
 	}
+	// retired is the tree dest pointed at before the swap. It is not removed
+	// here: hooks may be starting from it right now. Its mtime is refreshed so
+	// sweepStale removes it only after staleAfter.
+	retired := ""
+	if prev := filepath.Base(previous); previous == prev && strings.HasPrefix(prev, "."+name+".") && prev != filepath.Base(tree) {
+		retired = filepath.Join(parent, prev)
+	}
+	movedAside := ""
 	if fi, err := os.Lstat(dest); err == nil && fi.Mode()&os.ModeSymlink == 0 {
 		// A plain directory, from a version that extracted in place: move it
-		// aside so the symlink can take its name.
+		// aside so the symlink can take its name, into a sibling sweepStale
+		// removes later like any retired tree.
 		old, err := os.MkdirTemp(parent, "."+name+".")
 		if err != nil {
 			return "", err
 		}
-		if err := os.Rename(dest, filepath.Join(old, name)); err != nil && !os.IsNotExist(err) {
+		if err := rename(dest, filepath.Join(old, name)); err != nil {
 			os.Remove(old) //nolint:errcheck
-			return "", err
+			if !os.IsNotExist(err) {
+				return "", err
+			}
+		} else {
+			movedAside = filepath.Join(old, name)
+			retired = old
 		}
-		defer os.RemoveAll(old) //nolint:errcheck
 	}
-	if err := os.Rename(link, dest); err != nil {
+	if err := rename(link, dest); err != nil {
+		if movedAside != "" {
+			// Put the only complete tree back rather than leave dest missing.
+			if rename(movedAside, dest) == nil {
+				os.Remove(filepath.Dir(movedAside)) //nolint:errcheck
+			}
+		}
 		return "", err
 	}
 	swapped = true
-	if prev := filepath.Base(previous); previous == prev && strings.HasPrefix(prev, "."+name+".") && prev != filepath.Base(tree) {
-		os.RemoveAll(filepath.Join(parent, prev)) //nolint:errcheck
+	if retired != "" {
+		t := time.Now()
+		os.Chtimes(retired, t, t) //nolint:errcheck
 	}
 	sweepStale(parent, name)
 	return dest, nil
 }
 
-// staleAfter is how old a leftover extraction must be before sweepStale
-// removes it; a younger one may belong to a run still in progress.
+// rename is os.Rename, indirected so tests can fail the swap.
+var rename = os.Rename
+
+// staleAfter is how long an extraction dest no longer points at is kept
+// before sweepStale removes it. A younger one may belong to a run still in
+// progress, or be a retired tree that hooks started just before a swap are
+// still running from; hooks can run for minutes (on-save hooks run test
+// suites), and a kept tree costs about a megabyte.
 const staleAfter = time.Hour
 
 // sweepStale removes extractions next to parent/name that it doesn't point at
-// and that are older than staleAfter: leftovers of runs that were killed, or
-// that raced with another run and lost.
+// and that are older than staleAfter: trees retired by a swap, and leftovers
+// of runs that were killed or that raced with another run and lost.
 func sweepStale(parent, name string) {
 	entries, err := os.ReadDir(parent)
 	if err != nil {
@@ -459,16 +577,28 @@ func embeddedDir(version string) (string, error) {
 	return filepath.Join(base, "devexp", name), nil
 }
 
-// extractFS writes every file in fsys to dest, preserving directory structure
-// and marking shell scripts executable.
+// extractFS writes every file in fsys into dest, an existing directory,
+// preserving directory structure and marking shell scripts executable.
+//
+// Directories are created one level at a time (WalkDir visits a directory
+// before its contents), never with MkdirAll: if dest is removed mid-run — a
+// stalled extraction swept by another run — extraction fails instead of
+// quietly recreating part of the tree.
 func extractFS(fsys fs.FS, dest string) error {
 	return fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		target := filepath.Join(dest, filepath.FromSlash(path))
+		if path == "." {
+			fi, err := os.Stat(dest)
+			if err == nil && !fi.IsDir() {
+				err = fmt.Errorf("%s is not a directory", dest)
+			}
+			return err
+		}
 		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
+			return os.Mkdir(target, 0o755)
 		}
 
 		data, err := fs.ReadFile(fsys, path)
@@ -478,9 +608,6 @@ func extractFS(fsys fs.FS, dest string) error {
 		perm := os.FileMode(0o644)
 		if strings.HasSuffix(path, ".sh") {
 			perm = 0o755
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
 		}
 		return os.WriteFile(target, data, perm)
 	})
