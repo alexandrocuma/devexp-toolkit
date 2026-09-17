@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"devexp/internal/fsutil"
@@ -41,13 +42,22 @@ func InstallClaude(srcDir, targetDir string, disabled []string, dryRun bool) ([]
 		}
 		if dryRun {
 			ui.DryRun(fmt.Sprintf("write %s/", destDir))
+			// Preview the symlinks inside the skill a real run leaves alone.
+			if _, err := copyDir(skillDir, destDir, true); err != nil {
+				return installed, err
+			}
 			installed = append(installed, name)
 			continue
 		}
-		if err := CopyDir(skillDir, destDir); err != nil {
+		kept, err := copyDir(skillDir, destDir, false)
+		if err != nil {
 			return installed, err
 		}
-		ui.Added(fmt.Sprintf("%s/SKILL.md", name))
+		// A SKILL.md left untouched as a symlink was not added; its warning
+		// already said so.
+		if !slices.Contains(kept, filepath.Join(destDir, "SKILL.md")) {
+			ui.Added(fmt.Sprintf("%s/SKILL.md", name))
+		}
 		installed = append(installed, name)
 	}
 	return installed, nil
@@ -58,7 +68,19 @@ func InstallClaude(srcDir, targetDir string, disabled []string, dryRun bool) ([]
 // symlink is left untouched, with a warning, and nothing is written through it
 // (#124): it may point at a user's own copy or at the toolkit's source.
 func CopyDir(src, dst string) error {
-	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+	_, err := copyDir(src, dst, false)
+	return err
+}
+
+// copyDir is CopyDir, returning the destination paths it left untouched as
+// symlinks. With dryRun it writes nothing and only warns about those paths, so
+// a preview names what a real run keeps.
+//
+// The symlink check and the write are separate steps: a link created in
+// between is followed (fsutil.WriteFileAtomic replaces its target). Only a
+// writer running as the same user can do that.
+func copyDir(src, dst string, dryRun bool) (kept []string, err error) {
+	err = filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -69,9 +91,13 @@ func CopyDir(src, dst string) error {
 		dest := filepath.Join(dst, rel)
 		if fsutil.IsSymlink(dest) {
 			warnSymlinked(dest)
+			kept = append(kept, dest)
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		if dryRun {
 			return nil
 		}
 		if d.IsDir() {
@@ -83,6 +109,7 @@ func CopyDir(src, dst string) error {
 		}
 		return fsutil.WriteFileAtomic(dest, content, 0644)
 	})
+	return kept, err
 }
 
 // warnSymlinked reports a skill destination left untouched because it is a

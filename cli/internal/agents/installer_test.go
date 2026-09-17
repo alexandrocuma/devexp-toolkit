@@ -481,3 +481,32 @@ func TestInstall_SymlinkedAgentEntry(t *testing.T) {
 		}
 	}
 }
+
+// TestInstall_AgentFilesNeverWrittenInPlace (#157 review): agent files are
+// replaced through a temp file and a rename, for every installer. In a
+// directory where no temp file can be created, the write fails and the old
+// bytes stay, where an in-place os.WriteFile would have succeeded.
+func TestInstall_AgentFilesNeverWrittenInPlace(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permissions are not enforced for root")
+	}
+	installers := map[string]func(src, target string) ([]string, error){
+		"InstallClaude":            func(src, target string) ([]string, error) { return InstallClaude(src, target, "", nil, false) },
+		"InstallOpencode":          func(src, target string) ([]string, error) { return InstallOpencode(src, target, "", nil, false) },
+		"InstallOpencodeExclusive": func(src, target string) ([]string, error) { return InstallOpencodeExclusive(src, target, "", false) },
+	}
+	for name, install := range installers {
+		t.Run(name, func(t *testing.T) {
+			src, target := t.TempDir(), t.TempDir()
+			writeAgentFiles(t, src, map[string]string{"a.md": "---\nname: a\n---\n# A\n"})
+			os.WriteFile(filepath.Join(target, "a.md"), []byte("old\n"), 0644) //nolint:errcheck
+			os.Chmod(target, 0555)                                             //nolint:errcheck
+			t.Cleanup(func() { os.Chmod(target, 0755) })                       //nolint:errcheck
+			var err error
+			captureStdout(t, func() { _, err = install(src, target) })
+			if got, _ := os.ReadFile(filepath.Join(target, "a.md")); err == nil || string(got) != "old\n" {
+				t.Errorf("error = %v, a.md = %q; want an error and the old bytes", err, got)
+			}
+		})
+	}
+}

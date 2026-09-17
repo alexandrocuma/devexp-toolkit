@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -358,6 +359,87 @@ func TestInstall_SymlinkedSkillEntries(t *testing.T) {
 		}
 		if got, _ := os.ReadFile(filepath.Join(target, "gamma.md")); !strings.Contains(string(got), "# Alpha Skill") {
 			t.Errorf("gamma.md not installed: %q", got)
+		}
+	})
+}
+
+// TestInstallClaude_SymlinkInsideRealSkillDir (#157 review): a symlinked
+// SKILL.md or subdirectory inside a real skill directory is previewed in a dry
+// run, and a real run doesn't report a skipped SKILL.md as added.
+func TestInstallClaude_SymlinkInsideRealSkillDir(t *testing.T) {
+	for _, dryRun := range []bool{true, false} {
+		t.Run(fmt.Sprintf("dryRun=%v", dryRun), func(t *testing.T) {
+			src, target, outside := t.TempDir(), t.TempDir(), t.TempDir()
+			writeSkillDir(t, src, "beta", map[string]string{"SKILL.md": sampleSkillMD, "references/notes.md": "new\n"})
+			writeSkillDir(t, src, "gamma", map[string]string{"SKILL.md": sampleSkillMD})
+			os.WriteFile(filepath.Join(outside, "mine.md"), []byte("mine\n"), 0644)                  //nolint:errcheck
+			os.MkdirAll(filepath.Join(outside, "refs"), 0755)                                        //nolint:errcheck
+			os.MkdirAll(filepath.Join(target, "beta"), 0755)                                         //nolint:errcheck
+			os.Symlink(filepath.Join(outside, "mine.md"), filepath.Join(target, "beta", "SKILL.md")) //nolint:errcheck
+			os.Symlink(filepath.Join(outside, "refs"), filepath.Join(target, "beta", "references"))  //nolint:errcheck
+			var err error
+			out := captureStdout(t, func() { _, err = InstallClaude(src, target, nil, dryRun) })
+			if err != nil {
+				t.Fatalf("InstallClaude() error = %v\n%s", err, out)
+			}
+			for _, p := range []string{"beta/SKILL.md", "beta/references"} {
+				if !strings.Contains(out, fmt.Sprintf("%q is a symlink, so it was left untouched", filepath.Join(target, p))) {
+					t.Errorf("no warning for %s:\n%s", p, out)
+				}
+			}
+			if strings.Contains(out, "beta/SKILL.md\n") {
+				t.Errorf("the skipped beta/SKILL.md is reported as added:\n%s", out)
+			}
+			if !dryRun && !strings.Contains(out, "gamma/SKILL.md\n") {
+				t.Errorf("gamma/SKILL.md not reported as added:\n%s", out)
+			}
+			if got, _ := os.ReadFile(filepath.Join(outside, "mine.md")); string(got) != "mine\n" {
+				t.Errorf("written through the SKILL.md link: %q", got)
+			}
+			if entries, _ := os.ReadDir(filepath.Join(outside, "refs")); len(entries) != 0 {
+				t.Errorf("written into the symlinked references/")
+			}
+			if _, statErr := os.Stat(filepath.Join(target, "gamma")); dryRun != os.IsNotExist(statErr) {
+				t.Errorf("gamma on disk = %v with dryRun=%v", statErr == nil, dryRun)
+			}
+		})
+	}
+}
+
+// TestInstall_SkillFilesNeverWrittenInPlace (#157 review): skill and command
+// files are replaced through a temp file and a rename. In a directory where no
+// temp file can be created, the write fails and the old bytes stay, where an
+// in-place os.WriteFile would have succeeded.
+func TestInstall_SkillFilesNeverWrittenInPlace(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permissions are not enforced for root")
+	}
+	readOnly := func(t *testing.T, dir string) {
+		t.Helper()
+		os.Chmod(dir, 0555)                       //nolint:errcheck
+		t.Cleanup(func() { os.Chmod(dir, 0755) }) //nolint:errcheck
+	}
+	t.Run("CopyDir", func(t *testing.T) {
+		src, dst := t.TempDir(), t.TempDir()
+		os.WriteFile(filepath.Join(src, "SKILL.md"), []byte("new\n"), 0644) //nolint:errcheck
+		os.WriteFile(filepath.Join(dst, "SKILL.md"), []byte("old\n"), 0644) //nolint:errcheck
+		readOnly(t, dst)
+		if err := CopyDir(src, dst); err == nil {
+			t.Errorf("CopyDir() = nil, want the temp-file error")
+		}
+		if got, _ := os.ReadFile(filepath.Join(dst, "SKILL.md")); string(got) != "old\n" {
+			t.Errorf("SKILL.md = %q, written in place", got)
+		}
+	})
+	t.Run("InstallOpencode", func(t *testing.T) {
+		src, target := t.TempDir(), t.TempDir()
+		writeSkillDir(t, src, "alpha", map[string]string{"SKILL.md": sampleSkillMD})
+		os.WriteFile(filepath.Join(target, "alpha.md"), []byte("old\n"), 0644) //nolint:errcheck
+		readOnly(t, target)
+		var err error
+		captureStdout(t, func() { _, err = InstallOpencode(src, target, nil, false) })
+		if got, _ := os.ReadFile(filepath.Join(target, "alpha.md")); err == nil || string(got) != "old\n" {
+			t.Errorf("InstallOpencode() error = %v, alpha.md = %q; want an error and the old bytes", err, got)
 		}
 	})
 }

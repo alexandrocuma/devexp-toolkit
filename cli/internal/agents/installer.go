@@ -283,6 +283,10 @@ func isDisabled(name string, disabled []string) bool {
 // in a dotfiles repo or the toolkit's own source file; replacing it would
 // silently undo the user's setup. The name stays in the install set, so the
 // manifest keeps tracking it and it is never reported as stale.
+//
+// The check and the later write are separate steps: a link created in between
+// is followed (fsutil.WriteFileAtomic replaces its target). Only a writer
+// running as the same user can do that.
 func keepSymlinkedEntry(dest string) bool {
 	if !fsutil.IsSymlink(dest) {
 		return false
