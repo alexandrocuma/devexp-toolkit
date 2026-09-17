@@ -234,6 +234,43 @@ const BLOCK = [
   'rm -rf ${HOME,}',
   'rm -rf ${HOME@Q}',
 
+  // PR #160 re-review: rm followed at once by an expansion, brace, glob or redirect
+  'rm$IFS-f /tmp/*',
+  'rm${IFS}-rf ~/.claude/*',
+  'rm<<<x -f /tmp/*',
+  'rm</dev/null -f /tmp/*',
+  'rm>/dev/null -f /tmp/*',
+  'rm&>/dev/null -f /tmp/*',
+  'rm$(true) -f /tmp/*',
+  'rm`true` -f /tmp/*',
+  'rm$@ -f ~/.claude/*',
+  "rm$'' -f /tmp/*",
+  "rm'' -f /tmp/*",
+  'rm{,} -f /tmp/*',
+  '{sudo,rm} -f /tmp/*',
+  'rm* -f /tmp/*',
+  '$1rm -rf /', // a positional parameter before rm
+  '$1rm -f /tmp/*',
+  'rm /tmp/*', // no flags, one space
+  'rm -fr $HOME:h',
+
+  // PR #160 re-review: a ; or & that is data doesn't end the command
+  'rm -rf "a;b" /tmp/*',
+  "rm -rf 'a&b' ~/.claude/*",
+  'rm -rf a\\;b /tmp/*',
+  'rm -rf a\\&b /tmp/*',
+  'rm -rf "$(a;b)" /tmp/*',
+  'rm -rf $(a;b) /tmp/*',
+  'rm -rf `a;b` /tmp/*',
+  'rm -rf ${x:-a;b} /tmp/*',
+  "rm -rf $'a;b' /tmp/*",
+  'rm -rf "$(a && b)" ~/.claude/*',
+  'rm -f "$f&" /tmp/*',
+  'rm -f "a"; cp x /tmp/$y', // a quote before a real ; still scans on
+  'rm$(a;b) /tmp/*', // a substitution right after rm
+  'rm${x#;} -f /tmp/*',
+  'rm>&2 -f /tmp/*',
+
   // line by line, like the Claude Code hook's grep: CR is an ordinary character inside
   // a line, and NUL is dropped
   'git reset x\r--hard',
@@ -338,6 +375,12 @@ const ALLOW = [
   './bin/v2rm /tmp/$x',
   './bin/safe_rm /tmp/$x',
   './bin/safe.rm /tmp/$x',
+  './bin/Xrm /tmp/$x',
+  'rm${HOME}/.claude', // not rm: the word is rm/…/.claude
+  'rm -f a; cp "x" /tmp/$y', // a quote after the real ; doesn't scan on
+  'rm -f a >&&2 /tmp/*', // the & after >& has no > of its own
+  'rm -f $x && cp y /tmp/$z', // a bare $ is no quote
+  'rm -f "a;b" | ls /tmp/*', // the scan still ends at the next |
 
   // line by line, like the Claude Code hook's grep: a pattern begun on one line and
   // completed on a later one is not a match (backslash continuations are joined first)
@@ -434,6 +477,10 @@ const crafted = (len) => [
   ['repeated ;rm', rep(`;${RM} `, len)],
   ['rm then ?', `${RM} -rf ${rep('?', len)}`],
   ['open ${HOME[', `${RM} -rf \${HOME[${rep('a', len)}`],
+  ['rm " then ; run', `${RM} "${rep(';', len)}`],
+  ['repeated rm ";', rep(`${RM} ";`, len)],
+  ['repeated rm "|', rep(`${RM} "|`, len)],
+  ['repeated rm$(&', rep(`${RM}$(&`, len)],
 ];
 let perfFail = 0;
 const timed = (tier, len, budgetMs, stopEarly) => {

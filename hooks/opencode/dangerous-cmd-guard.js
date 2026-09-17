@@ -30,8 +30,9 @@ const END = String.raw`(?:\s|$|["'\x60();&|<>$*{?[]|[@+!]\()`;
 // with any operator, subscript, flags or modifier, `~` or `~name`.
 const HOME = String.raw`(?:\$[~=^]*HOME|\$\{[~=^]*(?:\([^()$\{\}]*\))?HOME(?:[-=?+#%/^,@:[][^$\{\}]*)?\}|~(?:[A-Za-z_][A-Za-z0-9._-]*)?)`;
 // `rm` as a word of its own: not part of a longer word or option (`--rm`, `terraform`). It
-// may still be an argument (`xargs rm`, `find -exec rm`).
-const RM_WORD = String.raw`(?<![A-Za-z0-9_.-])rm`; // grep: (^|[^A-Za-z0-9_.-])rm
+// may still be an argument (`xargs rm`, `find -exec rm`), or follow a positional parameter
+// that may be empty (`$1rm`).
+const RM_WORD = String.raw`(?:(?<![A-Za-z0-9_.-])|(?<=\$[0-9]))rm`; // grep: (^|[^A-Za-z0-9_.-]|\$[0-9])rm
 
 // Every rule decides one line at a time, as the Claude Code hook's line-by-line grep does
 // (blockReason splits the text; a backslash-continued command was joined by maskInert).
@@ -120,6 +121,40 @@ function commandEnd(line, start) {
 }
 
 /**
+ * commandEnd, unless a quote, escape, backtick, `$(` or `${` opens before that end (`$'…'` starts
+ * with a quote): it can hold a `;` or `&` that is data, so the scan runs on to the next `|`. The
+ * grep pattern is `START_OPENER[^|]*` right after `rm`, or `SCAN(OPENER[^|]*)?` after the
+ * character that follows it.
+ */
+function commandEndQuoted(line, start) {
+  const end = commandEnd(line, start);
+  for (let i = start; i < end; i++) {
+    const c = line[i];
+    const next = line[i + 1];
+    if (c === '"' || c === "'" || c === '\\' || c === '`' || (c === '$' && (next === '(' || next === '{'))) {
+      const pipe = line.indexOf('|', end);
+      return pipe < 0 ? line.length : pipe;
+    }
+  }
+  return end;
+}
+
+/**
+ * In the grep pattern `rm` is followed either by `\s/tmp…` at once, or by one more character
+ * before any other target can start. So a finder is asked from `start + 1`, except for that one form.
+ */
+function afterRm(finder) {
+  const tmpNow = new RegExp(String.raw`\s["']?\/tmp["']?\/?${END}`, 'y');
+  return (line) => {
+    const found = finder(line);
+    return (from, to) => {
+      tmpNow.lastIndex = from;
+      return tmpNow.test(line) || found(from + 1, to);
+    };
+  };
+}
+
+/**
  * PREFIX, then any run of characters not in `stop`, then SUFFIX. `suffix(line)` gives a finder.
  * `stop` is a string of characters, or a function (line, start) => end.
  */
@@ -170,13 +205,16 @@ export const BLOCK_PATTERNS = [
     // wholesale) — the blanket wipe an empty variable produces. Prefix-anchored globs like
     // /tmp/.deliver-PAY-123-* are allowed (no '*' right after the '/'). The target must follow
     // `rm` in the same simple command: the scan stops at `;`, `|` and a `&` that isn't part of
-    // a redirect (`2>&1`, `&>`).
+    // a redirect (`2>&1`, `&>`), unless a quote or substitution opens first. `rm` may be followed
+    // by whitespace, a quote, an expansion, a brace or glob character, or a redirect.
     test: sequence(
-      String.raw`${RM_WORD}(?=[\s"'])`,
-      commandEnd,
-      either(
-        leftmost(String.raw`\s["']?\/tmp["']?\/?${END}|["']?${HOME}["']?\/\.claude["']?\/?${END}`),
-        claudeGlob,
+      String.raw`${RM_WORD}(?=[\s"'$\x60<>{},*?[]|&>)`,
+      commandEndQuoted,
+      afterRm(
+        either(
+          leftmost(String.raw`\s["']?\/tmp["']?\/?${END}|["']?${HOME}["']?\/\.claude["']?\/?${END}`),
+          claudeGlob,
+        ),
       ),
     ),
     label:

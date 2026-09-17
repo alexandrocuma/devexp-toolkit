@@ -303,6 +303,49 @@ expect block 'rm -rf ${HOME^}'
 expect block 'rm -rf ${HOME,}'
 expect block 'rm -rf ${HOME@Q}'
 
+# ── PR #160 re-review: rm followed at once by an expansion, brace, glob or redirect ──
+expect block 'rm$IFS-f /tmp/*'
+expect block 'rm${IFS}-rf ~/.claude/*'
+expect block 'rm<<<x -f /tmp/*'
+expect block 'rm</dev/null -f /tmp/*'
+expect block 'rm>/dev/null -f /tmp/*'
+expect block 'rm&>/dev/null -f /tmp/*'
+expect block 'rm$(true) -f /tmp/*'
+expect block 'rm`true` -f /tmp/*'
+expect block 'rm$@ -f ~/.claude/*'
+expect block "rm\$'' -f /tmp/*"
+expect block "rm'' -f /tmp/*"
+expect block 'rm{,} -f /tmp/*'
+expect block '{sudo,rm} -f /tmp/*'
+expect block 'rm* -f /tmp/*'
+expect block '$1rm -rf /'                                     # a positional parameter before rm
+expect block '$1rm -f /tmp/*'
+expect block 'rm /tmp/*'                                      # no flags, one space
+expect block 'rm -fr $HOME:h'
+expect allow 'rm${HOME}/.claude'                              # not rm: the word is rm/…/.claude
+expect allow './bin/Xrm /tmp/$x'
+
+# ── PR #160 re-review: a ; or & that is data doesn't end the command ─────────
+expect block 'rm -rf "a;b" /tmp/*'
+expect block "rm -rf 'a&b' ~/.claude/*"
+expect block 'rm -rf a\;b /tmp/*'
+expect block 'rm -rf a\&b /tmp/*'
+expect block 'rm -rf "$(a;b)" /tmp/*'
+expect block 'rm -rf $(a;b) /tmp/*'
+expect block 'rm -rf `a;b` /tmp/*'
+expect block 'rm -rf ${x:-a;b} /tmp/*'
+expect block "rm -rf \$'a;b' /tmp/*"
+expect block 'rm -rf "$(a && b)" ~/.claude/*'
+expect block 'rm -f "$f&" /tmp/*'
+expect block 'rm -f "a"; cp x /tmp/$y'                        # a quote before a real ; still scans on
+expect allow 'rm -f a; cp "x" /tmp/$y'                        # a quote after it doesn't
+expect allow 'rm -f a >&&2 /tmp/*'                            # the & after >& has no > of its own
+expect block 'rm$(a;b) /tmp/*'                                # a substitution right after rm
+expect block 'rm${x#;} -f /tmp/*'
+expect block 'rm>&2 -f /tmp/*'
+expect allow 'rm -f $x && cp y /tmp/$z'                       # a bare $ is no quote
+expect allow 'rm -f "a;b" | ls /tmp/*'                        # the scan still ends at the next |
+
 # ── #146: the same decisions, reached in linear time ────────────────────────
 # A protected target or force flag in another pipeline stage than the command.
 expect allow 'rm -f a | cat ~/.claude | rm -f b'

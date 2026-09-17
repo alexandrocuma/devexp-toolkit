@@ -544,8 +544,9 @@ END='(\s|$|["'\''`();&|<>$*{?[]|[@+!]\()'
 # `${HOME}` with any operator, subscript, flags or modifier, `~` or `~name`.
 HOME_RE='(\$[~=^]*HOME|\$[{][~=^]*(\([^()${}]*\))?HOME([-=?+#%/^,@:[][^${}]*)?[}]|~([A-Za-z_][A-Za-z0-9._-]*)?)'
 # `rm` as a word of its own: not part of a longer word or option (`--rm`,
-# `terraform`). It may still be an argument (`xargs rm`, `find -exec rm`).
-RM_WORD='(^|[^A-Za-z0-9_.-])rm'
+# `terraform`). It may still be an argument (`xargs rm`, `find -exec rm`), or
+# follow a positional parameter that may be empty (`$1rm`).
+RM_WORD='(^|[^A-Za-z0-9_.-]|\$[0-9])rm'
 
 # rm -rf targeting filesystem root or home directory (optionally quoted)
 if matches -E "$RM_WORD"'\s+-[a-z]*r[a-z]*f\s+["'\'']?((/|'"$HOME_RE"'/?)'"$END"'|\$[~=^]*HOME:)' || \
@@ -559,11 +560,19 @@ fi
 # This is the blanket-wipe an empty variable produces — `rm -f /tmp/*"$id"*` with empty $id
 # collapses to `/tmp/*`, and the template itself contains `/tmp/*`. Prefix-anchored globs like
 # `/tmp/.deliver-PAY-123-*` are allowed (no '*' right after the '/').
-# The target must follow `rm` in the same simple command: the scan stops at
-# `;`, `|` and a `&` that isn't part of a redirect (`2>&1`, `&>`), so
-# `rm -rf dist && cp out /tmp/$x` doesn't match.
+# The target must follow `rm` in the same simple command: the scan (SCAN) stops
+# at `;`, `|` and a `&` that isn't part of a redirect (`2>&1`, `&>`), so
+# `rm -rf dist && cp out /tmp/$x` doesn't match. But a quote, an escape, a
+# backtick, `$(` or `${` can hold a `;` or `&` that is data (`$'…'` starts with
+# a quote), so once one of those opens (OPENER) the scan runs on to the next `|`.
+# `rm` itself may be followed by whitespace, a quote, an expansion, a brace or
+# glob character, or a redirect: the shell still runs `rm` with what follows.
 SENSITIVE='(\s["'\'']?/tmp["'\'']?/?'"$END"'|["'\'']?'"$HOME_RE"'["'\'']?/\.claude["'\'']?/?'"$END"'|\.claude\S*/\*)'
-if matches -E "$RM_WORD"'(\s["'\'']?/tmp["'\'']?/?'"$END"'|["'\''[:space:]]([^|;&]|[<>]&|&>)*'"$SENSITIVE"')'; then
+SCAN='([^|;&]|[<>]&|&>)*'
+OPENER='(["'\''\\`]|\$[({])'
+START_OPENER='(["'\''`]|\$[({])'
+AFTER_RM='([[:space:]<>${},*?[]|&>|[<>]&)'
+if matches -E "$RM_WORD"'(\s["'\'']?/tmp["'\'']?/?'"$END"'|('"$START_OPENER"'[^|]*|'"$AFTER_RM$SCAN"'('"$OPENER"'[^|]*)?)'"$SENSITIVE"')'; then
     echo "[devexp dangerous-cmd-guard] Blocked: unanchored wildcard delete in a sensitive directory (e.g. '/tmp/*' or '~/.claude/.../*'). Anchor the glob with a literal prefix (e.g. '/tmp/.deliver-<id>-*') so an empty variable cannot collapse it into a blanket wipe." >&2
     exit 2
 fi
