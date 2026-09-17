@@ -2,6 +2,7 @@ package fsutil
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -422,5 +423,36 @@ func TestIsSymlink(t *testing.T) {
 		if got := IsSymlink(path); got != want {
 			t.Errorf("IsSymlink(%s) = %v, want %v", path, got, want)
 		}
+	}
+}
+
+// TestWriteFileAtomic_TempNameTaken: the temp file is created exclusively. A
+// file already at the chosen name — another run's temp, or anything else — is
+// never opened or renamed over the target; the next name is tried.
+func TestWriteFileAtomic_TempNameTaken(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.json")
+	for _, existing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("target exists=%v", existing), func(t *testing.T) {
+			if existing {
+				write(t, p, "old", 0o644)
+			}
+			taken := filepath.Join(dir, ".config.json.tmp-taken")
+			write(t, taken, "someone else's", 0o600)
+			names := []string{"taken", "free"}
+			old := tempSuffix
+			tempSuffix = func() string { n := names[0]; names = names[1:]; return n }
+			t.Cleanup(func() { tempSuffix = old })
+			if err := WriteFileAtomic(p, []byte("new"), 0o644); err != nil {
+				t.Fatalf("WriteFileAtomic() error = %v", err)
+			}
+			if got := read(t, taken); got != "someone else's" {
+				t.Errorf("taken temp name = %q, overwritten", got)
+			}
+			if got := read(t, p); got != "new" {
+				t.Errorf("target = %q, want new", got)
+			}
+			os.Remove(taken) //nolint:errcheck
+		})
 	}
 }

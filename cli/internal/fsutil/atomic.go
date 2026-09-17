@@ -33,9 +33,10 @@ const accessWriteOK = 0x2
 
 // Indirected so tests can fail or interrupt a write at each step.
 var (
-	writeTemp = func(f *os.File, data []byte) error { _, err := f.Write(data); return err }
-	syncFile  = (*os.File).Sync
-	rename    = os.Rename
+	writeTemp  = func(f *os.File, data []byte) error { _, err := f.Write(data); return err }
+	syncFile   = (*os.File).Sync
+	tempSuffix = func() string { return strconv.FormatUint(rand.Uint64(), 36) }
+	rename     = os.Rename
 )
 
 // WriteFileAtomic replaces the contents of the file at path with data, so a
@@ -156,7 +157,7 @@ func resolveTarget(path string) (string, os.FileMode, bool, error) {
 // and with perm (minus the umask), retrying on a name that already exists.
 func createTemp(dir, base string, perm os.FileMode) (*os.File, error) {
 	for try := 0; ; try++ {
-		name := filepath.Join(dir, "."+base+".tmp-"+strconv.FormatUint(rand.Uint64(), 36))
+		name := filepath.Join(dir, "."+base+".tmp-"+tempSuffix())
 		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 		if os.IsExist(err) && try < 100 {
 			continue

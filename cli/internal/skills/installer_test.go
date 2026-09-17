@@ -443,3 +443,25 @@ func TestInstall_SkillFilesNeverWrittenInPlace(t *testing.T) {
 		}
 	})
 }
+
+// TestInstallClaude_UnreadableSkillFailsInDryRunToo: the dry-run walk reports
+// what a real run would hit, such as a source directory it can't read.
+func TestInstallClaude_UnreadableSkillFailsInDryRunToo(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permissions are not enforced for root")
+	}
+	for _, dryRun := range []bool{true, false} {
+		t.Run(fmt.Sprintf("dryRun=%v", dryRun), func(t *testing.T) {
+			src, target := t.TempDir(), t.TempDir()
+			writeSkillDir(t, src, "alpha", map[string]string{"SKILL.md": sampleSkillMD, "references/notes.md": "x\n"})
+			refs := filepath.Join(src, "alpha", "references")
+			os.Chmod(refs, 0o000)                       //nolint:errcheck
+			t.Cleanup(func() { os.Chmod(refs, 0o755) }) //nolint:errcheck
+			var err error
+			captureStdout(t, func() { _, err = InstallClaude(src, target, nil, dryRun) })
+			if err == nil {
+				t.Errorf("InstallClaude(dryRun=%v) = nil, want the unreadable-directory error", dryRun)
+			}
+		})
+	}
+}

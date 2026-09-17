@@ -81,3 +81,34 @@ func TestWriteFileAtomic_UmaskTempFile(t *testing.T) {
 		t.Errorf("temp file mode = %v, want 0600", tempMode)
 	}
 }
+
+// TestWriteFileAtomic_ReplacementTempStartsPrivate: when replacing a file, the
+// temp file holding the new contents is 0600 from creation until it takes the
+// old file's bits, whatever the umask — a 0600 settings.json is never readable
+// by others mid-save.
+func TestWriteFileAtomic_ReplacementTempStartsPrivate(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "settings.json")
+	write(t, p, "old", 0o600)
+	withUmask(t, 0o022)
+	var atWrite os.FileMode
+	old := writeTemp
+	writeTemp = func(f *os.File, data []byte) error {
+		fi, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		atWrite = fi.Mode().Perm()
+		return old(f, data)
+	}
+	t.Cleanup(func() { writeTemp = old })
+	if err := WriteFileAtomic(p, []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if atWrite != 0o600 {
+		t.Errorf("temp file mode while writing = %v, want 0600", atWrite)
+	}
+	if got := mode(t, p); got != 0o600 {
+		t.Errorf("mode = %v, want 0600", got)
+	}
+}

@@ -1984,3 +1984,24 @@ func TestUninstallOpencode_MatchesInstall(t *testing.T) {
 		})
 	}
 }
+
+// TestWarnLeftBehind_SaysWhy: a plugins/ that is itself a symlink is named as
+// one; one reached through a linked parent says where it resolves.
+func TestWarnLeftBehind_SaysWhy(t *testing.T) {
+	root := t.TempDir()
+	real := filepath.Join(root, "dotfiles", "plugins")
+	os.MkdirAll(real, 0755) //nolint:errcheck
+	link := filepath.Join(root, "plugins")
+	os.Symlink(real, link) //nolint:errcheck
+	out := captureOutput(t, func() { warnLeftBehind(link, []string{"devexp.js"}) })
+	if !strings.Contains(out, link+" is a symlink — devexp never removes files through it; remove these by hand: devexp.js") {
+		t.Errorf("symlinked plugins/ warning = %q", out)
+	}
+	os.MkdirAll(filepath.Join(root, "real-config", "opencode", "plugins"), 0755)   //nolint:errcheck
+	os.Symlink(filepath.Join(root, "real-config"), filepath.Join(root, ".config")) //nolint:errcheck
+	behind := filepath.Join(root, ".config", "opencode", "plugins")
+	out = captureOutput(t, func() { warnLeftBehind(behind, []string{"devexp.js"}) })
+	if !strings.Contains(out, behind+" is behind a symlink (it resolves to ") {
+		t.Errorf("behind-a-symlink warning = %q", out)
+	}
+}
