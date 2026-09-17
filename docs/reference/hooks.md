@@ -23,6 +23,7 @@ Hooks intercept tool calls automatically — no user action required. Some are s
 hooks/
   registry.json               # Source of truth — one entry per hook
   claude-code/                # One .sh file per hook + tests
+  └── scan-budget.sh           # Shared: the wall-clock scan budget the fail-closed guards run under
   └── secret-guard.sh
   └── secret-in-write-guard.sh
   └── dangerous-cmd-guard.sh
@@ -36,8 +37,9 @@ hooks/
   └── secret-guard.test.sh     # Hook tests (*.test.sh), run by CI
   └── dangerous-cmd-guard.test.sh
   └── fail-closed.test.sh      # Guards fail closed / advisory hooks fail open but loud
+  └── scan-budget.test.sh      # The scan budget: forced hits block, ordinary input is untouched
   opencode/                   # One .js module per hook + shared utils + entry point + tests
-  └── utils.js                # Shared helpers: findRoot, which, runLinter, runCommand (async spawn), countLines
+  └── utils.js                # Shared helpers: scanBudgetMs/startScanBudget, findRoot, which, runLinter, runCommand (async spawn), countLines
   └── secret-guard.js
   └── secret-in-write-guard.js
   └── dangerous-cmd-guard.js
@@ -50,6 +52,7 @@ hooks/
   └── graphify-grep-nudge.js
   └── secret-guard.test.js     # Hook tests (*.test.js), run by CI
   └── dangerous-cmd-guard.test.js
+  └── scan-budget.test.js     # The scan budget, and both twins agreeing on the same input
   └── devexp-plugin.js        # Entry point — composes the modules listed in devexp/hooks.json
   └── devexp-plugin.test.js   # Entry tests: selection, failure isolation, fail-closed stubs, event adapter
   └── package.json            # { "type": "module" } — required for ESM
@@ -68,7 +71,8 @@ hooks/
   "claude_code": {
     "event":   "PreToolUse",
     "matcher": "Bash",
-    "script":  "hooks/claude-code/hook-name.sh"
+    "script":  "hooks/claude-code/hook-name.sh",
+    "timeout": 45
   },
   "opencode": {
     "event":       "tool.execute.before",
@@ -86,6 +90,7 @@ hooks/
 | `claude_code.event` | `PreToolUse` or `PostToolUse` |
 | `claude_code.matcher` | Tool-name matcher (e.g. `"Bash"`, `"Write\|Edit"`). A plain `\|`-separated list matches those exact names, so `Edit` doesn't match `MultiEdit` or `NotebookEdit`; a pattern with other regex characters is an unanchored regex |
 | `claude_code.script` | Path to the shell script, relative to repo root |
+| `claude_code.timeout` | Optional hook timeout **in seconds**, written into the registration. Set on the guards that enforce a [scan budget](#the-scan-budget), above that budget. Omit for everything else, and an install leaves whatever timeout is registered alone |
 | `opencode.event` | `tool.execute.before` or `file.edited` |
 | `opencode.module` | Path to the JS module, relative to repo root (`hooks/opencode/<hook-name>.js`) |
 | `opencode.export` | Name of the module's factory export — the lowerCamel hook name (`hookName`) |
@@ -94,7 +99,7 @@ hooks/
 | `opencode.enabled` | Optional opencode-only override of `enabled`; absent (nil) = follow `enabled`. The `graphify-*` hooks set `true` |
 | `enabled` | Set to `false` to skip this hook for all users (targets without their own `enabled` override) |
 
-Every key other than `name`, `description` and `enabled` whose value is an object is an **install-target block**, keyed by target id: `claude_code` for Claude Code, `opencode` for opencode. The Go installer parses them all into `Hook.Targets` (`map[string]hooks.TargetSpec` in `cli/internal/hooks/installer.go`), so a new target is a new sibling block, not a new Go type. Target blocks share one field vocabulary: `event`, `matcher` (Claude Code), `script` (command-based targets), `module` + `export` (JS-plugin targets), `fail_closed`, and the optional per-target `enabled`. Each install asks `EnabledFor(<target>)`: the target block's own `enabled` when set, else the top-level `enabled` (Claude Code too, since #150; before it, Claude Code read only the top-level `enabled`).
+Every key other than `name`, `description` and `enabled` whose value is an object is an **install-target block**, keyed by target id: `claude_code` for Claude Code, `opencode` for opencode. The Go installer parses them all into `Hook.Targets` (`map[string]hooks.TargetSpec` in `cli/internal/hooks/installer.go`), so a new target is a new sibling block, not a new Go type. Target blocks share one field vocabulary: `event`, `matcher` and `timeout` (Claude Code), `script` (command-based targets), `module` + `export` (JS-plugin targets), `fail_closed`, and the optional per-target `enabled`. Each install asks `EnabledFor(<target>)`: the target block's own `enabled` when set, else the top-level `enabled` (Claude Code too, since #150; before it, Claude Code read only the top-level `enabled`).
 
 ---
 
@@ -117,7 +122,7 @@ The three `graphify-*` hooks ship with `enabled: false` — they're an **optiona
 
 **What `secret-in-write-guard` lets through on purpose** (#143). A value that is only a placeholder is allowed even when it starts with a vendor prefix: a documented example key ID, a `your-…` phrase, or a body made of one repeated character. The whole matched value has to be the placeholder, and every position in the text is still checked, so a real key next to a placeholder or joined to one still blocks. A value wrapped in `<…>` never matched any pattern, and is now tested. Long snake_case names that happen to contain a GitHub prefix are allowed, because GitHub tokens are matched by their documented shapes. A private-key header is blocked only when key material follows it closely, before any `END` or `BEGIN` line, so a header quoted in documentation or code, or a template with an elided body, is allowed, whatever comes later in the file. Key-like text on the header's own line or just after it, such as a long identifier or a fingerprint, still blocks. A real PEM block still blocks, including escaped, concatenated, encrypted and PGP-armored ones.
 
-**What `secret-in-write-guard` doesn't see** — it scans only the new text of a write, edit or patch, never the file text around it. A secret completed across text already in the file and an edit isn't seen. In opencode, `apply_patch` context lines are matched against the file loosely and written from the patch's own text, and those lines aren't scanned. A private-key body wrapped far narrower than the usual PEM line width, written in pieces across several edits, or starting far from its header, isn't recognized as key material. Its patterns run in time linear in the length of the write; there is no separate time budget, and a Claude Code hook that runs past its timeout doesn't block the write. The guard catches a secret written in one piece; it doesn't replace a secret scanner on the repository.
+**What `secret-in-write-guard` doesn't see** — it scans only the new text of a write, edit or patch, never the file text around it. A secret completed across text already in the file and an edit isn't seen. In opencode, `apply_patch` context lines are matched against the file loosely and written from the patch's own text, and those lines aren't scanned. A private-key body wrapped far narrower than the usual PEM line width, written in pieces across several edits, or starting far from its header, isn't recognized as key material. Its patterns run in time linear in the length of the write, and the scan runs under a [budget](#the-scan-budget) that blocks the write if it is exceeded. The guard catches a secret written in one piece; it doesn't replace a secret scanner on the repository.
 
 **How `graphify-read-guard` paces itself** — rather than a flat "queried in the last N hours" timer (which re-arms mid-session and creates friction, or "gate once" which under-uses the graph), it runs a tapering cadence sourced from a small JSON state file (`graphify-out/.graphify_session`, shared with `graphify-session-sentinel`):
 
@@ -203,6 +208,72 @@ In `dangerous-cmd-guard.sh`, all parsing happens in the `python3 -I` step, where
 
 ---
 
+## The Scan Budget
+
+Every guard marked `fail_closed` — `secret-guard`, `secret-in-write-guard`,
+`dangerous-cmd-guard` — scans under a wall-clock budget and **blocks** when it is
+exceeded (#162).
+
+**Why.** Claude Code does not block a tool call when a **command** hook times
+out: *"A timed-out `command`, `http`, or `mcp_tool` hook doesn't block the tool
+call. The call continues through the normal permission flow, so don't count on a
+stalled hook to act as a gate."* Its default timeout for such a hook is **600
+seconds**, and no hook field expresses "block on timeout". So without a budget a
+guard that is slow on some input fails **open**: the call goes ahead unscanned
+after a long wait. (The Agent SDK's in-process *callback* hooks do block on
+timeout — a different mechanism, and not what devexp registers.) opencode is the
+other way round: it puts no timeout on a plugin hook and runs it in its server
+process, so a slow scan stalls the session and a hook that never returns hangs
+the call for good.
+
+**The budget.** `DEVEXP_SCAN_BUDGET_MS`, default **15000 ms**, per guard
+invocation. Both twins read the variable and carry the same default
+(`DEVEXP_SCAN_BUDGET_DEFAULT_MS` in `hooks/claude-code/scan-budget.sh`,
+`SCAN_BUDGET_DEFAULT_MS` in `hooks/opencode/utils.js`); the test suites pin them
+to each other. Only a plain non-negative integer counts — anything else falls
+back to the default, so a typo can neither widen the budget nor disable the
+guard. `0` means "already over budget" and blocks immediately; it is the test
+seam, not a setting to use.
+
+15 s is sized from the worst cases measured on the crafted inputs the timing
+tests use — about 1 s for a 2 MB write through `secret-in-write-guard`, about
+1.7 s for a 1 MB command through `dangerous-cmd-guard`, under 0.1 s for ordinary
+input — and sits above the ceilings those suites already accept as "not slow"
+(8 s for a 2 MB write, 15 s for a 400 KB pipeline), so a much slower machine
+still never trips it.
+
+**The hook timeout.** Each of these guards sets `claude_code.timeout: 45` in the
+registry, three times the budget, so the guard's own exit 2 always lands before
+Claude Code cancels it. The installer writes the field into the registration and
+brings an existing one to the registry's value, so a machine installed before
+this existed stops running on the 600 s default at its next install.
+
+**How it is enforced.**
+
+| | Claude Code | opencode |
+|---|---|---|
+| Mechanism | `scan-budget.sh` re-runs the guard under a `python3` watchdog in a session of its own and `SIGKILL`s the process group at the deadline | a deadline started at handler entry, checked at every unit of the scan; the check throws, which is how `tool.execute.before` refuses a call |
+| Covers | the whole hook run — reading the envelope, `json.load`, the regex work and every `grep` | the scan, at the granularity of one unit of work: one pattern, one rule against one line, one token |
+| Cost | one extra interpreter start per guarded tool call | none |
+| On a hit | exit 2 with a message naming the budget | a thrown block with the same message |
+
+A single regex call cannot be interrupted from inside JavaScript, so the opencode
+side gives up at the first check after the budget rather than mid-pattern. That
+side has no fail-open path to begin with: the outcome there is a refused call,
+never one that proceeds unscanned.
+
+The shell twin also blocks on any child status that is neither allow (0) nor
+block (2), and when the watchdog itself cannot run — a guard whose decision
+cannot be read must not be taken for "allowed".
+
+**Where the twins differ.** The Claude Code budget starts before the guard can
+tell which tool it was handed and covers process startup; the opencode budget
+starts once the module has seen a tool it scans. With a real budget that makes no
+difference; with a budget of a millisecond or two it does, which is why the
+parity tests use a zero budget or the real one.
+
+---
+
 ## CLI Compatibility
 
 | | Claude Code | opencode |
@@ -242,6 +313,8 @@ In `dangerous-cmd-guard.sh`, all parsing happens in the `python3 -I` step, where
    ```
 
 3. Add the entry to `hooks/registry.json`, including the opencode mapping — `opencode.module`, `opencode.export`, and `opencode.fail_closed: true` for security guards. `devexp-plugin.js` is never edited per hook.
+
+   A **security guard** also takes a [scan budget](#the-scan-budget): source `scan-budget.sh` and call `devexp_scan_budget <hook-name> "$@"` at the top of the `.sh` (copy the block from an existing guard, including its fail-closed load), start a budget in the `.js` handler and check it at every unit of the scan, and give the registry entry a `claude_code.timeout` above the budget. `scan-budget.test.sh` fails if a `fail_closed` guard has no such timeout.
 
 4. Add mirrored tests (`<hook-name>.test.sh` / `<hook-name>.test.js`), a `check` line in `hooks/claude-code/fail-closed.test.sh`, and update this catalog, the file tree above and the hook counts — see [workflows → Add a hook](../guides/workflows.md#add-a-hook).
 
