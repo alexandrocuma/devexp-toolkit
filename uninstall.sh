@@ -344,13 +344,17 @@ def write_atomic(path, data):
         if mode is None:
             # A new file: created with 0644 and never chmodded, so the umask
             # applies (0600 under umask 077), as with a plain open().
-            while True:
+            # O_EXCL: a file or symlink already at the name is never opened or
+            # followed; the next name is tried, 101 names at most (as Go).
+            for attempt in range(101):
                 tmp = os.path.join(directory, '.' + os.path.basename(target) + '.tmp-' + os.urandom(8).hex())
                 try:
                     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
                     break
                 except FileExistsError:
                     tmp = None
+                    if attempt == 100:
+                        raise
         else:
             fd, tmp = tempfile.mkstemp(prefix='.' + os.path.basename(target) + '.tmp-', dir=directory)
         with os.fdopen(fd, 'wb') as f:
@@ -383,7 +387,9 @@ def write_atomic(path, data):
 # 3.9-3.11 (and in 3.12's indenting encoder), but not on 3.13+, so relying on
 # the error made the outcome depend on the version. Go's encoding/json, which
 # `devexp install` uses, allows 10,000; no version of python's json reaches
-# that reliably, so uninstall stops well below where any version fails.
+# that reliably, so uninstall stops well below where any version fails. A file
+# nested 501-10,000 deep is edited by install but skipped here; skipping leaves
+# it byte for byte and says to edit it by hand, which is safe.
 MAX_DEPTH = 500
 
 def too_deep(text):
@@ -575,13 +581,17 @@ def write_atomic(path, data):
         if mode is None:
             # A new file: created with 0644 and never chmodded, so the umask
             # applies (0600 under umask 077), as with a plain open().
-            while True:
+            # O_EXCL: a file or symlink already at the name is never opened or
+            # followed; the next name is tried, 101 names at most (as Go).
+            for attempt in range(101):
                 tmp = os.path.join(directory, '.' + os.path.basename(target) + '.tmp-' + os.urandom(8).hex())
                 try:
                     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
                     break
                 except FileExistsError:
                     tmp = None
+                    if attempt == 100:
+                        raise
         else:
             fd, tmp = tempfile.mkstemp(prefix='.' + os.path.basename(target) + '.tmp-', dir=directory)
         with os.fdopen(fd, 'wb') as f:
@@ -614,7 +624,9 @@ def write_atomic(path, data):
 # 3.9-3.11 (and in 3.12's indenting encoder), but not on 3.13+, so relying on
 # the error made the outcome depend on the version. Go's encoding/json, which
 # `devexp install` uses, allows 10,000; no version of python's json reaches
-# that reliably, so uninstall stops well below where any version fails.
+# that reliably, so uninstall stops well below where any version fails. A file
+# nested 501-10,000 deep is edited by install but skipped here; skipping leaves
+# it byte for byte and says to edit it by hand, which is safe.
 MAX_DEPTH = 500
 
 def too_deep(text):

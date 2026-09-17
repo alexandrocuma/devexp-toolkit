@@ -102,7 +102,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     python runs them. Python's `json` raised `RecursionError` (not a
     `ValueError`) near 1,000 levels on 3.9-3.11 but not on 3.13+, and the
     uninstall used to stop there under `set -e`. `devexp install` (Go) reads
-    up to 10,000 levels, which python can't reliably match. Any other failure of either step now prints
+    up to 10,000 levels, which python can't reliably match, so a file nested
+    501-10,000 deep is edited by install but skipped, untouched, by uninstall. Any other failure of either step now prints
     a warning and the uninstall carries on.
   - The `settings.json` step saves atomically with the same rules as
     `devexp install` (a symlinked `settings.json` keeps its link, the file it

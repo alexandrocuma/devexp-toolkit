@@ -694,6 +694,63 @@ else
     fail=$((fail+1)); printf 'FAIL write_atomic: a new file honours the umask, a replaced one keeps its bits\n'; cat "$TMP/wa.out"
 fi
 
+# Temp names (#157 re-review), as the Go tests pin them: a file, a symlink or a
+# dangling symlink already at a temp name is never opened or followed and the
+# next name is tried; after 101 taken names the save is refused and nothing is
+# created. A replacement's temp is 0600 from creation, whatever the umask.
+python3 - "$TMP/prune.py" "$TMP/wa-names" <<'PY' > "$TMP/wa.out" 2>&1
+import os, re, stat, sys, tempfile
+src = open(sys.argv[1]).read()
+start = src.index('class WriteRefused')
+end = re.compile(r'\n(?=\S)').search(src, src.index('def write_atomic')).start()
+exec(src[start:end])
+d = sys.argv[2]
+os.makedirs(d)
+victim = os.path.join(d, 'victim')
+open(victim, 'w').write('victim')
+tmp = lambda b: os.path.join(d, '.config.json.tmp-' + b.hex())
+open(tmp(b'\x01'), 'w').write("someone else's")
+os.symlink(victim, tmp(b'\x02'))
+os.symlink(os.path.join(d, 'nowhere'), tmp(b'\x03'))
+seq = [b'\x01', b'\x02', b'\x03', b'\x04']
+real_urandom = os.urandom
+os.urandom = lambda n: seq.pop(0)
+target = os.path.join(d, 'config.json')
+write_atomic(target, b'new')
+print('names', open(tmp(b'\x01')).read(), open(victim).read(), os.path.lexists(os.path.join(d, 'nowhere')), open(target).read(), len(seq))
+# Every name taken: refused after 101 tries, nothing created.
+calls = []
+open(os.path.join(d, '.other.json.tmp-01'), 'w').write('taken')
+os.urandom = lambda n: calls.append(n) or b'\x01'
+try:
+    write_atomic(os.path.join(d, 'other.json'), b'new')
+    print('giveup WROTE')
+except WriteRefused as e:
+    print('giveup REFUSED', len(calls), os.path.exists(os.path.join(d, 'other.json')))
+os.urandom = real_urandom
+# A replacement's temp is 0600 while it is written, even under umask 022.
+os.umask(0o022)
+repl = os.path.join(d, 'settings.json')
+open(repl, 'w').write('old')
+os.chmod(repl, 0o600)
+modes = []
+real_fsync = os.fsync
+def spy(fd):
+    modes.append(oct(os.fstat(fd).st_mode & 0o777))
+    return real_fsync(fd)
+os.fsync = spy
+write_atomic(repl, b'new')
+os.fsync = real_fsync
+print('private', modes[0], oct(os.stat(repl).st_mode & 0o777), open(repl).read())
+PY
+if grep -qxF "names someone else's victim False new 0" "$TMP/wa.out" \
+    && grep -qxF "giveup REFUSED 101 False" "$TMP/wa.out" \
+    && grep -qxF "private 0o600 0o600 new" "$TMP/wa.out"; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1)); printf 'FAIL write_atomic: taken temp names skipped (files and symlinks), bounded retries, private replacement temp\n'; cat "$TMP/wa.out"
+fi
+
 # Read-only settings.json, or a directory where no temp file can be made: a
 # warning, exit 0, the file unchanged, nothing left behind.
 for ro in file dir; do
@@ -730,7 +787,7 @@ deep() { python3 -c 'import sys; n=int(sys.argv[1]); print("[" * n + "]" * n, en
 # RecursionError near 1,000 levels and 3.13+ don't, which is why a 3,000-deep
 # file used to be skipped on one and edited on the other.
 for where in hooks top; do
-    for total in 500 501 3000 100000; do
+    for total in 499 500 501 3000 100000; do
         D="$TMP/settings-deep-$where-$total"; mkdir -p "$D"
         if [ "$where" = hooks ]; then
             # {"hooks":{..."X": <n arrays>}} is n + 2 levels.
@@ -914,7 +971,7 @@ if [ -s "$TMP/mcp.py" ]; then
 
     # Deeper than MAX_DEPTH (500 levels): skipped, untouched, exit 0, on every
     # python version. At 500 it is edited.
-    for total in 500 501 3000 100000; do
+    for total in 499 500 501 3000 100000; do
         D="$TMP/mcp-deep-$total"; mkdir -p "$D"
         printf '{"mcp":{"context7":{}},"deep":%s}' "$(deep $((total - 1)))" > "$D/config.json"
         cp "$D/config.json" "$D.before"
