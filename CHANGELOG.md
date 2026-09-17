@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     refuses (a bind-mounted file) is refused with an error naming the file,
     which is left untouched. Earlier releases created the file a dangling
     link pointed at.
+- **`devexp install` replaced an opencode `config.json` it couldn't parse
+  (#124).** The MCP merge ignored decode errors, so a `config.json` with a
+  syntax error or comments was overwritten with a file holding only the MCP
+  servers, and one holding `null` crashed the install. A `config.json` that
+  isn't strict JSON, or whose top level or `mcp` value isn't an object, is now
+  left untouched and the install stops with an error naming it. Numbers are
+  written back as they were instead of through a float (`12345678901234567890`
+  no longer becomes `12345678901234567000`). The save is atomic and keeps a
+  symlinked `config.json`'s link.
 
 ## [0.9.1] - 2026-09-16
 
