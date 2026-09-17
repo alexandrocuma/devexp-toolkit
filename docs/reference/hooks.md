@@ -84,7 +84,7 @@ hooks/
 |-------|-------------|
 | `name` | Unique hook identifier — used in `devexp.config.json` `hooks.disabled` list |
 | `claude_code.event` | `PreToolUse` or `PostToolUse` |
-| `claude_code.matcher` | Regex matched against tool name (e.g. `"Bash"`, `"Write\|Edit"`) |
+| `claude_code.matcher` | Tool-name matcher (e.g. `"Bash"`, `"Write\|Edit"`). A plain `\|`-separated list matches those exact names, so `Edit` doesn't match `MultiEdit` or `NotebookEdit`; a pattern with other regex characters is an unanchored regex |
 | `claude_code.script` | Path to the shell script, relative to repo root |
 | `opencode.event` | `tool.execute.before` or `file.edited` |
 | `opencode.module` | Path to the JS module, relative to repo root (`hooks/opencode/<hook-name>.js`) |
@@ -102,8 +102,8 @@ Every key other than `name`, `description` and `enabled` whose value is an objec
 | Hook | Event | Matcher | What it does |
 |------|-------|---------|--------------|
 | `secret-guard` | PreToolUse | `Read\|Bash` | Hard-blocks reads of `.env*`, `.pem`, `.key`, private key files |
-| `secret-in-write-guard` | PreToolUse | `Write\|Edit` | Hard-blocks writing content that contains secret patterns (API keys, GitHub tokens, private key blocks) |
-| `dangerous-cmd-guard` | PreToolUse | `Bash` | Hard-blocks `rm -rf /`, unanchored wildcard deletes in sensitive dirs (`/tmp/*`, `~/.claude/.../*`), fork bombs, `DROP DATABASE`, `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE` |
+| `secret-in-write-guard` | PreToolUse | `Write\|Edit\|MultiEdit\|NotebookEdit` | Hard-blocks writing content that contains secret patterns (API keys, GitHub tokens, private key blocks); in opencode it scans `write`, `edit` and the lines `apply_patch` adds |
+| `dangerous-cmd-guard` | PreToolUse | `Bash` | Hard-blocks `rm -rf /`, unanchored wildcard deletes in sensitive dirs (`/tmp/*`, `~/.claude/.../*`), fork bombs, `DROP DATABASE`, `git push --force`, `git reset --hard`, `git clean`, `DROP/TRUNCATE TABLE`, but not a mention of one in text that never runs ([what it matches](#what-dangerous-cmd-guard-matches)) |
 | `large-file-guard` | PreToolUse | `Write` | Asks for confirmation before overwriting a file with >500 lines |
 | `lint-on-save` | PostToolUse | `Write\|Edit` | Runs the project linter on edited source files (JS/TS → biome/eslint, Python → ruff/flake8, Go → go vet, Ruby → rubocop) |
 | `format-on-save` | PostToolUse | `Write\|Edit` | Runs the project formatter in-place (JS/TS → biome/prettier, Python → ruff/black, Go → gofmt, Ruby → rubocop). In opencode it rewrites the file after the edit tool computed its diff, so the reported diff can differ from the file on disk |
@@ -114,6 +114,8 @@ Every key other than `name`, `description` and `enabled` whose value is an objec
 
 The three `graphify-*` hooks ship with `enabled: false` — they're an **optional set** for projects that adopt the `graphify` skill and maintain a `graphify-out/` knowledge graph. All three self-gate on `graphify-out/graph.json` existing, so flipping them on is harmless even if a project hasn't built a graph yet (they simply no-op). Enable them in a fork by setting `"enabled": true` in `hooks/registry.json`. `devexp.config.json` can't enable them: it supports only `hooks.disabled` (`cli/internal/config/config.go`), and the installer skips any hook with `enabled: false` before it looks at config (`cli/internal/hooks/installer.go`). The install wizard lists only enabled hooks (`listHookNames` in `cli/cmd/registry.go`).
 
+**What `secret-in-write-guard` doesn't see** — it scans only the new text of a write, edit or patch, never the file text around it. A secret completed across text already in the file and an edit isn't seen. In opencode, `apply_patch` context lines are matched against the file loosely and written from the patch's own text, and those lines aren't scanned. The guard catches a secret written in one piece; it doesn't replace a secret scanner on the repository.
+
 **How `graphify-read-guard` paces itself** — rather than a flat "queried in the last N hours" timer (which re-arms mid-session and creates friction, or "gate once" which under-uses the graph), it runs a tapering cadence sourced from a small JSON state file (`graphify-out/.graphify_session`, shared with `graphify-session-sentinel`):
 
 1. **Fresh session** → blocks Read/Glob until `graphify query` has run **5** times
@@ -122,6 +124,45 @@ The three `graphify-*` hooks ship with `enabled: false` — they're an **optiona
 4. Subsequent re-arms taper to a steady-state floor of **1** query per ~6-read cycle
 
 This front-loads grounding when the agent knows least about the codebase, and eases off once it's shown sustained engagement with the graph — without ever resetting on a wall-clock timer or permanently locking out repo reads. `graphify-grep-nudge` covers the gap for `grep`/`rg`/`find`/etc. (Bash) and the built-in `Grep` tool — since those are often legitimately faster for precise lookups, it only nudges via `additionalContext`, it never blocks.
+
+### What `dangerous-cmd-guard` matches
+
+The patterns in the catalog row above run against the command after the guard blanks out text that can't run (#100). A runbook `echo`, a commit message or an issue body that names a destructive command is a mention, not an invocation. Both implementations share these rules: `maskInert` in `hooks/opencode/dangerous-cmd-guard.js` and `scan_text` in `hooks/claude-code/dangerous-cmd-guard.sh`.
+
+**Blanked (never runs):**
+
+- every argument of `echo`, and of `printf` without `-v`
+- the message of `git commit`/`git tag` (`-m`, `-am`, `-m…`, `--message[=]`)
+- the `--body`/`-b`, `--title`/`-t`, `--notes`/`-n` and `--comment`/`-c` value of `gh issue|pr|release create|comment|edit|review|close|merge`
+- a heredoc body fed to `cat`, `head`, `tail`, `wc`, `grep`, `egrep`, `fgrep`, `tr`, `cut` or `nl`, or read as a body by `git commit|tag -F -` or `gh … --body-file -`, when the delimiter is quoted or the body has no `$(`/backtick
+- a `#` comment
+
+These apply only when the command's output can't reach anything that runs it. It must not be redirected anywhere but `/dev/null`, `/dev/stdout`, `/dev/stderr`, `/dev/tty`, `&1` or `&2`, and every later stage of its pipeline must be one of the text filters above or a body reader. Assignments, reserved words (`{`, `!`, `if`, `then`, `else`, `elif`, `while`, `until`, `do`, `time`) and option-free `sudo`, `env`, `command`, `builtin`, `exec` and `time` prefixes are skipped to find the command. A `$(…)` or backtick inside a blanked argument still runs, so it is checked like any other command.
+
+**Always scanned:**
+
+- every other command and argument, including the strings passed to `bash -c`, `sh -c`, `eval`, `ssh host "…"` and `psql -c "…"`
+- a `$(…)` or backtick anywhere else (command position, assignment, another command's argument)
+- process substitutions
+- heredocs fed to anything else
+- `echo …` piped to a shell or `tee`, or redirected into a file
+
+**Scanned whole, like before #100:** if the guard can't be sure what runs, nothing is blanked. That happens when:
+
+- a quote, `$(`, backtick, subshell or heredoc is unterminated
+- the command has a `case` statement, a function (`f() {…}`), `alias`, `unalias`, `function`, `hash`, `enable`, `coproc`, a bare `exec` (fd redirection), `$((…))`, a `${…}` holding quotes, parentheses, braces or backslashes, or a backtick body with a backslash
+- a `(` sits inside or right after a word (arrays, extglob, zsh `=(…)` and glob qualifiers)
+- a subshell, `}`, `fi` or `done` is followed by a pipe or redirect
+- a heredoc is still pending when a nested command ends
+- any word names a shell or interpreter that could run text read back from a file, the clipboard, git or GitHub (`sh`, `bash`, `zsh`, …, `eval`, `source`, `xargs`, `ssh`, `su`, `script`, `python`, `perl`, `ruby`, `node`, `php`, `awk`, `sed`, `osascript`, …)
+- the command word is `.`, a path, or not a plain literal (`$SHELL`, `"$x"`, `$(…)`)
+- the parser raises for any other reason
+
+**Where a target ends.** Before matching, a trailing backslash plus newline is joined, so a command continued across lines matches as one line. A target (`/`, `~`, `$HOME`, `/tmp`, `~/.claude`, and the `--force`, `--force-with-lease` and `-f` flags) ends at whitespace, end of line, or a character that closes a shell word: `'`, `"`, `)`, a backtick, `;`, `&` or `|`. The root and home targets may also start with a quote (`rm -rf "/"`). So `sh -c 'rm -rf /'`, `eval "git push --force"`, `$(rm -rf ~)` and `git push -f&& …` block. A letter, digit, `/`, `.`, `-` or `*` continues the target, so `rm -rf ./build`, `rm -rf ~/projects/x` and `git push --follow-tags` don't match.
+
+**One line at a time.** Both implementations decide line by line. The Claude Code hook greps each line, and every opencode pattern is kept to a single line: its whitespace classes, negated classes and "any character" all stop at a newline. A pattern that starts on one line and ends on a later one is not a match, unless the lines were joined by a backslash continuation. Within a line, a carriage return counts as whitespace. NUL characters are dropped before matching.
+
+In `dangerous-cmd-guard.sh`, all parsing happens in the `python3 -I` step, where the tool input is data on stdin. `grep` reads the result from a here-string, so no pipe writer is killed by SIGPIPE when `grep -q` exits early. Any interpreter or `grep` error blocks.
 
 ---
 
