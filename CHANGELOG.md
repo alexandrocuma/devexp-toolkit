@@ -18,8 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adds. The whole file was also re-sorted and re-indented, with `&`, `<` and `>`
   written as `\u` escapes.
   - Install now edits only devexp's own handlers. Every other handler and entry
-    keeps all its fields, in order; an entry without `matcher` doesn't gain one;
-    a re-quoted devexp command changes that value only.
+    keeps all its fields, in order; a user's entry without `matcher` doesn't
+    gain one; a re-quoted devexp command changes that value only.
   - Only the top-level `hooks` value is rewritten, in the indentation and line
     ending (LF or CRLF) of the file around it. Every other byte of
     `settings.json` stays as it was. New files and devexp's own entries are
@@ -43,14 +43,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     is left untouched with a message.
 - **Existing installs never picked up a registry matcher change.** `devexp
   install` skipped a hook whose command was already registered, whatever
-  matcher its entry had, so a hook whose registry matcher grew (for example
-  `secret-in-write-guard` gaining `MultiEdit|NotebookEdit`) kept firing only
-  for the old tools.
+  matcher its entry had, so a hook whose registry matcher grew (as when
+  `secret-guard` went from `Read` to `Read|Bash`) kept firing only for the old
+  tools.
   - An enabled hook registered under another matcher is brought to the
     registry's. An entry holding only that hook takes the new matcher in place,
-    keeping its other fields. From an entry shared with other commands the
-    handler moves into an entry of its own, leaving the other commands and
-    their matcher untouched.
+    keeping its other fields (a `matcher` key it lacked goes before `hooks`).
+    From an entry shared with other commands the handler moves into an entry
+    of its own, leaving the other commands and their matcher untouched.
+  - **Behaviour change:** install now enforces the registry's matcher on
+    devexp's own handlers, so a matcher you set by hand on one, or an entry
+    with no `matcher` (matching every tool), is reset on the next install. To
+    use a matcher of your own, disable the hook (`hooks.disabled` in
+    `devexp.config.json`) and register your own command for it, such as a
+    wrapper script or the script with `"args": []`.
   - A hook already under the registry's matcher, or disabled, is left as it
     is, and a second install writes nothing. `uninstall.sh` is unchanged.
 - **Stale hook pruning removed users' commands under the repo dir (#138).**

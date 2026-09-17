@@ -102,6 +102,24 @@ func (o rawObject) with(key string, v json.RawMessage) rawObject {
 	return out
 }
 
+// insertBefore returns a copy of o with m inserted before its first member
+// named key, or appended when there is none.
+func (o rawObject) insertBefore(key string, m member) rawObject {
+	out := make(rawObject, 0, len(o)+1)
+	inserted := false
+	for _, cur := range o {
+		if !inserted && cur.key == key {
+			out = append(out, m)
+			inserted = true
+		}
+		out = append(out, cur)
+	}
+	if !inserted {
+		out = append(out, m)
+	}
+	return out
+}
+
 func (o rawObject) MarshalJSON() ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteByte('{')
@@ -167,7 +185,9 @@ func (e *hookEntry) UnmarshalJSON(b []byte) error {
 
 // MarshalJSON writes an entry devexp built exactly as earlier releases did
 // ({"matcher", "hooks"}), and an entry read from settings.json as its own
-// members in their order, with only its hooks array re-encoded.
+// members in their order, with only its matcher (when registerHook changed it)
+// and hooks array re-encoded. A matcher the entry didn't have goes before
+// "hooks", where devexp writes it.
 func (e hookEntry) MarshalJSON() ([]byte, error) {
 	if e.fields == nil {
 		return encodeJSON(struct {
@@ -175,9 +195,18 @@ func (e hookEntry) MarshalJSON() ([]byte, error) {
 			Hooks   []hookCmd `json:"hooks"`
 		}{e.Matcher, e.Hooks})
 	}
-	obj, err := e.fields.withString("matcher", e.Matcher)
-	if err != nil {
-		return nil, err
+	obj := e.fields
+	if !obj.has("matcher") && e.Matcher != "" {
+		v, err := encodeJSON(e.Matcher)
+		if err != nil {
+			return nil, err
+		}
+		obj = obj.insertBefore("hooks", member{key: "matcher", value: v})
+	} else {
+		var err error
+		if obj, err = obj.withString("matcher", e.Matcher); err != nil {
+			return nil, err
+		}
 	}
 	if obj.has("hooks") || len(e.Hooks) > 0 {
 		hooks, err := encodeJSON(e.Hooks)

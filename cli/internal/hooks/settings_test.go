@@ -726,6 +726,34 @@ func TestInstallClaude_SyncsRegistryMatcher(t *testing.T) {
         ]
       }`),
 		},
+		// The registry's matcher is enforced on devexp's own handler, even for
+		// an entry that had none (matching every tool); the key is written
+		// before "hooks", and the entry's other members keep their order.
+		"entry without a matcher: gains the registry's, before hooks": {
+			in: wrap(`
+      {
+        "x-note": "kept",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "` + guard + `"
+          }
+        ],
+        "x-after": 1
+      }`),
+			want: wrap(`
+      {
+        "x-note": "kept",
+        "matcher": "` + newMatcher + `",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "` + guard + `"
+          }
+        ],
+        "x-after": 1
+      }`),
+		},
 		"already under the registry's matcher: nothing written": {
 			in: wrap(`
       {
