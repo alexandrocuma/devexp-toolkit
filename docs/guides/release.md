@@ -87,7 +87,7 @@ Every merge to `main` ships this target; the release cut only adds the changelog
 
 ### Build
 
-N/A — there is nothing to build centrally. In a clone the CLI built by `./install.sh` reads assets live from that clone (`Resolve` in `cli/internal/repo/repo.go`). Each user's `./install.sh` builds `bin/devexp` only if it is missing (`install.sh:7-18`), so after Go changes users must `rm bin/devexp` first.
+N/A — there is nothing to build centrally. In a clone the CLI built by `./install.sh` reads assets live from that clone (`Resolve` in `cli/internal/repo/repo.go`). Each user's `./install.sh` builds `bin/devexp` only if it is missing (`install.sh:7-20`), so after Go changes users must `rm bin/devexp` first.
 
 ### Distribute
 
@@ -108,7 +108,7 @@ git revert <sha>              # a squash-merged PR (one commit on main)
 git revert -m 1 <merge-sha>   # a merge commit
 # open a PR with the revert; ci must pass before merging
 # clone users after it lands:
-git pull && rm -f bin/devexp && ./install.sh   # install.sh never rebuilds an existing binary (install.sh:7-18)
+git pull && rm -f bin/devexp && ./install.sh   # install.sh never rebuilds an existing binary (install.sh:7-20)
 ```
 
 ### Post-release verification
@@ -116,4 +116,4 @@ git pull && rm -f bin/devexp && ./install.sh   # install.sh never rebuilds an ex
 | Signal | Where | Healthy when |
 |--------|-------|--------------|
 | CI on `main` | `gh run list --workflow ci.yml --branch main --limit 1` | `completed success` on the release commit (`.github/workflows/ci.yml:3-6`) |
-| Installer from a clone at the tag | `rm -f bin/devexp && ./install.sh --dry-run` | builds without error and ends with `All done.`; `[REQUIRED]` notices for unset MCP env vars are warnings, not failures (`install.sh:7-20`, `cli/internal/ui/output.go:28`; verified at this commit) |
+| Installer from a clone at the tag | `rm -f bin/devexp && ./install.sh --dry-run` | builds without error and ends with `All done.`; `[REQUIRED]` notices for unset MCP env vars are warnings, not failures (`install.sh:7-22`, `cli/internal/ui/output.go:28`; verified at this commit) |

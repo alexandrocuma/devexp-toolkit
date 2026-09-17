@@ -8,7 +8,7 @@ For **contributors** working on the toolkit from a clone: prerequisites, build, 
 
 | Tool | Version | Source |
 |------|---------|--------|
-| Go | any Go 1.21+ on `PATH`. Builds use `toolchain go1.26.8` (minimum language version `go 1.25.11`). With the default `GOTOOLCHAIN=auto`, an older local Go downloads that toolchain and switches to it. CI and release read the same line (`go-version-file: cli/go.mod`) | `cli/go.mod:3-5`, `.github/workflows/ci.yml:15`, `.github/workflows/release.yml:21` |
+| Go | Go 1.21+ on `PATH`. `cli/go.mod` sets `toolchain go1.26.8` as the minimum for local builds. With the default `GOTOOLCHAIN=auto`, an older Go downloads go1.26.8 on the first build (needs network; offline it fails with `toolchain not available`), and a newer Go builds with itself. With `GOTOOLCHAIN=local` you need Go ≥ 1.25.11 (the `go` line), and the build uses that version. CI and release install exactly go1.26.8 (`go-version-file: cli/go.mod`) | `cli/go.mod:3-5`, `.github/workflows/ci.yml:15`, `.github/workflows/release.yml:21` |
 | bash | any — every script is `#!/usr/bin/env bash` | `install.sh:1`, `scripts/stage-assets.sh:1` |
 | rsync | not pinned — copies assets for embedding | `scripts/stage-assets.sh:16,19` |
 | python3 | not pinned — Claude Code hooks and their tests pipe the JSON envelope through it | `hooks/claude-code/secret-guard.test.sh:11`, `hooks/claude-code/fail-closed.test.sh:4-5` |
@@ -26,12 +26,12 @@ cd devexp-toolkit
 cp mcps/.env.example mcps/.env        # optional — only MCPs with required_env need it   # source: README.md:133
 ./scripts/stage-assets.sh             # stage embeddable assets — required before any go build/test   # source: cli/internal/assets/assets.go:1-6
 (cd cli && go build -o ../bin/devexp .)   # source: install.sh:12
-./install.sh --dry-run                # preview; installs nothing   # source: install.sh:20, cli/cmd/install.go:115
+./install.sh --dry-run                # preview; installs nothing   # source: install.sh:22, cli/cmd/install.go:115
 ```
 
 Expected result: the dry run prints `DRY RUN MODE — no files will be written`, `Detected: Claude Code` (and/or opencode), the MCPs/agents/skills/hooks it would install, and ends with `All done.` Until `UI_INSPECTOR_DIR` is set it also prints `[REQUIRED] ui-inspector — missing required env vars` — a warning, not a failure (`cli/internal/ui/output.go:28`).
 
-`./install.sh` on its own would have built `bin/devexp` for you (it runs staging + `go build` when the binary is missing — `install.sh:7-18`); the explicit steps above make each stage visible. To install for real, run `./install.sh` — see [`../guides/install.md`](../guides/install.md).
+`./install.sh` on its own would have built `bin/devexp` for you (it runs staging + `go build` when the binary is missing — `install.sh:7-20`); the explicit steps above make each stage visible. To install for real, run `./install.sh` — see [`../guides/install.md`](../guides/install.md).
 
 Because a binary run from the clone reads `agents/`, `skills/`, `hooks/` and `mcps/` **live from disk** — a dev build uses the checkout it was compiled from (`Resolve` in `cli/internal/repo/repo.go`), editing an asset needs only `./install.sh` again — no rebuild. Changing Go code under `cli/` does need a rebuild (see Troubleshooting).
 
@@ -41,7 +41,7 @@ The full list — `CLAUDE.md` shows only the most-used few and links here.
 
 | Task | Command | Source |
 |------|---------|--------|
-| Install deps | none separate — Go modules download on first `go build`/`go test`; hooks use only Node/python builtins | `cli/go.mod`, `hooks/opencode/package.json` |
+| Install deps | none separate. The first `go build`/`go test` downloads the Go modules, and also go1.26.8 if your Go is older and `GOTOOLCHAIN=auto` (both need network). Hooks use only Node/python builtins | `cli/go.mod`, `hooks/opencode/package.json` |
 | Stage embedded assets | `./scripts/stage-assets.sh` | `scripts/stage-assets.sh` (wipes and recopies into `cli/internal/assets/`, excluding `mcps/.env`) |
 | Build | `./scripts/stage-assets.sh && (cd cli && go build -o ../bin/devexp .)` | `install.sh:11-12` |
 | Rebuild via the installer | `rm bin/devexp && ./install.sh` | `install.sh:7` (builds only when `bin/devexp` is missing) |
