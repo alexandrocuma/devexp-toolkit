@@ -9,12 +9,9 @@
 # ('old_string') is never scanned, so an edit that removes a key is allowed.
 # Complements secret-guard which checks filenames.
 #
-# Matching happens inside the Python step, which fails closed. It used to be
-# `echo "$content" | grep -qE "$pattern"`, and that read two failures as
-# "no match": a pattern starting with dashes is parsed by grep as an option
-# (so private keys were never caught), and under pipefail grep -q exiting on
-# the first match SIGPIPEs echo on any write larger than the pipe buffer (so
-# large writes were never caught).
+# Matching happens inside the Python step, which fails closed. An earlier
+# shell pipeline read some of its own failures as "no match", so some kinds
+# of secret and large writes went through unchecked (#101).
 #
 # Tests: bash hooks/claude-code/secret-in-write-guard.test.sh
 # Mirror: hooks/opencode/secret-in-write-guard.js — keep the patterns in lockstep.

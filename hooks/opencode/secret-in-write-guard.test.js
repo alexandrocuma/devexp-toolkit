@@ -107,7 +107,7 @@ BLOCK.push(
   ['apply_patch', 'GitHub', patch('*** Update File: a.txt', '*** Move to: b.txt', '@@', '-old', `+${GH_PAT}`), { raw: true }],
   // A template is exempt only for what it holds, not for its name.
   ['write', 'GitHub', `GITHUB_TOKEN=${GH_P}`, { file: '.env.example' }],
-  // Larger than a pipe buffer, secret first — the shell twin once allowed these (#101).
+  // A large write, secret first — the shell twin once allowed these (#101).
   ['write', 'OpenAI', `${OPENAI}\n${FILLER}`],
   ['edit', 'private key', `${PK_RSA}${FILLER}`],
 );

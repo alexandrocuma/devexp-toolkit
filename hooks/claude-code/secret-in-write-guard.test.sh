@@ -126,7 +126,7 @@ block Write OpenAI    "client = OpenAI(api_key='$OPENAI_PROJ')"
 # A template is exempt only for what it holds, not for its name: a real value
 # in a committed .env.example is the likeliest way a secret reaches git.
 FILE=.env.example block Write GitHub "GITHUB_TOKEN=$GH_P"
-# Larger than the pipe buffer, secret first — once allowed silently (#101).
+# A large write, secret first — once allowed silently (#101).
 block Write OpenAI        "$OPENAI"$'\n'"$FILLER"
 block Edit  'private key' "$PK_RSA$FILLER"
 

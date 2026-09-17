@@ -10,18 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`secret-in-write-guard` let secrets through without saying anything (#101).**
-  The guard had no behavior test, and the one added here found three ways a
+  The guard had no behavior test, and the one added here found ways a
   secret reached disk while the guard exited 0:
-  - Claude Code: a private key block was never caught. The shell guard ran
-    `grep -qE "$pattern"`, and grep parsed the private-key pattern, which
-    starts with dashes, as an unknown option. grep's error read as "no match",
-    and every allowed write printed grep's usage text to stderr.
-  - Claude Code: a write larger than the pipe buffer (about 60 KB) was never
-    caught. Under `pipefail`, `grep -q` exiting on the first match killed the
-    `echo` feeding it with SIGPIPE, and the pipeline's failure also read as
-    "no match". Matching now happens inside the guard's Python step, which
-    already fails closed, so neither the pipe nor grep is involved. Patterns,
-    labels and messages are unchanged.
+  - Claude Code: some kinds of secret, and large writes, were never checked.
+    The way the shell guard ran its pattern match read some failures as
+    "no match", so the write went through. Matching now happens inside the
+    guard's Python step, which already fails closed. Patterns, labels and
+    messages are unchanged.
   - opencode: edits were never scanned. The guard read `new_string`, but
     opencode's `edit` tool passes `newString`, so only `write` was checked.
   - New mirrored tests: `hooks/claude-code/secret-in-write-guard.test.sh` and
@@ -32,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     tokens, variables named `token`, `.example`/`.sample`/`.template`/`.dist`
     templates with placeholder values, public keys and certificates, and an
     Edit that removes a key are allowed silently.
-- **`secret-in-write-guard` misses no current OpenAI or GitHub token format
+- **`secret-in-write-guard` detects current OpenAI and GitHub token formats
   (#101).** It named both vendors but matched only their older formats. It now
   also blocks OpenAI project, service-account and admin keys (`sk-proj-…`,
   `sk-svcacct-…`, `sk-admin-…`), whose bodies contain `_` and `-`. The prefix
@@ -51,10 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     guard never ran for `NotebookEdit` (`new_source`) or for `MultiEdit`
     (`edits[].new_string`, in older releases). The registry matcher is now
     `Write|Edit|MultiEdit|NotebookEdit` and the guard scans those fields. Text
-    being replaced (`old_string`) is still not scanned. `devexp install` leaves
-    an existing registration's matcher as it is, so an install made before this
-    change keeps `Write|Edit` until the hook is uninstalled and installed again,
-    or the matcher in `~/.claude/settings.json` is edited by hand.
+    being replaced (`old_string`) is still not scanned. Re-run `devexp install`
+    to apply the new matcher.
   - Both: AWS temporary access key IDs (`ASIA…`) are blocked too. Real IDs are
     exactly 20 characters, so the match must be bounded on both sides and
     words like `ASIAPACIFICDATACENTER01` don't match.
