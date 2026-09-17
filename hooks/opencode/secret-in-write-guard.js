@@ -15,7 +15,9 @@
 
 const SECRET_PATTERNS = [
   { re: /sk-ant-[A-Za-z0-9_\-]{40,}/m,          label: 'Anthropic API key (sk-ant-...)' },
-  { re: /sk-[A-Za-z0-9]{32,}/m,                  label: 'OpenAI API key (sk-...)' },
+  // Legacy user keys (some issued as sk-None-...) are no longer issued, but
+  // existing ones can still be live.
+  { re: /sk-(None-)?[A-Za-z0-9]{32,}/m,          label: 'OpenAI API key (sk-...)' },
   // Project, service-account and admin keys: the body has _ and -, like a
   // kebab-case id, so its length carries the signal. Real bodies are well
   // over 100 characters; ids like desk-admin-... are far shorter. No left

@@ -32,7 +32,9 @@ content = '\n'.join(str(p) for p in parts if p)
 
 PATTERNS = [
     ('an Anthropic API key (sk-ant-...)', r'sk-ant-[A-Za-z0-9_-]{40,}'),
-    ('an OpenAI API key (sk-...)',        r'sk-[A-Za-z0-9]{32,}'),
+    # Legacy user keys (some issued as sk-None-...) are no longer issued, but
+    # existing ones can still be live.
+    ('an OpenAI API key (sk-...)',        r'sk-(None-)?[A-Za-z0-9]{32,}'),
     # Project, service-account and admin keys: the body has _ and -, like a
     # kebab-case id, so its length carries the signal. Real bodies are well
     # over 100 characters; ids like desk-admin-... are far shorter. No left

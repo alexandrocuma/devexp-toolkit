@@ -76,6 +76,7 @@ AWS_TMP="${AS}$(rep FAKE 4)"
 GH_P="${GH}p_$(rep 0FAKE 8)"
 GH_O="${GH}o_$(rep 0FAKE 8)"
 GH_S="${GH}s_$(rep 0FAKE 8)"
+OPENAI_NONE="${SK}-None-$(rep 0FAKE 10)"
 OPENAI_PROJ="${SK}-proj-$(rep FAKE_proj-body 8)"
 OPENAI_SVC="${SK}-svcacct-$(rep FAKE_svc-body 8)"
 OPENAI_ADMIN="${SK}-admin-$(rep FAKE_admin-body 8)"
@@ -97,6 +98,7 @@ FILLER="$(rep $'an ordinary line of prose in a large generated file\n' 5000)"  #
 for tool in Write Edit MultiEdit NotebookEdit; do
   block "$tool" Anthropic   "$ANTHROPIC"
   block "$tool" OpenAI      "$OPENAI"
+  block "$tool" OpenAI      "$OPENAI_NONE"
   block "$tool" OpenAI      "$OPENAI_PROJ"
   block "$tool" OpenAI      "$OPENAI_SVC"
   block "$tool" OpenAI      "$OPENAI_ADMIN"
@@ -173,6 +175,7 @@ allow Write "$(pem 'PUBLIC KEY')"
 allow Write "$(pem 'CERTIFICATE')"
 allow Write 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKE user@host'
 allow Write 'import sklearn  # a.k.a. sk-learn; see task-runner and risk-score'
+allow Edit  'OPENAI_API_KEY = "sk-None-placeholder-for-local-dev"'
 allow Write '<div class="desk-admin-navigation-sidebar-collapsed-state-controller">'
 allow Edit  'const route = "/task-proj-onboarding-checklist-and-welcome-email-sequence";'
 allow Write '<div class="sk-admin-navigation-sidebar-collapsed-state-controller">'
@@ -188,6 +191,8 @@ allow Write "${SK}-ant-$(body FAKE_ant- 39)"
 block Write Anthropic "${SK}-ant-$(body FAKE_ant- 40)"
 allow Write "${SK}-proj-$(body FAKE_proj- 79)"
 block Write OpenAI    "${SK}-proj-$(body FAKE_proj- 80)"
+allow Write "${SK}-None-$(body 0FAKE 31)"
+block Write OpenAI    "${SK}-None-$(body 0FAKE 32)"
 allow Write "${AS}$(body FAKE 15)"
 block Write AWS       "${AS}$(body FAKE 16)"
 allow Write "${GH}u_$(body 0FAKE 35)"

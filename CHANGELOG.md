@@ -33,8 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sk-svcacct-…`, `sk-admin-…`), whose bodies contain `_` and `-`. A key is
   found wherever it sits, including right after an escape sequence, a
   percent-encoded character or a joined name, and only a body as long as a real
-  key's matches, so kebab-case names like `desk-admin-…` don't. It also blocks
-  GitHub user-to-server (`ghu_`), refresh (`ghr_`) and fine-grained
+  key's matches, so kebab-case names like `desk-admin-…` don't. Legacy user keys
+  issued as `sk-None-…`, which can still be live, are blocked too. It also
+  blocks GitHub user-to-server (`ghu_`), refresh (`ghr_`) and fine-grained
   (`github_pat_`) tokens, the last by their exact shape, so long snake_case
   names that start with `github_pat_` don't match. Both twins change together,
   and nothing that blocked before is allowed now.

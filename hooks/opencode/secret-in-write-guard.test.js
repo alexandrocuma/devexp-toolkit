@@ -51,6 +51,7 @@ const AWS_TMP = `${AS}${'FAKE'.repeat(4)}`;
 const GH_P = `${GH}p_${'0FAKE'.repeat(8)}`;
 const GH_O = `${GH}o_${'0FAKE'.repeat(8)}`;
 const GH_S = `${GH}s_${'0FAKE'.repeat(8)}`;
+const OPENAI_NONE = `${SK}-None-${'0FAKE'.repeat(10)}`;
 const OPENAI_PROJ = `${SK}-proj-${'FAKE_proj-body'.repeat(8)}`;
 const OPENAI_SVC = `${SK}-svcacct-${'FAKE_svc-body'.repeat(8)}`;
 const OPENAI_ADMIN = `${SK}-admin-${'FAKE_admin-body'.repeat(8)}`;
@@ -71,6 +72,7 @@ for (const tool of ['write', 'edit', 'apply_patch']) {
   BLOCK.push(
     [tool, 'Anthropic', ANTHROPIC],
     [tool, 'OpenAI', OPENAI],
+    [tool, 'OpenAI', OPENAI_NONE],
     [tool, 'OpenAI', OPENAI_PROJ],
     [tool, 'OpenAI', OPENAI_SVC],
     [tool, 'OpenAI', OPENAI_ADMIN],
@@ -127,6 +129,7 @@ BLOCK.push(
   // Length thresholds, pinned at the edge (the one-short twins are in ALLOW).
   ['write', 'Anthropic', `${SK}-ant-${body('FAKE_ant-', 40)}`],
   ['write', 'OpenAI', `${SK}-proj-${body('FAKE_proj-', 80)}`],
+  ['write', 'OpenAI', `${SK}-None-${body('0FAKE', 32)}`],
   ['write', 'AWS', `${AS}${body('FAKE', 16)}`],
   ['write', 'GitHub', `${GH}u_${body('0FAKE', 36)}`],
   ['write', 'GitHub', `${GHP}_pat_${body('0FAKE', 22)}_${body('FAKE0', 59)}`],
@@ -163,6 +166,7 @@ const ALLOW = [
   ['write', pem('CERTIFICATE')],
   ['write', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFAKE user@host'],
   ['write', 'import sklearn  # a.k.a. sk-learn; see task-runner and risk-score'],
+  ['edit', 'OPENAI_API_KEY = "sk-None-placeholder-for-local-dev"'],
   ['write', '<div class="desk-admin-navigation-sidebar-collapsed-state-controller">'],
   ['edit', 'const route = "/task-proj-onboarding-checklist-and-welcome-email-sequence";'],
   ['write', '<div class="sk-admin-navigation-sidebar-collapsed-state-controller">'],
@@ -175,6 +179,7 @@ const ALLOW = [
   // Length thresholds, one character short of blocking.
   ['write', `${SK}-ant-${body('FAKE_ant-', 39)}`],
   ['write', `${SK}-proj-${body('FAKE_proj-', 79)}`],
+  ['write', `${SK}-None-${body('0FAKE', 31)}`],
   ['write', `${AS}${body('FAKE', 15)}`],
   ['write', `${GH}u_${body('0FAKE', 35)}`],
   ['write', `${GHP}_pat_${body('0FAKE', 21)}_${body('FAKE0', 59)}`],
