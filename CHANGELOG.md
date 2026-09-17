@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The vulnerability scan runs weekly (#155).** `ci.yml` gained a `schedule:`
+  trigger (Mondays 06:27 UTC), so an advisory published while `main` is quiet
+  no longer waits for the next push, pull request or tag. The schedule runs the
+  whole `ci` workflow rather than a second copy of the `govulncheck` job, and a
+  failure is a red `ci` run on `main`. It deliberately opens no issue: that
+  would mean a write-scoped token on a workflow whose point is a read-only one,
+  plus dedup so a standing advisory doesn't file one issue a week.
+
+### Changed
+
+- **A tag can no longer publish from a commit whose tests fail (#155).**
+  `ci.yml` gained a `workflow_call` trigger and `release.yml` now calls it,
+  instead of carrying its own copy of the `govulncheck` job. A release run is
+  `ci / test`, `ci / hooks`, `ci / govulncheck` and then `goreleaser`, which
+  `needs:` the call — so every CI job must pass on the tagged commit before
+  anything is published. `goreleaser` is still the only job with
+  `contents: write`, the scan keeps its read-only token and
+  `persist-credentials: false`, and the job definitions now exist in one place.
+
+### Fixed
+
+- **Docs no longer cite line numbers that had drifted (#155).** `setup.md` and
+  `testing.md` pointed at `CHANGELOG.md:147` and `release.md` at
+  `CHANGELOG.md:60`; both had moved. Changelog references are now version
+  headings, and the workflow and Go-test references that had drifted (or that
+  this change would have moved) now name the job, step or symbol instead of a
+  line.
+
 ## [0.9.2] - 2026-09-17
 
 ### Added

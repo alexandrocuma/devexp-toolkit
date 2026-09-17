@@ -4,6 +4,21 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Weekly run of the whole suite on the default branch. Without it an advisory
+  # published while `main` is quiet waits for the next push, PR or tag; a
+  # failure here is a red `ci` run on `main`. The jobs are defined once — a
+  # scan-only workflow would be a second copy of `govulncheck` — and the two
+  # test jobs cost little and also catch drift in the runner image and the
+  # pinned actions.
+  schedule:
+    - cron: "27 6 * * 1" # Mondays 06:27 UTC
+  # Called by release.yml on a `v*` tag, so the same jobs gate the publish.
+  workflow_call:
+
+# Every job here only reads the repo. goreleaser, the one job that writes, is
+# in release.yml and raises this for itself. A caller can only lower these.
+permissions:
+  contents: read
 
 jobs:
   test:
