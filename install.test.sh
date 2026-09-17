@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tests install.sh's HOME check (#126), without building anything.
+# Tests install.sh's HOME check (#126) and its build-failure message (#104),
+# without building anything.
 #
 # In a clone without bin/devexp, install.sh stages the assets and runs
 # `go build` before `devexp install` gets a chance to refuse a bad HOME, and a
@@ -32,13 +33,15 @@ tree_sum() { # $1=dir -> every path, then every file's checksum
 # run_install [VAR=value ...]: install.sh --dry-run with only these variables,
 # from $E/cwd (a dotfiles-style tree, with the same tree under home/).
 envs=0
+GO_EXIT=0   # exit status of the stub `go`; non-zero simulates a failed build
 run_install() {
     envs=$((envs+1))
     E="$TMP/env$envs"
     mkdir -p "$E/r/scripts" "$E/r/cli" "$E/bin"
     cp "$ROOT/install.sh" "$E/r/install.sh"
     printf '#!/bin/sh\necho "stage-assets $*" >> "%s"\n' "$E/calls" > "$E/r/scripts/stage-assets.sh"
-    printf '#!/bin/sh\necho "go $*" >> "%s"\n' "$E/calls" > "$E/bin/go"
+    printf '#!/bin/sh\necho "go $*" >> "%s"\nexit %s\n' "$E/calls" "$GO_EXIT" > "$E/bin/go"
+    printf 'module devexp\n\ngo 1.25.11\n\ntoolchain go1.26.8\n' > "$E/r/cli/go.mod"
     chmod +x "$E/r/scripts/stage-assets.sh" "$E/bin/go"
     for d in "$E/cwd" "$E/cwd/home"; do
         mkdir -p "$d/.claude/agents" "$d/Library/Caches/go-build"
@@ -69,6 +72,14 @@ done
 run_install HOME="$TMP/home"
 check "absolute HOME: no refusal" sh -c "! grep -qF 'refusing to install anything' '$E/out'"
 check "absolute HOME: goes on to stage and build" grep -qF "go build" "$E/calls"
+
+# A failed build (for example, no network for the first toolchain download)
+# exits 1 and names the toolchain from cli/go.mod and the offline options.
+GO_EXIT=1 run_install HOME="$TMP/home"
+check "failed build: exits 1" test "$(cat "$E/rc")" = 1
+check "failed build: says Go must be installed" grep -qF "Build failed. Ensure Go is installed" "$E/out"
+check "failed build: names the toolchain download" grep -qF "If your Go is older than go1.26.8, the first build downloads that toolchain, which needs network access." "$E/out"
+check "failed build: gives the offline options" grep -qF "Offline: install go1.26.8 or newer, or set GOTOOLCHAIN=local" "$E/out"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
