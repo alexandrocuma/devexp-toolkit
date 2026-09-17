@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`secret-in-write-guard` detects OpenAI's older service keys (#152).**
+  Keys issued with the `sk-service-…` prefix can still be live, and public
+  scanners (Trivy, TruffleHog) still detect them. Both twins now block them.
+  The shape and length come from those scanners and are cited in the pattern
+  comment. Look-alike names that start with `sk-service-` are still allowed.
+
 ### Fixed
 
 - **`secret-in-write-guard` blocked long snake_case names that contain a

@@ -51,6 +51,13 @@ PATTERNS = [
     # over 100 characters; ids like desk-admin-... are far shorter. No left
     # boundary: a key can follow an escape, a %XX, a _, a - or a digit.
     ('an OpenAI API key (sk-...)',        r'sk-(?:proj|svcacct|admin)-(?!(?:([A-Za-z0-9])(?:\1|[_-])*|(?:your|YOUR)(?:[_-][A-Za-z]+)+)(?![A-Za-z0-9_-]))[A-Za-z0-9_-]{80,}'),
+    # Older service keys (#152): sk-service-, a service-account name, -, then
+    # 48 alphanumerics (20, the T3BlbkFJ watermark, 20), per Trivy's
+    # openai-service-api-key rule (aquasecurity/trivy#10798) and TruffleHog's
+    # OpenAI detector. The name is optional and the watermark isn't required
+    # here, so no real key is missed; the 48-character run keeps kebab-case
+    # ids like sk-service-account-... from matching.
+    ('an OpenAI API key (sk-...)',        r'sk-service-(?!([A-Za-z0-9])(?:\1|[_-])*(?![A-Za-z0-9_-]))[A-Za-z0-9_-]*[A-Za-z0-9]{48}'),
     ('an AWS Access Key ID (AKIA...)',    r'AKIA(?![0-9A-Z]{9}EXAMPLE|([0-9A-Z])\1{15})[0-9A-Z]{16}'),
     # Temporary (STS) key IDs are ASIA plus exactly 16 of [0-9A-Z], so a
     # boundary is any character outside that set: EURASIA... and

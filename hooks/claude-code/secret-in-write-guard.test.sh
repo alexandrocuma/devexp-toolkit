@@ -80,6 +80,8 @@ OPENAI_NONE="${SK}-None-$(rep 0FAKE 10)"
 OPENAI_PROJ="${SK}-proj-$(rep FAKE_proj-body 8)"
 OPENAI_SVC="${SK}-svcacct-$(rep FAKE_svc-body 8)"
 OPENAI_ADMIN="${SK}-admin-$(rep FAKE_admin-body 8)"
+# An older service key: a service-account name, then 20 + watermark + 20.
+OPENAI_SERVICE="${SK}-service-fake-svc-$(body FAKE0 20)T3BlbkFJ$(body 0FAKE 20)"
 GH_U="${GH}u_$(rep 0FAKE 8)"
 GH_R="${GH}r_$(rep 0FAKE 8)"
 GH_PAT="${GHP}_pat_$(body 0FAKE 22)_$(body FAKE0 59)"
@@ -105,6 +107,7 @@ for tool in Write Edit MultiEdit NotebookEdit; do
   block "$tool" OpenAI      "$OPENAI_PROJ"
   block "$tool" OpenAI      "$OPENAI_SVC"
   block "$tool" OpenAI      "$OPENAI_ADMIN"
+  block "$tool" OpenAI      "$OPENAI_SERVICE"
   block "$tool" AWS         "$AWS"
   block "$tool" AWS         "$AWS_TMP"
   block "$tool" GitHub      "$GH_P"
@@ -131,6 +134,10 @@ block Edit  AWS       "aws_access_key_id = $AWS"
 block Write AWS       "AWS_ACCESS_KEY_ID=$AWS_TMP"
 block Edit  AWS       "credentials = {'AccessKeyId': '$AWS_TMP'}"
 block Write OpenAI    "client = OpenAI(api_key='$OPENAI_PROJ')"
+block Write OpenAI    "OPENAI_API_KEY=$OPENAI_SERVICE"
+block Edit  OpenAI    "${SK}-service-$(body 0FAKE 48)"
+block Write OpenAI    "${SK}-service-fake_svc_$(body 0FAKE 48)"
+block Edit  OpenAI    "${SK}-service-your-service-key-$(body 0FAKE 48)"
 # A template is exempt only for what it holds, not for its name: a real value
 # in a committed .env.example is the likeliest way a secret reaches git.
 FILE=.env.example block Write GitHub "GITHUB_TOKEN=$GH_P"
@@ -191,6 +198,10 @@ allow Write '<div class="sk-admin-navigation-sidebar-collapsed-state-controller"
 allow Edit  't("sk-proj-onboarding-checklist-welcome-email-sequence-step-three-title")'
 allow Write 'sk-svcacct-rotation_reminder-banner-dismissed-at-timestamp-for-the-current-org: true'
 allow Edit  'github_pat_rotation_reminder_days_for_organization_members_with_admin_access = 30'
+allow Write 'sk-service-account-rotation-reminder-banner-dismissed-at-timestamp-for-the-current-org: true'
+allow Edit  't("sk-service-worker-registration-failed-offline-fallback-page-title-for-every-locale")'
+allow Write "OPENAI_API_KEY=${SK}-service-$(rep x 60)"
+allow Edit  "OPENAI_API_KEY=${SK}-service-your-service-account-key-goes-here"
 allow Write 'const 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 = true;'
 allow Write 'const REGION = "ASIAPACIFICDATACENTER01";'
 allow Edit  'EURASIAPACIFICREGION024 = load_regions()'
@@ -280,6 +291,8 @@ allow Write "${SK}-ant-$(body FAKE_ant- 39)"
 block Write Anthropic "${SK}-ant-$(body FAKE_ant- 40)"
 allow Write "${SK}-proj-$(body FAKE_proj- 79)"
 block Write OpenAI    "${SK}-proj-$(body FAKE_proj- 80)"
+allow Write "${SK}-service-fake-svc-$(body 0FAKE 47)"
+block Write OpenAI    "${SK}-service-fake-svc-$(body 0FAKE 48)"
 allow Write "${SK}-None-$(body 0FAKE 31)"
 block Write OpenAI    "${SK}-None-$(body 0FAKE 32)"
 allow Write "${AS}$(body FAKE 15)"

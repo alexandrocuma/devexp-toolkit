@@ -55,6 +55,8 @@ const OPENAI_NONE = `${SK}-None-${'0FAKE'.repeat(10)}`;
 const OPENAI_PROJ = `${SK}-proj-${'FAKE_proj-body'.repeat(8)}`;
 const OPENAI_SVC = `${SK}-svcacct-${'FAKE_svc-body'.repeat(8)}`;
 const OPENAI_ADMIN = `${SK}-admin-${'FAKE_admin-body'.repeat(8)}`;
+// An older service key: a service-account name, then 20 + watermark + 20.
+const OPENAI_SERVICE = `${SK}-service-fake-svc-${body('FAKE0', 20)}T3BlbkFJ${body('0FAKE', 20)}`;
 const GH_U = `${GH}u_${'0FAKE'.repeat(8)}`;
 const GH_R = `${GH}r_${'0FAKE'.repeat(8)}`;
 const GH_PAT = `${GHP}_pat_${body('0FAKE', 22)}_${body('FAKE0', 59)}`;
@@ -79,6 +81,7 @@ for (const tool of ['write', 'edit', 'apply_patch']) {
     [tool, 'OpenAI', OPENAI_PROJ],
     [tool, 'OpenAI', OPENAI_SVC],
     [tool, 'OpenAI', OPENAI_ADMIN],
+    [tool, 'OpenAI', OPENAI_SERVICE],
     [tool, 'AWS', AWS],
     [tool, 'AWS', AWS_TMP],
     [tool, 'GitHub', GH_P],
@@ -105,6 +108,10 @@ BLOCK.push(
   ['write', 'OpenAI', `line one\nline two\nOPENAI_API_KEY=${OPENAI}\nline four`],
   ['edit', 'AWS', `aws_access_key_id = ${AWS}`],
   ['write', 'OpenAI', `client = OpenAI(api_key='${OPENAI_PROJ}')`],
+  ['write', 'OpenAI', `OPENAI_API_KEY=${OPENAI_SERVICE}`],
+  ['edit', 'OpenAI', `${SK}-service-${body('0FAKE', 48)}`],
+  ['write', 'OpenAI', `${SK}-service-fake_svc_${body('0FAKE', 48)}`],
+  ['edit', 'OpenAI', `${SK}-service-your-service-key-${body('0FAKE', 48)}`],
   ['write', 'AWS', `AWS_ACCESS_KEY_ID=${AWS_TMP}`],
   ['edit', 'AWS', `credentials = {'AccessKeyId': '${AWS_TMP}'}`],
   // apply_patch: an added line in an update hunk, a heredoc-wrapped patch, CRLF line endings.
@@ -175,6 +182,7 @@ BLOCK.push(
   // Length thresholds, pinned at the edge (the one-short twins are in ALLOW).
   ['write', 'Anthropic', `${SK}-ant-${body('FAKE_ant-', 40)}`],
   ['write', 'OpenAI', `${SK}-proj-${body('FAKE_proj-', 80)}`],
+  ['write', 'OpenAI', `${SK}-service-fake-svc-${body('0FAKE', 48)}`],
   ['write', 'OpenAI', `${SK}-None-${body('0FAKE', 32)}`],
   ['write', 'AWS', `${AS}${body('FAKE', 16)}`],
   ['write', 'GitHub', `${GH}u_${body('0FAKE', 36)}`],
@@ -220,6 +228,10 @@ const ALLOW = [
   ['edit', 't("sk-proj-onboarding-checklist-welcome-email-sequence-step-three-title")'],
   ['write', 'sk-svcacct-rotation_reminder-banner-dismissed-at-timestamp-for-the-current-org: true'],
   ['edit', 'github_pat_rotation_reminder_days_for_organization_members_with_admin_access = 30'],
+  ['write', 'sk-service-account-rotation-reminder-banner-dismissed-at-timestamp-for-the-current-org: true'],
+  ['edit', 't("sk-service-worker-registration-failed-offline-fallback-page-title-for-every-locale")'],
+  ['write', `OPENAI_API_KEY=${SK}-service-${'x'.repeat(60)}`],
+  ['edit', `OPENAI_API_KEY=${SK}-service-your-service-account-key-goes-here`],
   ['write', 'const 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 = true;'],
   ['write', 'const REGION = "ASIAPACIFICDATACENTER01";'],
   ['edit', 'EURASIAPACIFICREGION024 = load_regions()'],
@@ -265,6 +277,7 @@ const ALLOW = [
   ['write', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${body('FAKE0+/', 31)}\n${D5}END RSA PRIVATE KEY${D5}`],
   ['write', `${SK}-ant-${body('FAKE_ant-', 39)}`],
   ['write', `${SK}-proj-${body('FAKE_proj-', 79)}`],
+  ['write', `${SK}-service-fake-svc-${body('0FAKE', 47)}`],
   ['write', `${SK}-None-${body('0FAKE', 31)}`],
   ['write', `${AS}${body('FAKE', 15)}`],
   ['write', `${GH}u_${body('0FAKE', 35)}`],
