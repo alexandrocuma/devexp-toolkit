@@ -6,11 +6,31 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  goreleaser:
+  # Runs before goreleaser in its own read-only job: a called vulnerability
+  # (or a scan that can't complete) means nothing is published.
+  govulncheck:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+
+      - name: govulncheck
+        run: ./scripts/govulncheck.sh
+
+  goreleaser:
+    needs: govulncheck
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
         with:
