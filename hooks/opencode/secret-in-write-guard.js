@@ -9,6 +9,14 @@
  * removed is never scanned, so an edit that takes a key out is allowed.
  * Complements secret-guard which checks filenames on read.
  *
+ * Known limitations: only the new text of an edit or patch is scanned, never
+ * the file text around it, so a secret completed across existing file text
+ * and an edit is not seen. For apply_patch, opencode matches context lines
+ * against the file loosely and writes the patch's own text for them, so what
+ * lands on disk for a context line isn't scanned either. The guard catches
+ * secrets written in one piece; it does not replace a secret scanner on the
+ * repository.
+ *
  * Tests: node hooks/opencode/secret-in-write-guard.test.js
  * Mirror: hooks/claude-code/secret-in-write-guard.sh — keep the patterns in lockstep.
  */
@@ -43,7 +51,7 @@ const SECRET_PATTERNS = [
 // The file content an apply_patch call writes: every line starting with "+",
 // which is each "*** Add File" body line and each added line of an
 // "*** Update File" hunk. Removed ("-") and context (" ") lines, "@@" anchors
-// and "***" headers are not written.
+// and "***" headers are not scanned (see the header on context lines).
 export function patchAddedText(patchText) {
   if (typeof patchText !== 'string') return '';
   return patchText

@@ -9,6 +9,11 @@
 # ('old_string') is never scanned, so an edit that removes a key is allowed.
 # Complements secret-guard which checks filenames.
 #
+# Known limitation: only the new text of each edit is scanned, never the file
+# text around it, so a secret completed across existing file text and an edit
+# is not seen. The guard catches secrets written in one piece; it does not
+# replace a secret scanner on the repository.
+#
 # Matching happens inside the Python step, which fails closed. An earlier
 # shell pipeline read some of its own failures as "no match", so some kinds
 # of secret and large writes went through unchecked (#101).

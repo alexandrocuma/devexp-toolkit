@@ -56,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     right after an escape sequence or a percent-encoded character. The match
     is bounded by characters that can't be part of an ID, so words like
     `EURASIA…` and `ASIAPACIFICDATACENTER01` don't match.
+  - Known limitation, now documented in both guards and
+    `docs/reference/hooks.md`: only the new text of a write is scanned, not
+    the file text around it, so a secret completed across existing file text
+    and an edit isn't seen.
 
 ### Security
 
