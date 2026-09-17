@@ -35,17 +35,23 @@ if isinstance(edits, list):
     parts += [e.get('new_string') for e in edits if isinstance(e, dict)]
 content = '\n'.join(str(p) for p in parts if p)
 
+# Placeholders (#143). The (?!...) right after a prefix skips a body that is
+# only a placeholder: one character repeated (separators aside), a your-...
+# phrase made of letter words, or a key ID ending in EXAMPLE, as in AWS's
+# documentation. A skipped body must run to where the key's characters end,
+# so key material can't hide inside one, and re.search still tries every
+# later start, so a real key next to or joined to a placeholder still blocks.
 PATTERNS = [
-    ('an Anthropic API key (sk-ant-...)', r'sk-ant-[A-Za-z0-9_-]{40,}'),
+    ('an Anthropic API key (sk-ant-...)', r'sk-ant-(?!(?:(?:api|admin)[0-9]+-)?(?:([A-Za-z0-9])(?:\1|[_-])*|(?:your|YOUR)(?:[_-][A-Za-z]+)+)(?![A-Za-z0-9_-]))[A-Za-z0-9_-]{40,}'),
     # Legacy user keys (some issued as sk-None-...) are no longer issued, but
     # existing ones can still be live.
-    ('an OpenAI API key (sk-...)',        r'sk-(None-)?[A-Za-z0-9]{32,}'),
+    ('an OpenAI API key (sk-...)',        r'sk-(?:None-)?(?!([A-Za-z0-9])\1*(?![A-Za-z0-9]))[A-Za-z0-9]{32,}'),
     # Project, service-account and admin keys: the body has _ and -, like a
     # kebab-case id, so its length carries the signal. Real bodies are well
     # over 100 characters; ids like desk-admin-... are far shorter. No left
     # boundary: a key can follow an escape, a %XX, a _, a - or a digit.
-    ('an OpenAI API key (sk-...)',        r'sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{80,}'),
-    ('an AWS Access Key ID (AKIA...)',    r'AKIA[0-9A-Z]{16}'),
+    ('an OpenAI API key (sk-...)',        r'sk-(?:proj|svcacct|admin)-(?!(?:([A-Za-z0-9])(?:\1|[_-])*|(?:your|YOUR)(?:[_-][A-Za-z]+)+)(?![A-Za-z0-9_-]))[A-Za-z0-9_-]{80,}'),
+    ('an AWS Access Key ID (AKIA...)',    r'AKIA(?![0-9A-Z]{9}EXAMPLE|([0-9A-Z])\1{15})[0-9A-Z]{16}'),
     # Temporary (STS) key IDs are ASIA plus exactly 16 of [0-9A-Z], so a
     # boundary is any character outside that set: EURASIA... and
     # ASIAPACIFICDATACENTER01 don't match, while a key next to a lowercase
@@ -53,11 +59,11 @@ PATTERNS = [
     # that ends in an uppercase hex digit (%2F, \u002F, \x2F) also counts;
     # \x5c is a backslash. A key run straight into more capitals or digits
     # reads as a longer word and is not matched.
-    ('an AWS temporary Access Key ID (ASIA...)', r'(^|[^0-9A-Z]|%[0-9A-Fa-f]{2}|\x5cu[0-9A-Fa-f]{4}|\x5cx[0-9A-Fa-f]{2})ASIA[0-9A-Z]{16}([^0-9A-Z]|$)'),
+    ('an AWS temporary Access Key ID (ASIA...)', r'(^|[^0-9A-Z]|%[0-9A-Fa-f]{2}|\x5cu[0-9A-Fa-f]{4}|\x5cx[0-9A-Fa-f]{2})ASIA(?![0-9A-Z]{9}EXAMPLE|([0-9A-Z])\2{15})[0-9A-Z]{16}([^0-9A-Z]|$)'),
     # Classic tokens: 36 or more alphanumerics, never _ (GitHub's token
     # formats docs; gitleaks and Trivy match the same class), so snake_case
     # names that contain a prefix like ght_ don't match.
-    ('a GitHub token (ghp_, ghs_, etc.)', r'gh[postaur]_[A-Za-z0-9]{36,}'),
+    ('a GitHub token (ghp_, ghs_, etc.)', r'gh[postaur]_(?!([A-Za-z0-9])\1*(?![A-Za-z0-9]))[A-Za-z0-9]{36,}'),
     # Stateless tokens (installation tokens since 2026-04-27, GITHUB_TOKEN
     # included) are the prefix, an app id and _, then a JWT, and a JWT
     # starts eyJ: github.blog/changelog/2026-05-15-github-app-installation-
@@ -67,7 +73,7 @@ PATTERNS = [
     # Fine-grained tokens have a fixed shape: 22 alphanumerics, _, 59 more.
     # Anything looser blocks long snake_case names that start github_pat_.
     ('a GitHub token (ghp_, ghs_, etc.)', r'github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}'),
-    ('a Slack token (xox...)',            r'xox[baprs]-[0-9A-Za-z-]{10,}'),
+    ('a Slack token (xox...)',            r'xox[baprs]-(?!(?:([0-9A-Za-z])(?:\1|-)*|(?:your|YOUR)(?:-[A-Za-z]+)+)(?![0-9A-Za-z-]))[0-9A-Za-z-]{10,}'),
     ('a private key block',               r'-----BEGIN [A-Z ]*(PRIVATE|SECRET) KEY'),
 ]
 for name, pattern in PATTERNS:

@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   moving to a longer stateless format since 2026-04-27, and that format contains
   `_`. It gets its own match, so those tokens are still blocked. Both twins
   change together.
+- **`secret-in-write-guard` blocked placeholders shaped like keys (#143).**
+  Documentation and templates use values such as a Slack prefix followed by
+  `your-token`, AWS's published example access key ID, or a body of repeated
+  `x`, and the guard refused them. A value that is entirely a placeholder is
+  now allowed. A real key next to a placeholder, or joined to one, still
+  blocks. Mirrored tests cover both.
 
 ## [0.9.1] - 2026-09-16
 
