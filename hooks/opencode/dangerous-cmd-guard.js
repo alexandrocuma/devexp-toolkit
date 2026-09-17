@@ -19,15 +19,19 @@
 // changes what it expands to:
 // - ' " ` ( ) ; & | < >  closes the word or starts a redirect, so `sh -c 'rm -rf /'`,
 //   `$(rm -rf ~)` and `git push --force;` match;
-// - $ { * [ :  and ?( @( +( !(  start an expansion that can leave the target itself: a
+// - $ { * ? [  and @( +( !(  start an expansion that can leave the target itself: a
 //   parameter, command or ANSI-C expansion that may be empty or split the word, brace
-//   expansion, a glob, a zsh subscript or modifier, an extglob.
-// A letter, digit, '/', '.', '-' or '_' continues the target, so `./build`, `~/projects/$x`
-// and `/tmp/.deliver-$id-*` don't match.
-const END = String.raw`(?:\s|$|["':\x60();&|<>$*{[]|[?@+!]\()`;
+//   expansion, a glob, a zsh subscript or qualifier, an extglob.
+// Every other character continues the target, so `./build`, `~/projects/$x`,
+// `/tmp/.deliver-$id-*` and `-v /tmp:/data` don't match. (`:` changes a word only right
+// after an unbraced parameter name; rule 1 lists `$HOME:` itself.)
+const END = String.raw`(?:\s|$|["'\x60();&|<>$*{?[]|[@+!]\()`;
 // The home directory (HOME), spelled `$HOME` (zsh `$~HOME`, `$=HOME`, `$^HOME`), `${HOME}`
-// with any operator, flags or modifier, `~` or `~name`.
-const HOME = String.raw`(?:\$[~=^]*HOME|\$\{[~=^]*(?:\([^()$\{\}]*\))?HOME(?:[-=?+#%/^,@:][^$\{\}]*)?\}|~(?:[A-Za-z_][A-Za-z0-9._-]*)?)`;
+// with any operator, subscript, flags or modifier, `~` or `~name`.
+const HOME = String.raw`(?:\$[~=^]*HOME|\$\{[~=^]*(?:\([^()$\{\}]*\))?HOME(?:[-=?+#%/^,@:[][^$\{\}]*)?\}|~(?:[A-Za-z_][A-Za-z0-9._-]*)?)`;
+// `rm` as a word of its own: not part of a longer word or option (`--rm`, `terraform`). It
+// may still be an argument (`xargs rm`, `find -exec rm`).
+const RM_WORD = String.raw`(?<![A-Za-z0-9_.-])rm`; // grep: (^|[^A-Za-z0-9_.-])rm
 
 // Every rule decides one line at a time, as the Claude Code hook's line-by-line grep does
 // (blockReason splits the text; a backslash-continued command was joined by maskInert).
@@ -38,8 +42,9 @@ const HOME = String.raw`(?:\$[~=^]*HOME|\$\{[~=^]*(?:\([^()$\{\}]*\))?HOME(?:[-=
 // - "rm, then -flags" names the first 'r' (or 'f') of the flags, so the letters are not
 //   split every possible way;
 // - "PREFIX, then any text without STOP, then SUFFIX" is decided by `sequence`: the first
-//   PREFIX of each STOP-separated segment is the only one that matters, and SUFFIX is
-//   searched for once, left to right, across all segments;
+//   PREFIX of each segment (text up to STOP, or up to where `commandEnd` says one simple
+//   command ends) is the only one that matters, and SUFFIX is searched for once, left to
+//   right, across all segments;
 // - `\.claude\S*\/\*` is decided by `claudeGlob` from one right-to-left pass.
 
 /** SUFFIX as a regex: does a match start in [from, to]? Calls must not move `from` back. */
@@ -84,7 +89,40 @@ function claudeGlob(line) {
   };
 }
 
-/** PREFIX, then any run of characters not in `stop`, then SUFFIX. `suffix(line)` gives a finder. */
+/**
+ * Where the text after `start` stops belonging to one simple command, for `([^|;&]|[<>]&|&>)*`:
+ * `;` and `|` end it, and so does a `&` unless it is part of a redirect. A `&` joins the `<` or
+ * `>` just before it when that character stands alone; otherwise it needs a `>` right after.
+ * Joining backwards first leaves the most room, so this finds the end the pattern can reach.
+ */
+function commandEnd(line, start) {
+  let i = start;
+  let single = false; // the previous character is a `<` or `>` not yet joined to a `&`
+  while (i < line.length) {
+    const c = line[i];
+    if (c === '|' || c === ';') return i;
+    if (c === '&') {
+      if (single) {
+        single = false;
+        i += 1;
+      } else if (line[i + 1] === '>') {
+        single = false;
+        i += 2;
+      } else {
+        return i;
+      }
+      continue;
+    }
+    single = c === '<' || c === '>';
+    i += 1;
+  }
+  return i;
+}
+
+/**
+ * PREFIX, then any run of characters not in `stop`, then SUFFIX. `suffix(line)` gives a finder.
+ * `stop` is a string of characters, or a function (line, start) => end.
+ */
 function sequence(prefix, stop, suffix, flags = '') {
   const pre = new RegExp(prefix, `g${flags}`);
   return (line) => {
@@ -96,7 +134,8 @@ function sequence(prefix, stop, suffix, flags = '') {
       if (!m) return false;
       const start = m.index + m[0].length;
       let end = start;
-      while (end < line.length && !stop.includes(line[end])) end += 1;
+      if (typeof stop === 'function') end = stop(line, start);
+      else while (end < line.length && !stop.includes(line[end])) end += 1;
       if (found(start, end)) return true;
       if (end >= line.length) return false;
       pos = end + 1;
@@ -119,20 +158,22 @@ const TABLE = 'DROP TABLE will permanently destroy table data';
 export const BLOCK_PATTERNS = [
   {
     // rm -rf targeting filesystem root or home directory (optionally quoted)
-    test: regex(String.raw`rm\s+-[a-qs-z]*r[a-z]*f\s+["']?(?:\/|${HOME}\/?)${END}`),
+    test: regex(String.raw`${RM_WORD}\s+-[a-qs-z]*r[a-z]*f\s+["']?(?:(?:\/|${HOME}\/?)${END}|\$[~=^]*HOME:)`),
     label: WIPE,
   },
   {
-    test: regex(String.raw`rm\s+-[a-eg-z]*f[a-z]*r\s+["']?(?:\/|${HOME}\/?)${END}`),
+    test: regex(String.raw`${RM_WORD}\s+-[a-eg-z]*f[a-z]*r\s+["']?(?:(?:\/|${HOME}\/?)${END}|\$[~=^]*HOME:)`),
     label: WIPE,
   },
   {
     // Unanchored wildcard delete in a sensitive dir (/tmp/* , ~/.claude/.../* , or the dir
     // wholesale) — the blanket wipe an empty variable produces. Prefix-anchored globs like
-    // /tmp/.deliver-PAY-123-* are allowed (no '*' right after the '/').
+    // /tmp/.deliver-PAY-123-* are allowed (no '*' right after the '/'). The target must follow
+    // `rm` in the same simple command: the scan stops at `;`, `|` and a `&` that isn't part of
+    // a redirect (`2>&1`, `&>`).
     test: sequence(
-      String.raw`rm\b`,
-      '|',
+      String.raw`${RM_WORD}(?=[\s"'])`,
+      commandEnd,
       either(
         leftmost(String.raw`\s["']?\/tmp["']?\/?${END}|["']?${HOME}["']?\/\.claude["']?\/?${END}`),
         claudeGlob,

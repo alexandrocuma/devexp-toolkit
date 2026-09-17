@@ -234,6 +234,75 @@ expect allow 'git push --follow-tags$x'
 expect allow 'echo rm -rf ${HOME}'
 expect allow 'git commit -m "rm -rf /$IFS"'
 
+# ── PR #160 review: more globs and home spellings end or name a target ──────
+expect block 'rm -rf ~/?*'                                    # a glob made of `?`
+expect block 'rm -rf /???'
+expect block 'rm -rf /tmp/?*'
+expect block 'rm -rf ~/.claude/?*'
+expect block 'rm -rf /tmp/@(x)'
+expect block 'rm -rf /tmp/!(x)'
+expect block 'rm -rf /tmp/+(x)'
+expect block 'rm -rf ${HOME[@]}'                              # subscripts inside the braces
+expect block 'rm -rf ${HOME[0]}'
+expect block 'rm -rf "${HOME[*]}"'
+expect block 'rm -rf ${HOME[1,-1]}'
+expect block 'rm -f ${HOME[@]}/.claude'
+expect block 'rm -rf $^HOME'
+expect block 'rm -rf ${^HOME}'
+expect block 'rm -rf ${HOME#x}'
+expect block 'rm -rf ${HOME/x/y}'
+expect block 'rm -rf ~a.b'
+expect block 'rm -rf $=HOME:h'
+expect allow 'rm -rf ${HOME}:h'                               # a modifier needs the unbraced name
+expect allow 'rm -f /tmp/:x'                                  # `:` continues a target
+
+# ── PR #160 review: `rm` must be its own word, and the target in its command ──
+expect allow 'docker run --rm -v /tmp:/tmp alpine ls'
+expect allow 'docker run --rm -v ~/.claude:/root/.claude img'
+expect allow 'docker run --rm -v "$HOME/.claude":/home/node/.claude img'
+expect allow 'docker run --rm -v /tmp/$x:/data img'
+expect allow 'rm -rf dist && cp -r out /tmp/$(date +%s)'
+expect allow 'rm -rf build; ls /tmp/{a,b}'
+expect allow 'rm -f a.o && PATH=/tmp:$PATH make'
+expect allow 'docker rm -f c1; docker run -v /tmp:/tmp img'
+expect allow 'terraform init && cat ~/.claude/${f}.md'
+expect allow 'rm -rf node_modules && mktemp -d /tmp/$USER.XXXX'
+expect allow 'rm -f a && ls /tmp/*'
+expect allow 'rm -f a & ls ~/.claude/*'
+expect block 'docker run --rm img; rm -rf /tmp/*'              # a real rm after ; && || & |
+expect block 'terraform init && rm -f ~/.claude/*'
+expect block 'make || rm -rf /tmp/$x'
+expect block 'sleep 1 & rm -f ~/.claude/x/*'
+expect block 'ls | xargs rm -f /tmp/*'
+expect block 'find . -exec rm -f ~/.claude/* +'
+expect block '/bin/rm -rf /tmp/*'
+expect block '\rm -f ~/.claude/*'
+expect block 'sudo rm -rf $HOME/.claude'
+expect block 'rm -rf 2>&1 /tmp/*'                             # a redirect's & doesn't end it
+expect block 'rm -rf &>/dev/null ~/.claude'
+expect block 'rm -f <&0 >&2 /tmp/$x'
+expect block 'x=$(rm -f /tmp/*)'
+expect block 'x=`rm -rf /tmp`'                                # a backtick ends the target
+expect block '"rm" -f /tmp/*'                                 # rm followed by a quote
+expect block 'rm -frvr /'
+expect block 'rm -f >&>& /tmp/*'                              # each & joins the > before it
+expect allow 'rm -f &>& /tmp/*'                               # the second & has no > of its own
+expect allow 'rmdir ~/.claude/x/*'                            # rm must end its word
+expect allow 'terraform plan -out /tmp/$plan'                 # nor start inside one
+expect allow './bin/v2rm /tmp/$x'
+expect allow './bin/safe_rm /tmp/$x'
+expect allow './bin/safe.rm /tmp/$x'
+expect block 'rm -rf $=HOME'                                  # the remaining home spellings
+expect block 'rm -rf ${~HOME}'
+expect block 'rm -rf ${HOME-x}'
+expect block 'rm -rf ${HOME=x}'
+expect block 'rm -rf ${HOME?x}'
+expect block 'rm -rf ${HOME+x}'
+expect block 'rm -rf ${HOME%x}'
+expect block 'rm -rf ${HOME^}'
+expect block 'rm -rf ${HOME,}'
+expect block 'rm -rf ${HOME@Q}'
+
 # ── #146: the same decisions, reached in linear time ────────────────────────
 # A protected target or force flag in another pipeline stage than the command.
 expect allow 'rm -f a | cat ~/.claude | rm -f b'
@@ -243,11 +312,29 @@ expect allow 'git push origin | grep -f pats | git push origin'
 expect block ':(){ :|:& };:'
 expect block $'echo "`#`"; git reset --hard\necho done'     # a comment inside backticks ends there
 expect allow ':(){ :; } | cat'
-# Nesting deeper than 100 levels is scanned whole in both implementations.
-open50=$(printf '$(echo %.0s' $(seq 50)); close50=$(printf ')%.0s' $(seq 50))
-open150=$(printf '$(echo %.0s' $(seq 150)); close150=$(printf ')%.0s' $(seq 150))
-expect allow "echo \"${open50}x${close50}\" \"git reset --hard\""
-expect block "echo \"${open150}x${close150}\" \"git reset --hard\""
+# The rule applies again in every later stage or command, not only the first.
+expect block 'rm -f a | rm -f /tmp/*'
+expect block 'rm -f a; rm -f ~/.claude/*'
+expect block 'git push origin | git push --force'
+expect block 'git push origin; git push -f'
+expect allow 'ls ~/.claude/x/* | rm -f b'                     # .claude/* before the rm
+expect allow 'ls ~/.claude/x/*; rm -f b'
+expect allow $'rm -f x.claude\tb/*'                          # a tab ends the .claude…/* run
+expect block 'git reset x | y --hard'                         # reset and clean scan past | ; &
+expect block 'git clean x; y -f'
+expect block ':(){ :;:|:& };:'                                # the fork bomb scans past ;
+expect block 'git push --force-with-lease=main'
+# Nesting deeper than 100 levels is scanned whole, at the same depth in both
+# implementations: 99 nested substitutions are masked, 100 and 101 are not.
+nest() { # $1=depth -> echo "$(echo …x…)" "git reset --hard"
+  local open close; open=$(printf '$(echo %.0s' $(seq "$1")); close=$(printf ')%.0s' $(seq "$1"))
+  printf 'echo "%sx%s" "git reset --hard"' "$open" "$close"
+}
+expect allow "$(nest 50)"
+expect allow "$(nest 99)"
+expect block "$(nest 100)"
+expect block "$(nest 101)"
+expect block "$(nest 150)"
 
 # ── Both implementations decide line by line (the Claude Code hook's grep) ──
 # A pattern begun on one line and completed on a later one is not a match; a
@@ -319,6 +406,22 @@ expect_big block 'git reset --hard; echo ' ''
 expect_big block 'echo "' '" && git push --force'
 expect_big block 'echo "git reset --hard ' ''                # unbalanced: scanned whole, still blocks
 expect_big allow 'echo "' '"'
+
+# ── #146: a long pipeline is checked in linear time ─────────────────────────
+# 400 KB of `a|a|…` takes about a second; checking every stage against the rest
+# of the pipeline took over a minute. The run is cut off at the budget.
+rc=$(python3 - "$HOOK" <<'PY'
+import json, subprocess, sys
+cmd = 'a|' * 200000 + 'a'
+try:
+    r = subprocess.run(['bash', sys.argv[1]], input=json.dumps({'tool_input': {'command': cmd}}).encode(),
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+    print(r.returncode)
+except subprocess.TimeoutExpired:
+    print('timeout')
+PY
+)
+if [ "$rc" = 0 ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL [want allow within 15 s, got %s]: 400 KB pipeline\n' "$rc"; fi
 
 # ── A grep failure blocks; it is never read as "no match" ───────────────────
 STUB=$(mktemp -d); trap 'rm -rf "$STUB"' EXIT

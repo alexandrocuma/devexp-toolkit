@@ -172,7 +172,67 @@ const BLOCK = [
   // scanned whole in both implementations
   ':(){ :|:& };:',
   'echo "`#`"; git reset --hard\necho done', // a comment inside backticks ends there
+  `echo "${'$(echo '.repeat(100)}x${')'.repeat(100)}" "git reset --hard"`,
+  `echo "${'$(echo '.repeat(101)}x${')'.repeat(101)}" "git reset --hard"`,
   `echo "${'$(echo '.repeat(150)}x${')'.repeat(150)}" "git reset --hard"`,
+  // the rule applies again in every later stage or command, not only the first
+  'rm -f a | rm -f /tmp/*',
+  'rm -f a; rm -f ~/.claude/*',
+  'git push origin | git push --force',
+  'git push origin; git push -f',
+  'git reset x | y --hard', // reset and clean scan past | ; &
+  'git clean x; y -f',
+  ':(){ :;:|:& };:', // the fork bomb scans past ;
+  'git push --force-with-lease=main',
+
+  // PR #160 review: more globs and home spellings end or name a target
+  'rm -rf ~/?*', // a glob made of `?`
+  'rm -rf /???',
+  'rm -rf /tmp/?*',
+  'rm -rf ~/.claude/?*',
+  'rm -rf /tmp/@(x)',
+  'rm -rf /tmp/!(x)',
+  'rm -rf /tmp/+(x)',
+  'rm -rf ${HOME[@]}', // subscripts inside the braces
+  'rm -rf ${HOME[0]}',
+  'rm -rf "${HOME[*]}"',
+  'rm -rf ${HOME[1,-1]}',
+  'rm -f ${HOME[@]}/.claude',
+  'rm -rf $^HOME',
+  'rm -rf ${^HOME}',
+  'rm -rf ${HOME#x}',
+  'rm -rf ${HOME/x/y}',
+  'rm -rf ~a.b',
+  'rm -rf $=HOME:h',
+
+  // PR #160 review: a real rm after ; && || & |, as an argument, or with a redirect's &
+  'docker run --rm img; rm -rf /tmp/*',
+  'terraform init && rm -f ~/.claude/*',
+  'make || rm -rf /tmp/$x',
+  'sleep 1 & rm -f ~/.claude/x/*',
+  'ls | xargs rm -f /tmp/*',
+  'find . -exec rm -f ~/.claude/* +',
+  '/bin/rm -rf /tmp/*',
+  '\\rm -f ~/.claude/*',
+  'sudo rm -rf $HOME/.claude',
+  'rm -rf 2>&1 /tmp/*',
+  'rm -rf &>/dev/null ~/.claude',
+  'rm -f <&0 >&2 /tmp/$x',
+  'x=$(rm -f /tmp/*)',
+  'x=`rm -rf /tmp`', // a backtick ends the target
+  '"rm" -f /tmp/*', // rm followed by a quote
+  'rm -frvr /',
+  'rm -f >&>& /tmp/*', // each & joins the > before it
+  'rm -rf $=HOME', // the remaining home spellings
+  'rm -rf ${~HOME}',
+  'rm -rf ${HOME-x}',
+  'rm -rf ${HOME=x}',
+  'rm -rf ${HOME?x}',
+  'rm -rf ${HOME+x}',
+  'rm -rf ${HOME%x}',
+  'rm -rf ${HOME^}',
+  'rm -rf ${HOME,}',
+  'rm -rf ${HOME@Q}',
 
   // line by line, like the Claude Code hook's grep: CR is an ordinary character inside
   // a line, and NUL is dropped
@@ -250,6 +310,34 @@ const ALLOW = [
   'git push origin | grep -f pats | git push origin',
   ':(){ :; } | cat',
   `echo "${'$(echo '.repeat(50)}x${')'.repeat(50)}" "git reset --hard"`,
+  `echo "${'$(echo '.repeat(99)}x${')'.repeat(99)}" "git reset --hard"`,
+  'ls ~/.claude/x/* | rm -f b', // .claude/* before the rm
+  'ls ~/.claude/x/*; rm -f b',
+  'rm -f x.claude\tb/*', // a tab ends the .claude…/* run
+
+  // PR #160 review: a modifier needs the unbraced name; `:` continues a target
+  'rm -rf ${HOME}:h',
+  'rm -f /tmp/:x',
+
+  // PR #160 review: `rm` must be its own word, and the target in its command
+  'docker run --rm -v /tmp:/tmp alpine ls',
+  'docker run --rm -v ~/.claude:/root/.claude img',
+  'docker run --rm -v "$HOME/.claude":/home/node/.claude img',
+  'docker run --rm -v /tmp/$x:/data img',
+  'rm -rf dist && cp -r out /tmp/$(date +%s)',
+  'rm -rf build; ls /tmp/{a,b}',
+  'rm -f a.o && PATH=/tmp:$PATH make',
+  'docker rm -f c1; docker run -v /tmp:/tmp img',
+  'terraform init && cat ~/.claude/${f}.md',
+  'rm -rf node_modules && mktemp -d /tmp/$USER.XXXX',
+  'rm -f a && ls /tmp/*',
+  'rm -f a & ls ~/.claude/*',
+  'rm -f &>& /tmp/*', // the second & has no > of its own
+  'rmdir ~/.claude/x/*', // rm must end its word
+  'terraform plan -out /tmp/$plan', // nor start inside one
+  './bin/v2rm /tmp/$x',
+  './bin/safe_rm /tmp/$x',
+  './bin/safe.rm /tmp/$x',
 
   // line by line, like the Claude Code hook's grep: a pattern begun on one line and
   // completed on a later one is not a match (backslash continuations are joined first)
@@ -341,6 +429,11 @@ const crafted = (len) => [
   ['repeated ${(', `${RM} ${rep('${(', len)}`],
   ['long ~name', `${RM} -rf ${rep('~a', 2)}${rep('a', len)}`],
   ['repeated $~', `${RM} ${rep('$~', len)}`],
+  ['rm then redirects', `${RM} ${rep('>&', len)}`],
+  ['repeated rm x&', rep(`${RM} x&`, len)],
+  ['repeated ;rm', rep(`;${RM} `, len)],
+  ['rm then ?', `${RM} -rf ${rep('?', len)}`],
+  ['open ${HOME[', `${RM} -rf \${HOME[${rep('a', len)}`],
 ];
 let perfFail = 0;
 const timed = (tier, len, budgetMs, stopEarly) => {
