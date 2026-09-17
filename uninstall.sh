@@ -329,7 +329,7 @@ if $REMOVE_CLAUDE; then
     if [[ -f "$settings_path" && -f "$REPO_DIR/hooks/registry.json" ]]; then
         info "Removing hooks (Claude Code)..."
         python3 - "$REPO_DIR" "$settings_path" <<'PYEOF'
-import json, sys, os
+import json, math, sys, os
 
 repo_dir      = sys.argv[1]
 settings_path = sys.argv[2]
@@ -408,14 +408,38 @@ def is_devexp_hook(cmd):
     head = p[:-len(base)]
     return head == SCRIPT_DIR or head.endswith('/' + SCRIPT_DIR)
 
+# newline='' keeps line endings as they are: text mode would turn CRLF into LF
+# across the whole file.
 try:
-    with open(settings_path, encoding='utf-8') as f:
+    with open(settings_path, encoding='utf-8', newline='') as f:
         text = f.read()
 except (OSError, ValueError) as e:
     print(f"  [skip] could not read settings.json: {e}")
     sys.exit(0)
+
+class NotPortable(ValueError):
+    pass
+
+def reject_constant(name):
+    raise NotPortable(name)
+
+def finite_float(s):
+    f = float(s)
+    if math.isinf(f) or math.isnan(f):
+        raise NotPortable(s)
+    return f
+
+def load(text):
+    # Strict JSON, as Claude Code and devexp install read it: NaN and Infinity
+    # are refused, and so is a number a float can't hold (1e400 reads as inf and
+    # would be written back as Infinity, which isn't JSON).
+    return json.loads(text, parse_constant=reject_constant, parse_float=finite_float)
+
 try:
-    settings = json.loads(text)
+    settings = load(text)
+except NotPortable as e:
+    print(f"  [skip] settings.json holds {e}, which uninstall can't write back as JSON, so it was left untouched -- remove the devexp hooks from it by hand")
+    sys.exit(0)
 except ValueError:
     print("  [skip] settings.json is not valid JSON")
     sys.exit(0)
@@ -488,19 +512,34 @@ def top_level_member(text, name):
             return found
         i = ws(i + 1)
 
-# Only the hooks value is rewritten, in the layout of the line its key is on;
-# every other byte of settings.json stays as it was.
+# Only the hooks value is rewritten, in the layout of the line its key is on and
+# with the file's own line ending (that of its first line); every other byte of
+# settings.json stays as it was.
 key_start, value_start, value_end = top_level_member(text, 'hooks')
 lead = text[text.rfind('\n', 0, key_start) + 1:key_start]
-if lead.strip(' \t'):
-    value = json.dumps(hooks_section, ensure_ascii=False, separators=(',', ':'))
-else:
-    value = json.dumps(hooks_section, ensure_ascii=False, indent=lead or '  ').replace('\n', '\n' + lead)
+first_eol = text.find('\n')
+eol = '\r\n' if first_eol > 0 and text[first_eol - 1] == '\r' else '\n'
+try:
+    # allow_nan=False backs up load(): nothing it accepts is non-finite.
+    if lead.strip(' \t'):
+        value = json.dumps(hooks_section, ensure_ascii=False, allow_nan=False, separators=(',', ':'))
+    else:
+        value = json.dumps(hooks_section, ensure_ascii=False, allow_nan=False, indent=lead or '  ').replace('\n', eol + lead)
+except ValueError as e:
+    print(f"  [skip] settings.json: {e}, so it was left untouched")
+    sys.exit(0)
 new_text = text[:value_start] + value + text[value_end:]
-if json.loads(new_text) != settings:
+# By construction new_text is text with only the hooks value replaced, so this
+# can't fail unless top_level_member or the splice has a bug: it is a guard.
+try:
+    same = load(new_text) == settings
+except ValueError:
+    same = False
+if not same:
     print("  [skip] settings.json: rewriting it would change more than its hooks, so it was left untouched")
     sys.exit(0)
-with open(settings_path, 'w', encoding='utf-8') as f:
+# newline='' again: text mode writes os.linesep, which isn't LF everywhere.
+with open(settings_path, 'w', encoding='utf-8', newline='') as f:
     f.write(new_text)
 print(f"  Saved: {settings_path}")
 PYEOF

@@ -36,8 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     holding only the hooks.
   - `uninstall.sh` applies the same rules: it keeps pre-existing empty events,
     no longer escapes non-ASCII text, splices the new `hooks` value into the
-    original text, and skips entries and handlers that aren't objects instead
-    of failing with a traceback.
+    original text in the file's own line ending (CRLF files stay CRLF), and
+    skips entries and handlers that aren't objects instead of failing with a
+    traceback. A `settings.json` holding `NaN`, `Infinity` or a number a float
+    can't hold (such as `1e400`, which python would write back as `Infinity`)
+    is left untouched with a message.
 - **Existing installs never picked up a registry matcher change.** `devexp
   install` skipped a hook whose command was already registered, whatever
   matcher its entry had, so a hook whose registry matcher grew (for example

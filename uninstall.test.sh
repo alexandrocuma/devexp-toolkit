@@ -296,8 +296,8 @@ fill_paths() { # $1=template $2=output: @MINE@ and @FOREIGN@ replaced
     python3 - "$1" "$2" "$MINE" "$FOREIGN" <<'PY'
 import sys
 src, dst, mine, foreign = sys.argv[1:5]
-text = open(src, encoding='utf-8').read().replace('@MINE@', mine).replace('@FOREIGN@', foreign)
-open(dst, 'w', encoding='utf-8').write(text)
+text = open(src, encoding='utf-8', newline='').read().replace('@MINE@', mine).replace('@FOREIGN@', foreign)
+open(dst, 'w', encoding='utf-8', newline='').write(text)
 PY
 }
 expect_file() { # $1=label $2=input template $3=expected template
@@ -457,6 +457,26 @@ expect_file "a compact file stays compact; entries and handlers that aren't obje
 printf '{\n\t"model": "opus",\n\t"hooks": {\n\t\t"Stop": [\n\t\t\t{\n\t\t\t\t"hooks": [\n\t\t\t\t\t{\n\t\t\t\t\t\t"type": "command",\n\t\t\t\t\t\t"command": "@MINE@"\n\t\t\t\t\t},\n\t\t\t\t\t{\n\t\t\t\t\t\t"type": "command",\n\t\t\t\t\t\t"command": "/usr/local/bin/notify"\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t}\n\t\t]\n\t}\n}\n' > "$TMP/tabs-in.json"
 printf '{\n\t"model": "opus",\n\t"hooks": {\n\t\t"Stop": [\n\t\t\t{\n\t\t\t\t"hooks": [\n\t\t\t\t\t{\n\t\t\t\t\t\t"type": "command",\n\t\t\t\t\t\t"command": "/usr/local/bin/notify"\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t}\n\t\t]\n\t}\n}\n' > "$TMP/tabs-want.json"
 expect_file "a tab-indented file keeps its indentation" "$TMP/tabs-in.json" "$TMP/tabs-want.json"
+
+# CRLF: text mode would turn every line ending into LF. Lines outside hooks keep
+# CRLF, and the rewritten hooks value is written with it too.
+printf '{\r\n  "model": "opus",\r\n  "hooks": {\r\n    "Stop": [\r\n      {\r\n        "hooks": [\r\n          {\r\n            "type": "command",\r\n            "command": "@MINE@"\r\n          },\r\n          {\r\n            "type": "command",\r\n            "command": "/usr/local/bin/notify"\r\n          }\r\n        ]\r\n      }\r\n    ]\r\n  },\r\n  "z": 1\r\n}\r\n' > "$TMP/crlf-in.json"
+printf '{\r\n  "model": "opus",\r\n  "hooks": {\r\n    "Stop": [\r\n      {\r\n        "hooks": [\r\n          {\r\n            "type": "command",\r\n            "command": "/usr/local/bin/notify"\r\n          }\r\n        ]\r\n      }\r\n    ]\r\n  },\r\n  "z": 1\r\n}\r\n' > "$TMP/crlf-want.json"
+expect_file "a CRLF file keeps CRLF, inside and outside hooks" "$TMP/crlf-in.json" "$TMP/crlf-want.json"
+if [ "$(tr -cd '\r' < "$TMP/settings.json" | wc -c | tr -d ' ')" = 16 ] && [ "$(tr -cd '\n' < "$TMP/settings.json" | wc -c | tr -d ' ')" = 16 ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL the CRLF fixture really is CRLF after uninstall"; fi
+
+# A number python reads as non-finite (1e400 is inf) would be written back as
+# Infinity, which isn't JSON; NaN and Infinity aren't JSON to begin with. The
+# file is left untouched, saying why.
+for n in 1e400 -1e400 NaN Infinity -Infinity; do
+    printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"@MINE@"},{"type":"command","command":"/u","timeout":%s}]}]}}' "$n" > "$TMP/nonfinite.json"
+    expect_file "leaves a file holding $n untouched" "$TMP/nonfinite.json" "$TMP/nonfinite.json"
+    if grep -qF "settings.json holds $n," "$TMP/prune.out" && grep -qF "left untouched" "$TMP/prune.out"; then
+        pass=$((pass+1))
+    else
+        fail=$((fail+1)); printf 'FAIL says why a file holding %s is left untouched\n' "$n"; cat "$TMP/prune.out"
+    fi
+done
 
 # ── opencode (#109) ──────────────────────────────────────────────────────────
 
