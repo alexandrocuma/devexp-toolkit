@@ -18,14 +18,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Such a path is now registered as one POSIX single-quoted word (`'…'`, each
     `'` written as `'\''`). Every other path is registered as before, byte for
     byte.
-  - An unquoted entry an earlier install wrote from the same repo/cache dir is
-    rewritten in place on the next `devexp install`, disabled hooks included.
+  - On the next `devexp install`, a registration of one of the same repo/cache
+    dir's scripts is rewritten in place to the form devexp writes (quoted only
+    when the path needs it), disabled hooks included. This covers the bare
+    path an earlier install wrote, the path in double quotes (the natural hand
+    fix, recognised only when the path has no `$`, backquote, `\` or `"`), and
+    a single-quoted path that needs no quoting, which becomes plain.
+  - When the event already holds the registered command, for example after an
+    older devexp re-added the bare path, that other spelling is removed rather
+    than rewritten into a duplicate. An entry left with no commands goes too,
+    so the script never runs twice.
   - Install-time pruning (stale, foreign-root, relative) and `uninstall.sh`
     recognise exactly the two forms devexp writes: a plain path, or one
     single-quoted absolute path that re-quotes to itself.
-    `uninstall.sh` also removes its own repo's unquoted entries. Double quotes,
-    arguments, chained or concatenated words and other quoting are still the
-    user's and are never touched.
+    `uninstall.sh` also removes its own repo's bare and double-quoted
+    spellings. Any other double quotes, arguments, chained or concatenated
+    words and other quoting are still the user's and are never touched.
   - Not migrated: an unquoted entry from a different root, which can't be told
     apart from a user command with arguments. An install or uninstall from its
     own root fixes it.

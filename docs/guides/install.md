@@ -66,7 +66,7 @@ Re-running the installer is how you update devexp — there's no separate "upgra
 - **Agents and skills** are overwritten in place with the versions shipped in the new release. Before overwriting, the Claude Code install backs up your existing `~/.claude/agents/*.md` and `~/.claude/skills/<name>/` directories into a timestamped `~/.claude/.devexp-backup-<timestamp>/` folder (`cli/cmd/backup.go`, `cli/cmd/paths.go`). The opencode install makes **no backup** of `~/.config/opencode/agents/` or `commands/` (`cli/cmd/install_opencode.go`).
 - **MCP server registrations** are *not* refreshed automatically — pass `--reinstall-mcps` if an MCP's config (command, args, env) changed in the new release.
 - **Hooks**:
-  - Claude Code: new hooks in `hooks/registry.json` are added to `settings.json`; hooks already registered are left as-is, including ones disabled since. The one exception is the command string: an entry an earlier install wrote from this repo/cache dir unquoted, for a path that needs quoting, is rewritten in place to the quoted form (see [Hook commands](#hook-commands-claude-code)).
+  - Claude Code: new hooks in `hooks/registry.json` are added to `settings.json`; hooks already registered are left as-is, including ones disabled since. The one exception is the command string. Another spelling of one of this repo/cache dir's own scripts is rewritten in place to the form devexp writes, which is quoted only when the path needs it. That covers the bare path, the path in double quotes and a single-quoted path that needs no quoting. If the event already holds the registered command, the other spelling is removed instead, so the script doesn't run twice (see [Hook commands](#hook-commands-claude-code)).
   - opencode: the plugin files are copied again and rewritten only when their bytes changed. Only the selected modules are copied, and a module disabled since the last run is removed.
 
 ### Stale-file cleanup
@@ -106,7 +106,15 @@ Claude Code runs a hook's `command` through a shell (`sh -c` on macOS and Linux)
 - A path with no shell syntax is registered as-is, exactly as earlier releases wrote it.
 - A path with whitespace or any of `` $ ~ ' " ` \ ; & | < > ( ) * ? [ ] { } ! # `` (a clone under `~/My Projects/`, say) is registered as one POSIX single-quoted word, each `'` written as `'\''`. The shell runs that path and nothing else, with no expansion.
 
-Before #135 such a path was registered unquoted. The shell split or expanded it, so the hook didn't run (Claude Code treats that as a non-blocking error, so a guard failed open) or a different program ran. On the next `devexp install` from the same repo/cache dir, those entries are rewritten in place to the quoted form, disabled hooks included, and `uninstall.sh` from that dir removes them. An unquoted entry from a *different* root can't be told apart from a user command that takes arguments, so it is left alone. An install or uninstall from its own root fixes it.
+Before #135 such a path was registered unquoted. The shell split or expanded it, so the hook didn't run (Claude Code treats that as a non-blocking error, so a guard failed open) or a different program ran. On the next `devexp install` from the same repo/cache dir, each registration of one of that dir's registry scripts is brought to the registered form, disabled hooks included (`requoteDevexpHooks`). Only these exact spellings of the script's path count:
+
+- the bare path, as earlier releases wrote it;
+- the path in double quotes (`"<dir>/hooks/claude-code/<script>"`, the natural hand fix), only when the path has no `$`, backquote, `\` or `"`, so the double quotes are literal;
+- a single-quoted path that needs no quoting, which becomes the plain path.
+
+Each is rewritten in place (event, matcher and position kept). If the event already holds the registered command, for example after an older devexp re-added the bare path, the spelling is removed instead, and an entry left with no commands goes too, so the script never runs twice. `uninstall.sh` from that dir removes the bare and double-quoted spellings along with the registered forms.
+
+Everything else stays the user's. That includes a double-quoted path holding `$`, backquote or `\` (the shell expands those inside double quotes), arguments, other directories and other scripts. An unquoted entry from a *different* root can't be told apart from a user command that takes arguments, so it is left alone. An install or uninstall from its own root fixes it.
 
 ### Previewing an update
 
@@ -134,7 +142,7 @@ Shows every add, update, and removal devexp would make — including stale-file 
 - Detects which CLIs have devexp agents installed; asks which to remove from only when both are found
 - Removes agents from the appropriate directory for each CLI
 - Skills (`~/.claude/skills/`) are only removed if uninstalling from all CLIs that use them
-- **Claude Code hooks** are removed from `settings.json` by an embedded python step, with the install's rules: a registry script under a `hooks/claude-code/` path segment, as a plain path or one single-quoted absolute path, from any install root; plus this repo's own unquoted entries for a path that needs quoting ([Hook commands](#hook-commands-claude-code)). Everything else is left in place.
+- **Claude Code hooks** are removed from `settings.json` by an embedded python step, with the install's rules: a registry script under a `hooks/claude-code/` path segment, as a plain path or one single-quoted absolute path, from any install root; plus this repo's own scripts spelled as the bare path or, when the path has no `$`, backquote, `\` or `"`, the path in double quotes ([Hook commands](#hook-commands-claude-code)). Everything else is left in place.
 - **opencode hook plugin**: an install with only the plugin (no agents) is detected too. The plugin (`plugins/devexp.js` + `plugins/devexp/`) and a legacy flat install are removed by the hidden `devexp uninstall --target opencode`, with exactly the rules of [Stale-file cleanup](#stale-file-cleanup): only devexp-owned files, nothing through a symlinked `plugins/`, a refusal (nothing removed) for a symlinked `devexp/` or a dangling `plugins/` link, all-or-nothing on `devexp.js` + `devexp/`, and the legacy `config.json` entry spliced out byte for byte. It runs before the MCP servers are removed from `config.json`.
   - The preview before the confirmation is that command's `--dry-run`.
   - It needs a `devexp` binary that has the command, looked up in this order: `DEVEXP_BIN` (set when you choose Remove in `devexp install`), `bin/devexp` in the clone, `devexp` on `PATH`. Without one, the plugin is left in place with a warning and the uninstall still completes. In a clone with an older binary, rebuild it: `rm bin/devexp && ./install.sh`.
