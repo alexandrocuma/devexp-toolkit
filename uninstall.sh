@@ -352,9 +352,15 @@ try:
             if h.get('claude_code', {}).get('script')
         ]
         managed = {os.path.basename(s) for s in scripts}
-        # What an install from this repo wrote before paths were quoted: the
-        # joined path verbatim, which the shell splits when it needs quoting.
-        legacy = {os.path.normpath(os.path.join(repo_dir, s)) for s in scripts}
+        # Other spellings of this repo's own scripts: the joined path verbatim,
+        # as an install wrote it before paths were quoted (the shell splits it
+        # when it needs quoting), and that path in double quotes, the natural
+        # hand fix, when it has no $, backquote, \ or " (so the quotes are
+        # literal). Same rules as requoteDevexpHooks in cli/internal/hooks.
+        own = [os.path.normpath(os.path.join(repo_dir, s)) for s in scripts]
+        legacy = set(own) | {
+            '"' + p + '"' for p in own if not any(c in p for c in '$`\\"')
+        }
 except (OSError, json.JSONDecodeError, KeyError, TypeError, AttributeError):
     print("  [skip] could not read hooks/registry.json")
     sys.exit(0)

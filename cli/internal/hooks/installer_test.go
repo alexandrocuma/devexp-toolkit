@@ -2,10 +2,12 @@ package hooks
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -1175,5 +1177,370 @@ func TestQuotedDevexpHookMatchers(t *testing.T) {
 				t.Errorf("isStaleDevexpHook(%q) = %v, want %v", tt.cmd, got, tt.stale)
 			}
 		})
+	}
+}
+
+// runHooks runs every command registered in settingsPath through sh -c, the way
+// Claude Code does, with LOG set, from an unrelated directory.
+func runHooks(t *testing.T, settingsPath, log string) {
+	t.Helper()
+	cwd := t.TempDir()
+	for _, entries := range readHooks(t, settingsPath) {
+		for _, e := range entries {
+			for _, h := range e.Hooks {
+				c := exec.Command("sh", "-c", h.Command)
+				c.Dir = cwd
+				c.Env = append(os.Environ(), "LOG="+log)
+				// A user's command may legitimately fail here; only what ran matters.
+				c.Run() //nolint:errcheck
+			}
+		}
+	}
+}
+
+// loggedLines returns the sorted lines of log (none if it doesn't exist).
+func loggedLines(t *testing.T, log string) []string {
+	t.Helper()
+	data, err := os.ReadFile(log)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	sort.Strings(lines)
+	return lines
+}
+
+// loggingScript writes an executable script at repoDir/relPath that appends
+// "<name>" to $LOG each time it runs.
+func loggingScript(t *testing.T, repoDir, relPath string) string {
+	t.Helper()
+	abs := filepath.Join(repoDir, relPath)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "#!/bin/sh\necho " + filepath.Base(relPath) + ` >> "$LOG"` + "\n"
+	if err := os.WriteFile(abs, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return abs
+}
+
+func commands(hooks hooksMapT) []string {
+	var out []string
+	for _, entries := range hooks {
+		for _, e := range entries {
+			for _, h := range e.Hooks {
+				out = append(out, h.Command)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// TestInstallClaude_DoubleQuotedHandFix: "<repo>/hooks/claude-code/<script>" is
+// the natural hand fix for an unquoted path. When the path has no $, backquote,
+// \ or ", those double quotes are literal, so it is this repo's script: it is
+// rewritten to the registered form instead of gaining a second copy that runs
+// alongside it.
+func TestInstallClaude_DoubleQuotedHandFix(t *testing.T) {
+	for name, dir := range map[string]string{
+		"needs quoting":    "My Proj/it's (x) & y",
+		"needs no quoting": "plain-repo",
+	} {
+		t.Run(name, func(t *testing.T) {
+			base := t.TempDir()
+			repoDir := filepath.Join(base, dir)
+			for _, s := range []string{"secret-guard.sh", "dangerous-cmd-guard.sh", "graphify-read-guard.sh"} {
+				loggingScript(t, repoDir, "hooks/claude-code/"+s)
+			}
+			mine := func(s string) string { return filepath.Join(repoDir, "hooks", "claude-code", s) }
+			foreign := loggingScript(t, filepath.Join(base, "Other Root"), "hooks/claude-code/secret-guard.sh")
+			userCmds := []hookCmd{
+				{Type: "command", Command: `"` + mine("secret-guard.sh") + `" --strict`}, // arguments
+				{Type: "command", Command: `"` + foreign + `"`},                          // another root
+				{Type: "command", Command: `"` + filepath.Join(repoDir, "hooks", "claude-code", "mine.sh") + `"`},
+			}
+			settingsPath := filepath.Join(t.TempDir(), "settings.json")
+			writeSettingsHooks(t, settingsPath, hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: `"` + mine("secret-guard.sh") + `"`}}},
+				{Matcher: "Read|Glob", Hooks: []hookCmd{{Type: "command", Command: `"` + mine("graphify-read-guard.sh") + `"`}}}, // disabled
+				{Matcher: "Write", Hooks: userCmds},
+			}})
+
+			var err error
+			out := captureOutput(t, func() { err = InstallClaude(testRegistry(), repoDir, settingsPath, nil, false) })
+			if err != nil {
+				t.Fatalf("InstallClaude() error = %v\n%s", err, out)
+			}
+			want := hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: hookCommand(mine("secret-guard.sh"))}}},
+				{Matcher: "Read|Glob", Hooks: []hookCmd{{Type: "command", Command: hookCommand(mine("graphify-read-guard.sh"))}}},
+				{Matcher: "Write", Hooks: userCmds},
+				{Matcher: "Bash", Hooks: []hookCmd{{Type: "command", Command: hookCommand(mine("dangerous-cmd-guard.sh"))}}},
+			}}
+			if got := readHooks(t, settingsPath); !reflect.DeepEqual(got, want) {
+				t.Fatalf("hooks =\n%+v\nwant\n%+v\noutput:\n%s", got, want, out)
+			}
+
+			before, _ := os.ReadFile(settingsPath)
+			out = captureOutput(t, func() { err = InstallClaude(testRegistry(), repoDir, settingsPath, nil, false) })
+			if after, _ := os.ReadFile(settingsPath); err != nil || string(after) != string(before) {
+				t.Errorf("second install changed settings.json (err %v):\n%s", err, out)
+			}
+
+			// Each of this repo's scripts runs once. The user's "…" --strict
+			// runs it once more, and the foreign root's copy runs as its own.
+			log := filepath.Join(t.TempDir(), "ran.log")
+			runHooks(t, settingsPath, log)
+			wantRan := []string{"dangerous-cmd-guard.sh", "graphify-read-guard.sh", "secret-guard.sh", "secret-guard.sh", "secret-guard.sh"}
+			if got := loggedLines(t, log); !reflect.DeepEqual(got, wantRan) {
+				t.Errorf("ran %q, want %q", got, wantRan)
+			}
+		})
+	}
+}
+
+// TestInstallClaude_DoubleQuotedWithShellSpecials: inside double quotes $,
+// backquote and \ are still special, so "<path>" is not that path and stays
+// the user's.
+func TestInstallClaude_DoubleQuotedWithShellSpecials(t *testing.T) {
+	for name, dir := range map[string]string{"dollar": "a$b", "backquote": "a`b`", "backslash": `a\b`} {
+		t.Run(name, func(t *testing.T) {
+			repoDir := filepath.Join(t.TempDir(), dir)
+			createScript(t, repoDir, "hooks/claude-code/secret-guard.sh")
+			createScript(t, repoDir, "hooks/claude-code/dangerous-cmd-guard.sh")
+			scriptAbs := filepath.Join(repoDir, "hooks", "claude-code", "secret-guard.sh")
+			userCmd := `"` + scriptAbs + `"`
+			settingsPath := filepath.Join(t.TempDir(), "settings.json")
+			writeSettingsHooks(t, settingsPath, hooksMapT{"PreToolUse": {
+				{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: userCmd}}},
+			}})
+			captureOutput(t, func() {
+				if err := InstallClaude(testRegistry(), repoDir, settingsPath, nil, false); err != nil {
+					t.Error(err)
+				}
+			})
+			got := commands(readHooks(t, settingsPath))
+			wantCmds := []string{userCmd, shellQuote(filepath.Join(repoDir, "hooks", "claude-code", "dangerous-cmd-guard.sh")), shellQuote(scriptAbs)}
+			sort.Strings(wantCmds)
+			if !reflect.DeepEqual(got, wantCmds) {
+				t.Errorf("commands = %q, want %q", got, wantCmds)
+			}
+		})
+	}
+}
+
+// oldInstallClaude does what InstallClaude did before #135 for one hook: append
+// the bare path unless that exact string is already registered. It stands in
+// for an older devexp run against the same settings.json.
+func oldInstallClaude(t *testing.T, settingsPath, event, matcher, scriptAbs string) {
+	t.Helper()
+	hooks := readHooks(t, settingsPath)
+	for _, e := range hooks[event] {
+		for _, h := range e.Hooks {
+			if h.Command == scriptAbs {
+				return
+			}
+		}
+	}
+	if hooks == nil {
+		hooks = hooksMapT{}
+	}
+	hooks[event] = append(hooks[event], hookEntry{Matcher: matcher, Hooks: []hookCmd{{Type: "command", Command: scriptAbs}}})
+	writeSettingsHooks(t, settingsPath, hooks)
+}
+
+// TestInstallClaude_CollapsesLegacyDuplicates: installing with this release,
+// then an older one (which appends the bare path it can't match), then this
+// release again must leave one registration per script, not a legacy entry
+// rewritten into an exact duplicate.
+func TestInstallClaude_CollapsesLegacyDuplicates(t *testing.T) {
+	repoDir := filepath.Join(t.TempDir(), "My Proj")
+	registry := testRegistry()
+	for _, h := range registry {
+		loggingScript(t, repoDir, h.Targets[TargetClaudeCode].Script)
+	}
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	install := func() {
+		t.Helper()
+		var err error
+		out := captureOutput(t, func() { err = InstallClaude(registry, repoDir, settingsPath, nil, false) })
+		if err != nil {
+			t.Fatalf("InstallClaude() error = %v\n%s", err, out)
+		}
+	}
+
+	install()                    // new
+	for _, h := range registry { // old
+		cc := h.Targets[TargetClaudeCode]
+		if h.Enabled {
+			oldInstallClaude(t, settingsPath, cc.Event, cc.Matcher, filepath.Join(repoDir, cc.Script))
+		}
+	}
+	// A hand fix in an entry that also holds a user command: only the
+	// duplicate goes, the user command and the entry's matcher stay.
+	hooks := readHooks(t, settingsPath)
+	hooks["PreToolUse"] = append(hooks["PreToolUse"], hookEntry{Matcher: "Read", Hooks: []hookCmd{
+		{Type: "command", Command: "/usr/local/bin/my-hook"},
+		{Type: "command", Command: `"` + filepath.Join(repoDir, "hooks", "claude-code", "secret-guard.sh") + `"`},
+	}})
+	writeSettingsHooks(t, settingsPath, hooks)
+	install() // new
+	install() // new
+
+	want := []string{
+		"/usr/local/bin/my-hook",
+		shellQuote(filepath.Join(repoDir, "hooks", "claude-code", "dangerous-cmd-guard.sh")),
+		shellQuote(filepath.Join(repoDir, "hooks", "claude-code", "secret-guard.sh")),
+	}
+	sort.Strings(want)
+	got := readHooks(t, settingsPath)
+	if cmds := commands(got); !reflect.DeepEqual(cmds, want) {
+		t.Fatalf("commands = %q, want %q", cmds, want)
+	}
+	for event, entries := range got {
+		for _, e := range entries {
+			if len(e.Hooks) == 0 {
+				t.Errorf("%s: entry %+v left with no commands", event, e)
+			}
+		}
+	}
+	var userEntry *hookEntry
+	for i, e := range got["PreToolUse"] {
+		if e.Matcher == "Read" {
+			userEntry = &got["PreToolUse"][i]
+		}
+	}
+	if userEntry == nil || len(userEntry.Hooks) != 1 || userEntry.Hooks[0].Command != "/usr/local/bin/my-hook" {
+		t.Errorf("user entry = %+v, want matcher Read holding only /usr/local/bin/my-hook", userEntry)
+	}
+
+	log := filepath.Join(t.TempDir(), "ran.log")
+	runHooks(t, settingsPath, log)
+	if lines := loggedLines(t, log); !reflect.DeepEqual(lines, []string{"dangerous-cmd-guard.sh", "secret-guard.sh"}) {
+		t.Errorf("ran %q, want each enabled script once", lines)
+	}
+}
+
+// shellSyntaxChars lists, independently of shellSyntax, every character
+// Claude Code's shell would split on or interpret in a hook command.
+var shellSyntaxChars = []string{
+	" ", "\t", "\n", "\r", "$", "~", "'", `"`, "`", `\`, ";", "&", "|",
+	"<", ">", "(", ")", "*", "?", "[", "]", "{", "}", "!", "#",
+}
+
+func TestShellSyntax_IsExactlyTheListedCharacters(t *testing.T) {
+	got := strings.Split(shellSyntax, "")
+	want := append([]string(nil), shellSyntaxChars...)
+	sort.Strings(got)
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("shellSyntax = %q, want %q", got, want)
+	}
+}
+
+// TestInstallClaude_EveryShellSyntaxCharacter: a repo dir holding any one of
+// these characters is registered quoted, and sh -c runs exactly that script.
+// Characters the shell treats literally keep the plain form.
+func TestInstallClaude_EveryShellSyntaxCharacter(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	registry := Registry{ccHook("secret-guard", true, "PreToolUse", "Read", "hooks/claude-code/secret-guard.sh")}
+	check := func(t *testing.T, char string, wantQuoted bool) {
+		repoDir := filepath.Join(t.TempDir(), "a"+char+"b")
+		scriptAbs := loggingScript(t, repoDir, "hooks/claude-code/secret-guard.sh")
+		settingsPath := filepath.Join(t.TempDir(), "settings.json")
+		var err error
+		out := captureOutput(t, func() { err = InstallClaude(registry, repoDir, settingsPath, nil, false) })
+		if err != nil {
+			t.Fatalf("InstallClaude() error = %v\n%s", err, out)
+		}
+		cmds := commands(readHooks(t, settingsPath))
+		want := scriptAbs
+		if wantQuoted {
+			want = shellQuote(scriptAbs)
+		}
+		if len(cmds) != 1 || cmds[0] != want {
+			t.Fatalf("commands = %q, want [%q]", cmds, want)
+		}
+		log := filepath.Join(t.TempDir(), "ran.log")
+		runHooks(t, settingsPath, log)
+		if lines := loggedLines(t, log); !reflect.DeepEqual(lines, []string{"secret-guard.sh"}) {
+			t.Errorf("sh -c %q ran %q, want the script once", cmds[0], lines)
+		}
+	}
+	for _, c := range shellSyntaxChars {
+		t.Run(fmt.Sprintf("quoted %q", c), func(t *testing.T) { check(t, c, true) })
+	}
+	for _, c := range []string{"-", "_", ".", "+", "@", "%", ",", ":", "=", "é", "ß"} {
+		t.Run(fmt.Sprintf("plain %q", c), func(t *testing.T) { check(t, c, false) })
+	}
+}
+
+// TestShellSyntax_MatchesUninstallScript: uninstall.sh keeps its own copy of
+// the set; if the two drift, one of them misjudges which commands are devexp's.
+func TestShellSyntax_MatchesUninstallScript(t *testing.T) {
+	py, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("no python3")
+	}
+	src, err := os.ReadFile(filepath.Join("..", "..", "..", "uninstall.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^SHELL_SYNTAX = set\((.*)\)$`).FindSubmatch(src)
+	if m == nil {
+		t.Fatal("no SHELL_SYNTAX = set(...) line in uninstall.sh")
+	}
+	out, err := exec.Command(py, "-c", "import ast, json, sys; print(json.dumps(sorted(ast.literal_eval(sys.argv[1]))))", string(m[1])).Output()
+	if err != nil {
+		t.Fatalf("evaluating %s: %v", m[1], err)
+	}
+	var got []string
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Split(shellSyntax, "")
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("uninstall.sh SHELL_SYNTAX = %q, want shellSyntax %q", got, want)
+	}
+}
+
+// TestRequoteDevexpHooks_DropsEmptiedEntry: removing a duplicate spelling must
+// not leave an entry with no commands behind, and must keep the event's other
+// entries and commands as they were.
+func TestRequoteDevexpHooks_DropsEmptiedEntry(t *testing.T) {
+	repoDir := filepath.Join(t.TempDir(), "My Proj")
+	scriptAbs := filepath.Join(repoDir, "hooks", "claude-code", "secret-guard.sh")
+	hooks := hooksMapT{
+		"PreToolUse": {
+			{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: shellQuote(scriptAbs)}}},
+			{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: scriptAbs}}},
+			{Matcher: "Read", Hooks: []hookCmd{{Type: "command", Command: `"` + scriptAbs + `"`}, {Type: "command", Command: "/usr/local/bin/my-hook"}}},
+		},
+		"PostToolUse": {
+			{Matcher: "Write", Hooks: []hookCmd{{Type: "command", Command: scriptAbs}}},
+		},
+	}
+	var changed bool
+	captureOutput(t, func() { changed = requoteDevexpHooks(hooks, testRegistry(), repoDir, false) })
+	want := hooksMapT{
+		"PreToolUse": {
+			{Matcher: "Read|Bash", Hooks: []hookCmd{{Type: "command", Command: shellQuote(scriptAbs)}}},
+			{Matcher: "Read", Hooks: []hookCmd{{Type: "command", Command: "/usr/local/bin/my-hook"}}},
+		},
+		// Another event is a separate registration: rewritten, not dropped.
+		"PostToolUse": {
+			{Matcher: "Write", Hooks: []hookCmd{{Type: "command", Command: shellQuote(scriptAbs)}}},
+		},
+	}
+	if !changed || !reflect.DeepEqual(hooks, want) {
+		t.Errorf("changed = %v, hooks =\n%+v\nwant\n%+v", changed, hooks, want)
 	}
 }

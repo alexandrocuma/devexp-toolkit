@@ -461,13 +461,20 @@ func pruneForeignDevexpHooks(hooksMap map[string][]hookEntry, registry Registry,
 	return pruned
 }
 
-// requoteDevexpHooks rewrites, in place, each registration of a registry script
-// under repoDir that is not in the form hookCommand gives it — the unquoted
-// path an earlier install wrote before paths needing quotes were quoted (#135),
-// which the shell splits, or a quoted form of a path that needs none. Disabled
-// hooks are included: the entry keeps its event, matcher and position and only
-// becomes runnable. Only the exact unquoted path and the exact quoted form of a
-// script under repoDir are rewritten; a user's command never is.
+// requoteDevexpHooks brings each registration of a registry script under
+// repoDir to the form hookCommand gives it. It recognises exactly these other
+// spellings of that one path:
+//   - the bare path an earlier install wrote before paths needing quotes were
+//     quoted (#135), which the shell splits;
+//   - the path in double quotes, the natural hand fix for that, when the path
+//     has no $, backquote, \ or " (so the double quotes are literal);
+//   - the single-quoted form of a path that needs no quoting.
+//
+// Each is rewritten in place (the entry keeps its event, matcher and position;
+// disabled hooks included), or dropped when the event already holds the
+// command it would become, so the script never runs twice. An entry left with
+// no commands is removed. A user's command never matches: other directories,
+// other scripts, arguments or any other quoting.
 func requoteDevexpHooks(hooksMap map[string][]hookEntry, registry Registry, repoDir string, dryRun bool) bool {
 	want := map[string]string{} // script path under repoDir -> command to register
 	for _, h := range registry {
@@ -476,30 +483,79 @@ func requoteDevexpHooks(hooksMap map[string][]hookEntry, registry Registry, repo
 			want[abs] = hookCommand(abs)
 		}
 	}
+	legacy := map[string]string{} // exact legacy spelling -> script path
+	for abs := range want {
+		legacy[abs] = abs
+		if dq, ok := doubleQuoted(abs); ok {
+			legacy[dq] = abs
+		}
+	}
+
 	changed := false
 	for event, entries := range hooksMap {
-		for i := range entries {
-			for j, h := range entries[i].Hooks {
-				p := h.Command
-				if _, legacy := want[p]; !legacy {
-					if p, _ = commandPath(h.Command); p == "" {
-						continue
-					}
+		present := map[string]bool{}
+		for _, e := range entries {
+			for _, h := range e.Hooks {
+				present[h.Command] = true
+			}
+		}
+		var kept []hookEntry
+		for _, e := range entries {
+			var keptCmds []hookCmd
+			for _, h := range e.Hooks {
+				p, ok := legacy[h.Command]
+				if !ok {
+					p, _ = commandPath(h.Command)
 				}
 				cmd, ok := want[p]
 				if !ok || cmd == h.Command {
+					keptCmds = append(keptCmds, h)
+					continue
+				}
+				if present[cmd] {
+					msg := fmt.Sprintf("%s: %s (duplicate of the registered command)", event, filepath.Base(p))
+					if dryRun {
+						ui.DryRun("remove " + msg)
+						keptCmds = append(keptCmds, h)
+						continue
+					}
+					ui.Removed(msg)
+					changed = true
 					continue
 				}
 				msg := fmt.Sprintf("%s: %s (command re-quoted for the shell)", event, filepath.Base(p))
 				if dryRun {
 					ui.DryRun("rewrite " + msg)
+					keptCmds = append(keptCmds, h)
 					continue
 				}
 				fmt.Printf("  \033[0;33m~\033[0m %s\n", msg)
-				entries[i].Hooks[j].Command = cmd
+				h.Command = cmd
+				present[cmd] = true
+				keptCmds = append(keptCmds, h)
 				changed = true
 			}
+			if len(keptCmds) == 0 {
+				continue
+			}
+			e.Hooks = keptCmds
+			kept = append(kept, e)
+		}
+		if len(kept) == 0 {
+			delete(hooksMap, event)
+		} else {
+			hooksMap[event] = kept
 		}
 	}
 	return changed
+}
+
+// doubleQuoted returns p in double quotes when that is just p to the shell:
+// p holds none of the characters double quotes leave special ($, backquote,
+// \, "). Otherwise there is no such literal spelling.
+func doubleQuoted(p string) (string, bool) {
+	if strings.ContainsAny(p, "$`\\\"") {
+		return "", false
+	}
+	return `"` + p + `"`, true
 }
