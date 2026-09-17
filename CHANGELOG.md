@@ -22,7 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mangle. The generic path never adds `--draft` on its own: in a repo with no
   publisher step the draft would stay unpublished forever. A Cut section that
   mentions release creation without a runnable command stops the cut and sends
-  the user to `/devxp`, rather than guessing. An unpublished release is
+  the user to `/devxp`, rather than guessing — classified in the read-only
+  preflight, so the stop happens before the tag is pushed and the gate shows
+  the command it is about to run. The cut now also refuses to create anything
+  unless the tag is actually on the remote (`git ls-remote … | grep -q .`,
+  because `ls-remote` exits 0 either way) and unless the changelog section it
+  extracted is non-empty. An unpublished release is
   reported as not yet shipped, with the target that publishes it named, and
   the failure path — delete the unpublished release, fix, cut the next patch,
   never move the tag — is spelled out. The `gen-docs` / `update-docs` Release

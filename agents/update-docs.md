@@ -559,7 +559,7 @@ Kinds: `library` · `cli` · `web` · `service` · `ios` · `android` · `deskto
 
 - Version source of truth: `<file>` — scheme: semver
 - Tag format: `v<version>` (or `<target>@<version>` in a monorepo with independent versions)
-- Release object: `<command that creates the platform release>` — write this line only when the repo needs something other than a plain published release (e.g. a draft that a target's build pipeline publishes once it has uploaded its assets). `/release` runs it verbatim; omit it and `/release` creates a published release from the version's changelog section. Name whatever publishes it in that target's **Build**
+- Release object: `<command that creates the platform release>` — write this line only when the repo needs something other than a plain published release (e.g. a draft that a target's build pipeline publishes once it has uploaded its assets). `/release` runs it as written, substituting only the version, tag and notes file, and never adding, dropping or reordering a flag; omit the line and `/release` creates a published release from the version's changelog section. Name whatever publishes it in that target's **Build**
 
 ## Target: <id>
 

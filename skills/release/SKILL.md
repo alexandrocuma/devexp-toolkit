@@ -87,6 +87,8 @@ ls package.json go.mod pyproject.toml Cargo.toml version.go VERSION 2>/dev/null 
 gh auth status >/dev/null 2>&1 && echo "platform: github" || { glab auth status >/dev/null 2>&1 && echo "platform: gitlab" || echo "platform: none — tag only"; }
 ```
 
+**The cut itself**, once: read the guide's **Cut** section read-only and classify it against Phase 6's table. A Cut that mentions a release object without a runnable command, or still carries `[CONFIRM]`, blocks the cut the way a missing prerequisite blocks a target — report it here and do not offer the gate; `/devxp` is the fix. Row 1 resolves the exact command the gate will show.
+
 **Per target**, check the guide's **Prerequisites** read-only: the named CLI reports an authenticated session (its own status/whoami subcommand), the named CI secret or connector is present. Never trigger an auth flow and never ask for a credential. A target whose prerequisites are missing, or whose steps still contain a `[CONFIRM]` marker, is **blocked** — it is reported and not attempted; the rest of the release can still proceed.
 
 Emit the inventory:
@@ -100,6 +102,7 @@ Release preflight — <ticket or branch>
   Current version: <vX.Y.Z> → proposed <vX.Y.Z> (<patch|minor|major>)
   Platform       : <github | gitlab | none — tag only>
   Release guide  : <docs/guides/release.md, last verified YYYY-MM-DD | missing — cut only>
+  Release object : <from the guide's Cut: `<command>` | generic — Cut is silent | blocked — Cut unfinished, run /devxp>
 
   Targets:
   | Target | Kind    | Build no.       | Channel → production              | Rollback             | Status   |
@@ -121,7 +124,7 @@ Ready to release <version>?
     Step 1: Merge <type>/<ticket> into <base>
     Step 2: Changelog entry from commits since <last tag>
     Step 3: Bump version to <vX.Y.Z> (+ build numbers: <target: N → N+1, …>)
-    Step 4: Tag, then create the release on <platform> (<command from the guide's Cut | generic>)
+    Step 4: Tag, then create the release on <platform> — <the command Phase 1 resolved>
   Then ship, each target gated on its own:
     <target> → <channel → production>
     <target> → blocked (<reason>) — will not be attempted
@@ -178,18 +181,29 @@ Then apply each affected target's **Versioning** rule from the guide — typical
 
 ### Phase 6 — Tag and Create the Release
 
-The guide's **Cut** section owns this phase the way each target's section owns Phase 7. Read it before running anything:
+The guide's **Cut** section owns this phase the way each target's section owns Phase 7. **Resolve it before anything is committed** — Phase 1 already classified it read-only, and nothing below runs unless that classification was one of the first two rows:
 
 ```bash
 sed -n '/^## Cut/,/^## /p' docs/guides/release.md 2>/dev/null
 ```
 
-Commit and tag — with the guide's Cut format for the release commit, the tag name and the tag message wherever it states them:
+Empty output is not proof the guide is silent — the heading may simply be worded differently (`## The Cut`, `### Cut`). Confirm with `grep -niE 'release object|release create|--draft' docs/guides/release.md` before treating it as row 2. A guide that clearly discusses release creation under a heading this range cannot find is an unfinished guide: row 3.
+
+| The guide's Cut section… | Do |
+|--------------------------|----|
+| gives the command | run exactly that, substituting version, tag and notes file — never add, drop or reorder a flag |
+| says nothing about creating a release | use the generic commands below |
+| mentions it, but the command is missing, ambiguous or still `[CONFIRM]` | **stop the cut here, before the commit** — nothing is pushed. Quote what the guide says, send the user to `/devxp` to finish the Cut section, and report it as `not created — the guide's Cut is unfinished` |
+
+Never let the third row slide into the second. A repo whose guide asks for anything other than a plain published release is exactly the repo where a guess ships an empty release to users. Stopping costs nothing *here*; after the tag push it costs a public tag that may already have started a pipeline.
+
+Commit and tag — with the guide's Cut format for the release commit, the tag name and the tag message wherever it states them. The tag the cut actually pushes is what every command below uses, never a literal `v<version>`:
 
 ```bash
+tag="v<version>"        # or the guide's format, e.g. <target>@<version>
 git add CHANGELOG.md <version-file> <target build-number files>
 git commit -m "chore: release v<version>"
-git tag -a "v<version>" -m "Release v<version>"
+git tag -a "$tag" -m "Release v<version>"
 git push && git push --tags
 ```
 
@@ -198,45 +212,52 @@ git push && git push --tags
 The release notes are always the version's own `CHANGELOG.md` section, passed as a **file**. A multiline body inlined into `--notes` is at the mercy of the shell:
 
 ```bash
-notes="/tmp/.release-<ticket>-notes.md"   # retired with the rest of the scratch in Phase 8
+notes="/tmp/.release-${ticket}-notes.md"   # retired with the scratch in Phase 8, when the release completes with a ticket id
 awk -v v="<version>" '$0 ~ "^## \\[" v "\\]" {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md > "$notes"
+[ -s "$notes" ] || { echo "no [<version>] section in CHANGELOG.md — stop"; exit 1; }
 ```
 
-Then create the platform release object. Where that command comes from:
+`<version>` here is the bare version as the changelog heading writes it, **without** the `v` the tag carries — the commonest way to get an empty file, and an empty notes file ships a release with no notes.
 
-| The guide's Cut section… | Do |
-|--------------------------|----|
-| gives the command | run exactly that, substituting version, tag and notes file — never add, drop or reorder a flag |
-| says nothing about creating a release | use the generic commands below |
-| mentions it, but the command is missing, ambiguous or still `[CONFIRM]` | **stop the cut.** Quote what the guide says and send the user to `/devxp` to finish the Cut section |
+Then confirm the tag reached the remote. This is read-only and cheap, so it runs before **any** release-creation command, including a guide-provided one that omits `--verify-tag` — row 1 forbids changing that command, not checking before it:
 
-Never let the third row slide into the second. A repo whose guide asks for anything other than a plain published release is exactly the repo where a guess ships an empty release to users.
+```bash
+git ls-remote --tags origin "refs/tags/$tag" | grep -q . \
+  || { echo "tag never reached the remote — stop, do not create the release"; exit 1; }
+```
+
+`ls-remote` exits 0 whether or not the tag exists — it is the **output** that has to be non-empty. Empty output means the tag never reached the remote: stop, and create nothing.
 
 Generic commands — only when the guide defines none:
 
 ```bash
-gh   release create "v<version>" --title "v<version>" --notes-file "$notes" --verify-tag   # GitHub
-git ls-remote --tags origin "refs/tags/v<version>"                                         # GitLab: stands in for --verify-tag
-glab release create "v<version>" --name  "v<version>" --notes-file "$notes"                # GitLab
+gh   release create "$tag" --title "$tag" --notes-file "$notes" --verify-tag   # GitHub
+glab release create "$tag" --name  "$tag" --notes-file "$notes"                # GitLab — no --verify-tag; the check above stands in for it
 ```
 
-`--verify-tag` aborts when the tag never reached the remote. `glab` has no equivalent and tags the default branch itself when the tag is missing, so the `ls-remote` check has to pass first.
+`--verify-tag` aborts when the tag never reached the remote. `glab` has no equivalent and tags the default branch itself when the tag is missing, which is why its check is a separate command and not a flag.
 
 **Never add `--draft` to the generic commands.** A draft is right only where the guide names what publishes it; with no publisher the draft stays unpublished forever and users get no release at all.
 
 With no platform detected, the tag **is** the release. Report that rather than failing.
 
-**A release the guide leaves unpublished is not shipped yet.** When the Cut's command creates a draft, a pre-release or anything else users cannot see, something else publishes it — typically a tag-triggered pipeline in a target's **Build**. Until then the cut is incomplete: name that target, never report the release as published, and let Phase 7 watch that pipeline and read the guide's **Post-release verification** signals for it (no longer a draft, assets attached, the version resolving as latest).
+**A release the guide leaves unpublished is not shipped yet.** When the Cut's command creates a draft, a pre-release or anything else users cannot see, something else publishes it — typically a tag-triggered pipeline in a target's **Build**. Until then the cut is incomplete. Name that target and **bind it for this run even if the change did not affect it — watch-only**: Phase 7 watches its pipeline and reads its **Post-release verification** signals for it, but runs none of its build or distribute commands and needs no target gate. Never report the release as published before those signals say so (no longer a draft, assets attached, the version resolving as latest).
 
-**If that publisher fails or never runs**, follow the guide's steps for the target. Where it gives none, the generic shape is: delete the unpublished release object — it was never public, so this is not the release deletion a rollback forbids — fix on a branch, then cut the next patch version. The tag stays; tags are never moved, deleted or re-pushed.
+**If that publisher fails or never runs**, follow the guide's steps for the target. Where it gives none, the generic shape is **confirm it is still unpublished, then delete it** — a re-run of the publisher, by you or by the user in the platform's UI, can publish it while you are standing here:
+
+```bash
+gh release view   "$tag" --json isDraft,isPrerelease   # must still show it unpublished
+gh release delete "$tag" --yes                         # never --cleanup-tag
+```
+
+If it has since been published it is a normal release: do not delete it — that is the deletion a rollback forbids — roll forward instead. Either way, fix on a branch and cut the next patch version. The tag stays; tags are never moved, deleted or re-pushed.
 
 If the guide says a target's pipeline is **triggered by the tag** (CI builds and deploys on tag push), the push has already started that target's ship — Phase 7 then *watches* that pipeline instead of running its build/distribute commands.
-
 ---
 
 ### Phase 7 — Ship Targets  *(each target gated on its own; skipped when cut-only)*
 
-Ship the targets bound in Phase 0, in the order the guide lists them (the guide or groom plan may require an order — e.g. a backend before the app that depends on it). Blocked targets are skipped and reported.
+Ship the targets bound in Phase 0 — plus any publisher target Phase 6 bound **watch-only**, which is watched and verified but never gated, built or distributed, and whose state is recorded like any other target's — in the order the guide lists them (the guide or groom plan may require an order — e.g. a backend before the app that depends on it). Blocked targets are skipped and reported.
 
 **The guide is the only source of commands.** Run exactly what the target's section says; never improvise, substitute or "fix" a ship command. A step marked `[CONFIRM]` is not executed. If a guide command fails because it is wrong, stop that target and send the user to `/devxp` to correct the guide.
 
@@ -289,7 +310,7 @@ mkdir -p ~/.claude/agent-memory/release
 
 ### Phase 8 — Retire Delivery Artifacts  *(only when the release is complete)*
 
-**Gate strictly on completion.** The release is complete when the cut succeeded **and** every bound target is `shipped` or explicitly `skipped`. If any step failed or was declined, or any target is `awaiting-external`, `blocked` or `failed`, skip this phase entirely and preserve everything — worktree, plan, scratch, release state — for the resumed run. Scope every action to this ticket; the repo-wide sweep belongs to `/improve` (C2) and `/cleanup`.
+**Gate strictly on completion.** The release is complete when the cut succeeded, the release object is published (or the user has explicitly accepted it staying unpublished), **and** every bound target is `shipped` or explicitly `skipped`. If any step failed or was declined, or any target is `awaiting-external`, `blocked` or `failed`, skip this phase entirely and preserve everything — worktree, plan, scratch, release state — for the resumed run. Scope every action to this ticket; the repo-wide sweep belongs to `/improve` (C2) and `/cleanup`.
 
 **Safety gate — bind and verify the id before any deletion.** Every `rm` below is keyed to `$ticket`. An empty id turns an id-scoped glob into a blanket wipe (`/tmp/*$ticket*` → `/tmp/*`), so **abort cleanup entirely if the id is empty or unsafe:**
 
@@ -336,7 +357,7 @@ With `$ticket` verified, retire each artifact:
   Changelog:    <N entries — N feat, N fix, N breaking / skipped>
   Version:      <vOLD → vNEW (patch|minor|major) / tag-only, no version file>
   Tag:          <v<version> pushed / not pushed / already existed (resumed)>
-  Platform:     <published on github|gitlab / created unpublished on github|gitlab — published by <target> / tag only — no platform detected>
+  Platform:     <published on github|gitlab / created unpublished on github|gitlab — published by <target> / not created — the guide's Cut is unfinished (/devxp) / tag only — no platform detected>
 
   Targets:      <cut only — no release guide>
   | Target  | Build | Channel reached          | State                                | Verification          |
