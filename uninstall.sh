@@ -378,6 +378,37 @@ def write_atomic(path, data):
     except OSError:
         pass
 
+# The deepest nesting either step edits. Deeper, the file is skipped whatever
+# python runs this: its json module raises RecursionError near 1,000 levels on
+# 3.9-3.11 (and in 3.12's indenting encoder), but not on 3.13+, so relying on
+# the error made the outcome depend on the version. Go's encoding/json, which
+# `devexp install` uses, allows 10,000; no version of python's json reaches
+# that reliably, so uninstall stops well below where any version fails.
+MAX_DEPTH = 500
+
+def too_deep(text):
+    # Whether text nests arrays and objects more than MAX_DEPTH deep, counting
+    # brackets outside strings in one linear pass (no recursion).
+    depth = 0
+    in_string = escaped = False
+    for c in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif c == '\\':
+                escaped = True
+            elif c == '"':
+                in_string = False
+        elif c == '"':
+            in_string = True
+        elif c == '[' or c == '{':
+            depth += 1
+            if depth > MAX_DEPTH:
+                return True
+        elif c == ']' or c == '}':
+            depth -= 1
+    return False
+
 # Like the plugin step (removeLegacyConfigEntry), a symlinked config.json is
 # someone's dotfiles setup: never written through, never replaced.
 if os.path.islink(config_path):
@@ -395,6 +426,9 @@ try:
     # newline='' keeps line endings exactly as they are.
     with open(config_path, encoding='utf-8', newline='') as f:
         text = f.read()
+    if too_deep(text):
+        print(f"  [skip] {config_path} is nested too deeply to edit (more than {MAX_DEPTH} levels), so it was left untouched — remove the devexp MCP servers from it by hand")
+        sys.exit(0)
     config = parse(text)
 except RecursionError:
     print(f"  [skip] {config_path} is nested too deeply to edit, so it was left untouched — remove the devexp MCP servers from it by hand")
@@ -575,6 +609,37 @@ def write_atomic(path, data):
     except OSError:
         pass
 
+# The deepest nesting either step edits. Deeper, the file is skipped whatever
+# python runs this: its json module raises RecursionError near 1,000 levels on
+# 3.9-3.11 (and in 3.12's indenting encoder), but not on 3.13+, so relying on
+# the error made the outcome depend on the version. Go's encoding/json, which
+# `devexp install` uses, allows 10,000; no version of python's json reaches
+# that reliably, so uninstall stops well below where any version fails.
+MAX_DEPTH = 500
+
+def too_deep(text):
+    # Whether text nests arrays and objects more than MAX_DEPTH deep, counting
+    # brackets outside strings in one linear pass (no recursion).
+    depth = 0
+    in_string = escaped = False
+    for c in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif c == '\\':
+                escaped = True
+            elif c == '"':
+                in_string = False
+        elif c == '"':
+            in_string = True
+        elif c == '[' or c == '{':
+            depth += 1
+            if depth > MAX_DEPTH:
+                return True
+        elif c == ']' or c == '}':
+            depth -= 1
+    return False
+
 repo_dir      = sys.argv[1]
 settings_path = sys.argv[2]
 
@@ -727,6 +792,10 @@ def load(text):
     # are refused, and so is a number a float can't hold (1e400 reads as inf and
     # would be written back as Infinity, which isn't JSON).
     return json.loads(text, parse_constant=reject_constant, parse_float=finite_float)
+
+if too_deep(text):
+    print(f"  [skip] settings.json is nested too deeply to edit (more than {MAX_DEPTH} levels), so it was left untouched -- remove the devexp hooks from it by hand")
+    sys.exit(0)
 
 try:
     settings = load(text)

@@ -724,26 +724,52 @@ done
 # It is skipped with a message, the file untouched. Nesting inside hooks, and
 # outside it.
 deep() { python3 -c 'import sys; n=int(sys.argv[1]); print("[" * n + "]" * n, end="")' "$1"; }
+# The limit is explicit (MAX_DEPTH = 500, counted over the whole file), so the
+# outcome doesn't depend on the python version: at 500 levels the file is
+# edited, from 501 on it is skipped, far past it too. Python 3.9-3.11 raise
+# RecursionError near 1,000 levels and 3.13+ don't, which is why a 3,000-deep
+# file used to be skipped on one and edited on the other.
 for where in hooks top; do
-    for depth in 3000 100000; do
-        D="$TMP/settings-deep-$where-$depth"; mkdir -p "$D"
+    for total in 500 501 3000 100000; do
+        D="$TMP/settings-deep-$where-$total"; mkdir -p "$D"
         if [ "$where" = hooks ]; then
-            printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s"}]}],"X":%s}}' "$MINE" "$(deep $depth)" > "$D/settings.json"
+            # {"hooks":{..."X": <n arrays>}} is n + 2 levels.
+            printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s"}]}],"X":%s}}' "$MINE" "$(deep $((total - 2)))" > "$D/settings.json"
         else
-            printf '{"deep":%s,"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s"}]}]}}' "$(deep $depth)" "$MINE" > "$D/settings.json"
+            # {"deep": <n arrays>, ...} is n + 1 levels.
+            printf '{"deep":%s,"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s"}]}]}}' "$(deep $((total - 1)))" "$MINE" > "$D/settings.json"
         fi
         cp "$D/settings.json" "$D.before"
         prune_run "$D/settings.json"
-        if [ "$(cat "$TMP/prune.rc")" = 0 ] && cmp -s "$D/settings.json" "$D.before" \
-            && grep -qF "[skip]" "$TMP/prune.out" && grep -qF "left untouched" "$TMP/prune.out" \
+        if [ "$total" -le 500 ]; then
+            if [ "$(cat "$TMP/prune.rc")" = 0 ] && ! cmp -s "$D/settings.json" "$D.before" \
+                && grep -qF "Saved:" "$TMP/prune.out" && ! grep -qF "[skip]" "$TMP/prune.out" \
+                && python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d["hooks"].get("Stop") is None else 1)' "$D/settings.json" 2>/dev/null; then
+                pass=$((pass+1))
+            else
+                fail=$((fail+1)); printf 'FAIL settings.json nested exactly %s deep (%s): edited and saved\n' "$total" "$where"
+                printf 'rc=%s\n' "$(cat "$TMP/prune.rc")"; head -c 600 "$TMP/prune.out"; echo
+            fi
+        elif [ "$(cat "$TMP/prune.rc")" = 0 ] && cmp -s "$D/settings.json" "$D.before" \
+            && grep -qF "[skip] settings.json is nested too deeply to edit (more than 500 levels)" "$TMP/prune.out" \
+            && grep -qF "left untouched" "$TMP/prune.out" \
             && ! grep -qF "Traceback" "$TMP/prune.out" && [ "$(ls -A "$D")" = "settings.json" ]; then
             pass=$((pass+1))
         else
-            fail=$((fail+1)); printf 'FAIL settings.json nested %s deep (%s): skipped, untouched, exit 0\n' "$depth" "$where"
+            fail=$((fail+1)); printf 'FAIL settings.json nested %s deep (%s): skipped, untouched, exit 0\n' "$total" "$where"
             printf 'rc=%s\n' "$(cat "$TMP/prune.rc")"; head -c 600 "$TMP/prune.out"; echo
         fi
     done
 done
+# Brackets inside strings, and escaped quotes, don't count.
+D="$TMP/settings-deep-strings"; mkdir -p "$D"
+printf '{"note":"%s \\" %s","hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s"}]}]}}' "$(deep 600)" "$(deep 600)" "$MINE" > "$D/settings.json"
+prune_run "$D/settings.json"
+if grep -qF "Saved:" "$TMP/prune.out" && ! grep -qF "[skip]" "$TMP/prune.out"; then
+    pass=$((pass+1))
+else
+    fail=$((fail+1)); printf 'FAIL brackets and escaped quotes inside strings do not count towards the depth limit\n'; head -c 600 "$TMP/prune.out"; echo
+fi
 REPO="$REPO_PLAIN"
 
 # ── opencode (#109) ──────────────────────────────────────────────────────────
@@ -886,14 +912,19 @@ if [ -s "$TMP/mcp.py" ]; then
     if [ $? = 0 ] && [ "$(cat "$D/config.json")" = '{ "mcp" : { "mine" : {} } }' ] && ! grep -qF "Saved" "$D.out" \
         && grep -qF "[skip] context7 — not configured" "$D.out"; then ok; else ko "MCP block with nothing to remove writes nothing" "$(cat "$D.out")"; fi
 
-    # Nested too deeply for python's json: skipped, untouched, exit 0.
-    for depth in 3000 100000; do
-        D="$TMP/mcp-deep-$depth"; mkdir -p "$D"
-        printf '{"mcp":{"context7":{}},"deep":%s}' "$(deep $depth)" > "$D/config.json"
+    # Deeper than MAX_DEPTH (500 levels): skipped, untouched, exit 0, on every
+    # python version. At 500 it is edited.
+    for total in 500 501 3000 100000; do
+        D="$TMP/mcp-deep-$total"; mkdir -p "$D"
+        printf '{"mcp":{"context7":{}},"deep":%s}' "$(deep $((total - 1)))" > "$D/config.json"
         cp "$D/config.json" "$D.before"
         mcp_run "$D"
-        if [ "$(cat "$D.rc")" = 0 ] && cmp -s "$D/config.json" "$D.before" && grep -qF "nested too deeply" "$D.out" \
-            && ! grep -qF "Traceback" "$D.out"; then ok; else ko "MCP block with config.json nested $depth deep: skipped, untouched, exit 0" "rc=$(cat "$D.rc") $(head -c 400 "$D.out")"; fi
+        if [ "$total" -le 500 ]; then
+            if [ "$(cat "$D.rc")" = 0 ] && grep -qF "Saved:" "$D.out" \
+                && [ "$(head -c 23 "$D/config.json")" = '{"mcp":{},"deep":[[[[[[' ]; then ok; else ko "MCP block with config.json nested exactly $total deep: edited" "rc=$(cat "$D.rc") $(head -c 400 "$D.out")"; fi
+        elif [ "$(cat "$D.rc")" = 0 ] && cmp -s "$D/config.json" "$D.before" \
+            && grep -qF "is nested too deeply to edit (more than 500 levels)" "$D.out" \
+            && ! grep -qF "Traceback" "$D.out"; then ok; else ko "MCP block with config.json nested $total deep: skipped, untouched, exit 0" "rc=$(cat "$D.rc") $(head -c 400 "$D.out")"; fi
     done
 fi
 
@@ -902,7 +933,7 @@ wa_body() { python3 - "$1" <<'PY'
 import re, sys
 src = open(sys.argv[1]).read()
 start = src.index('class WriteRefused')
-end = re.compile(r'\n(?=\S)').search(src, src.index('def write_atomic')).start()
+end = re.compile(r'\n(?=\S)').search(src, src.index('def too_deep')).start()
 print(src[start:end])
 PY
 }
@@ -910,7 +941,7 @@ if [ -s "$TMP/mcp.py" ] && [ "$(wa_body "$TMP/prune.py")" = "$(wa_body "$TMP/mcp
     && [ "$(grep -c '^def write_atomic' "$ROOT/uninstall.sh")" = 2 ]; then
     ok
 else
-    ko "the settings and MCP blocks carry the same write_atomic" "$(diff <(wa_body "$TMP/prune.py") <(wa_body "$TMP/mcp.py"))"
+    ko "the settings and MCP blocks carry the same write_atomic, MAX_DEPTH and too_deep" "$(diff <(wa_body "$TMP/prune.py") <(wa_body "$TMP/mcp.py"))"
 fi
 
 # ── Harness: uninstall.sh in a temp HOME with stub devexp binaries ───────────

@@ -97,10 +97,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `enabled` either way.
 - **`uninstall.sh`: crashes on deeply nested JSON, writes that weren't atomic,
   and a reformatted `config.json` (#124, #150).**
-  - Both python steps skip a `settings.json` or `config.json` nested too
-    deeply for python's `json` (a `RecursionError`, which isn't a
-    `ValueError`), with a message and the file untouched. The uninstall used
-    to stop there under `set -e`. Any other failure of either step now prints
+  - Both python steps skip a `settings.json` or `config.json` nested more
+    than 500 levels deep, with a message and the file untouched, whatever
+    python runs them. Python's `json` raised `RecursionError` (not a
+    `ValueError`) near 1,000 levels on 3.9-3.11 but not on 3.13+, and the
+    uninstall used to stop there under `set -e`. `devexp install` (Go) reads
+    up to 10,000 levels, which python can't reliably match. Any other failure of either step now prints
     a warning and the uninstall carries on.
   - The `settings.json` step saves atomically with the same rules as
     `devexp install` (a symlinked `settings.json` keeps its link, the file it
