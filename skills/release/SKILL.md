@@ -121,7 +121,7 @@ Ready to release <version>?
     Step 1: Merge <type>/<ticket> into <base>
     Step 2: Changelog entry from commits since <last tag>
     Step 3: Bump version to <vX.Y.Z> (+ build numbers: <target: N → N+1, …>)
-    Step 4: Tag and publish on <platform>
+    Step 4: Tag, then create the release on <platform> (<command from the guide's Cut | generic>)
   Then ship, each target gated on its own:
     <target> → <channel → production>
     <target> → blocked (<reason>) — will not be attempted
@@ -176,7 +176,15 @@ Then apply each affected target's **Versioning** rule from the guide — typical
 
 ---
 
-### Phase 6 — Tag and Publish
+### Phase 6 — Tag and Create the Release
+
+The guide's **Cut** section owns this phase the way each target's section owns Phase 7. Read it before running anything:
+
+```bash
+sed -n '/^## Cut/,/^## /p' docs/guides/release.md 2>/dev/null
+```
+
+Commit and tag — with the guide's Cut format for the release commit, the tag name and the tag message wherever it states them:
 
 ```bash
 git add CHANGELOG.md <version-file> <target build-number files>
@@ -185,16 +193,42 @@ git tag -a "v<version>" -m "Release v<version>"
 git push && git push --tags
 ```
 
-Publish on the platform detected in Phase 1:
+**Tag push is the point of no return for the cut.** Everything before it is local and revertible; everything after is public. If a step here fails, stop — do not proceed to Phase 7, and do not retry a push that may have partially succeeded without checking `git ls-remote --tags origin` first.
+
+The release notes are always the version's own `CHANGELOG.md` section, passed as a **file**. A multiline body inlined into `--notes` is at the mercy of the shell:
 
 ```bash
-gh release create  "v<version>" --title "v<version>" --notes "<changelog entry>"   # GitHub
-glab release create "v<version>" --name  "v<version>" --notes "<changelog entry>"  # GitLab
+notes="/tmp/.release-<ticket>-notes.md"   # retired with the rest of the scratch in Phase 8
+awk -v v="<version>" '$0 ~ "^## \\[" v "\\]" {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md > "$notes"
 ```
+
+Then create the platform release object. Where that command comes from:
+
+| The guide's Cut section… | Do |
+|--------------------------|----|
+| gives the command | run exactly that, substituting version, tag and notes file — never add, drop or reorder a flag |
+| says nothing about creating a release | use the generic commands below |
+| mentions it, but the command is missing, ambiguous or still `[CONFIRM]` | **stop the cut.** Quote what the guide says and send the user to `/devxp` to finish the Cut section |
+
+Never let the third row slide into the second. A repo whose guide asks for anything other than a plain published release is exactly the repo where a guess ships an empty release to users.
+
+Generic commands — only when the guide defines none:
+
+```bash
+gh   release create "v<version>" --title "v<version>" --notes-file "$notes" --verify-tag   # GitHub
+git ls-remote --tags origin "refs/tags/v<version>"                                         # GitLab: stands in for --verify-tag
+glab release create "v<version>" --name  "v<version>" --notes-file "$notes"                # GitLab
+```
+
+`--verify-tag` aborts when the tag never reached the remote. `glab` has no equivalent and tags the default branch itself when the tag is missing, so the `ls-remote` check has to pass first.
+
+**Never add `--draft` to the generic commands.** A draft is right only where the guide names what publishes it; with no publisher the draft stays unpublished forever and users get no release at all.
 
 With no platform detected, the tag **is** the release. Report that rather than failing.
 
-**Tag push is the point of no return for the cut.** Everything before it is local and revertible; everything after is public. If a step here fails, stop — do not proceed to Phase 7, and do not retry a push that may have partially succeeded without checking `git ls-remote --tags origin` first.
+**A release the guide leaves unpublished is not shipped yet.** When the Cut's command creates a draft, a pre-release or anything else users cannot see, something else publishes it — typically a tag-triggered pipeline in a target's **Build**. Until then the cut is incomplete: name that target, never report the release as published, and let Phase 7 watch that pipeline and read the guide's **Post-release verification** signals for it (no longer a draft, assets attached, the version resolving as latest).
+
+**If that publisher fails or never runs**, follow the guide's steps for the target. Where it gives none, the generic shape is: delete the unpublished release object — it was never public, so this is not the release deletion a rollback forbids — fix on a branch, then cut the next patch version. The tag stays; tags are never moved, deleted or re-pushed.
 
 If the guide says a target's pipeline is **triggered by the tag** (CI builds and deploys on tag push), the push has already started that target's ship — Phase 7 then *watches* that pipeline instead of running its build/distribute commands.
 
@@ -302,7 +336,7 @@ With `$ticket` verified, retire each artifact:
   Changelog:    <N entries — N feat, N fix, N breaking / skipped>
   Version:      <vOLD → vNEW (patch|minor|major) / tag-only, no version file>
   Tag:          <v<version> pushed / not pushed / already existed (resumed)>
-  Platform:     <published on github|gitlab / tag only — no platform detected>
+  Platform:     <published on github|gitlab / created unpublished on github|gitlab — published by <target> / tag only — no platform detected>
 
   Targets:      <cut only — no release guide>
   | Target  | Build | Channel reached          | State                                | Verification          |
@@ -328,7 +362,8 @@ On a deferred, pending or failed release, the report says which step or target s
 ## Guidelines
 
 - **The gates are the whole point.** Release is irreversible and affects shared systems. The cut gate authorizes the cut; each target is its own decision; each production-facing promote is its own decision. Never infer consent from an earlier "yes" — not from `/deliver`, not from the cut gate, not from a previous target.
-- **The guide is the source of ship commands.** Never improvise, guess or repair a ship step. `[CONFIRM]` means don't run it. Wrong guide → `/devxp`, not a workaround.
+- **The guide is the source of release commands** — its **Cut** section for the tag and the release object, each target's section for the ship steps. Never improvise, guess or repair one. `[CONFIRM]`, or a half-written command, means don't run it. Wrong or unfinished guide → `/devxp`, not a workaround.
+- **Never create a release nothing can publish.** `--draft` and its equivalents belong only to a guide that names what publishes them; on its own the skill always creates a plain published release, with the tag verified and the notes read from a file.
 - **Show the rollback before the risk.** Every target gate displays the rollback plan; no target ships without one being known.
 - **Never roll back automatically.** Offer the guide's rollback; run it only on an explicit yes.
 - **Waiting is a state, not a failure.** Store review and staged rollouts are `awaiting-external` — recorded, resumable, and they keep the delivery's artifacts alive.
