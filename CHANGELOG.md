@@ -40,6 +40,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Saving `settings.json`, the manifests and the opencode plugin files could
+  leave a truncated file, and a plain atomic rename would have replaced a
+  symlinked file with a regular one (#124).** `devexp install` wrote
+  `~/.claude/settings.json` and both `.devexp-manifest.json` files by
+  truncating and rewriting them in place. All of them, and the opencode plugin
+  files and legacy `config.json` edit, now go through one writer
+  (`cli/internal/fsutil`):
+  - the new bytes go to a temp file next to the file being replaced, are
+    fsynced, get that file's permission bits (not a fixed 0644) and are
+    renamed over it, so an interrupted save leaves the old file or the new
+    one. A new file still gets 0644 minus the umask (0600 under `umask 077`),
+    as before. Replacing breaks a hard link and drops xattrs, ACLs and
+    setuid/setgid/sticky bits;
+  - a symlinked file (dotfiles) is followed to the file it finally points at,
+    which is replaced; the link, and every link in a chain, stays;
+  - a dangling link, a link loop, a directory, a file you can't write, a
+    directory where no temp file can be created, or a rename the file system
+    refuses (a bind-mounted file) is refused with an error naming the file,
+    which is left untouched. Earlier releases created the file a dangling
+    link pointed at.
+- **`devexp install` replaced an opencode `config.json` it couldn't parse
+  (#124).** The MCP merge ignored decode errors, so a `config.json` with a
+  syntax error or comments was overwritten with a file holding only the MCP
+  servers, and one holding `null` crashed the install. A `config.json` that
+  isn't strict JSON, or whose top level or `mcp` value isn't an object, is now
+  left untouched: the MCP step is skipped with a warning naming the file and
+  the servers to add by hand, and agents, skills and hooks still install (with
+  `--mcps-only` it is an error). opencode reads `config.json` as JSONC, so a
+  commented one is valid there. Numbers are
+  written back as they were instead of through a float (`12345678901234567890`
+  no longer becomes `12345678901234567000`). The save is atomic and keeps a
+  symlinked `config.json`'s link.
+- **`devexp install` overwrote the file behind a symlinked agent, command or
+  skill (#124).** An installed agent file (`~/.claude/agents/<name>.md`,
+  opencode `agents/`), opencode command, skill directory, or file or directory
+  inside a skill that was a symlink had its target overwritten, which could be
+  a customised copy in a dotfiles repo or the toolkit's own source file.
+  **Behaviour change:** such an entry is now left untouched, with a warning
+  naming it, in a dry run too. Its name stays in the manifest. Replace the link
+  with a regular file to get the release's copy. Agent, command and skill
+  files are also written atomically now.
+- **Hook registrations from another install root were never pruned once their
+  script left the registry, and Claude Code ignored `claude_code.enabled`
+  (#150).**
+  - `devexp install` now removes a registration in a form devexp writes (a
+    plain or single-quoted absolute path) of a script that no longer exists
+    directly under `<root>/hooks/claude-code/`, when `<root>` is another devexp
+    install root. Such a root is recognised by its own `hooks/registry.json`
+    (a non-empty JSON array of hooks, each with a `name`). A directory without
+    one, including a root that has been deleted, is treated as the user's and
+    left alone, as are commands with arguments, double quotes, wrappers,
+    other directories or `args`.
+  - Claude Code hook registration uses `EnabledFor(claude_code)`, as opencode
+    already did: a hook's `claude_code.enabled` overrides the top-level
+    `enabled` either way.
+- **`uninstall.sh`: crashes on deeply nested JSON, writes that weren't atomic,
+  and a reformatted `config.json` (#124, #150).**
+  - Both python steps skip a `settings.json` or `config.json` nested more
+    than 500 levels deep, with a message and the file untouched, whatever
+    python runs them. Python's `json` raised `RecursionError` (not a
+    `ValueError`) near 1,000 levels on 3.9-3.11 but not on 3.13+, and the
+    uninstall used to stop there under `set -e`. `devexp install` (Go) reads
+    up to 10,000 levels, which python can't reliably match, so a file nested
+    501-10,000 deep is edited by install but skipped, untouched, by uninstall. Any other failure of either step now prints
+    a warning and the uninstall carries on.
+  - The `settings.json` step saves atomically with the same rules as
+    `devexp install` (a symlinked `settings.json` keeps its link, the file it
+    points at is replaced; dangling links, unwritable files and directories
+    are refused with a warning). It used to truncate and rewrite the file in
+    place.
+  - The opencode MCP step cuts only the removed servers' members out of
+    `config.json`, so key order, indentation, CRLF line endings, escapes,
+    numbers and the other servers stay byte for byte. It used to rewrite the
+    whole file as 2-space JSON. A symlinked `config.json` is still left
+    untouched with a warning.
+  - The `settings.json` step also removes the orphaned registrations from any
+    devexp install root that `devexp install` now prunes (#150).
 - **Re-installing removed stale agents and skills through a symlinked target
   directory (#128).** When `~/.claude/agents`, `~/.claude/skills`,
   `~/.config/opencode/agents` or `~/.config/opencode/commands` was a symlink

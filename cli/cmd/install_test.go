@@ -2543,3 +2543,82 @@ func TestAnnounceAssetRoot(t *testing.T) {
 		})
 	}
 }
+
+// TestDoInstallOpencode_UnmergeableConfig (#157 review): opencode reads
+// config.json as JSONC, so a commented one is valid. The MCP merge still can't
+// edit it safely: it is left byte for byte, the servers to add by hand are
+// named, and agents, skills and hooks install anyway, in a dry run too. With
+// --mcps-only there is nothing else to do, so it stays an error.
+func TestDoInstallOpencode_UnmergeableConfig(t *testing.T) {
+	const jsonc = "{\n  // my model\n  \"model\": \"x\",\n}\n"
+	setup := func(t *testing.T) (repoDir, home, configPath string) {
+		home = t.TempDir()
+		t.Setenv("HOME", home)
+		repoDir = writeOpencodeHookRepo(t)
+		os.WriteFile(filepath.Join(repoDir, "mcps", "registry.json"), []byte(`[{"name": "context7", "command": "npx"}, {"name": "remote", "transport": "http", "url": "https://example.com"}]`), 0o644) //nolint:errcheck
+		os.MkdirAll(filepath.Join(repoDir, "agents"), 0o755)                                                                                                                                            //nolint:errcheck
+		os.WriteFile(filepath.Join(repoDir, "agents", "helper.md"), []byte("---\nname: helper\n---\n# H\n"), 0o644)                                                                                     //nolint:errcheck
+		configPath = filepath.Join(home, ".config", "opencode", "config.json")
+		os.MkdirAll(filepath.Dir(configPath), 0o755)   //nolint:errcheck
+		os.WriteFile(configPath, []byte(jsonc), 0o644) //nolint:errcheck
+		return repoDir, home, configPath
+	}
+
+	for _, dryRun := range []bool{false, true} {
+		t.Run(fmt.Sprintf("full install dryRun=%v", dryRun), func(t *testing.T) {
+			repoDir, home, configPath := setup(t)
+			var err error
+			out := captureStdout(t, func() {
+				err = doInstallOpencode(&installOpts{repoDir: repoDir, cfg: &config.Config{}, env: map[string]string{}, dryRun: dryRun})
+			})
+			if err != nil {
+				t.Fatalf("doInstallOpencode() error = %v\n%s", err, out)
+			}
+			if got, _ := os.ReadFile(configPath); string(got) != jsonc {
+				t.Errorf("config.json changed:\n%s", got)
+			}
+			for _, want := range []string{"MCP servers skipped", "not valid JSON", "left untouched", "context7, remote", "opencode installation complete"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("output lacks %q:\n%s", want, out)
+				}
+			}
+			agent := filepath.Join(home, ".config", "opencode", "agents", "helper.md")
+			plugin := filepath.Join(home, ".config", "opencode", "plugins", "devexp.js")
+			for _, p := range []string{agent, plugin} {
+				if _, statErr := os.Stat(p); dryRun != os.IsNotExist(statErr) {
+					t.Errorf("%s exists = %v, want %v", p, statErr == nil, !dryRun)
+				}
+			}
+			if dryRun && !strings.Contains(out, "helper.md") {
+				t.Errorf("dry run doesn't preview the agent:\n%s", out)
+			}
+		})
+	}
+
+	t.Run("--mcps-only returns the error", func(t *testing.T) {
+		repoDir, _, configPath := setup(t)
+		var err error
+		out := captureStdout(t, func() {
+			err = doInstallOpencode(&installOpts{repoDir: repoDir, cfg: &config.Config{}, env: map[string]string{}, mcpsOnly: true})
+		})
+		var refused *mcp.ConfigRefusedError
+		if !errors.As(err, &refused) || !strings.Contains(err.Error(), "left untouched") {
+			t.Errorf("doInstallOpencode() error = %v, want the config refusal\n%s", err, out)
+		}
+		if got, _ := os.ReadFile(configPath); string(got) != jsonc {
+			t.Errorf("config.json changed")
+		}
+	})
+
+	t.Run("other MCP errors still stop the install", func(t *testing.T) {
+		repoDir, _, _ := setup(t)
+		os.WriteFile(filepath.Join(repoDir, "mcps", "registry.json"), []byte(`{not a registry`), 0o644) //nolint:errcheck
+		var err error
+		captureStdout(t, func() {
+			err = doInstallOpencode(&installOpts{repoDir: repoDir, cfg: &config.Config{}, env: map[string]string{}})
+		})
+		if err == nil {
+			t.Errorf("doInstallOpencode() = nil, want the registry error")
+		}
+	})
+}

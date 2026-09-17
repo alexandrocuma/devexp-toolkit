@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"devexp/internal/agents"
 	"devexp/internal/hooks"
@@ -37,7 +39,16 @@ func doInstallOpencode(opts *installOpts) error {
 
 	if !opts.agentsOnly && !opts.skillsOnly {
 		if err := installMCPsOpencode(opts, configPath); err != nil {
-			return err
+			// A config.json the merge can't edit safely — opencode reads it as
+			// JSONC, so comments are valid there — costs only the MCP step:
+			// agents, skills and hooks still install (#157 review). With
+			// --mcps-only (above) it stays an error.
+			var refused *mcp.ConfigRefusedError
+			if !errors.As(err, &refused) {
+				return err
+			}
+			warnMCPsSkipped(refused)
+			fmt.Println()
 		}
 	}
 
@@ -133,6 +144,16 @@ func doInstallOpencode(opts *installOpts) error {
 	ui.Info("Restart opencode to activate.")
 	fmt.Println()
 	return nil
+}
+
+// warnMCPsSkipped reports an opencode MCP step skipped because config.json
+// couldn't be merged into, naming the servers to add by hand.
+func warnMCPsSkipped(refused *mcp.ConfigRefusedError) {
+	msg := fmt.Sprintf("MCP servers skipped: %v, so it was left untouched and the rest of the install continues.", refused.Reason)
+	if len(refused.Servers) > 0 {
+		msg += fmt.Sprintf(" Add these to its \"mcp\" object by hand, or make it strict JSON (no comments or trailing commas) and re-run with --mcps-only: %s", strings.Join(refused.Servers, ", "))
+	}
+	ui.Warn(msg)
 }
 
 func installMCPsOpencode(opts *installOpts, configPath string) error {

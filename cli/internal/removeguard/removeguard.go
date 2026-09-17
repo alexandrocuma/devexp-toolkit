@@ -1,12 +1,12 @@
 // Package removeguard decides whether devexp may remove anything from one of
 // its target directories. It is removal-only: installs still write through a
 // symlinked directory (a dotfiles setup), but nothing is ever removed through
-// one (#108, #128).
+// one (#108, #128). Whether a single path is a symlink is fsutil.IsSymlink,
+// shared with the installers that never write through a symlinked entry (#124).
 package removeguard
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -37,11 +37,4 @@ func BehindSymlink(home, dir string) (resolved string, behind bool, err error) {
 		return "", false, err
 	}
 	return resolved, resolved != filepath.Join(realHome, rel), nil
-}
-
-// IsSymlink reports whether path itself, not what it resolves to, is a
-// symlink. A path that can't be checked is not reported as one.
-func IsSymlink(path string) bool {
-	fi, err := os.Lstat(path)
-	return err == nil && fi.Mode()&os.ModeSymlink != 0
 }

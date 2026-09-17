@@ -90,10 +90,11 @@ hooks/
 | `opencode.module` | Path to the JS module, relative to repo root (`hooks/opencode/<hook-name>.js`) |
 | `opencode.export` | Name of the module's factory export — the lowerCamel hook name (`hookName`) |
 | `opencode.fail_closed` | `true` for security guards: if the module fails to import or initialise, the plugin blocks every tool call instead of running without it. Omit for advisory hooks |
+| `claude_code.enabled` | Optional Claude Code-only override of `enabled`; absent (nil) = follow `enabled` (#150) |
 | `opencode.enabled` | Optional opencode-only override of `enabled`; absent (nil) = follow `enabled`. The `graphify-*` hooks set `true` |
 | `enabled` | Set to `false` to skip this hook for all users (targets without their own `enabled` override) |
 
-Every key other than `name`, `description` and `enabled` whose value is an object is an **install-target block**, keyed by target id: `claude_code` for Claude Code, `opencode` for opencode. The Go installer parses them all into `Hook.Targets` (`map[string]hooks.TargetSpec` in `cli/internal/hooks/installer.go`), so a new target is a new sibling block, not a new Go type. Target blocks share one field vocabulary: `event`, `matcher` (Claude Code), `script` (command-based targets), `module` + `export` (JS-plugin targets), `fail_closed`, and the optional per-target `enabled`. The Claude Code install reads `claude_code` and the top-level `enabled`.
+Every key other than `name`, `description` and `enabled` whose value is an object is an **install-target block**, keyed by target id: `claude_code` for Claude Code, `opencode` for opencode. The Go installer parses them all into `Hook.Targets` (`map[string]hooks.TargetSpec` in `cli/internal/hooks/installer.go`), so a new target is a new sibling block, not a new Go type. Target blocks share one field vocabulary: `event`, `matcher` (Claude Code), `script` (command-based targets), `module` + `export` (JS-plugin targets), `fail_closed`, and the optional per-target `enabled`. Each install asks `EnabledFor(<target>)`: the target block's own `enabled` when set, else the top-level `enabled` (Claude Code too, since #150; before it, Claude Code read only the top-level `enabled`).
 
 ---
 
@@ -112,7 +113,7 @@ Every key other than `name`, `description` and `enabled` whose value is an objec
 | `graphify-session-sentinel` *(disabled)* | PostToolUse | `Bash` | Tracks `graphify query/path/explain` usage toward `graphify-read-guard`'s tapering gate |
 | `graphify-grep-nudge` *(disabled)* | PreToolUse | `Bash\|Grep` | Soft-nudges toward `graphify query` (via `additionalContext`, never a block) when grep-like commands or the `Grep` tool run |
 
-The three `graphify-*` hooks ship with `enabled: false` — they're an **optional set** for projects that adopt the `graphify` skill and maintain a `graphify-out/` knowledge graph. All three self-gate on `graphify-out/graph.json` existing, so flipping them on is harmless even if a project hasn't built a graph yet (they simply no-op). Enable them in a fork by setting `"enabled": true` in `hooks/registry.json`. `devexp.config.json` can't enable them: it supports only `hooks.disabled` (`cli/internal/config/config.go`), and the installer skips any hook with `enabled: false` before it looks at config (`cli/internal/hooks/installer.go`). The install wizard lists only enabled hooks (`listHookNames` in `cli/cmd/registry.go`).
+The three `graphify-*` hooks ship with `enabled: false` — they're an **optional set** for projects that adopt the `graphify` skill and maintain a `graphify-out/` knowledge graph. All three self-gate on `graphify-out/graph.json` existing, so flipping them on is harmless even if a project hasn't built a graph yet (they simply no-op). Enable them in a fork by setting `"enabled": true` in `hooks/registry.json`. `devexp.config.json` can't enable them: it supports only `hooks.disabled` (`cli/internal/config/config.go`), and the installer skips any hook not enabled for its target (`EnabledFor`: the target block's `enabled`, else the top-level one) before it looks at config (`cli/internal/hooks/installer.go`). The install wizard lists only enabled hooks (`listHookNames` in `cli/cmd/registry.go`).
 
 **What `secret-in-write-guard` doesn't see** — it scans only the new text of a write, edit or patch, never the file text around it. A secret completed across text already in the file and an edit isn't seen. In opencode, `apply_patch` context lines are matched against the file loosely and written from the patch's own text, and those lines aren't scanned. The guard catches a secret written in one piece; it doesn't replace a secret scanner on the repository.
 
@@ -173,7 +174,7 @@ In `dangerous-cmd-guard.sh`, all parsing happens in the `python3 -I` step, where
 | Hook scripts | `hooks/claude-code/*.sh` (one per hook) | `hooks/opencode/*.js` (one module per hook) |
 | Entry point | Each script registered separately in `settings.json` | `devexp-plugin.js` composes the modules listed in `devexp/hooks.json`; file events arrive through `event` → `file.edited` |
 | Installed by `./install.sh` | Yes — enabled hooks, into `~/.claude/settings.json` | Yes — selected modules, into `~/.config/opencode/plugins/` (`devexp.js` + `devexp/`) |
-| Selection | Top-level `enabled`, minus `hooks.disabled` / wizard deselection | `opencode.enabled` if set, else `enabled`, minus `hooks.disabled` / wizard deselection — so the `graphify-*` hooks are on (turn them off with `hooks.disabled`) |
+| Selection | `claude_code.enabled` if set, else `enabled`, minus `hooks.disabled` / wizard deselection | `opencode.enabled` if set, else `enabled`, minus `hooks.disabled` / wizard deselection — so the `graphify-*` hooks are on (turn them off with `hooks.disabled`) |
 | Hook disabled after install | Stays registered in `settings.json` | Removed on the next install |
 | Block mechanism | `exit 2` + stderr | `throw new Error(...)` |
 | Confirm/ask | `permissionDecision: "ask"` JSON output | Not supported — hard block instead |

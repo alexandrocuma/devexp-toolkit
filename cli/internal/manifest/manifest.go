@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"devexp/internal/fsutil"
 )
 
 // Manifest records the filenames/dirnames devexp installed for one target
@@ -51,7 +53,8 @@ func Load(path string) (*Manifest, error) {
 }
 
 // Save writes m to path as indented JSON, creating parent directories as
-// needed.
+// needed. The write is atomic, and a symlinked manifest keeps its link while
+// the file it points at is replaced (fsutil.WriteFileAtomic).
 func Save(path string, m *Manifest) error {
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
@@ -60,7 +63,7 @@ func Save(path string, m *Manifest) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return fsutil.WriteFileAtomic(path, data, 0644)
 }
 
 // Stale returns entries present in old but not in newList — i.e. files that
