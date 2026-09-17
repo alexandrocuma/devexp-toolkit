@@ -6,7 +6,7 @@ Where tests live, how they're written and run, and what must pass before a commi
 
 ## Test Types
 
-CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `main`, in two jobs: `test` (Go) and `hooks` (the three script suites). All four suites below were green at this commit.
+CI (`.github/workflows/ci.yml`) runs on every pull request and every push to `main`, in three jobs: `test` (Go), `hooks` (the three script suites) and `govulncheck` (the [vulnerability scan](#vulnerability-scan), not a test suite). All four suites below were green at this commit.
 
 | Type | Framework | Location | Run |
 |------|-----------|----------|-----|
@@ -68,6 +68,30 @@ Gotchas when running tests:
 - `TestCommandExists` expects `go` on `PATH` (`cmd/install_test.go:115`); hook shell tests need `python3`.
 - On macOS `t.TempDir()` lives under `/var/…` → `/private/var/…`; compare resolved paths with `filepath.EvalSymlinks`, as `repo/repo_test.go:81-87` does.
 
+## Vulnerability Scan
+
+The `govulncheck` job in `ci.yml` stages assets, sets up Go from `cli/go.mod` (so it checks the go1.26.8 standard library the release is built with), installs govulncheck at the pinned `GOVULNCHECK_VERSION` and runs `govulncheck -show verbose ./...` in `cli/`. `release.yml` runs the same steps before goreleaser, so a finding also stops a tag from publishing (see [`../guides/release.md`](../guides/release.md#build)).
+
+Policy — govulncheck's own exit status, unchanged:
+
+- **Called** (a vulnerable function is reachable from the CLI's code, listed under `=== Symbol Results ===` with an example trace): exit 3, the job fails.
+- **Not called** (the vulnerable package is imported or the module is required, but nothing reaches the affected symbols — `=== Package Results ===` / `=== Module Results ===`): printed by `-show verbose`, exit 0, the job passes. Fix these in the next dependency bump; they still ship in the binary.
+
+Run it locally the way CI does (nothing is installed on `PATH`; `go run` exits 1 instead of 3 on a finding):
+
+```bash
+./scripts/stage-assets.sh && (cd cli && go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -show verbose ./...)
+```
+
+When it fails:
+
+1. Read the finding: the advisory ID, `Found in` / `Fixed in`, and the trace showing which of our calls reaches it.
+2. **Standard library** (`Found in: <pkg>@go1.x.y`): bump only the `toolchain` line in `cli/go.mod` to a supported patch at or above `Fixed in` (see [`../guides/workflows.md`](../guides/workflows.md), Go toolchain). **Module**: `cd cli && go get <module>@<fixed version> && go mod tidy`, commit `go.mod` and `go.sum` together.
+3. Re-run the command above until the symbol results are clear, run the Go tests, and land the bump as its own `fix:` commit naming the advisory, with a `CHANGELOG.md` entry.
+4. No fixed version yet: don't disable the job. Record the advisory in an issue; if the called path can be avoided in our code, do that.
+
+To bump govulncheck itself, change `GOVULNCHECK_VERSION` in both `ci.yml` and `release.yml`. CI runs with `GOTOOLCHAIN=local`, so the new version's `go` directive must not be newer than the `toolchain` in `cli/go.mod` (v1.8.0 needs Go 1.26.0).
+
 ## Before Every Commit
 
 Mirror CI — it runs all of these on the PR:
@@ -76,6 +100,7 @@ Mirror CI — it runs all of these on the PR:
 - [ ] `for f in hooks/claude-code/*.test.sh; do bash "$f" || exit 1; done`
 - [ ] `for f in hooks/opencode/*.test.js; do node "$f" || exit 1; done`
 - [ ] `for f in ./*.test.sh; do bash "$f" || exit 1; done`
+- [ ] Touched `cli/go.mod`/`go.sum` or the Go toolchain? Run the [vulnerability scan](#vulnerability-scan) — CI fails on a called finding.
 - [ ] Lint: not enforced — no lint job in `ci.yml`, no linter config. `(cd cli && go vet ./... && gofmt -l .)` is clean at this commit and was run by hand for #97 (`CHANGELOG.md:147`).
 - [ ] Type check: N/A — covered by `go test`/`go vet` for Go; none configured for shell/JS.
 - [ ] Changed an agent, skill or hook? `./install.sh` and exercise it in Claude Code/opencode (see [`setup.md`](setup.md#commands)).

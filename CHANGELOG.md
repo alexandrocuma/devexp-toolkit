@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CI scans the CLI for known vulnerabilities (#141).** A new `govulncheck`
+  job in `ci.yml` runs on every pull request and push to `main`. It uses the
+  Go toolchain from `cli/go.mod`, installs govulncheck v1.8.0 and runs
+  `govulncheck -show verbose ./...` in `cli/`. It fails when the CLI calls
+  vulnerable code, in the standard library or a module; findings the CLI
+  doesn't call are printed but don't fail it. `release.yml` runs the same check
+  before goreleaser, so a tag with a called vulnerability publishes no
+  binaries. `docs/development/testing.md` describes the policy, the local
+  command and how to fix a finding; `docs/guides/release.md` covers a release
+  blocked by it.
+
 ## [0.9.1] - 2026-09-16
 
 ### Fixed

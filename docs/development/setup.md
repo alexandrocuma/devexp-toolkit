@@ -16,7 +16,7 @@ For **contributors** working on the toolkit from a clone: prerequisites, build, 
 | `claude` and/or `opencode` on `PATH` | any — `devexp install` refuses to run without one | `cli/cmd/targets.go:31` |
 | git | any — to clone | `README.md:83` |
 
-No lint, formatter or release tool needs to be installed locally: CI has no lint job, and goreleaser runs only in GitHub Actions (see [`../guides/release.md`](../guides/release.md)).
+No lint, formatter, scanner or release tool needs to be installed locally: CI has no lint job, `go run` fetches the pinned govulncheck on demand, and goreleaser runs only in GitHub Actions (see [`../guides/release.md`](../guides/release.md)).
 
 ## First Run
 
@@ -57,6 +57,7 @@ The full list — `CLAUDE.md` shows only the most-used few and links here.
 | Test — single hook | `bash hooks/claude-code/secret-guard.test.sh` · `node hooks/opencode/secret-guard.test.js` | `Run:` header line in each test file |
 | Test — hooks / installer script | `for f in hooks/claude-code/*.test.sh; do bash "$f" \|\| exit 1; done` · `for f in hooks/opencode/*.test.js; do node "$f" \|\| exit 1; done` · `for f in ./*.test.sh; do bash "$f" \|\| exit 1; done` | `.github/workflows/ci.yml:30-45` |
 | Coverage | `cd cli && go test ./... -cover` | `.github/workflows/ci.yml:21` |
+| Vulnerability scan (CI job `govulncheck`, also run before release) | `./scripts/stage-assets.sh && (cd cli && go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -show verbose ./...)` — fails only on vulnerabilities in called code; policy and how to fix a finding in [`testing.md`](testing.md#vulnerability-scan) | `.github/workflows/ci.yml:47-67`, `.github/workflows/release.yml:24-37` |
 | Lint / format | Not enforced — no lint job in CI and no linter config in the repo. `(cd cli && go vet ./... && gofmt -l .)` is clean at this commit and was run by hand for #97 | `.github/workflows/ci.yml`, `CHANGELOG.md:147` |
 | Shell syntax check (hooks) | `bash -n hooks/claude-code/<hook>.sh` | `docs/development/hook-authoring-guide.md` (Deployment Checklist) |
 | Type check | N/A — Go is type-checked by `go build`/`go vet`; no type checker is configured for the shell or JS hooks | `cli/go.mod`, `hooks/opencode/package.json` |

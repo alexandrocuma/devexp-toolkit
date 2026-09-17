@@ -21,6 +21,21 @@ jobs:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
 
+      # Same check as the govulncheck job in ci.yml: a called vulnerability
+      # fails the job here and nothing is published.
+      - name: stage assets
+        run: ./scripts/stage-assets.sh
+
+      - name: install govulncheck
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+        env:
+          # Keep in sync with .github/workflows/ci.yml.
+          GOVULNCHECK_VERSION: v1.8.0
+
+      - name: govulncheck
+        working-directory: cli
+        run: govulncheck -show verbose ./...
+
       - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser

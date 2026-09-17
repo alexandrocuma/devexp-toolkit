@@ -21,13 +21,13 @@ Asset edits reach the two targets at different times. Clone users get them on th
 - Tag format: `v<version>`, annotated, message `Release v<version> — <summary>` (`git tag -n1 v0.7.0 v0.6.0`). Any pushed `v*` tag starts the `release` workflow (`.github/workflows/release.yml:3-6`).
 - Release commit: `chore: release v<version>`, committed directly on `main`, changing only `CHANGELOG.md`. It moves the `## [Unreleased]` entries under `## [<version>] - YYYY-MM-DD` (Keep a Changelog — `CHANGELOG.md:5,8,60`). See `git show --stat d5f6943 f88f123 879a5c8 d15c02d` (v0.7.0, v0.6.0, v0.5.0, v0.4.0).
 - GitHub Release object: **created by `/release` right after the tag push**, with the version's `CHANGELOG.md` section as notes (`gh release create v<version> --title v<version> --notes-file <section> --verify-tag`); goreleaser then uploads the assets to it and keeps those notes. This is how v0.7.1, v0.7.0 and v0.5.0 were released. v0.6.0 was the exception: goreleaser created it with its own commit-list notes, which leave out `docs:`, `test:` and `chore:` commits (`.goreleaser.yaml:36-42`).
-- Nothing waits for CI before the tag. `main` has no branch protection or rulesets (GitHub API, checked 2026-09-16), and `release.yml` runs no tests. For v0.7.0, `ci` started on the release commit at 04:48:20Z and `release` started from the tag at 04:48:23Z (`gh run list`).
+- Nothing waits for CI before the tag. `main` has no branch protection or rulesets (GitHub API, checked 2026-09-16), and `release.yml` runs no tests; its only check is govulncheck before goreleaser (see Target: cli → Build). For v0.7.0, `ci` started on the release commit at 04:48:20Z and `release` started from the tag at 04:48:23Z (`gh run list`).
 
 ## Target: cli
 
 - **Kind / path:** cli — `cli/` and the embedded asset dirs listed in Targets (changes under these paths affect this target)
 - **Versioning:** the tag only; no build number. `devexp --version` prints `devexp version <version>` without the leading `v` (`cli/cmd/root.go:20`, goreleaser `.Version`; verified with v0.7.0)
-- **Prerequisites:** push access to `origin` (`github.com/alexandrocuma/devexp-toolkit`) for `main` and tags · `GITHUB_TOKEN`, supplied by GitHub Actions (`.github/workflows/release.yml:30`) with `contents: write` (`.github/workflows/release.yml:8-9`) · `gh auth status` for creating the release and for verification
+- **Prerequisites:** push access to `origin` (`github.com/alexandrocuma/devexp-toolkit`) for `main` and tags · `GITHUB_TOKEN`, supplied by GitHub Actions (`.github/workflows/release.yml:45`) with `contents: write` (`.github/workflows/release.yml:8-9`) · `gh auth status` for creating the release and for verification
 
 ### Build
 
@@ -35,8 +35,16 @@ The tag push from the cut starts the build. Watch it; don't run it again.
 
 ```bash
 gh run list --workflow release.yml --limit 1   # watch the tag-triggered run until completed/success   # source: .github/workflows/release.yml:1-6
-# CI runs: ./scripts/stage-assets.sh (goreleaser before-hook) → goreleaser release --clean   # source: .goreleaser.yaml:5-7, .github/workflows/release.yml:24-28
+# CI runs: ./scripts/stage-assets.sh → govulncheck -show verbose ./... (in cli/) → ./scripts/stage-assets.sh (goreleaser before-hook) → goreleaser release --clean   # source: .github/workflows/release.yml:24-43, .goreleaser.yaml:5-7
 ```
+
+The `govulncheck` step is the same check as the `govulncheck` job in `ci.yml`. If it finds a vulnerability in code the CLI calls, the job stops before goreleaser, so no GitHub Release assets are uploaded for the tag (uncalled findings are only printed). The tag stays pushed and, if `/release` already created it, so does the GitHub Release object, with no assets. `releases/latest` then points at a release `remote-install.sh` can't download from, so act straight away:
+
+1. Mark the empty release as a pre-release (`gh release edit v<version> --prerelease`) so `latest` falls back to the previous one.
+2. Fix the finding on a branch as described in [`../development/testing.md`](../development/testing.md#vulnerability-scan) and merge it.
+3. Cut `v<next patch>`. Don't move or re-push the failed tag (tags are never moved — see Rollback).
+
+A new advisory can appear between the PR's CI run and the tag, which is why the check runs again here.
 
 Artifact: `devexp-toolkit_darwin_amd64.tar.gz`, `devexp-toolkit_darwin_arm64.tar.gz`, `devexp-toolkit_linux_amd64.tar.gz`, `devexp-toolkit_linux_arm64.tar.gz` (each holds a static `devexp` binary, `CGO_ENABLED=0`, built with `-trimpath` so it records no build paths, stripped with `-s -w`, compiled with the Go `toolchain` from `cli/go.mod` via `go-version-file` in `release.yml`; check a binary with `go version devexp`) plus `checksums.txt`, attached to the tag's GitHub Release (`.goreleaser.yaml:9-34,44-47`).
 
@@ -48,7 +56,7 @@ N/A — there is no pre-production channel. `.goreleaser.yaml` sets no draft, pr
 
 | Stage | How | Gate |
 |-------|-----|------|
-| tag push → published GitHub Release, marked **Latest** | automatic once the `v*` tag is pushed (`.github/workflows/release.yml`). New `remote-install.sh` installs pick it up at once, because the script resolves `releases/latest` (`scripts/remote-install.sh:51-55`) | manual — the tag push at the cut gate. No automated gate (no branch protection; no tests in `release.yml`) |
+| tag push → published GitHub Release, marked **Latest** | automatic once the `v*` tag is pushed (`.github/workflows/release.yml`). New `remote-install.sh` installs pick it up at once, because the script resolves `releases/latest` (`scripts/remote-install.sh:51-55`) | manual — the tag push at the cut gate. One automated gate: `govulncheck` must pass before goreleaser runs (`.github/workflows/release.yml:35-37`). No tests in `release.yml` and no branch protection |
 
 ### Rollback
 
