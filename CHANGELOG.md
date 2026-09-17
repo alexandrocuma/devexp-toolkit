@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Re-installing removed stale agents and skills through a symlinked target
+  directory (#128).** When `~/.claude/agents`, `~/.claude/skills`,
+  `~/.config/opencode/agents` or `~/.config/opencode/commands` was a symlink
+  (for example into a dotfiles repo or a source checkout), `devexp install`
+  removed an agent or skill it no longer installs from the tree the link points
+  at, and a skill directory with everything in it.
+  - devexp still installs through such a link, but no longer removes anything
+    through it, the rule opencode `plugins/` already follows (#108). The output
+    lists what was left: `"<dir>" is a symlink — devexp never removes files
+    through it; remove these by hand: …`.
+  - Those entries stay in the manifest, so a run after the link is replaced
+    with a real directory removes them. So does an entry that couldn't be
+    checked or removed (for example, permission denied): earlier releases
+    dropped it from the manifest and never tried again.
+  - Real directories are cleaned up as before. Only the target directory itself
+    is checked, so a symlinked `~/.claude` or `~/.config` above it doesn't stop
+    the cleanup.
+
 ## [0.9.1] - 2026-09-16
 
 ### Fixed

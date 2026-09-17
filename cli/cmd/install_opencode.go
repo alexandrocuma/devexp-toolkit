@@ -71,8 +71,9 @@ func doInstallOpencode(opts *installOpts) error {
 		ui.Success(fmt.Sprintf("Installed %d agent(s).", len(allInstalledAgents)))
 		fmt.Println()
 
-		newManifest.Agents = allInstalledAgents
-		removeStale(agentsTarget, old.Agents, allInstalledAgents, staleFile, os.Remove, opts.dryRun)
+		// What couldn't be removed stays recorded, so a later run can finish.
+		kept := removeStale(agentsTarget, old.Agents, allInstalledAgents, staleFile, os.Remove, opts.dryRun)
+		newManifest.Agents = append(allInstalledAgents, kept...)
 	}
 
 	if !opts.agentsOnly {
@@ -89,8 +90,8 @@ func doInstallOpencode(opts *installOpts) error {
 		ui.Success(fmt.Sprintf("Installed %d skill(s).", len(installedSkills)))
 		fmt.Println()
 
-		newManifest.Skills = installedSkills
-		removeStale(skillsTarget, old.Skills, installedSkills, staleCommand, os.Remove, opts.dryRun)
+		kept := removeStale(skillsTarget, old.Skills, installedSkills, staleCommand, os.Remove, opts.dryRun)
+		newManifest.Skills = append(installedSkills, kept...)
 	}
 
 	if !opts.agentsOnly && !opts.skillsOnly {

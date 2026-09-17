@@ -113,7 +113,9 @@ var lstat = os.Lstat
 
 // removeStale removes from dir, via removeFn, the entries of old (the previous
 // manifest) that this run didn't install, reporting via ui. In dry-run mode it
-// only reports what would be removed.
+// only reports what would be removed. It returns the stale entries it had to
+// leave on disk that the manifest should go on recording, so a later run can
+// finish the job.
 //
 // An entry is kept, with a warning, unless all of these hold:
 //   - it is a name devexp installs (isInstalledName);
@@ -127,11 +129,20 @@ var lstat = os.Lstat
 //   - what is on disk can be checked and has the entry's shape: a regular
 //     file for staleFile and staleCommand, a real directory for staleDir. A
 //     symlink is never removed: it is the user's own setup, as for opencode
-//     plugin files.
+//     plugin files. (Inside a real skill directory, os.RemoveAll unlinks a
+//     symlink without following it.);
+//   - dir itself is not a symlink (a dotfiles setup). The installers write
+//     through one, but nothing is ever removed through it (#128), as for
+//     opencode plugins/: the entries that pass every other check are listed
+//     in one warning to remove by hand.
 //
-// An entry that is already gone needs nothing. Names and paths are printed
-// quoted, so nothing from the manifest reaches the terminal raw.
-func removeStale(dir string, old, installed []string, shape staleShape, removeFn func(path string) error, dryRun bool) {
+// Of the entries kept, those left behind a symlinked dir and those that
+// couldn't be checked or removed are returned; the others aren't devexp's on
+// disk. An entry that is already gone needs nothing. Names and paths are
+// printed quoted, so nothing from the manifest reaches the terminal raw.
+func removeStale(dir string, old, installed []string, shape staleShape, removeFn func(path string) error, dryRun bool) (kept []string) {
+	linked := isSymlink(dir)
+	var leftBehind []string
 	for _, name := range manifest.Stale(old, installed) {
 		if !isInstalledName(name, shape) {
 			ui.Warn(fmt.Sprintf("%q left untouched: listed in the manifest but not a name devexp installs in %q", name, dir))
@@ -148,6 +159,7 @@ func removeStale(dir string, old, installed []string, shape staleShape, removeFn
 			continue
 		case err != nil:
 			ui.Warn(fmt.Sprintf("%q left untouched: %v", path, pathErrCause(err)))
+			kept = append(kept, name)
 			continue
 		case !hasStaleShape(fi, shape):
 			ui.Warn(fmt.Sprintf("%q left untouched: no longer in this release, but %s", path, describeMode(fi)))
@@ -157,16 +169,34 @@ func removeStale(dir string, old, installed []string, shape staleShape, removeFn
 			ui.Warn(fmt.Sprintf("%q left untouched: the same file as %q, installed by this run", path, twin))
 			continue
 		}
+		if linked {
+			leftBehind = append(leftBehind, fmt.Sprintf("%q", path))
+			kept = append(kept, name)
+			continue
+		}
 		if dryRun {
 			ui.DryRun(fmt.Sprintf("remove %q (no longer in this release)", path))
 			continue
 		}
 		if err := removeFn(path); err != nil && !os.IsNotExist(err) {
 			ui.Warn(fmt.Sprintf("remove %q: %v", path, pathErrCause(err)))
+			kept = append(kept, name)
 			continue
 		}
 		ui.Removed(fmt.Sprintf("%q", onDisk(name, shape)))
 	}
+	if len(leftBehind) > 0 {
+		ui.Warn(fmt.Sprintf("%q is a symlink — devexp never removes files through it; remove these by hand: %s", dir, strings.Join(leftBehind, ", ")))
+	}
+	return kept
+}
+
+// isSymlink reports whether path itself, not what it resolves to, is a
+// symlink. A path that can't be checked is not reported as one: an entry under
+// it then fails its own check, and is kept.
+func isSymlink(path string) bool {
+	fi, err := os.Lstat(path)
+	return err == nil && fi.Mode()&os.ModeSymlink != 0
 }
 
 func foldMatch(name string, installed []string) (string, bool) {
