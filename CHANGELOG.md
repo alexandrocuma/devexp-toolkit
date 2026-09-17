@@ -30,12 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Docs no longer cite line numbers that had drifted (#155).** `setup.md` and
-  `testing.md` pointed at `CHANGELOG.md:147` and `release.md` at
-  `CHANGELOG.md:60`; both had moved. Changelog references are now version
-  headings, and the workflow and Go-test references that had drifted (or that
-  this change would have moved) now name the job, step or symbol instead of a
-  line.
+- **Docs no longer cite line numbers that had drifted (#155).** `setup.md`,
+  `testing.md` and `release.md` each pointed at a changelog line that had since
+  moved to an unrelated entry. Changelog references are now version headings,
+  and the workflow and Go-test references that had drifted (or that this
+  change would have moved) now name the job, step or symbol instead of a line.
 
 ## [0.9.2] - 2026-09-17
 
