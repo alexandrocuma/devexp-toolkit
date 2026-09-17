@@ -43,3 +43,20 @@ jobs:
             [ -e "$f" ] || continue
             echo "== $f"; bash "$f" || exit 1
           done
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+      # Pinned version, platforms and exit codes live in the script:
+      # 3 = called vulnerability, any other failure = infrastructure.
+      - name: govulncheck
+        run: ./scripts/govulncheck.sh

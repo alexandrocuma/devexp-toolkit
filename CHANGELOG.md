@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CI scans the CLI for known vulnerabilities (#141).** A new `govulncheck`
+  job in `ci.yml` runs on every pull request and push to `main`, and
+  `release.yml` runs the same job before goreleaser, which now `needs:` it, so
+  a failed scan publishes nothing. Both run `scripts/govulncheck.sh`, which
+  holds the pinned govulncheck version (v1.8.0) and scans `cli/` with the Go
+  toolchain from `cli/go.mod` once for every platform the release ships (each
+  GOOS and GOARCH in `.goreleaser.yaml`, `CGO_ENABLED=0`). It exits 3 when the
+  CLI calls vulnerable code, in the standard library or a module, on any
+  platform. Findings the CLI doesn't call are printed but don't fail it, and
+  any other failure, such as vuln.go.dev being unreachable, is reported as an
+  infrastructure failure to re-run. Run it locally with
+  `./scripts/govulncheck.sh`; `docs/development/testing.md` describes the
+  policy and how to fix a finding.
+
+### Changed
+
+- **A GitHub Release is no longer public before its binaries are uploaded
+  (#141).** `/release` now creates the release as a draft
+  (`gh release create v<version> --draft …`), and `.goreleaser.yaml` sets
+  `release.use_existing_draft: true`, so goreleaser uploads the assets into
+  that draft, keeps its notes and then publishes it. Before, the release was
+  Latest from the moment `/release` created it, and `remote-install.sh`
+  failed for new installs until the upload finished, or for good if the
+  workflow failed. If a release run fails now, delete the draft, fix, and cut
+  the next patch; see `docs/guides/release.md`.
+- **The release workflow's write token is limited to the goreleaser job.**
+  The workflow default is now `contents: read`, and the scan job checks out
+  without persisted credentials.
+
 ### Fixed
 
 - **Re-installing removed stale agents and skills through a symlinked target
