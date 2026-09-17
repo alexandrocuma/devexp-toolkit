@@ -36,6 +36,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     no longer escapes non-ASCII text, splices the new `hooks` value into the
     original text, and skips entries and handlers that aren't objects instead
     of failing with a traceback.
+- **Stale hook pruning removed users' commands under the repo dir (#138).**
+  `devexp install` treated any registered command whose string pointed under
+  the devexp repo/cache dir and wasn't an existing file as a stale devexp
+  hook, so a user's own hook such as `<dir>/hooks/x.sh --flag` was removed.
+  - Only devexp's own form is pruned now: the plain or single-quoted path of a
+    script directly in `<dir>/hooks/claude-code/` (or the bare path an earlier
+    install from that dir wrote), when the script no longer exists.
+  - A command with arguments, in another directory, double-quoted, chained or
+    using a variable is the user's and is never pruned, whether or not what it
+    names exists.
 
 ## [0.9.0] - 2026-09-16
 

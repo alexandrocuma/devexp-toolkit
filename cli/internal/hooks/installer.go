@@ -274,19 +274,48 @@ func pruneStaleHooks(hooksMap map[string][]hookEntry, repoDir string, dryRun boo
 	return pruned
 }
 
-// isStaleDevexpHook reports whether cmd is a devexp-managed command (lives
-// under repoDir) whose script no longer exists on disk. A quoted command is
-// judged by the path it runs (#135).
+// isStaleDevexpHook reports whether cmd is devexp's registration of a script
+// under repoDir that no longer exists on disk. Only the forms devexp writes
+// count (#138): a plain or single-quoted command (commandPath, so a quoted one
+// is judged by the path it runs, #135), or this repo's legacy bare spelling
+// (legacyScriptPath), naming the clean absolute path
+// repoDir/hooks/claude-code/<script>. The registry no longer lists a removed
+// script, so its name can't be checked; its directory can. Any other command
+// under repoDir — with arguments, in another directory, with shell syntax — is
+// the user's and never stale.
 func isStaleDevexpHook(cmd, repoDir string) bool {
-	if p, ok := commandPath(cmd); ok {
-		cmd = p
+	p, ok := commandPath(cmd)
+	if !ok {
+		p, ok = legacyScriptPath(cmd, repoDir)
 	}
-	rel, err := filepath.Rel(repoDir, cmd)
-	if err != nil || strings.HasPrefix(rel, "..") || rel == "." {
+	if !ok || filepath.Clean(p) != p {
 		return false
 	}
-	_, statErr := os.Stat(cmd)
+	rel, err := filepath.Rel(repoDir, p)
+	if err != nil {
+		return false
+	}
+	script, ok := strings.CutPrefix(filepath.ToSlash(rel), scriptDir)
+	if !ok || script == "" || strings.Contains(script, "/") {
+		return false
+	}
+	_, statErr := os.Stat(p)
 	return os.IsNotExist(statErr)
+}
+
+// legacyScriptPath returns cmd when it may be the bare path an install from
+// repoDir wrote before paths needing quotes were quoted (#135): repoDir, then a
+// rest with no shell syntax, which isStaleDevexpHook requires to be
+// hooks/claude-code/<script>. Only repoDir may hold shell syntax; a rest
+// holding some, such as "hooks/claude-code/x.sh --flag", is a command with
+// arguments. Double quotes stay the user's here: requoteDevexpHooks takes them
+// as devexp's only for scripts the registry still lists.
+func legacyScriptPath(cmd, repoDir string) (string, bool) {
+	rest, ok := strings.CutPrefix(cmd, filepath.Clean(repoDir))
+	if !ok || strings.ContainsAny(rest, shellSyntax) {
+		return "", false
+	}
+	return cmd, true
 }
 
 // scriptDir is the one directory every claude_code.script in the registry
