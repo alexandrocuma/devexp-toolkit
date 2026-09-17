@@ -65,7 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   syntax error or comments was overwritten with a file holding only the MCP
   servers, and one holding `null` crashed the install. A `config.json` that
   isn't strict JSON, or whose top level or `mcp` value isn't an object, is now
-  left untouched and the install stops with an error naming it. Numbers are
+  left untouched: the MCP step is skipped with a warning naming the file and
+  the servers to add by hand, and agents, skills and hooks still install (with
+  `--mcps-only` it is an error). opencode reads `config.json` as JSONC, so a
+  commented one is valid there. Numbers are
   written back as they were instead of through a float (`12345678901234567890`
   no longer becomes `12345678901234567000`). The save is atomic and keeps a
   symlinked `config.json`'s link.

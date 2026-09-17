@@ -25,7 +25,11 @@ type ocEntry struct {
 func InstallOpencode(mcps []MCP, env map[string]string, configPath string, dryRun, reinstall bool) error {
 	config, err := loadOpencodeConfig(configPath)
 	if err != nil {
-		return fmt.Errorf("mcp: %w — it was left untouched and no MCP servers were added; fix it and re-run", err)
+		names := make([]string, 0, len(mcps))
+		for _, m := range mcps {
+			names = append(names, m.Name)
+		}
+		return &ConfigRefusedError{Path: configPath, Reason: err, Servers: names}
 	}
 
 	mcpMap, ok := config["mcp"].(map[string]interface{})
@@ -131,6 +135,22 @@ func InstallOpencode(mcps []MCP, env map[string]string, configPath string, dryRu
 
 	return nil
 }
+
+// ConfigRefusedError is InstallOpencode's error for a config.json it can't
+// merge into without losing what is there (loadOpencodeConfig). The file was
+// left untouched and no MCP server was added; Servers are the ones the install
+// would have added, for the user to add by hand.
+type ConfigRefusedError struct {
+	Path    string
+	Reason  error
+	Servers []string
+}
+
+func (e *ConfigRefusedError) Error() string {
+	return fmt.Sprintf("mcp: %v — it was left untouched and no MCP servers were added; fix it and re-run", e.Reason)
+}
+
+func (e *ConfigRefusedError) Unwrap() error { return e.Reason }
 
 // loadOpencodeConfig reads config.json for merging MCP servers into it. A
 // missing or blank file is an empty config. Anything devexp can't merge into
