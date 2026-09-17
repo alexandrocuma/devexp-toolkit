@@ -15,61 +15,251 @@
  * Tests: node hooks/opencode/dangerous-cmd-guard.test.js
  */
 
-// A target ends at whitespace, end of line, or a character that closes the word in shell
-// syntax: ' " ) ` ; & | — so `sh -c 'rm -rf /'`, `$(rm -rf ~)` and `git push --force;` match.
-// A letter, digit, '/', '.', '-' or '*' continues it.
+// Where a target ends (END). Whitespace, end of line, or a character that ends the word or
+// changes what it expands to:
+// - ' " ` ( ) ; & | < >  closes the word or starts a redirect, so `sh -c 'rm -rf /'`,
+//   `$(rm -rf ~)` and `git push --force;` match;
+// - $ { * ? [  and @( +( !(  start an expansion that can leave the target itself: a
+//   parameter, command or ANSI-C expansion that may be empty or split the word, brace
+//   expansion, a glob, a zsh subscript or qualifier, an extglob.
+// Every other character continues the target, so `./build`, `~/projects/$x`,
+// `/tmp/.deliver-$id-*` and `-v /tmp:/data` don't match. (`:` changes a word only right
+// after an unbraced parameter name; rule 1 lists `$HOME:` itself.)
+const END = String.raw`(?:\s|$|["'\x60();&|<>$*{?[]|[@+!]\()`;
+// The home directory (HOME), spelled `$HOME` (zsh `$~HOME`, `$=HOME`, `$^HOME`), `${HOME}`
+// with any operator, subscript, flags or modifier, `~` or `~name`.
+const HOME = String.raw`(?:\$[~=^]*HOME|\$\{[~=^]*(?:\([^()$\{\}]*\))?HOME(?:[-=?+#%/^,@:[][^$\{\}]*)?\}|~(?:[A-Za-z_][A-Za-z0-9._-]*)?)`;
+// `rm` as a word of its own: not part of a longer word or option (`--rm`, `terraform`). It
+// may still be an argument (`xargs rm`, `find -exec rm`), or follow a positional parameter
+// that may be empty (`$1rm`).
+const RM_WORD = String.raw`(?:(?<![A-Za-z0-9_.-])|(?<=\$[0-9]))rm`; // grep: (^|[^A-Za-z0-9_.-]|\$[0-9])rm
+
+// Every rule decides one line at a time, as the Claude Code hook's line-by-line grep does
+// (blockReason splits the text; a backslash-continued command was joined by maskInert).
+// Within a line, `\s` is whitespace, CR included, as it is for grep's `\s`.
 //
-// Every pattern stays on one line, as the Claude Code hook's line-by-line grep does:
-// `[^\S\n]` is whitespace other than a newline (CR, tab, VT and FF count, as they do for
-// grep's `\s`), `[^\n]` stands in for `.` (which in JS would also stop at CR), and negated
-// classes exclude `\n`. A backslash-continued command is joined into one line by maskInert.
+// Each rule runs in time linear in the line (#146). JavaScript's regex engine backtracks,
+// so the grep patterns are not copied as they are:
+// - "rm, then -flags" names the first 'r' (or 'f') of the flags, so the letters are not
+//   split every possible way;
+// - "PREFIX, then any text without STOP, then SUFFIX" is decided by `sequence`: the first
+//   PREFIX of each segment (text up to STOP, or up to where `commandEnd` says one simple
+//   command ends) is the only one that matters, and SUFFIX is searched for once, left to
+//   right, across all segments;
+// - `\.claude\S*\/\*` is decided by `claudeGlob` from one right-to-left pass.
+
+/** SUFFIX as a regex: does a match start in [from, to]? Calls must not move `from` back. */
+function leftmost(source, flags = '') {
+  const re = new RegExp(source, `g${flags}`);
+  return (line) => {
+    let searched = -1;
+    let at = -1;
+    return (from, to) => {
+      if (searched < 0 || (at >= 0 && at < from)) {
+        re.lastIndex = from;
+        const m = re.exec(line);
+        searched = from;
+        at = m ? m.index : -1;
+      }
+      return at >= 0 && at <= to;
+    };
+  };
+}
+
+/** `\.claude\S*\/\*`: does a match start in [from, to]? Calls must not move `from` back. */
+function claudeGlob(line) {
+  if (!line.includes('.claude')) return () => false;
+  let lastGlob = null;
+  const starts = [];
+  let k = 0;
+  return (from, to) => {
+    if (lastGlob === null) {
+      // lastGlob[i]: where the last '/*' begins that is reachable from i without whitespace, or -1.
+      const n = line.length;
+      lastGlob = new Int32Array(n + 1).fill(-1);
+      for (let i = n - 1; i >= 0; i--) {
+        if (/\s/.test(line[i])) continue;
+        if (lastGlob[i + 1] >= 0) lastGlob[i] = lastGlob[i + 1];
+        else if (line[i] === '/' && line[i + 1] === '*') lastGlob[i] = i;
+      }
+      for (let i = line.indexOf('.claude'); i >= 0; i = line.indexOf('.claude', i + 7)) starts.push(i);
+    }
+    while (k < starts.length && starts[k] < from) k++;
+    for (; k < starts.length && starts[k] <= to; k++) if (lastGlob[starts[k] + 7] >= 0) return true;
+    return false;
+  };
+}
+
+/**
+ * Where the text after `start` stops belonging to one simple command, for `([^|;&]|[<>]&|&>)*`:
+ * `;` and `|` end it, and so does a `&` unless it is part of a redirect. A `&` joins the `<` or
+ * `>` just before it when that character stands alone; otherwise it needs a `>` right after.
+ * Joining backwards first leaves the most room, so this finds the end the pattern can reach.
+ */
+const PIPE = 124; // |
+const SEMI = 59; // ;
+const AMP = 38; // &
+const LT = 60; // <
+const GT = 62; // >
+
+function commandEnd(line, start) {
+  const n = line.length;
+  let i = start;
+  let single = false; // the previous character is a `<` or `>` not yet joined to a `&`
+  while (i < n) {
+    const c = line.charCodeAt(i);
+    if (c === PIPE || c === SEMI) return i;
+    if (c === AMP) {
+      if (single) {
+        single = false;
+        i += 1;
+      } else if (i + 1 < n && line.charCodeAt(i + 1) === GT) {
+        single = false;
+        i += 2;
+      } else {
+        return i;
+      }
+      continue;
+    }
+    single = c === LT || c === GT;
+    i += 1;
+  }
+  return i;
+}
+
+/**
+ * commandEnd, unless a quote, escape, backtick, `$(`, `${`, `$[` or a process substitution (`<(`, `>(`,
+ * zsh `=(`) opens before that end (`$'…'` starts with a quote): it can hold a `;` or `&` that is
+ * data, so the scan runs on to the next `|`. (The lookahead after `rm` never admits `=`.) The
+ * grep pattern is `START_OPENER[^|]*` right after `rm`, or `SCAN(OPENER[^|]*)?` after the
+ * character that follows it.
+ */
+function commandEndQuoted(line, start) {
+  const end = commandEnd(line, start);
+  for (let i = start; i < end; i++) {
+    const c = line.charCodeAt(i);
+    // " ' \ ` open at once; `${`, `$[`, and `$(` `<(` `>(` `=(`, open a substitution. Character codes keep
+    // this loop fast on long lines; past the end of the line charCodeAt gives NaN.
+    const next = line.charCodeAt(i + 1);
+    const opens = c === 34 || c === 39 || c === 92 || c === 96
+      || (c === 36 && (next === 123 || next === 91 || next === 40))
+      || ((c === LT || c === GT || c === 61) && next === 40);
+    if (opens) {
+      const pipe = line.indexOf('|', end);
+      return pipe < 0 ? line.length : pipe;
+    }
+  }
+  return end;
+}
+
+/**
+ * In the grep pattern `rm` is followed either by `\s/tmp…` at once, or by one more character
+ * before any other target can start. So a finder is asked from `start + 1`, except for that one form.
+ */
+function afterRm(finder) {
+  const tmpNow = new RegExp(String.raw`\s["']?\/tmp["']?\/?${END}`, 'y');
+  return (line) => {
+    const found = finder(line);
+    return (from, to) => {
+      tmpNow.lastIndex = from;
+      return tmpNow.test(line) || found(from + 1, to);
+    };
+  };
+}
+
+/**
+ * PREFIX, then any run of characters not in `stop`, then SUFFIX. `suffix(line)` gives a finder.
+ * `stop` is a string of characters, or a function (line, start) => end.
+ */
+function sequence(prefix, stop, suffix, flags = '') {
+  const pre = new RegExp(prefix, `g${flags}`);
+  return (line) => {
+    const found = suffix(line);
+    let pos = 0;
+    for (;;) {
+      pre.lastIndex = pos;
+      const m = pre.exec(line);
+      if (!m) return false;
+      const start = m.index + m[0].length;
+      let end = start;
+      if (typeof stop === 'function') end = stop(line, start);
+      else while (end < line.length && !stop.includes(line[end])) end += 1;
+      if (found(start, end)) return true;
+      if (end >= line.length) return false;
+      pos = end + 1;
+    }
+  };
+}
+
+const regex = (source, flags = '') => {
+  const re = new RegExp(source, flags);
+  return (line) => re.test(line);
+};
+const either = (...finders) => (line) => {
+  const fs = finders.map((f) => f(line));
+  return (from, to) => fs.some((f) => f(from, to));
+};
+
+const WIPE = "'rm -rf /' or 'rm -rf ~' would wipe your filesystem or home directory";
+const TABLE = 'DROP TABLE will permanently destroy table data';
+
 export const BLOCK_PATTERNS = [
   {
-    re: /rm[^\S\n]+-[a-z]*r[a-z]*f[^\S\n]+["']?(\/([^\S\n]|$|['"`);&|])|~\/?([^\S\n]|$|['"`);&|])|\$HOME([^\S\n]|$|['"`);&|]))/m,
-    label: "'rm -rf /' or 'rm -rf ~' would wipe your filesystem or home directory",
+    // rm -rf targeting filesystem root or home directory (optionally quoted)
+    test: regex(String.raw`${RM_WORD}\s+-[a-qs-z]*r[a-z]*f\s+["']?(?:(?:\/|${HOME}\/?)${END}|\$[~=^]*HOME:)`),
+    label: WIPE,
   },
   {
-    re: /rm[^\S\n]+-[a-z]*f[a-z]*r[^\S\n]+["']?(\/([^\S\n]|$|['"`);&|])|~\/?([^\S\n]|$|['"`);&|])|\$HOME([^\S\n]|$|['"`);&|]))/m,
-    label: "'rm -rf /' or 'rm -rf ~' would wipe your filesystem or home directory",
+    test: regex(String.raw`${RM_WORD}\s+-[a-eg-z]*f[a-z]*r\s+["']?(?:(?:\/|${HOME}\/?)${END}|\$[~=^]*HOME:)`),
+    label: WIPE,
   },
   {
     // Unanchored wildcard delete in a sensitive dir (/tmp/* , ~/.claude/.../* , or the dir
     // wholesale) — the blanket wipe an empty variable produces. Prefix-anchored globs like
-    // /tmp/.deliver-PAY-123-* are allowed (no '*' right after the '/').
-    re: /rm\b[^|\n]*([^\S\n]["']?\/tmp["']?(\/\*|\/?([^\S\n]|$|['"`);&|]))|["']?(\$HOME|~)["']?\/\.claude(\S*\/\*|["']?\/?([^\S\n]|$|['"`);&|]))|\.claude\S*\/\*)/m,
+    // /tmp/.deliver-PAY-123-* are allowed (no '*' right after the '/'). The target must follow
+    // `rm` in the same simple command: the scan stops at `;`, `|` and a `&` that isn't part of
+    // a redirect (`2>&1`, `&>`), unless a quote or substitution opens first. `rm` may be followed
+    // by whitespace, a quote, an expansion, a brace or glob character, or a redirect.
+    test: sequence(
+      String.raw`${RM_WORD}(?=[\s"'$\x60<>{},*?[]|&>)`,
+      commandEndQuoted,
+      afterRm(
+        either(
+          leftmost(String.raw`\s["']?\/tmp["']?\/?${END}|["']?${HOME}["']?\/\.claude["']?\/?${END}`),
+          claudeGlob,
+        ),
+      ),
+    ),
     label:
       "unanchored wildcard delete in a sensitive directory (e.g. '/tmp/*' or '~/.claude/.../*') — anchor the glob with a literal prefix like '/tmp/.deliver-<id>-*' so an empty variable cannot collapse it into a blanket wipe",
   },
   {
-    re: /:[^\S\n]*\([^\S\n]*\)[^\S\n]*\{[^\n]*\|[^\n]*:/m,
+    test: sequence(String.raw`:\s*\(\s*\)\s*\{`, '', (line) => (from) => {
+      const pipe = line.indexOf('|', from);
+      return pipe >= 0 && line.indexOf(':', pipe + 1) >= 0;
+    }),
     label: 'fork bomb pattern detected',
   },
   {
-    re: /DROP[^\S\n]+DATABASE/im,
+    test: regex(String.raw`DROP\s+DATABASE`, 'i'),
     label: 'DROP DATABASE would permanently destroy a database',
   },
   {
     // Force flag must be an argument of the same push command (no intervening ; | & ), so an
     // unrelated `-f` elsewhere (e.g. `rm -f` in a commit message) no longer false-positives.
-    re: /git[^\S\n]+push\b[^|&;\n]*[^\S\n](--force-with-lease|--force|-f)([^\S\n]|=|$|['"`);&|])/m,
+    test: sequence(String.raw`git\s+push\b`, '|&;', leftmost(String.raw`\s(?:--force-with-lease|--force|-f)(?:=|${END})`)),
     label: 'git push --force can overwrite remote history and affect other contributors',
   },
   {
-    re: /git[^\S\n]+reset\b[^\n]*?--hard/m,
+    test: sequence(String.raw`git\s+reset\b`, '', (line) => (from) => line.indexOf('--hard', from) >= 0),
     label: 'git reset --hard will permanently discard all uncommitted changes',
   },
   {
-    re: /git[^\S\n]+clean\b[^\n]*?-[a-z]*f/m,
+    test: sequence(String.raw`git\s+clean\b`, '', leftmost(String.raw`-[a-eg-z]*f`)),
     label: 'git clean -f will permanently delete untracked files',
   },
-  {
-    re: /DROP[^\S\n]+TABLE/im,
-    label: 'DROP TABLE will permanently destroy table data',
-  },
-  {
-    re: /TRUNCATE[^\S\n]+TABLE/im,
-    label: 'TRUNCATE TABLE will permanently destroy table data',
-  },
+  { test: regex(String.raw`DROP\s+TABLE`, 'i'), label: TABLE },
+  { test: regex(String.raw`TRUNCATE\s+TABLE`, 'i'), label: 'TRUNCATE TABLE will permanently destroy table data' },
 ];
 
 // ── Inert-text masking (#100) ─────────────────────────────────────────────────
@@ -101,21 +291,35 @@ const ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*(\[[^\]]*\])?\+?=/;
 const LITERAL = /^[A-Za-z0-9_./:@%+,=-]+$/;
 const REDIR = /([0-9]*)(&>>|&>|>>|>\||>&|>|<<<|<<-|<<|<&|<>|<)/y;
 const CASE = /\besac\b/;
+// Deeper nesting of (…), $(…), backticks and <(…) is scanned whole. The same
+// limit in both implementations keeps Python's recursion limit from deciding.
+const MAX_DEPTH = 100;
 
 class Parser {
   constructor(s) {
     this.s = s;
     this.n = s.length;
     this.pendingTotal = 0;
+    this.depth = 0;
+    this.found = new Map(); // ch -> [from, index]: the last indexOf, reused while still valid
   }
 
   at(i, tok) {
     return i + tok.length <= this.n && this.s.startsWith(tok, i);
   }
 
+  // Python's bounded str.find. indexOf cannot stop at this.n, so its answer is
+  // cached: a search from a later position before that answer returns it again.
   find(ch, i) {
-    const j = this.s.indexOf(ch, i);
-    return j >= this.n ? -1 : j;
+    const hit = this.found.get(ch);
+    let j;
+    if (hit && hit[0] <= i && (hit[1] < 0 || i <= hit[1])) {
+      j = hit[1];
+    } else {
+      j = this.s.indexOf(ch, i);
+      this.found.set(ch, [i, j]);
+    }
+    return j < 0 || j >= this.n ? -1 : j;
   }
 
   blanks(i) {
@@ -137,6 +341,16 @@ class Parser {
   }
 
   script(i, closer) {
+    this.depth += 1;
+    try {
+      if (this.depth > MAX_DEPTH) throw new Raw();
+      return this.parseScript(i, closer);
+    } finally {
+      this.depth -= 1;
+    }
+  }
+
+  parseScript(i, closer) {
     const s = this.s;
     const sc = { pipelines: [], comments: [] };
     let pending = [];
@@ -398,13 +612,25 @@ function bodyReader(st, k, name) {
   return false;
 }
 
-function downstreamOk(pipeline, idx) {
-  for (const st of pipeline.slice(idx + 1)) {
-    if (st.subshell || !stdoutOk(st)) return false;
-    const [k, name] = effective(st);
-    if (!SINKS.has(name) && !bodyReader(st, k, name)) return false;
+/**
+ * For each stage: can its output only reach text filters and body readers?
+ * Computed once per pipeline, from the last stage back, so a long pipeline
+ * costs linear time.
+ */
+function downstreamOk(pipeline) {
+  const ok = new Array(pipeline.length).fill(true);
+  let after = true;
+  for (let idx = pipeline.length - 1; idx >= 0; idx--) {
+    ok[idx] = after;
+    const st = pipeline[idx];
+    if (st.subshell || !stdoutOk(st)) {
+      after = false;
+    } else {
+      const [k, name] = effective(st);
+      after = after && (SINKS.has(name) || bodyReader(st, k, name));
+    }
   }
-  return true;
+  return ok;
 }
 
 function flagValues(args, [flags, attached]) {
@@ -429,19 +655,20 @@ function blank(out, s, a, b) {
 function walk(sc, ok, s, out) {
   if (ok) for (const [a, b] of sc.comments) blank(out, s, a, b);
   for (const pipeline of sc.pipelines) {
+    const downstream = downstreamOk(pipeline);
     pipeline.forEach((st, idx) => {
       if (st.subshell) walk(st.subshell, ok, s, out);
-      else walkSimple(st, pipeline, idx, ok, s, out);
+      else walkSimple(st, downstream[idx], ok, s, out);
     });
   }
 }
 
-function walkSimple(st, pipeline, idx, ok, s, out) {
+function walkSimple(st, downstream, ok, s, out) {
   const [k, name] = effective(st);
   if (DEFINERS.has(name) || (name === 'exec' && k === st.words.length - 1)) throw new Raw();
   if (st.words.some((w) => EXECUTORS.has(w.text.split('/').pop()))) throw new Raw();
   if (k < st.words.length && (name === null || name.includes('/') || name === '.')) throw new Raw();
-  const ctx = ok && name !== null && stdoutOk(st) && downstreamOk(pipeline, idx);
+  const ctx = ok && name !== null && stdoutOk(st) && downstream;
   let inert = new Set();
   if (ctx) {
     const args = st.words.slice(k + 1);
@@ -467,11 +694,12 @@ function walkSimple(st, pipeline, idx, ok, s, out) {
     }
   }
   for (const r of st.redirs) for (const [, , , sub] of r.target.subs) walk(sub, false, s, out);
+  const reads = ctx && st.heredocs.length > 0 && (SINKS.has(name) || bodyReader(st, k, name));
   for (const hd of st.heredocs) {
     const [a, b] = hd.body;
     const body = s.slice(a, b);
     const expands = body.includes('$(') || body.includes('`');
-    if (ctx && (SINKS.has(name) || bodyReader(st, k, name)) && (hd.quoted || !expands)) blank(out, s, a, b);
+    if (reads && (hd.quoted || !expands)) blank(out, s, a, b);
   }
 }
 
@@ -498,8 +726,8 @@ export function maskInert(command) {
 
 /** blockReason — the label of the first pattern the command really invokes, or null. */
 export function blockReason(command) {
-  const text = maskInert(command);
-  for (const { re, label } of BLOCK_PATTERNS) if (re.test(text)) return label;
+  const lines = maskInert(command).split('\n');
+  for (const { test, label } of BLOCK_PATTERNS) for (const line of lines) if (test(line)) return label;
   return null;
 }
 

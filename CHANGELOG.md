@@ -45,6 +45,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`dangerous-cmd-guard` could miss a delete of a protected directory
+  (#151, security).** Both the Claude Code hook and the opencode module
+  decided where a target ends from literal characters only.
+  - A shell expansion right after the target didn't end it, although the
+    expansion could leave the directory itself: it may be empty, split the
+    word, or be a glob or brace expansion. Now any expansion right after a
+    target ends it, as a quote or a redirect already did. So do the
+    remaining redirection operators.
+  - Some spellings of the home directory weren't recognised. Every rule that
+    recognised `$HOME` or `~` now also recognises the other bash and zsh
+    spellings, and a trailing `/` after any of them.
+  - A path with a literal component after the protected directory is still
+    allowed. To delete under a protected directory by variable, put a literal
+    component first.
+  - `rm` now has to be a word of its own, and the wildcard-delete rule needs
+    the target in the same simple command as that `rm`. A `--rm` option, a
+    longer word ending in `rm`, or a protected path after a real `;`, `&&`,
+    `||` or `&` in a later command no longer blocks (for example a container
+    run that removes itself and mounts `/tmp`). `rm` as an argument of another
+    command, `rm` followed at once by an expansion or redirect, and a `;` or
+    `&` that is quoted or inside a substitution still count. Upgrade to pick
+    this up; rules:
+    `docs/reference/hooks.md#what-dangerous-cmd-guard-matches`.
+- **`dangerous-cmd-guard` could take a very long time on some crafted
+  commands (#146).** Checks that could run slowly:
+  - Both implementations re-checked the rest of a pipeline for every stage
+    while deciding what text is inert, so a very long pipeline took time that
+    grew with the square of its length. A 1 MB command took about 40 seconds
+    in the Claude Code hook. That check now runs once per pipeline.
+  - The opencode module's patterns backtracked on some crafted long lines:
+    a few KB took seconds and longer lines minutes, delaying every guarded
+    command. Each rule now decides one line in time linear in its length,
+    a few hundred ms at most for a 1 MB line. Decisions are unchanged.
+  - Nesting of subshells and substitutions deeper than 100 levels is now
+    scanned whole in both implementations. Before, the Claude Code hook fell
+    back at Python's recursion limit and the opencode module much deeper, so
+    the two could decide differently.
 - **`secret-in-write-guard` blocked long snake_case names that contain a
   GitHub token prefix (#143).** A name like `test_blocks_right_token_…`
   contains `ght_`, and the GitHub pattern accepted `_` in the token body, so a

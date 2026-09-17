@@ -55,6 +55,9 @@ ASSIGN = re.compile(r'[A-Za-z_][A-Za-z0-9_]*(\[[^\]]*\])?\+?=')
 LITERAL = re.compile(r'[A-Za-z0-9_./:@%+,=-]+')
 REDIR = re.compile(r'([0-9]*)(&>>|&>|>>|>\||>&|>|<<<|<<-|<<|<&|<>|<)')
 CASE = re.compile(r'\besac\b', re.A)
+# Deeper nesting of (…), $(…), backticks and <(…) is scanned whole. The same
+# limit in both implementations keeps Python's recursion limit from deciding.
+MAX_DEPTH = 100
 
 
 class Word:
@@ -89,7 +92,7 @@ class Script:
 
 class Parser:
     def __init__(self, s):
-        self.s, self.n, self.pending_total = s, len(s), 0
+        self.s, self.n, self.pending_total, self.depth = s, len(s), 0, 0
 
     def at(self, i, tok):
         return self.s.startswith(tok, i, self.n)
@@ -118,6 +121,15 @@ class Parser:
         raise Raw()
 
     def script(self, i, closer):
+        self.depth += 1
+        if self.depth > MAX_DEPTH:
+            raise Raw()
+        try:
+            return self.parse_script(i, closer)
+        finally:
+            self.depth -= 1
+
+    def parse_script(self, i, closer):
         s = self.s
         sc = Script()
         pending, pipeline, cur, pipe_open = [], [], None, False
@@ -382,14 +394,21 @@ def body_reader(st, k, name):
     return False
 
 
-def downstream_ok(pipeline, idx):
-    for st in pipeline[idx + 1:]:
+def downstream_ok(pipeline):
+    """For each stage: can its output only reach text filters and body readers?
+
+    Computed once per pipeline, from the last stage back, so a long pipeline
+    costs linear time."""
+    ok, after = [True] * len(pipeline), True
+    for idx in range(len(pipeline) - 1, -1, -1):
+        ok[idx] = after
+        st = pipeline[idx]
         if isinstance(st, Subshell) or not stdout_ok(st):
-            return False
-        k, name = effective(st)
-        if name not in SINKS and not body_reader(st, k, name):
-            return False
-    return True
+            after = False
+        else:
+            k, name = effective(st)
+            after = after and (name in SINKS or body_reader(st, k, name))
+    return ok
 
 
 def flag_values(args, spec):
@@ -418,14 +437,15 @@ def walk(sc, ok, s, out):
         for a, b in sc.comments:
             blank(out, s, a, b)
     for pipeline in sc.pipelines:
+        downstream = downstream_ok(pipeline)
         for idx, st in enumerate(pipeline):
             if isinstance(st, Subshell):
                 walk(st.script, ok, s, out)
             else:
-                walk_simple(st, pipeline, idx, ok, s, out)
+                walk_simple(st, downstream[idx], ok, s, out)
 
 
-def walk_simple(st, pipeline, idx, ok, s, out):
+def walk_simple(st, downstream, ok, s, out):
     k, name = effective(st)
     if name in DEFINERS or (name == 'exec' and k == len(st.words) - 1):
         raise Raw()
@@ -433,7 +453,7 @@ def walk_simple(st, pipeline, idx, ok, s, out):
         raise Raw()
     if k < len(st.words) and (name is None or '/' in name or name == '.'):
         raise Raw()
-    ctx = ok and name is not None and stdout_ok(st) and downstream_ok(pipeline, idx)
+    ctx = ok and name is not None and stdout_ok(st) and downstream
     inert = set()
     if ctx:
         args = st.words[k + 1:]
@@ -457,10 +477,11 @@ def walk_simple(st, pipeline, idx, ok, s, out):
     for r in st.redirs:
         for kind, a, b, sub in r.target.subs:
             walk(sub, False, s, out)
+    reads = ctx and bool(st.heredocs) and (name in SINKS or body_reader(st, k, name))
     for hd in st.heredocs:
         a, b = hd.body
         expands = '$(' in s[a:b] or '`' in s[a:b]
-        if ctx and (name in SINKS or body_reader(st, k, name)) and (hd.quoted or not expands):
+        if reads and (hd.quoted or not expands):
             blank(out, s, a, b)
 
 
@@ -508,13 +529,28 @@ matches() { # $1=grep flags  $2=pattern
 
 # ── Blocked patterns ───────────────────────────────────────────────────────────
 
-# A target ends at whitespace, end of line, or a character that closes the word
-# in shell syntax: ' " ) ` ; & | — so `sh -c 'rm -rf /'`, `$(rm -rf ~)` and
-# `git push --force;` match. A letter, digit, '/', '.', '-' or '*' continues it.
+# Where a target ends (END). Whitespace, end of line, or a character that ends
+# the word or changes what it expands to:
+# - ' " ` ( ) ; & | < >  closes the word or starts a redirect, so
+#   `sh -c 'rm -rf /'`, `$(rm -rf ~)` and `git push --force;` match;
+# - $ { * ? [  and @( +( !(  start an expansion that can leave the target
+#   itself: a parameter, command or ANSI-C expansion that may be empty or split
+#   the word, brace expansion, a glob, a zsh subscript or qualifier, an extglob.
+# Every other character continues the target, so `./build`, `~/projects/$x`,
+# `/tmp/.deliver-$id-*` and `-v /tmp:/data` don't match. (`:` changes a word
+# only right after an unbraced parameter name; rule 1 lists `$HOME:` itself.)
+END='(\s|$|["'\''`();&|<>$*{?[]|[@+!]\()'
+# The home directory (HOME), spelled `$HOME` (zsh `$~HOME`, `$=HOME`, `$^HOME`),
+# `${HOME}` with any operator, subscript, flags or modifier, `~` or `~name`.
+HOME_RE='(\$[~=^]*HOME|\$[{][~=^]*(\([^()${}]*\))?HOME([-=?+#%/^,@:[][^${}]*)?[}]|~([A-Za-z_][A-Za-z0-9._-]*)?)'
+# `rm` as a word of its own: not part of a longer word or option (`--rm`,
+# `terraform`). It may still be an argument (`xargs rm`, `find -exec rm`), or
+# follow a positional parameter that may be empty (`$1rm`).
+RM_WORD='(^|[^A-Za-z0-9_.-]|\$[0-9])rm'
 
 # rm -rf targeting filesystem root or home directory (optionally quoted)
-if matches -E 'rm\s+-[a-z]*r[a-z]*f\s+["'\'']?(\/(\s|$|["'\''`);&|])|~\/?(\s|$|["'\''`);&|])|\$HOME(\s|$|["'\''`);&|]))' || \
-   matches -E 'rm\s+-[a-z]*f[a-z]*r\s+["'\'']?(\/(\s|$|["'\''`);&|])|~\/?(\s|$|["'\''`);&|])|\$HOME(\s|$|["'\''`);&|]))'; then
+if matches -E "$RM_WORD"'\s+-[a-z]*r[a-z]*f\s+["'\'']?((/|'"$HOME_RE"'/?)'"$END"'|\$[~=^]*HOME:)' || \
+   matches -E "$RM_WORD"'\s+-[a-z]*f[a-z]*r\s+["'\'']?((/|'"$HOME_RE"'/?)'"$END"'|\$[~=^]*HOME:)'; then
     echo "[devexp dangerous-cmd-guard] Blocked: 'rm -rf /' or 'rm -rf ~' would wipe your filesystem or home directory." >&2
     exit 2
 fi
@@ -524,7 +560,21 @@ fi
 # This is the blanket-wipe an empty variable produces — `rm -f /tmp/*"$id"*` with empty $id
 # collapses to `/tmp/*`, and the template itself contains `/tmp/*`. Prefix-anchored globs like
 # `/tmp/.deliver-PAY-123-*` are allowed (no '*' right after the '/').
-if matches -E 'rm\b[^|]*(\s["'\'']?/tmp["'\'']?(/\*|/?(\s|$|["'\''`);&|]))|["'\'']?(\$HOME|~)["'\'']?/\.claude(\S*/\*|["'\'']?/?(\s|$|["'\''`);&|]))|\.claude\S*/\*)'; then
+# The target must follow `rm` in the same simple command: the scan (SCAN) stops
+# at `;`, `|` and a `&` that isn't part of a redirect (`2>&1`, `&>`), so
+# `rm -rf dist && cp out /tmp/$x` doesn't match. But a quote, an escape, a
+# backtick, `$(`, `${`, `$[` or a process substitution (`<(`, `>(`, zsh `=(`) can hold
+# a `;` or `&` that is data (`$'…'` starts with a quote), so once one of those
+# opens (OPENER) the scan runs on to the next `|`. Right after `rm` a `=(` is an
+# array assignment, not rm, so START_OPENER leaves it out.
+# `rm` itself may be followed by whitespace, a quote, an expansion, a brace or
+# glob character, or a redirect: the shell still runs `rm` with what follows.
+SENSITIVE='(\s["'\'']?/tmp["'\'']?/?'"$END"'|["'\'']?'"$HOME_RE"'["'\'']?/\.claude["'\'']?/?'"$END"'|\.claude\S*/\*)'
+SCAN='([^|;&]|[<>]&|&>)*'
+OPENER='(["'\''\\`]|[$<>=][(]|\$[{[])'
+START_OPENER='(["'\''`]|[$<>][(]|\$[{[])'
+AFTER_RM='([[:space:]<>${},*?[]|&>|[<>]&)'
+if matches -E "$RM_WORD"'(\s["'\'']?/tmp["'\'']?/?'"$END"'|('"$START_OPENER"'[^|]*|'"$AFTER_RM$SCAN"'('"$OPENER"'[^|]*)?)'"$SENSITIVE"')'; then
     echo "[devexp dangerous-cmd-guard] Blocked: unanchored wildcard delete in a sensitive directory (e.g. '/tmp/*' or '~/.claude/.../*'). Anchor the glob with a literal prefix (e.g. '/tmp/.deliver-<id>-*') so an empty variable cannot collapse it into a blanket wipe." >&2
     exit 2
 fi
@@ -543,7 +593,7 @@ fi
 
 # Force push — match the force flag only as an argument of the SAME push command (no intervening
 # ; | & ), so an unrelated `-f` elsewhere (e.g. `rm -f` in a commit message) no longer false-positives.
-if matches -E 'git\s+push\b[^|&;]*\s(--force-with-lease|--force|-f)(\s|=|$|["'\''`);&|])'; then
+if matches -E 'git\s+push\b[^|&;]*\s(--force-with-lease|--force|-f)(=|'"$END"')'; then
     echo "[devexp dangerous-cmd-guard] Blocked: git push --force can overwrite remote history and affect other contributors." >&2
     exit 2
 fi
