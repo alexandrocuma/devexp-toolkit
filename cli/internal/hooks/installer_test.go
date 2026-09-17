@@ -1713,6 +1713,9 @@ func ptr(s string) *string { return &s }
 // script directly under <root>/hooks/claude-code/ of another devexp root.
 func TestIsOrphanedDevexpHook(t *testing.T) {
 	base := t.TempDir()
+	// So the relative cases name a real devexp root (plain/) and are refused
+	// for being relative, not for naming nothing.
+	t.Chdir(base)
 	repoDir := devexpRoot(t, filepath.Join(base, "repo"))
 	other := devexpRoot(t, filepath.Join(base, "other checkout's $root"))
 	userDir := filepath.Join(base, "user")
@@ -1747,11 +1750,50 @@ func TestIsOrphanedDevexpHook(t *testing.T) {
 		"an unclean path":                                                  {cmd: plainOther + "/hooks/../hooks/claude-code/removed.sh"},
 		"the scripts directory itself":                                     {cmd: filepath.Join(plainOther, "hooks", "claude-code") + "/"},
 		"at the file-system root":                                          {cmd: "/hooks/claude-code/removed.sh"},
+		"a leading // (Clean folds it, so not a clean path)":               {cmd: "/" + plainGone},
+		"relative with ./":                                                 {cmd: "./plain/hooks/claude-code/removed.sh"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			if got := isOrphanedDevexpHook(tt.cmd, repoDir, map[string]bool{}); got != tt.want {
 				t.Errorf("isOrphanedDevexpHook(%q) = %v, want %v", tt.cmd, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPruneStaleHooks_RootsCachedPerAnswer (#157 review): the per-pass cache of
+// isDevexpRoot holds each root's own answer. Two missing scripts under one
+// user directory without a registry both stay, and two under one devexp root
+// both go, whichever is judged first.
+func TestPruneStaleHooks_RootsCachedPerAnswer(t *testing.T) {
+	base := t.TempDir()
+	repoDir := devexpRoot(t, filepath.Join(base, "repo"))
+	userRoot := filepath.Join(base, "user")
+	os.MkdirAll(filepath.Join(userRoot, "hooks", "claude-code"), 0755) //nolint:errcheck
+	otherRoot := devexpRoot(t, filepath.Join(base, "other"))
+	user1 := filepath.Join(userRoot, "hooks", "claude-code", "one.sh")
+	user2 := filepath.Join(userRoot, "hooks", "claude-code", "two.sh")
+	gone1 := filepath.Join(otherRoot, "hooks", "claude-code", "one.sh")
+	gone2 := filepath.Join(otherRoot, "hooks", "claude-code", "two.sh")
+	for name, order := range map[string][]string{
+		"user root first":   {user1, user2, gone1, gone2},
+		"devexp root first": {gone1, gone2, user1, user2},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var cmds []hookCmd
+			for _, c := range order {
+				cmds = append(cmds, hookCmd{Type: "command", Command: c})
+			}
+			hooksMap := hooksMapT{"Stop": {{Hooks: cmds}}}
+			var pruned bool
+			captureOutput(t, func() { pruned = pruneStaleHooks(hooksMap, repoDir, false) })
+			var got []string
+			for _, h := range hooksMap["Stop"][0].Hooks {
+				got = append(got, h.Command)
+			}
+			if want := []string{user1, user2}; !pruned || !reflect.DeepEqual(got, want) {
+				t.Errorf("pruned=%v, kept %q, want %q", pruned, got, want)
 			}
 		})
 	}

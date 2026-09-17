@@ -519,6 +519,8 @@ expect "keeps look-alikes of an orphaned registration" \
       "$PLAIN_ORPHAN_ROOT/hooks/claude-code/sub/gone.sh" \
       "$PLAIN_ORPHAN_ROOT/hooks/gone.sh" \
       "$PLAIN_ORPHAN_ROOT/my-hooks/claude-code/gone.sh" \
+      "$PLAIN_ORPHAN_ROOT/hooks/../hooks/claude-code/gone.sh" \
+      "/$PLAIN_GONE" \
       "$GONE")" \
   "$NOREG_ROOT/hooks/claude-code/pre-tool-use.sh
 $TMP/deleted-root/hooks/claude-code/pre-tool-use.sh
@@ -529,6 +531,8 @@ bash $PLAIN_GONE
 $PLAIN_ORPHAN_ROOT/hooks/claude-code/sub/gone.sh
 $PLAIN_ORPHAN_ROOT/hooks/gone.sh
 $PLAIN_ORPHAN_ROOT/my-hooks/claude-code/gone.sh
+$PLAIN_ORPHAN_ROOT/hooks/../hooks/claude-code/gone.sh
+/$PLAIN_GONE
 $GONE"
 BAD_ROOT="$TMP/bad-registry"; mkdir -p "$BAD_ROOT/hooks/claude-code"
 for reg in '' '[]' '{"name":"a"}' '[{"name":""}]' '[{"name":"a"},{"x":1}]' '[{"name":1}]' '[null]' '[{"name":"a"'; do

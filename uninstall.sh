@@ -613,7 +613,9 @@ def is_orphaned(p):
     # registry, so the root is. A user's hook directory has no registry; a root
     # deleted outright can't be told from a user's and is left alone. Same rules
     # as isStaleDevexpHook / isOrphanedDevexpHook in cli/internal/hooks.
-    if not p.startswith('/') or os.path.normpath(p) != p:
+    # A clean absolute path, as filepath.Clean sees it: normpath keeps a
+    # leading '//' (POSIX allows it), Clean folds it, so it is refused here too.
+    if not p.startswith('/') or p.startswith('//') or os.path.normpath(p) != p:
         return False
     cut = p.rfind('/') + 1
     directory, script = p[:cut], p[cut:]
