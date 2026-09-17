@@ -2,7 +2,7 @@ name: zz-call-check
 
 # TEMPORARY, for PR #166 (#155) only — delete before merge.
 #
-# ci.yml's `workflow_call` path is otherwise only exercised by a tag, i.e. during
+# ci.yml's `workflow_call` path is otherwise only reached by a tag, i.e. during
 # a release, which is the worst moment to discover the call is wrong. This calls
 # it exactly the way release.yml does (same job id, same read-only token, no
 # `with:` or `secrets:`) so the call is proven on a pull request instead.
@@ -15,3 +15,20 @@ permissions:
 jobs:
   ci:
     uses: ./.github/workflows/ci.yml
+
+  # Stands in for release.yml's `goreleaser` job: a plain `needs: ci`, nothing
+  # else. If one job inside ci.yml fails, this must be SKIPPED — that is the
+  # release gate. It never publishes anything; it only echoes.
+  gate:
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "publish would happen here"
+
+  # Runs whatever happened, to record the call job's aggregate result.
+  gate-observer:
+    needs: ci
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "needs.ci.result = ${{ needs.ci.result }}"
