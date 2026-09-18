@@ -263,7 +263,29 @@ stub grep-i-blind grep "for a in \"\$@\"; do
 done
 exec $REAL_GREP \"\$@\""
 
-for stub_name in grep-never grep-always grep-error grep-lies grep-q-blind grep-q-always grep-no-E grep-i-blind; do
+# A grep can share the call shape and still not share the regular expressions.
+# `\s`, `\b` and `\S` are GNU extensions, so a strict-POSIX or busybox-style
+# grep reads them as literals and under-matches — by accident, on somebody's
+# PATH, with nothing raised anywhere. Each of these refuses one construct the
+# real patterns use; before the probes carried that vocabulary, the first of
+# them allowed every dangerous command tested, in silence.
+blind_to() { # $1=name  $2=the construct its patterns must not contain
+    stub "$1" grep "for a in \"\$@\"; do
+  case \"\$a\" in *'$2'*) exit 1 ;; esac
+done
+exec $REAL_GREP \"\$@\""
+}
+blind_to grep-s-blind     '\s'
+blind_to grep-b-blind     '\b'
+blind_to grep-brace-blind '{'
+blind_to grep-class-blind '[a-z]'
+# Reads only the first line of its input, so a probe whose answer is on line 1
+# would certify it while a dangerous command further down went unseen.
+stub grep-first-line grep "in=\$(cat)
+printf '%s' \"\$in\" | head -1 | exec $REAL_GREP \"\$@\""
+
+for stub_name in grep-never grep-always grep-error grep-lies grep-q-blind grep-q-always grep-no-E \
+                 grep-i-blind grep-s-blind grep-b-blind grep-brace-blind grep-class-blind grep-first-line; do
     blocks "$stub_name" dangerous-cmd-guard "$(block_envelope dangerous-cmd-guard)" "a $stub_name"
     blocks "$stub_name" dangerous-cmd-guard "$(allow_envelope dangerous-cmd-guard)" "a $stub_name (ordinary input)"
 done
@@ -284,11 +306,60 @@ check "that command is one the guard blocks on its own reason" \
 # status would block anyway; where it is a silent no-match (GNU grep) nothing
 # downstream would, so a block attributed to the probes is the platform-
 # independent statement of the property.
-for stub_name in grep-never grep-q-blind grep-no-E; do
+for stub_name in grep-never grep-q-blind grep-no-E grep-s-blind grep-first-line; do
     got=$(run "$stub_name" dangerous-cmd-guard "$(allow_envelope dangerous-cmd-guard)")
     ok=1; case "${got##*|}" in *"a question with a known answer"*) ok=0 ;; esac
     check "a $stub_name is caught by the probes, and named" "$ok" "$(printf '%.110s' "${got##*|}")"
 done
+
+# ── The probes speak the same regex dialect as the patterns ─────────────────
+# Sharing the call shape is not sharing the vocabulary. This reads the real
+# patterns and the probe patterns out of the guard and fails when a construct
+# appears in the first and in none of the second — so adding a pattern that
+# uses something the probes do not exercise is visible here rather than on
+# somebody's PATH. The catalogue is of constructs, not spellings: a grep that
+# handles `[0-9]` and refuses one particular range is the purpose-built class,
+# not the accidental one.
+drift=$(python3 -I -c '
+import re, sys
+
+CATALOGUE = [
+    (r"\s",            r"\\s"),
+    (r"\b",            r"\\b"),
+    (r"\S",            r"\\S"),
+    (r"\w",            r"\\w"),
+    (r"\d",            r"\\d"),
+    ("{m,n}",          r"\{[0-9]+,?[0-9]*\}"),
+    ("[[:class:]]",    r"\[\[:"),
+    ("[...]",          r"\[(?!\[:)"),
+    ("literal brace",  r"[{}]"),
+    ("alternation",    r"\|"),
+    ("group",          r"\("),
+    ("+",              r"\+"),
+    ("*",              r"\*"),
+    ("?",              r"\?"),
+    ("^",              r"\^"),
+    ("$",              r"\$"),
+    ("backreference",  r"\\[1-9]"),
+]
+
+src = open(sys.argv[1]).read()
+body = src[src.index("Blocked patterns"):]
+real = "\n".join(s for s in (l.strip() for l in body.splitlines())
+                 if s and not s.startswith("#")
+                 and (re.match(r"^[A-Z_]+=", s) or re.match(r"^(if )?matches ", s)))
+probes = "\n".join(l for l in src.splitlines() if "devexp_grep_probe -" in l)
+gaps = [name for name, det in CATALOGUE
+        if re.search(det, real) and not re.search(det, probes)]
+print(",".join(gaps) if gaps else "-")
+print(sum(1 for name, det in CATALOGUE if re.search(det, real)))
+' "$DIR/dangerous-cmd-guard.sh")
+gaps=$(printf '%s' "$drift" | head -1)
+covered=$(printf '%s' "$drift" | tail -1)
+check "every construct the real patterns use is exercised by a probe" \
+    "$([ "$gaps" = "-" ] && echo 0 || echo 1)" "no probe exercises: $gaps"
+check "the patterns use enough constructs for that to mean something" \
+    "$([ "${covered:-0}" -ge 8 ] && echo 0 || echo 1)" "only $covered constructs found in the real patterns"
 
 # ── The proof descriptor reaches the watchdog and nobody else ───────────────
 # The guard waits for every holder of that pipe, so anything the guarded run
@@ -382,6 +453,61 @@ for guard in $GUARDS; do
     check "$guard requires proof from its own scan" "$ok" \
         "$guard.sh must call devexp_scan_result and pass \$DEVEXP_SCAN_PROOF to its scanning step"
 done
+
+# ── One place hands a pattern to grep ──────────────────────────────────────
+# The probes certify the call the checks make, which only means something while
+# there is exactly one such call. Re-inlining it in `matches` is behaviour-
+# preserving today and takes the basis of that away, so it is structural here.
+funnel=$(python3 -I -c '
+import re, sys
+calls, heredoc = [], None
+for path in sys.argv[1:]:
+    name = path.rsplit("/", 1)[-1]
+    for n, line in enumerate(open(path), 1):
+        # Program text embedded in a quoted heredoc is data, not a command.
+        if heredoc is None:
+            m = re.match(r"^\s*\S*\s*<<[-]?[\x27\x22]?([A-Za-z_][A-Za-z0-9_]*)", line)
+            if m:
+                heredoc = m.group(1)
+                continue
+        else:
+            if line.strip() == heredoc:
+                heredoc = None
+            continue
+        code = line.split("#", 1)[0]
+        if re.search(r"(?:^|[;&|(]|\$\()\s*grep\s", code):
+            calls.append("%s:%d" % (name, n))
+print(" ".join(calls) if calls else "-")
+' "$DIR/dangerous-cmd-guard.sh" "$DIR/secret-guard.sh" "$DIR/secret-in-write-guard.sh" "$DIR/scan-budget.sh")
+inside=$(awk '/^devexp_grep\(\) \{/{s=NR} /^\}/{if (s && !e) {e=NR}} END{print s "-" e}' "$DIR/dangerous-cmd-guard.sh")
+call_line=${funnel#*:}
+check "exactly one grep invocation across the guards and the helper" \
+    "$([ "$(printf '%s' "$funnel" | wc -w | tr -d ' ')" = 1 ] && echo 0 || echo 1)" "found: $funnel"
+check "that invocation is inside devexp_grep" \
+    "$(python3 -I -c '
+import sys
+span, call = sys.argv[1], sys.argv[2]
+start, end = (int(x) for x in span.split("-"))
+sys.exit(0 if start < int(call) < end else 1)' "$inside" "${call_line:-0}" && echo 0 || echo 1)" \
+    "devexp_grep spans lines $inside, the call is at line ${call_line:-none}"
+
+# ── The guarded run's stdout still reaches the caller ───────────────────────
+# fd 8 exists so a guard can write where it always did while the proof travels
+# separately. Forcing the "no stdout" branch sends that output to /dev/null
+# instead, which nothing else would notice.
+cat > "$TMP/speak-guard.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+. "$DIR/scan-budget.sh"
+devexp_scan_budget speak-guard "\$@"
+cat >/dev/null
+echo "devexp-passthrough-marker"
+exit 0
+EOF
+spoke=$(bash "$TMP/speak-guard.sh" </dev/null 2>/dev/null); rc=$?
+check "the guarded run's stdout reaches the caller" \
+    "$([ "$rc" = 0 ] && [ "$spoke" = "devexp-passthrough-marker" ] && echo 0 || echo 1)" \
+    "rc=$rc stdout=\"$spoke\""
 
 # The proof channel is spelled twice — a redirection needs a literal number —
 # so the two spellings have to agree or the watchdog's proof goes nowhere.

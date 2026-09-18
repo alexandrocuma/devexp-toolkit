@@ -577,24 +577,40 @@ matches() { # $1=grep flags  $2=pattern
 # `matches` reads grep's exit status and nothing else, so every check below is
 # only as good as that status (#168). These probes ask questions whose answers
 # are known, through devexp_grep — the same call shape, `-q` and `-e` and a
-# here-string included — because a grep that is honest in some other mode and
-# blind under `-q` would otherwise pass and then report every command clean.
+# here-string included — because a grep honest in some other mode and blind
+# under `-q` would otherwise pass and then report every command clean.
 #
-# Three of them, against a subject made up here:
-#   * a hit, so a grep that never matches cannot pass;
-#   * a miss, so one that matches everything cannot either;
+# A shared call shape is not enough on its own: a grep can also differ in the
+# regular expressions it understands. `\s` is a GNU extension, so a strict-POSIX
+# or busybox-style grep reads it as a literal `s` and quietly under-matches
+# every pattern below that uses it — no error, no match, every command clean.
+# That is an accident waiting on someone's PATH, not an attack, so each probe
+# pattern carries the same vocabulary the real patterns do: `\s`, `\b`, `\S`, a
+# POSIX class, a bracket range, a literal brace, alternation, a group, `+`, `*`,
+# `?` and both anchors. interpreter-proof.test.sh reads the patterns below and
+# fails if one of them uses a construct no probe exercises, so the two cannot
+# drift apart.
+#
+# The subject is two lines and the answer is on the second, because a grep that
+# only ever sees the first line would otherwise pass every probe and then miss
+# any dangerous command that is not on line 1.
+#
+# Three probes, and each is the only one that catches something:
+#   * a hit, so a grep that never matches — or refuses one of the constructs,
+#     or drops -E, or reads only the first line — cannot pass;
+#   * a miss with the same vocabulary, so one that matches everything cannot;
 #   * a case-insensitive hit, because half the checks below use -iE.
-# The patterns are ERE-only — alternation and `+` — so a dropped `-E` fails the
-# first probe instead of degrading to a silent no-match on every real pattern.
 devexp_grep_canary="devexp-grep-canary-$$-${RANDOM}-${RANDOM}"
+devexp_grep_subject="not-the-canary
+$devexp_grep_canary {end}"
 devexp_grep_probe() { # $1=flags  $2=pattern  $3=expected status (0 hit, 1 miss)
     local rc=0
-    devexp_grep "$1" "$2" "$devexp_grep_canary" || rc=$?
+    devexp_grep "$1" "$2" "$devexp_grep_subject" || rc=$?
     [ "$rc" = "$3" ]
 }
-if ! devexp_grep_probe -E  '^(zz|devexp)-grep-canary-[0-9]+-[0-9]+-[0-9]+$' 0 ||
-   ! devexp_grep_probe -E  '^(zz|qq)-grep-canary' 1 ||
-   ! devexp_grep_probe -iE '^(ZZ|DEVEXP)-GREP-CANARY-[0-9]+' 0; then
+if ! devexp_grep_probe -E  '^(zz|devexp)\b-grep-canary-[0-9]+-[0-9]*[0-9]-[0-9]+\s+[{][a-z]\S*[[:alpha:]]}?$' 0 ||
+   ! devexp_grep_probe -E  '^(zz|qq)\b-grep-canary-[0-9]+-[0-9]*[0-9]-[0-9]+\s+[{][a-z]\S*[[:alpha:]]}?$' 1 ||
+   ! devexp_grep_probe -iE '^(ZZ|DEVEXP)\b-GREP-CANARY-[0-9]+-[0-9]*[0-9]-[0-9]+\s+[{][A-Z]\S*[[:alpha:]]}?$' 0; then
     echo "[devexp dangerous-cmd-guard] internal error -- grep answered a question with a known answer wrongly, so the command was not checked. Blocking to be safe." >&2
     exit 2
 fi

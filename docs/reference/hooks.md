@@ -273,7 +273,7 @@ this existed stops running on the 600 s default at its next install.
 |---|---|---|
 | Mechanism | `scan-budget.sh` re-runs the guard under a `python3` watchdog in a session of its own and `SIGKILL`s the process group at the deadline | a deadline started at handler entry, checked as the scan runs; the check throws a `ScanBudgetError`, which is how `tool.execute.before` refuses a call |
 | Covers | the whole hook run — reading the envelope, `json.load`, the regex work and every `grep` | the scan, at the granularity of one unit of work: one pattern, one rule against one line, one token, and the masking pass `dangerous-cmd-guard` runs first |
-| Cost | one extra `python3` **and** one extra `bash` — the guard is re-run as a child, not `exec`'d — so roughly **+60 to +85 ms** per guarded tool call on current hardware, about double a guard's run (median of 30 warmed runs against `origin/main`, same machine: `dangerous-cmd-guard` 66 → 129 ms, `secret-guard` 46 → 130 ms, `secret-in-write-guard` 46 → 130 ms; one Bash tool call, two guards in parallel, 66 → 130 ms. An independent run on the same head measured 69 → 144, 50 → 135 and 50 → 137 ms) | **under 0.05 ms**, on any input the guards accept — counted, not timed (below) |
+| Cost | one extra `python3` **and** one extra `bash` — the guard is re-run as a child, not `exec`'d — so roughly **+60 to +85 ms** per guarded tool call on current hardware, about double a guard's run (median of 30 warmed runs against `origin/main`, same machine: `dangerous-cmd-guard` 66 → 129 ms, `secret-guard` 46 → 130 ms, `secret-in-write-guard` 46 → 130 ms; one Bash tool call, two guards in parallel, 66 → 130 ms. An independent run on the same head measured 69 → 144, 50 → 135 and 50 → 137 ms) | **under 0.05 ms** of clock reads on any input the guards accept — counted, not timed, and a floor rather than the whole cost (below) |
 | On a hit | exit 2 with a message naming the budget | a thrown block with the same message |
 
 **How often the opencode side looks at the clock, and what that costs.** Count
@@ -288,8 +288,13 @@ variance, not the budget. The counts are deterministic and reproduce exactly:
 | a 200k-line command | 2,025 | 0.045 ms of a 183 ms scan |
 | `ls -la` | 13 | 0.0003 ms |
 
-That is the row above. Checking at *every* token instead is what costs something
-real: 800k reads is about 18 ms on that command, and measured against the
+That is the row above — and it is a **floor**, not the whole of it: what is
+counted is the clock reads, not the per-unit branch that decides whether to read
+the clock, the sampling counter it tests, or the deadline object each handler
+builds. Those are cheap enough to sit under end-to-end noise, which is exactly
+why they cannot be quoted as a measured number here.
+
+Checking at *every* token instead is what costs something real: 800k reads is about 18 ms on that command, and measured against the
 sampled code it came out at **6 to 10%** where the token loop dominates (a
 200k-line command 187 → 206 ms, a 200k-token read 33.4 → 35.3 ms) — unsample the
 masking pass as well and an 800k-token command costs about **45%** more. So
@@ -386,33 +391,61 @@ match" to everything would have reported every command as clean.
 
 Before the patterns run, the guard asks three questions whose answers it knows,
 against a subject made up on the spot: a hit, a miss, and a case-insensitive
-hit. What makes them worth anything is that they go through `devexp_grep`, the
-one place a pattern is handed to grep — the same `-q`, the same `-e`, the same
-here-string that every real check uses. A question asked in some other mode
-would certify a code path the guard never takes: a grep honest under `-c` and
-blind under `-q` passes such a check and then reports every blocked pattern as
-clean, which is what a first version of this did. The probe patterns are
-ERE-only (alternation, `+`), so a dropped `-E` fails the first probe rather than
-turning every real pattern into a literal that matches nothing.
+hit. Three things make them worth anything.
+
+**They go through `devexp_grep`**, the one place a pattern is handed to grep —
+the same `-q`, the same `-e`, the same here-string that every real check uses. A
+question asked in some other mode certifies a code path the guard never takes: a
+grep honest under `-c` and blind under `-q` passes such a check and then reports
+every blocked pattern as clean, which is what a first version of this did. The
+suite fails if a second `grep` invocation appears anywhere in the guards or the
+helper, because the funnel is what the probes rest on.
+
+**They use the same regular-expression vocabulary as the patterns.** Sharing the
+call shape is not sharing the dialect. `\s`, `\b` and `\S` are GNU extensions:
+a strict-POSIX or busybox-style grep reads them as literals and quietly
+under-matches every pattern that uses one — no error, no match, and by accident
+rather than design. A grep that answered all three probes and refused `\s` let
+through every dangerous command tested. So each probe pattern now carries `\s`,
+`\b`, `\S`, a POSIX class, a bracket range, a literal brace, alternation, a
+group, `+`, `*`, `?` and both anchors. The suite reads the real patterns and the
+probe patterns out of the guard and fails when a construct appears in the first
+and in none of the second, so adding a pattern that uses something new is
+visible there rather than on somebody's PATH. A dropped `-E` fails the probes
+directly, whatever a given grep does with a basic regular expression that
+contains `(`.
+
+**The subject is two lines and the answer is on the second**, because a grep
+that only ever reads the first line of its input would otherwise pass every
+probe and then miss any dangerous command that is not on line 1.
+
+Each probe is the only one that catches something, so none is decoration:
+removing any of the three lets one of the suite's stand-ins through.
 
 So the claim is bounded, and this is its shape: **a grep that answers wrongly in
-the mode the checks use is caught** — never matching, always matching, blind or
-always-true under `-q`, blind under `-i`, silently dropping `-E`, erroring, or
-returning a status that carries no information. A grep that answers all three
-probes correctly and then lies about one particular pattern is not caught, and
-is the same class as an interpreter built to imitate the protocol.
+the mode or the dialect the checks use is caught** — never matching, always
+matching, blind or always-true under `-q`, blind under `-i`, dropping `-E`,
+refusing a construct the patterns use, reading only the first line, erroring, or
+returning a status that carries no information. What is not caught is a grep
+that answers every probe correctly and then lies about one particular pattern:
+that is the same class as an interpreter built to imitate the protocol, and it
+is deliberate, not accidental.
 
 **Cost:** no new process except the three `grep` probes, and no new interpreter
-start. Measured against v0.9.3 (median of 30 warmed runs each, alternating
-between the two trees on one machine, three consecutive runs): `secret-guard`
-131.4 → 132.4 ms, `dangerous-cmd-guard` 129.0 → 130.5 ms, `secret-in-write-guard`
-131.2 → 132.4 ms, and one Bash tool call running two guards at once
-187.7 → 189.7 ms — **+0 to +2 ms**, against the +60 to +85 ms the budget itself
-costs. The probes account for most of it: timed on their own they are 5.2 ms of
-`grep` against the 2.2 ms the single count-mode question cost. (A first round of
-measurements, taken while the machine was busy, showed swings of tens of
-milliseconds in both directions; the per-probe timing is what the figure rests
-on.)
+start. Measured against v0.9.3 on one machine, 40 paired runs per case:
+`secret-guard` and `secret-in-write-guard` **+1 ms** (132 → 133 ms),
+`dangerous-cmd-guard` **+6 ms** (128.8 → 134.7 ms), one Bash tool call running
+two guards at once **+3 ms** (186.9 → 189.5 ms). Timed on their own the three
+probes are 4.9 ms of `grep` against the 2.0 ms the single count-mode question
+cost.
+
+That is the median. The distribution has a tail this machine shows in v0.9.3
+too: a run occasionally costs ~50 ms more than the rest, and two more
+short-lived processes make hitting it likelier — 2 runs in 40 became 14, and for
+the two-guard call 1 in 40 became 17. Bare `grep` spawns are not bimodal, so the
+tail belongs to the environment rather than to the probes; what the probes do is
+buy more tickets in it. Against the +60 to +85 ms the budget itself costs, and
+against a guard that reports every command clean, that is the trade this makes.
 
 **opencode needs none of this.** Its three `fail_closed` guards are in-process
 JavaScript: no child process, no interpreter resolved from `PATH`, and a refusal
