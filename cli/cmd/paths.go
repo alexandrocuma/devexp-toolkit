@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -80,5 +81,78 @@ func opencodeTargetPaths(home string) (opencodePaths, error) {
 		plugins:  filepath.Join(home, ".config", "opencode", "plugins"),
 		config:   filepath.Join(home, ".config", "opencode", "config.json"),
 		manifest: filepath.Join(home, ".config", "opencode", ".devexp-manifest.json"),
+	}, nil
+}
+
+// ── Kimi Code CLI paths ───────────────────────────────────────────────────────
+//
+// Kimi Code keeps everything under one configurable root, so unlike the other
+// two targets its paths do not hang off $HOME. Nothing writes to them yet —
+// #112-#114 fill that in — but they are resolved and refused here so a
+// misconfigured $KIMI_CODE_HOME is a refusal now rather than a surprise
+// removal later.
+
+// kimiPaths holds every destination the Kimi Code CLI install will write to.
+type kimiPaths struct {
+	// home is what the removal guard resolves symlinks from. It is the Kimi
+	// root's parent, not $HOME: removeStale requires the directory it removes
+	// from not to escape home (backup.go, internal/removeguard), and
+	// $KIMI_CODE_HOME may point outside $HOME entirely, which would leave
+	// every removal unguardable. With the default root this is exactly $HOME,
+	// as for Claude Code; with a custom root it keeps the Kimi root itself
+	// inside the chain the guard checks.
+	home     string
+	root     string // $KIMI_CODE_HOME when set, else <home>/.kimi-code
+	agents   string
+	skills   string
+	mcp      string
+	config   string
+	manifest string
+	backup   string
+}
+
+// resolveKimiHome mirrors Kimi Code's own rule — $KIMI_CODE_HOME when set,
+// else ~/.kimi-code — and refuses the values that would aim an install, and
+// later a removal, somewhere it must never point. Kimi resolves a relative
+// value against whatever directory it happens to run in; devexp refuses one
+// outright, for the same reason targetHome refuses a relative HOME (#126).
+// Kimi treats an empty value as unset, so devexp does too.
+func resolveKimiHome(kimiCodeHome, home string) (string, error) {
+	home, err := targetHome(home)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(kimiCodeHome) == "" {
+		return filepath.Join(home, ".kimi-code"), nil
+	}
+	if !filepath.IsAbs(kimiCodeHome) {
+		return "", fmt.Errorf("KIMI_CODE_HOME is %q, not an absolute path", kimiCodeHome)
+	}
+	root := filepath.Clean(kimiCodeHome)
+	// The root gets a manifest, a backup directory and, from #113, removals.
+	// Neither the filesystem root nor the home directory itself may be it.
+	if root == string(filepath.Separator) || root == home {
+		return "", fmt.Errorf("KIMI_CODE_HOME is %q, which devexp will not install into", root)
+	}
+	return root, nil
+}
+
+// kimiTargetPaths resolves the Kimi Code destinations under kimiCodeHome, or
+// under home when it is unset. now is passed in rather than read from the
+// clock so the backup directory's name is assertable.
+func kimiTargetPaths(kimiCodeHome, home string, now time.Time) (kimiPaths, error) {
+	root, err := resolveKimiHome(kimiCodeHome, home)
+	if err != nil {
+		return kimiPaths{}, err
+	}
+	return kimiPaths{
+		home:     filepath.Dir(root),
+		root:     root,
+		agents:   filepath.Join(root, "agents"),
+		skills:   filepath.Join(root, "skills"),
+		mcp:      filepath.Join(root, "mcp.json"),
+		config:   filepath.Join(root, "config.toml"),
+		manifest: filepath.Join(root, ".devexp-manifest.json"),
+		backup:   filepath.Join(root, ".devexp-backup-"+now.Format("20060102T150405")),
 	}, nil
 }

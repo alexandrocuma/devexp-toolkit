@@ -1373,6 +1373,141 @@ func TestOpencodeTargetPaths(t *testing.T) {
 	}
 }
 
+// testKimiPaths resolves the Kimi target paths under a home a test controls.
+func testKimiPaths(t *testing.T, kimiCodeHome, home string) kimiPaths {
+	t.Helper()
+	p, err := kimiTargetPaths(kimiCodeHome, home, time.Now())
+	if err != nil {
+		t.Fatalf("kimiTargetPaths(%q, %q) error = %v", kimiCodeHome, home, err)
+	}
+	return p
+}
+
+// resolveKimiHome mirrors Kimi Code's own rule, and refuses the values that
+// would aim an install — and from #113 a removal — somewhere it must not.
+func TestResolveKimiHome(t *testing.T) {
+	tests := map[string]struct {
+		kimiCodeHome string
+		home         string
+		want         string
+		wantErr      string
+	}{
+		"unset falls back to ~/.kimi-code": {home: "/home/u", want: "/home/u/.kimi-code"},
+		// Kimi's own CLI treats an empty value as unset, so devexp does too.
+		"empty counts as unset":       {kimiCodeHome: "", home: "/home/u", want: "/home/u/.kimi-code"},
+		"whitespace counts as unset":  {kimiCodeHome: "   ", home: "/home/u", want: "/home/u/.kimi-code"},
+		"an absolute value wins":      {kimiCodeHome: "/opt/k", home: "/home/u", want: "/opt/k"},
+		"a trailing slash is cleaned": {kimiCodeHome: "/opt/k/", home: "/home/u", want: "/opt/k"},
+		"an inner dotdot is cleaned":  {kimiCodeHome: "/opt/x/../k", home: "/home/u", want: "/opt/k"},
+		"a value under home is fine":  {kimiCodeHome: "/home/u/kimi", home: "/home/u", want: "/home/u/kimi"},
+
+		// Kimi resolves a relative value against whatever directory it runs
+		// in; devexp refuses rather than install somewhere it cannot name.
+		"a relative value is refused": {kimiCodeHome: "rel/dir", home: "/home/u", wantErr: "not an absolute path"},
+		"a bare dot is refused":       {kimiCodeHome: ".", home: "/home/u", wantErr: "not an absolute path"},
+		"a tilde is refused":          {kimiCodeHome: "~/.kimi-code", home: "/home/u", wantErr: "not an absolute path"},
+		// These two would put a manifest, a backup directory and later a
+		// removal root at the top of the filesystem or of the user's home.
+		"the filesystem root is refused":            {kimiCodeHome: "/", home: "/home/u", wantErr: "will not install into"},
+		"the home directory is refused":             {kimiCodeHome: "/home/u", home: "/home/u", wantErr: "will not install into"},
+		"the home directory, uncleaned, is refused": {kimiCodeHome: "/home/u/", home: "/home/u", wantErr: "will not install into"},
+		// A relative HOME is refused whether or not KIMI_CODE_HOME is set.
+		"a bad home is refused":                       {home: "home/u", wantErr: "not an absolute path"},
+		"a bad home is refused even with an override": {kimiCodeHome: "/opt/k", home: "", wantErr: "not an absolute path"},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := resolveKimiHome(tt.kimiCodeHome, tt.home)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("resolveKimiHome(%q, %q) = %q, %v; want an error containing %q",
+						tt.kimiCodeHome, tt.home, got, err, tt.wantErr)
+				}
+				if got != "" {
+					t.Errorf("= %q, want no path alongside the error", got)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Errorf("resolveKimiHome(%q, %q) = %q, %v; want %q",
+					tt.kimiCodeHome, tt.home, got, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestKimiTargetPaths(t *testing.T) {
+	now := time.Date(2026, 9, 18, 4, 5, 6, 0, time.UTC)
+
+	t.Run("under the default root", func(t *testing.T) {
+		got, err := kimiTargetPaths("", "/home/u", now)
+		want := kimiPaths{
+			// home is the Kimi root's parent, which for the default root is
+			// exactly $HOME, as for Claude Code.
+			home:     "/home/u",
+			root:     "/home/u/.kimi-code",
+			agents:   "/home/u/.kimi-code/agents",
+			skills:   "/home/u/.kimi-code/skills",
+			mcp:      "/home/u/.kimi-code/mcp.json",
+			config:   "/home/u/.kimi-code/config.toml",
+			manifest: "/home/u/.kimi-code/.devexp-manifest.json",
+			// now is a parameter precisely so this is assertable rather than
+			// whatever the clock said when the test ran.
+			backup: "/home/u/.kimi-code/.devexp-backup-20260918T040506",
+		}
+		if err != nil || got != want {
+			t.Errorf("kimiTargetPaths() = %+v, %v; want %+v", got, err, want)
+		}
+	})
+
+	t.Run("under a KIMI_CODE_HOME outside the user home", func(t *testing.T) {
+		got, err := kimiTargetPaths("/opt/k", "/home/u", now)
+		want := kimiPaths{
+			home:     "/opt",
+			root:     "/opt/k",
+			agents:   "/opt/k/agents",
+			skills:   "/opt/k/skills",
+			mcp:      "/opt/k/mcp.json",
+			config:   "/opt/k/config.toml",
+			manifest: "/opt/k/.devexp-manifest.json",
+			backup:   "/opt/k/.devexp-backup-20260918T040506",
+		}
+		if err != nil || got != want {
+			t.Errorf("kimiTargetPaths() = %+v, %v; want %+v", got, err, want)
+		}
+	})
+
+	// home is what removeStale hands the removal guard, which refuses to check
+	// — and so refuses to remove from — a directory that escapes it. Were home
+	// $HOME, a KIMI_CODE_HOME outside $HOME would leave every Kimi removal
+	// unguardable, which is the bug this assertion exists to catch.
+	t.Run("every target directory stays inside home", func(t *testing.T) {
+		for _, kimiCodeHome := range []string{"", "/opt/k", "/home/u/kimi"} {
+			p := testKimiPaths(t, kimiCodeHome, "/home/u")
+			for _, dir := range []string{p.root, p.agents, p.skills, p.backup} {
+				rel, err := filepath.Rel(p.home, dir)
+				if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+					t.Errorf("KIMI_CODE_HOME=%q: %q escapes home %q (rel %q, %v)", kimiCodeHome, dir, p.home, rel, err)
+				}
+			}
+		}
+	})
+
+	t.Run("a refused root yields no paths at all", func(t *testing.T) {
+		for _, bad := range []string{"rel/dir", ".", "/", "/home/u"} {
+			if got, err := kimiTargetPaths(bad, "/home/u", now); err == nil || got != (kimiPaths{}) {
+				t.Errorf("kimiTargetPaths(%q) = %+v, %v; want no paths and an error", bad, got, err)
+			}
+		}
+		for _, badHome := range []string{"", "home/u", "."} {
+			if got, err := kimiTargetPaths("", badHome, now); err == nil || got != (kimiPaths{}) {
+				t.Errorf("kimiTargetPaths(home=%q) = %+v, %v; want no paths and an error", badHome, got, err)
+			}
+		}
+	})
+}
+
 // ── Registry loading ──────────────────────────────────────────────────────────
 
 func writeRegistry(t *testing.T, repoDir, contents string) {

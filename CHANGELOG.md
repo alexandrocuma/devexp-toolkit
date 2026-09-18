@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Kimi Code CLI target paths (#111).** `kimiTargetPaths` resolves the agents and skills directories, `mcp.json`, `config.toml`, the devexp manifest and the backup directory under `$KIMI_CODE_HOME`, defaulting to `~/.kimi-code`. Nothing installs there yet (#112-#114); the paths exist so a `$KIMI_CODE_HOME` devexp must not write to — relative, the filesystem root, or the home directory itself — is refused now rather than discovered later.
+
 ## [0.9.4] - 2026-09-18
 
 ### Fixed
