@@ -21,16 +21,32 @@
 set -euo pipefail
 
 # The whole scan runs under a wall-clock budget and blocks when it is exceeded:
-# a slow scan must never let a tool call through unchecked (#162). The helper is
-# found without running anything: an external command that is missing would end
-# the guard with a status Claude Code reads as a non-blocking error, which is
-# the fail-open this guards against. Failing to load it blocks.
+# a slow scan must never let a tool call through unchecked (#162).
+#
+# Everything up to devexp_scan_budget runs with no floor under it, so this
+# prologue installs one. It cannot be an `if ! . …`: under `set -e` bash leaves
+# the script where the `.` failed and never reaches the body, and it cannot
+# read $? either — for a missing, unreadable or unparsable file, and for an
+# unset variable, bash 3.2 reports 0 to an EXIT trap, and 0 reads as "allow".
+# So the trap asks no questions: reaching it at all means the budget never
+# started. devexp_scan_budget clears it as soon as it takes over, and from
+# there the watchdog's own 0-or-2 check is the floor.
+devexp_budget_why="stopped before its scan budget could start"
+devexp_budget_floor() {
+    trap - EXIT
+    echo "[devexp dangerous-cmd-guard] internal error -- the guard $devexp_budget_why, so it did not run. Blocking to be safe." >&2
+    exit 2
+}
+trap devexp_budget_floor EXIT
+
 devexp_dir="${BASH_SOURCE[0]%/*}"
 if [ "$devexp_dir" = "${BASH_SOURCE[0]}" ]; then devexp_dir="."; fi
-if ! . "$devexp_dir/scan-budget.sh"; then
-    echo "[devexp dangerous-cmd-guard] internal error -- the scan budget could not be loaded, so the guard did not run. Blocking to be safe." >&2
-    exit 2
-fi
+devexp_budget_why="could not read its scan budget helper"
+[ -r "$devexp_dir/scan-budget.sh" ] || exit 1
+devexp_budget_why="could not load its scan budget helper"
+. "$devexp_dir/scan-budget.sh"
+devexp_budget_why="loaded a scan budget helper that defines no entry point"
+command -v devexp_scan_budget >/dev/null 2>&1 || exit 1
 devexp_scan_budget dangerous-cmd-guard "$@"
 
 input=$(cat)

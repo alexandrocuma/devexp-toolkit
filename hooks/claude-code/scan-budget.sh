@@ -19,16 +19,20 @@
 # A budget hit exits 2 — a block — never 0. So does a child status that is
 # neither allow (0) nor block (2): a guard that dies on a signal or cannot
 # start has no decision, and an unknown decision must not let the call through.
+# That same check is what floors the budgeted run, which is why the guard's
+# prologue trap is cleared the moment this function takes over.
 #
 # The budget is DEVEXP_SCAN_BUDGET_MS milliseconds, defaulting to
-# DEVEXP_SCAN_BUDGET_DEFAULT_MS. A value of 0 means "already over budget" and
-# blocks without scanning; anything that is not a non-negative integer is
-# ignored in favour of the default. hooks/opencode/utils.js reads the same
-# variable and carries the same default, so both twins decide alike.
+# DEVEXP_SCAN_BUDGET_DEFAULT_MS and capped at DEVEXP_SCAN_BUDGET_MAX_MS. A
+# value of 0 means "already over budget" and blocks without scanning; anything
+# that is not a plain ASCII non-negative integer is ignored in favour of the
+# default. hooks/opencode/utils.js reads the same variable and carries the same
+# default, ceiling and spelling, so both twins decide alike.
 #
-# Usage — first thing in a guard, right after `set -euo pipefail`:
+# Usage — first thing in a guard, right after `set -euo pipefail`, under the
+# prologue trap the guards install (copy it from any of them):
 #
-#   . "$(dirname "${BASH_SOURCE[0]}")/scan-budget.sh"
+#   . "$devexp_dir/scan-budget.sh"
 #   devexp_scan_budget <guard-name> "$@"
 #
 # Tests: bash hooks/claude-code/scan-budget.test.sh
@@ -39,25 +43,68 @@
 # dangerous-cmd-guard, ~0.07 s for ordinary input. That is ~9x headroom, and it
 # is above the ceilings those suites already accept as "not slow" (8 s for a
 # 2 MB write, 15 s for a 400 KB pipeline), so a much slower machine still never
-# trips it. hooks/registry.json sets each guard's hook `timeout` well above it,
-# so the guard's own block always lands first.
+# trips it.
 DEVEXP_SCAN_BUDGET_DEFAULT_MS=15000
+
+# The ceiling, in milliseconds. A budget at or above the hook `timeout` in
+# hooks/registry.json reinstates the bug this exists to prevent: Claude Code
+# would cancel the guard first, and a cancelled command hook does not block the
+# tool call. A larger DEVEXP_SCAN_BUDGET_MS is therefore clamped to this, with
+# a notice, rather than honoured. It must stay below every fail-closed guard's
+# registered timeout — scan-budget.test.sh and the Go registry test both check
+# that against the registry, so raising one without the other fails.
+DEVEXP_SCAN_BUDGET_MAX_MS=44000
+
+# How the watchdog tells the budgeted run apart from the first one. It travels
+# in argv, which only the watchdog can write, and Claude Code passes a command
+# hook no arguments. An environment variable would be inherited from whatever
+# started Claude Code — a settings `env` entry, a shell profile, a CI image —
+# and would silently switch the budget off for every guard.
+DEVEXP_SCAN_BUDGET_SENTINEL='--devexp-budgeted'
+
+# A second marker, counted rather than trusted. If the sentinel above ever stops
+# being recognised, each budgeted run starts a watchdog of its own and the guard
+# forks without bound — the budget only kills its own child's process group, and
+# every level makes a new session. This one is read from the environment on
+# purpose, because the only thing it can do is make the guard BLOCK: it can
+# switch nothing off. A value that is already at the limit stops the guard dead
+# instead of letting it multiply.
+DEVEXP_SCAN_BUDGET_DEPTH_VAR='DEVEXP_SCAN_BUDGET_DEPTH'
 
 # The program is fixed text; nothing from the tool input reaches it.
 IFS= read -r -d '' DEVEXP_SCAN_BUDGET_PY <<'PY' || true
-import os, signal, subprocess, sys
+import os, re, signal, subprocess, sys
 
-guard, raw, default = sys.argv[1], sys.argv[2], sys.argv[3]
-cmd = sys.argv[4:]
+guard, raw, default, ceiling, sentinel, depth_var = sys.argv[1:7]
+cmd = sys.argv[7:]
+ceiling = int(ceiling)
+# One watchdog runs the guard; the guard does not run another. Anything past
+# that is re-entry, which can only mean the sentinel stopped being recognised.
+MAX_DEPTH = 1
 
-# Only a plain non-negative integer counts; "10s", "-1", "1e3" and an empty or
-# unset variable all fall back to the default, so a typo cannot silently widen
-# or disable the budget.
-ms = int(raw) if raw.isdigit() else int(default)
-secs = ms / 1000.0
 
-over = ('[devexp %s] Blocked: the scan did not finish within its %.4g s budget, so this input '
-        'was not fully checked. Blocking to be safe.\n' % (guard, secs))
+def seconds(ms):
+    return '%.4g' % (ms / 1000.0)
+
+
+# Only a plain ASCII non-negative integer counts; "10s", "-1", "1e3", an empty
+# or unset variable, a non-ASCII decimal digit such as U+0663 and a digit-like
+# character such as U+00B2 all fall back to the default. str.isdigit() accepts
+# the last two — one silently, the other by raising — and disagrees with the JS
+# twin, which is ASCII-only. Both sides trim surrounding spaces.
+ms = int(raw) if re.fullmatch(r'[0-9]+', raw.strip()) else int(default)
+
+# A budget that outlives the hook timeout is a fail-open, so it is capped
+# rather than honoured, and the cap is said out loud.
+if ms > ceiling:
+    sys.stderr.write(
+        "[devexp %s] Note: DEVEXP_SCAN_BUDGET_MS of %s s is at or above this guard's registered hook "
+        "timeout, which would let Claude Code cancel the guard before it could block. Using %s s.\n"
+        % (guard, seconds(ms), seconds(ceiling)))
+    ms = ceiling
+
+over = ('[devexp %s] Blocked: the scan did not finish within its %s s budget, so this input '
+        'was not fully checked. Blocking to be safe.\n' % (guard, seconds(ms)))
 
 
 def block(message):
@@ -70,15 +117,27 @@ if ms <= 0:
     block(over)
 
 try:
+    depth = int(re.fullmatch(r'[0-9]+', os.environ.get(depth_var, '').strip() or 'x') and
+                os.environ[depth_var].strip() or 0)
+except Exception:
+    depth = 0
+if depth >= MAX_DEPTH:
+    block('[devexp %s] internal error -- the scan budget re-entered itself, so the guard did not '
+          'run. Blocking to be safe.\n' % guard)
+
+try:
     # A session of its own, so the deadline can kill the guard's whole process
-    # tree — its python and its greps — and never anything above it.
-    child = subprocess.Popen(cmd, start_new_session=True)
+    # tree — its python and its greps — and never anything above it. The
+    # sentinel tells that run it is the budgeted one; the depth says how many
+    # watchdogs are already above it.
+    child = subprocess.Popen(cmd + [sentinel], start_new_session=True,
+                             env=dict(os.environ, **{depth_var: str(depth + 1)}))
 except Exception as err:
     block('[devexp %s] internal error -- the guard could not be started (%s), so it did not run. '
           'Blocking to be safe.\n' % (guard, err))
 
 try:
-    rc = child.wait(timeout=secs)
+    rc = child.wait(timeout=ms / 1000.0)
 except subprocess.TimeoutExpired:
     try:
         os.killpg(child.pid, signal.SIGKILL)
@@ -95,17 +154,30 @@ PY
 
 # devexp_scan_budget — run the calling guard under its budget, then exit with
 # its status. Returns without doing anything when it is already the budgeted
-# run, so the guard's own body runs exactly once.
+# run, so the guard's body runs exactly once.
 devexp_scan_budget() {
-    if [ "${DEVEXP_SCAN_BUDGET_RUNNING:-}" = "1" ]; then
-        return 0
-    fi
     local guard="$1"
     shift
+
+    # The guard's prologue trap covers only the window before this function
+    # exists. From here the watchdog's 0-or-2 check is what floors an unknown
+    # status, the budgeted run included, and leaving the trap installed would
+    # make it fire on the guard's own clean exit.
+    trap - EXIT
+
+    local arg
+    for arg in ${1+"$@"}; do
+        if [ "$arg" = "$DEVEXP_SCAN_BUDGET_SENTINEL" ]; then
+            return 0
+        fi
+    done
+
     local rc=0
-    DEVEXP_SCAN_BUDGET_RUNNING=1 python3 -I -S -c "$DEVEXP_SCAN_BUDGET_PY" \
+    python3 -I -S -c "$DEVEXP_SCAN_BUDGET_PY" \
         "$guard" "${DEVEXP_SCAN_BUDGET_MS-}" "$DEVEXP_SCAN_BUDGET_DEFAULT_MS" \
-        "${BASH:-bash}" "$0" "$@" || rc=$?
+        "$DEVEXP_SCAN_BUDGET_MAX_MS" "$DEVEXP_SCAN_BUDGET_SENTINEL" \
+        "$DEVEXP_SCAN_BUDGET_DEPTH_VAR" \
+        "${BASH:-bash}" "$0" ${1+"$@"} || rc=$?
     if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then
         # The watchdog itself could not run (no python3, killed, …). It is the
         # only thing standing between a slow scan and an unscanned tool call,
