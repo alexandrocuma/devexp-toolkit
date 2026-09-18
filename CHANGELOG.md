@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Kimi Code CLI detection (#111).** devexp recognises Kimi Code CLI `0.31.0` or newer on `PATH` from the bare semver `kimi --version` prints. An older one is skipped with the minimum named, and the legacy Python kimi-cli — which ships a binary of the same name, with overlapping version numbers, and is told apart by its `kimi, version <x>` output — is skipped as unsupported rather than mistaken for Kimi Code. A binary that answers with anything else is skipped rather than guessed at, and the probe is the first exec in the installer with a timeout, so a `kimi` that blocks cannot hang an install.
 - **Kimi Code CLI target paths (#111).** `kimiTargetPaths` resolves the agents and skills directories, `mcp.json`, `config.toml`, the devexp manifest and the backup directory under `$KIMI_CODE_HOME`, defaulting to `~/.kimi-code`. Nothing installs there yet (#112-#114); the paths exist so a `$KIMI_CODE_HOME` devexp must not write to — relative, the filesystem root, or the home directory itself — is refused now rather than discovered later.
 
 ## [0.9.4] - 2026-09-18

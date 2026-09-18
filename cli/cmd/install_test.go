@@ -1249,6 +1249,19 @@ func fakeCLI(t *testing.T, names ...string) {
 	t.Setenv("PATH", dir)
 }
 
+// fakeCLIScript is fakeCLI for a stub that has to answer something — a version
+// probe. Unlike fakeCLI it prepends to PATH rather than replacing it, so it can
+// be layered on top of a fakeCLI call. Bodies use shell builtins only.
+func fakeCLIScript(t *testing.T, name, body string) {
+	t.Helper()
+	dir := t.TempDir()
+	script := "#!/bin/sh\n" + body + "\n"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile(%s) error = %v", name, err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 func TestDetectTargets(t *testing.T) {
 	t.Run("finds claude alone", func(t *testing.T) {
 		fakeCLI(t, "claude")
