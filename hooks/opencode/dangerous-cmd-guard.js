@@ -18,7 +18,7 @@
  * Tests: node hooks/opencode/dangerous-cmd-guard.test.js
  */
 
-import { startScanBudget } from './utils.js';
+import { ScanBudgetError, startScanBudget } from './utils.js';
 
 // Where a target ends (END). Whitespace, end of line, or a character that ends the word or
 // changes what it expands to:
@@ -300,13 +300,32 @@ const CASE = /\besac\b/;
 // limit in both implementations keeps Python's recursion limit from deciding.
 const MAX_DEPTH = 100;
 
+// How far the masking pass may run between budget checks, in characters of the
+// command or nodes of the parse. Below this the clock costs more than it saves;
+// above it the overshoot stops being a rounding error on a command of tens of
+// megabytes.
+const BUDGET_STEP = 65536;
+
 class Parser {
-  constructor(s) {
+  constructor(s, overBudget = () => {}) {
     this.s = s;
     this.n = s.length;
     this.pendingTotal = 0;
     this.depth = 0;
     this.found = new Map(); // ch -> [from, index]: the last indexOf, reused while still valid
+    this.overBudget = overBudget;
+    this.nextCheck = 0;
+  }
+
+  // The scan budget, sampled by position: `i` only moves forward through the
+  // command, so this fires about once every BUDGET_STEP characters however the
+  // parse jumps between its loops. A single word, quoted string or run of
+  // whitespace can be the whole command, so each of those loops ticks too.
+  tick(i) {
+    if (i >= this.nextCheck) {
+      this.nextCheck = i + BUDGET_STEP;
+      this.overBudget();
+    }
   }
 
   at(i, tok) {
@@ -329,6 +348,7 @@ class Parser {
 
   blanks(i) {
     while (i < this.n) {
+      this.tick(i);
       if (this.s[i] === ' ' || this.s[i] === '\t') i += 1;
       else if (this.at(i, '\\\n')) i += 2;
       else break;
@@ -369,6 +389,7 @@ class Parser {
       pipeline = [];
     };
     for (;;) {
+      this.tick(i);
       if (i >= this.n) {
         if (closer || pending.length || pipeOpen) throw new Raw();
         endPipeline();
@@ -481,6 +502,7 @@ class Parser {
     const start = i;
     const subs = [];
     while (i < this.n) {
+      this.tick(i);
       const c = s[i];
       if ((c === '<' || c === '>') && i === start && this.at(i + 1, '(')) {
         const [sub, j] = this.script(i + 2, ')');
@@ -520,6 +542,7 @@ class Parser {
   dquote(i, subs) {
     const s = this.s;
     while (i < this.n) {
+      this.tick(i);
       const c = s[i];
       if (c === '\\') i += 2;
       else if (c === '"') return i + 1;
@@ -533,6 +556,7 @@ class Parser {
 
   ansi(i) {
     while (i < this.n) {
+      this.tick(i);
       const c = this.s[i];
       if (c === '\\') i += 2;
       else if (c === "'") return i + 1;
@@ -657,18 +681,20 @@ function blank(out, s, a, b) {
   for (let p = a; p < b; p++) if (s[p] !== '\n') out[p] = ' ';
 }
 
-function walk(sc, ok, s, out) {
+function walk(sc, ok, s, out, sample = () => {}) {
   if (ok) for (const [a, b] of sc.comments) blank(out, s, a, b);
   for (const pipeline of sc.pipelines) {
+    sample();
     const downstream = downstreamOk(pipeline);
     pipeline.forEach((st, idx) => {
-      if (st.subshell) walk(st.subshell, ok, s, out);
-      else walkSimple(st, downstream[idx], ok, s, out);
+      if (st.subshell) walk(st.subshell, ok, s, out, sample);
+      else walkSimple(st, downstream[idx], ok, s, out, sample);
     });
   }
 }
 
-function walkSimple(st, downstream, ok, s, out) {
+function walkSimple(st, downstream, ok, s, out, sample = () => {}) {
+  sample();
   const [k, name] = effective(st);
   if (DEFINERS.has(name) || (name === 'exec' && k === st.words.length - 1)) throw new Raw();
   if (st.words.some((w) => EXECUTORS.has(w.text.split('/').pop()))) throw new Raw();
@@ -691,14 +717,14 @@ function walkSimple(st, downstream, ok, s, out) {
       for (const [kind, a, b, sub] of w.subs) {
         blank(out, s, pos, a);
         pos = b;
-        walk(sub, kind === 'cmd', s, out);
+        walk(sub, kind === 'cmd', s, out, sample);
       }
       blank(out, s, pos, w.end);
     } else {
-      for (const [, , , sub] of w.subs) walk(sub, false, s, out);
+      for (const [, , , sub] of w.subs) walk(sub, false, s, out, sample);
     }
   }
-  for (const r of st.redirs) for (const [, , , sub] of r.target.subs) walk(sub, false, s, out);
+  for (const r of st.redirs) for (const [, , , sub] of r.target.subs) walk(sub, false, s, out, sample);
   const reads = ctx && st.heredocs.length > 0 && (SINKS.has(name) || bodyReader(st, k, name));
   for (const hd of st.heredocs) {
     const [a, b] = hd.body;
@@ -713,16 +739,29 @@ function walkSimple(st, downstream, ok, s, out) {
  * by spaces (newlines kept), line continuations joined and NUL dropped (as
  * the Claude Code hook's text reaches grep). Anything the parser cannot
  * classify comes back unmasked.
+ *
+ * This pass is often the largest single piece of work here, so it carries the
+ * budget too, sampled every BUDGET_STEP characters of the parse and nodes of
+ * the walk.
+ *
+ * The catch below turns anything the parser refuses into "scan it all", so a
+ * spent budget has to be let through it rather than read as an unclassifiable
+ * command.
  */
-export function maskInert(command) {
+export function maskInert(command, overBudget = () => {}) {
   let out = command;
   if (!CASE.test(command)) {
+    let nodes = 0;
+    const sampleWalk = () => {
+      if ((nodes++ & (BUDGET_STEP - 1)) === 0) overBudget();
+    };
     try {
-      const [sc] = new Parser(command).script(0, null);
+      const [sc] = new Parser(command, overBudget).script(0, null);
       const chars = command.split('');
-      walk(sc, true, command, chars);
+      walk(sc, true, command, chars, sampleWalk);
       out = chars.join('');
-    } catch {
+    } catch (err) {
+      if (err instanceof ScanBudgetError) throw err;
       out = command;
     }
   }
@@ -732,14 +771,14 @@ export function maskInert(command) {
 /**
  * blockReason — the label of the first pattern the command really invokes, or null.
  *
- * `overBudget` is called before the masking pass and at each rule, and sampled
- * across a rule's lines; it throws once the scan budget is spent. Sampled
- * rather than called per line because reading the clock costs real time, and a
- * command can hold hundreds of thousands of lines.
+ * `overBudget` throws once the scan budget is spent. It is sampled here and
+ * inside the masking pass, at the shared cadence `startScanBudget` explains:
+ * a command can hold hundreds of thousands of lines, and reading the clock on
+ * each one costs more than the sampling loses.
  */
 export function blockReason(command, overBudget = () => {}) {
   overBudget();
-  const lines = maskInert(command).split('\n');
+  const lines = maskInert(command, overBudget).split('\n');
   for (const { test, label } of BLOCK_PATTERNS) {
     for (let i = 0; i < lines.length; i++) {
       if ((i & 1023) === 0) overBudget();

@@ -12,25 +12,53 @@ import { join, dirname, resolve, extname, basename, isAbsolute } from 'path';
  * opencode loads plugins with a plain dynamic import inside its server process
  * and puts no timeout on a hook, so a slow scan stalls the session and a hook
  * that never returns hangs the tool call for good. The budget turns that into a
- * refusal: the deadline is checked at every unit of the scan, and the check
- * throws, which is how a `tool.execute.before` handler refuses a call.
+ * refusal: the deadline is checked as the scan runs, and the check throws, which
+ * is how a `tool.execute.before` handler refuses a call.
  *
  * A single regex call is not interruptible in JavaScript, so the granularity is
- * one unit of work — one pattern, one rule against one line, one token. What
- * the budget rules out here is a scan that drags on, never a call that proceeds
- * unscanned: this side has no fail-open path to begin with.
+ * one unit of work. What the budget rules out here is a scan that drags on,
+ * never a call that proceeds unscanned: this side has no fail-open path.
  *
- * DEVEXP_SCAN_BUDGET_MS overrides the default, in milliseconds. 0 means
- * "already over budget" and blocks at the first check; anything that is not a
- * non-negative integer is ignored in favour of the default.
- * hooks/claude-code/scan-budget.sh reads the same variable and carries the same
- * default, so both twins decide alike.
+ * **How often to check.** Reading the clock is not free — on an 800k-token
+ * command, checking per token costs about 9% over sampling. So the rule across
+ * the guards is one rule, not two: check every unit when units are few and each
+ * is expensive (one regex over the whole write: 11 of them), and sample every
+ * 1024 when units are many and each is cheap (one token, one line of a command
+ * that may hold hundreds of thousands). Both keep the overshoot to one unit of
+ * work; the sampled ones keep the clock off the hot path.
+ *
+ * DEVEXP_SCAN_BUDGET_MS overrides the default, in milliseconds, up to
+ * SCAN_BUDGET_MAX_MS. 0 means "already over budget" and blocks at the first
+ * check; anything that is not a plain ASCII non-negative integer is ignored in
+ * favour of the default. hooks/claude-code/scan-budget.sh reads the same
+ * variable and carries the same default, ceiling and spelling, so both twins
+ * decide alike.
  */
 export const SCAN_BUDGET_DEFAULT_MS = 15000;
 
+/**
+ * The ceiling, in milliseconds — the same one the Claude Code twin enforces,
+ * where a budget above the registered hook timeout would let Claude Code cancel
+ * the guard before it could block. opencode has no such timeout, so here the
+ * ceiling is about the session: a ten-minute budget means a tool call that can
+ * stall for ten minutes. Keeping one number for both twins also keeps them
+ * deciding alike on the same input.
+ */
+export const SCAN_BUDGET_MAX_MS = 44000;
+
+/** The refusal a spent budget throws — distinguishable from a guard's own findings. */
+export class ScanBudgetError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ScanBudgetError';
+  }
+}
+
+/** `\d` is ASCII-only in JavaScript; the Python twin spells it `[0-9]` for the same reason. */
 export function scanBudgetMs(env = process.env) {
   const raw = env?.DEVEXP_SCAN_BUDGET_MS;
-  return typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : SCAN_BUDGET_DEFAULT_MS;
+  const ms = typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : SCAN_BUDGET_DEFAULT_MS;
+  return Math.min(ms, SCAN_BUDGET_MAX_MS);
 }
 
 /** The budget in seconds, spelled as the Claude Code twin's `%.4g` spells it. */
@@ -38,17 +66,29 @@ function budgetSeconds(ms) {
   return String(Number((ms / 1000).toPrecision(4)));
 }
 
+// The clamp is said out loud, but once per process: this runs on every tool
+// call, and a notice per call would bury the guards' own messages.
+let clampNoticed = false;
+
 /**
- * startScanBudget — begin a guard's budget and return the check to call at each
- * unit of the scan. The check throws once the budget is spent, with the message
- * the Claude Code twin prints.
+ * startScanBudget — begin a guard's budget and return the check to call as the
+ * scan runs. The check throws once the budget is spent, with the message the
+ * Claude Code twin prints.
  */
 export function startScanBudget(guard, env = process.env) {
   const ms = scanBudgetMs(env);
+  const raw = env?.DEVEXP_SCAN_BUDGET_MS;
+  if (!clampNoticed && typeof raw === 'string' && /^\d+$/.test(raw.trim()) && Number(raw.trim()) > SCAN_BUDGET_MAX_MS) {
+    clampNoticed = true;
+    console.error(
+      `[devexp ${guard}] Note: DEVEXP_SCAN_BUDGET_MS of ${budgetSeconds(Number(raw.trim()))} s is above the ` +
+      `${budgetSeconds(SCAN_BUDGET_MAX_MS)} s ceiling the guards share. Using ${budgetSeconds(ms)} s.`
+    );
+  }
   const deadline = performance.now() + ms;
   return () => {
     if (performance.now() >= deadline) {
-      throw new Error(
+      throw new ScanBudgetError(
         `[devexp ${guard}] Blocked: the scan did not finish within its ${budgetSeconds(ms)} s budget, ` +
         `so this input was not fully checked. Blocking to be safe.`
       );

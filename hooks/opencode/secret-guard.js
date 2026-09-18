@@ -61,14 +61,20 @@ export function plausiblePath(tok) {
 
 const SEARCHERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack']);
 
-/** `overBudget` is called once per token; it throws when the budget is spent. */
+/**
+ * `overBudget` throws when the scan budget is spent. A command can hold
+ * hundreds of thousands of tokens and each one costs very little to check, so
+ * it is sampled at the cadence `startScanBudget` explains rather than read on
+ * every token.
+ */
 export function secretInCommand(cmd, overBudget = () => {}) {
   if (!cmd) return null;
   const stripped = cmd.replace(HEREDOC, ' ');
   const tokens = stripped.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
   let skipPattern = false;
-  for (const token of tokens) {
-    overBudget();
+  for (let i = 0; i < tokens.length; i++) {
+    if ((i & 1023) === 0) overBudget();
+    const token = tokens[i];
     const clean = token.replace(/^['"]|['"]$/g, '');
     // A searcher's first non-flag argument is a pattern, never a path.
     // Auditing for leaked key names is security work, not a secret read.
