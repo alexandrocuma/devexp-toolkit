@@ -20,7 +20,8 @@
 # neither allow (0) nor block (2): a guard that dies on a signal or cannot
 # start has no decision, and an unknown decision must not let the call through.
 # That same check is what floors the budgeted run, which is why the guard's
-# prologue trap is cleared the moment this function takes over.
+# prologue trap is cleared only where a decision is in hand, never on the way
+# in — see devexp_scan_budget.
 #
 # The budget is DEVEXP_SCAN_BUDGET_MS milliseconds, defaulting to
 # DEVEXP_SCAN_BUDGET_DEFAULT_MS and capped at DEVEXP_SCAN_BUDGET_MAX_MS. A
@@ -105,11 +106,19 @@ ms = int(raw) if re.fullmatch(r'[0-9]+', raw.strip()) else int(default)
 
 # A budget that outlives the hook timeout is a fail-open, so it is capped
 # rather than honoured, and the cap is said out loud.
+# The wording is the JS twin's, word for word, so the two say the same thing
+# about the same input — and it names the ceiling, which is what actually bit.
+# "at or above the registered hook timeout" would be false for anything between
+# the ceiling and that timeout, and points at the wrong number.
+#
+# Frequency: the JS twin dedupes with a flag because its module outlives many
+# tool calls. A Claude Code hook is a process per tool call, so printing once
+# here already is once per process; there is nothing to dedupe against without
+# state on disk, which is not worth an I/O on every guarded call.
 if ms > ceiling:
     sys.stderr.write(
-        "[devexp %s] Note: DEVEXP_SCAN_BUDGET_MS of %s s is at or above this guard's registered hook "
-        "timeout, which would let Claude Code cancel the guard before it could block. Using %s s.\n"
-        % (guard, seconds(ms), seconds(ceiling)))
+        '[devexp %s] Note: DEVEXP_SCAN_BUDGET_MS of %s s is above the %s s ceiling the guards '
+        'share. Using %s s.\n' % (guard, seconds(ms), seconds(ceiling), seconds(ceiling)))
     ms = ceiling
 
 over = ('[devexp %s] Blocked: the scan did not finish within its %s s budget, so this input '
@@ -168,15 +177,20 @@ devexp_scan_budget() {
     local guard="$1"
     shift
 
-    # The guard's prologue trap covers only the window before this function
-    # exists. From here the watchdog's 0-or-2 check is what floors an unknown
-    # status, the budgeted run included, and leaving the trap installed would
-    # make it fire on the guard's own clean exit.
-    trap - EXIT
-
+    # The prologue trap stays installed until a decision is actually in hand.
+    # Being defined is not the same as being able to run: a helper that carries
+    # this function but not the constants above it passes the prologue's
+    # `command -v`, and then `set -u` ends the guard at exit 1 — which Claude
+    # Code reads as a non-blocking error, so the call would proceed unscanned.
+    # Each `trap - EXIT` below therefore sits at a point where the status is
+    # known, not on the way in.
     local arg
     for arg in ${1+"$@"}; do
         if [ "$arg" = "$DEVEXP_SCAN_BUDGET_SENTINEL" ]; then
+            # The budgeted run is floored from here by the watchdog's 0-or-2
+            # check on this process's own status; the trap must not fire on the
+            # guard's clean exit.
+            trap - EXIT
             return 0
         fi
     done
@@ -194,5 +208,9 @@ devexp_scan_budget() {
         echo "[devexp $guard] internal error -- the scan budget could not run (exit $rc), so the guard did not run. Blocking to be safe." >&2
         rc=2
     fi
+    # After the line above, not before it: the constants are dereferenced on the
+    # `python3` line itself, so clearing the trap any earlier reopens the very
+    # window this guards.
+    trap - EXIT
     exit "$rc"
 }

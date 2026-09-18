@@ -49,6 +49,7 @@ devexp_budget_why="could not load its scan budget helper"
 . "$devexp_dir/scan-budget.sh"
 devexp_budget_why="loaded a scan budget helper that defines no entry point"
 command -v devexp_scan_budget >/dev/null 2>&1 || exit 1
+devexp_budget_why="could not run its scan budget"
 devexp_scan_budget secret-guard "$@"
 
 input=$(cat)

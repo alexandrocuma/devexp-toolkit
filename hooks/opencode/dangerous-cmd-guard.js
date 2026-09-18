@@ -712,6 +712,10 @@ function walkSimple(st, downstream, ok, s, out, sample = () => {}) {
     }
   }
   for (const w of st.words) {
+    // Where the walk's time actually goes: one simple command can hold millions
+    // of words, so sampling per pipeline or per command would leave the whole
+    // of it unwatched.
+    sample();
     if (inert.has(w)) {
       let pos = w.start;
       for (const [kind, a, b, sub] of w.subs) {

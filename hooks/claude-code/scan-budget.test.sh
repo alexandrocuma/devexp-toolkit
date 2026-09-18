@@ -326,6 +326,11 @@ printf 'if then fi\n' > "$SAND/scan-budget.sh"
 prologue_case "a helper bash cannot parse" -
 mkdir "$SAND/scan-budget.sh"
 prologue_case "a helper that is a directory" -
+# The entry point without the constants above it: `command -v` is satisfied, so
+# a floor lifted on the way into the function would already be gone, and `set -u`
+# would end the guard at exit 1 -- which Claude Code reads as non-blocking.
+sed -n '/^devexp_scan_budget()/,$p' "$DIR/scan-budget.sh" > "$SAND/scan-budget.sh"
+prologue_case "a helper with the entry point but not its constants" "could not run its scan budget"
 
 # ── The budget cannot be switched off from the environment ──────────────────
 # The marker that tells the budgeted run apart travels in argv, not the

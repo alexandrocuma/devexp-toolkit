@@ -70,7 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   off — and a depth counter that *is* read from the environment, because all it
   can do is block, stops the guard if that marker ever stops being recognised
   rather than letting it fork without bound. It costs one extra `python3` and
-  one extra `bash` per guarded tool call, roughly +70 ms on current hardware.
+  one extra `bash` per guarded tool call, roughly +60 to +85 ms on current
+  hardware — about double a guard's run.
 
   In opencode, where a plugin hook has no timeout and runs in the server
   process, the deadline is checked as the scan runs — including inside

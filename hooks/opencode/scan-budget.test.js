@@ -220,6 +220,20 @@ const runSh = (script, envelope, budget) => {
   return { rc: r.status, stderr: r.stderr ?? '' };
 };
 
+// The notice itself has to read the same on both sides, not just fire on the
+// same input: it names the number the reader can act on, and a value between
+// the ceiling and the registered timeout makes "at or above the timeout" false.
+{
+  const asked = String(SCAN_BUDGET_MAX_MS + 500);
+  const js = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    const { startScanBudget } = await import(${JSON.stringify(new URL('./utils.js', import.meta.url).href)});
+    startScanBudget('dangerous-cmd-guard');
+  `], { env: { ...process.env, DEVEXP_SCAN_BUDGET_MS: asked }, encoding: 'utf8' }).stderr.trim();
+  const sh = runSh('dangerous-cmd-guard.sh', { tool_name: 'Bash', tool_input: { command: 'ls -la' } }, asked)
+    .stderr.split('\n').find((l) => l.includes('Note:'))?.trim() ?? '';
+  check('both twins word the clamp notice identically', js !== '' && js === sh, `\n  js:    ${js}\n  shell: ${sh}`);
+}
+
 for (const c of CASES) {
   // Over budget: every tool the guard scans is refused, with the budget's own
   // message rather than the guard's finding.
@@ -322,6 +336,16 @@ for (const [guard, factory, call] of INSIDE) {
   maskInert(SLOW_TO_PARSE, () => { consulted += 1; });
   check('maskInert consults the budget as it goes, not once at the end',
     consulted > 10, `consulted ${consulted} time(s)`);
+
+  // The walk runs after the parse has finished, so the parse's own checks say
+  // nothing about it. A budget that outlives the parse and not the walk is the
+  // only thing that reaches it: with the walk unsampled this call returns a
+  // masked string instead of refusing, however long the walk takes.
+  let walkThrew = null;
+  try { maskInert(SLOW_TO_PARSE, startScanBudget('dangerous-cmd-guard', { DEVEXP_SCAN_BUDGET_MS: '300' })); }
+  catch (e) { walkThrew = e; }
+  check('the masking walk is budgeted too, not just the parse',
+    walkThrew instanceof ScanBudgetError, String(walkThrew));
 
   const t0 = performance.now();
   let thrown = null;
