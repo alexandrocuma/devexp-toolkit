@@ -213,7 +213,16 @@ try:
     # tree — its python and its greps — and never anything above it. The
     # sentinel tells that run it is the budgeted one; the depth says how many
     # watchdogs are already above it.
-    child = subprocess.Popen(cmd + [sentinel], start_new_session=True,
+    #
+    # close_fds is spelled out because it is load-bearing, not incidental
+    # (#168). The proof descriptor is a pipe the caller reads to the end, so
+    # anything that inherits it and outlives the guarded run keeps the guard
+    # waiting — past the budget, past the hook timeout, which is the very
+    # fail-open #162 exists to prevent. With it on, the guarded run and every
+    # descendant get stdin, stdout and stderr and nothing else. Turning it off
+    # took one guarded call from 0.2 s to over nine minutes in testing;
+    # interpreter-proof.test.sh pins both halves.
+    child = subprocess.Popen(cmd + [sentinel], start_new_session=True, close_fds=True,
                              env=dict(os.environ, **{depth_var: str(depth + 1)}))
 except Exception as err:
     block('[devexp %s] internal error -- the guard could not be started (%s), so it did not run. '
@@ -269,11 +278,11 @@ devexp_scan_budget() {
         fi
     done
 
-    # The watchdog's own token, minted here, for this invocation only. It comes
-    # back on DEVEXP_SCAN_BUDGET_PROOF_FD, which is this command substitution:
-    # the watchdog's stdout is restored to the guard's own (fd 8) first, so the
-    # guarded run still writes where it always did and only the token is read
-    # back here.
+    # The watchdog's own token, minted here, for this invocation only — a
+    # replay of an earlier invocation's token is a token for an invocation that
+    # is over, and is refused. It comes back on DEVEXP_SCAN_BUDGET_PROOF_FD,
+    # which devexp_scan_budget_run points at a command substitution while
+    # sending the guarded run's stdout to fd 8, so the two never mix.
     local nonce="devexp-budget-$$-${RANDOM}${RANDOM}${RANDOM}"
     local rc=0 proof=''
 
@@ -289,12 +298,22 @@ devexp_scan_budget() {
           depth_var="$DEVEXP_SCAN_BUDGET_DEPTH_VAR" \
           proof_fd="$DEVEXP_SCAN_BUDGET_PROOF_FD"
 
-    exec 8>&1
-    proof=$(python3 -I -S -c "$program" \
-        "$guard" "${DEVEXP_SCAN_BUDGET_MS-}" "$default" "$ceiling" "$sentinel" \
-        "$depth_var" "$nonce" "$proof_fd" \
-        "${BASH:-bash}" "$0" ${1+"$@"} 9>&1 1>&8) || rc=$?
-    exec 8>&-
+    # fd 8 is where the guarded run's own stdout goes, and it is attached to
+    # the call below rather than with `exec`: a failed `exec` redirection ends
+    # a non-interactive shell on the spot, so a caller with no stdout — a
+    # harness, a wrapper, a cron line — would have ended the guard mid-prologue
+    # with a raw shell error and a reason naming the wrong cause. Claude Code
+    # always gives a hook a stdout; when something else does not, the guarded
+    # run writes to /dev/null and still decides, as it did before this channel
+    # existed. Asked quietly, and stderr is silenced BEFORE the failing dup, or
+    # the shell's own complaint is the noise this avoids.
+    local dupable=0
+    { : >&8; } 2>/dev/null 8>&1 || dupable=1
+    if [ "$dupable" = 0 ]; then
+        devexp_scan_budget_run ${1+"$@"} 8>&1
+    else
+        devexp_scan_budget_run ${1+"$@"} 8>/dev/null
+    fi
     if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then
         # The watchdog itself could not run (no python3, killed, …). It is the
         # only thing standing between a slow scan and an unscanned tool call,
@@ -314,4 +333,16 @@ devexp_scan_budget() {
     # reopens the very window this guards.
     trap - EXIT
     exit "$rc"
+}
+
+# devexp_scan_budget_run — start the watchdog and collect its token. Called by
+# devexp_scan_budget and nowhere else: it reads that function's locals and
+# writes its `proof` and `rc` back, and it expects fd 8 to already point where
+# the guarded run's stdout should go. It exists as a function so that fd 8 can
+# be attached to a call rather than to the shell itself.
+devexp_scan_budget_run() {
+    proof=$(python3 -I -S -c "$program" \
+        "$guard" "${DEVEXP_SCAN_BUDGET_MS-}" "$default" "$ceiling" "$sentinel" \
+        "$depth_var" "$nonce" "$proof_fd" \
+        "${BASH:-bash}" "$0" ${1+"$@"} 9>&1 1>&8) || rc=$?
 }

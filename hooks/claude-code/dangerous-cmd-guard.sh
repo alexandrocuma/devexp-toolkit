@@ -549,13 +549,23 @@ devexp_scan_result dangerous-cmd-guard "$scan"
 scan="$devexp_scanned"
 scan=${scan%x}
 
+# The one place a pattern is handed to grep. Every check below goes through it,
+# and so do the probes that certify it (#168) — a question asked in some other
+# mode certifies a code path the guard never takes.
+#
 # grep reads a here-string, not a pipe: with pipefail, a pipe writer killed by
 # SIGPIPE when `grep -q` stops at its first match fails the pipeline and turns
 # a match into "no match". `-e` keeps a pattern from being read as an option.
+devexp_grep() { # $1=grep flags  $2=pattern  $3=subject -> 0 hit, 1 miss, else grep's own status
+    local rc=0
+    grep -q "$1" -e "$2" <<<"$3" || rc=$?
+    return "$rc"
+}
+
 # Any grep error blocks.
 matches() { # $1=grep flags  $2=pattern
     local rc=0
-    grep -q "$1" -e "$2" <<<"$scan" || rc=$?
+    devexp_grep "$1" "$2" "$scan" || rc=$?
     case "$rc" in
         0) return 0 ;;
         1) return 1 ;;
@@ -565,15 +575,26 @@ matches() { # $1=grep flags  $2=pattern
 }
 
 # `matches` reads grep's exit status and nothing else, so every check below is
-# only as good as that status (#168). One question with a known answer proves it
-# carries information: two lines, one of which matches a pattern made up here,
-# so the count is 1 for a working grep — and neither 0 (a grep that never
-# matches would report every command as clean) nor 2 (one that matches
-# everything, which over-blocks but would also mean the status says nothing).
-# The canary is alphanumerics and dashes only, so it is its own regex.
-devexp_grep_canary="devexp-grep-canary-$$-${RANDOM}"
-devexp_grep_answer=$(grep -cE "^$devexp_grep_canary\$" <<<"$devexp_grep_canary"$'\nnot-the-canary') || devexp_grep_answer='-'
-if [ "$devexp_grep_answer" != 1 ]; then
+# only as good as that status (#168). These probes ask questions whose answers
+# are known, through devexp_grep — the same call shape, `-q` and `-e` and a
+# here-string included — because a grep that is honest in some other mode and
+# blind under `-q` would otherwise pass and then report every command clean.
+#
+# Three of them, against a subject made up here:
+#   * a hit, so a grep that never matches cannot pass;
+#   * a miss, so one that matches everything cannot either;
+#   * a case-insensitive hit, because half the checks below use -iE.
+# The patterns are ERE-only — alternation and `+` — so a dropped `-E` fails the
+# first probe instead of degrading to a silent no-match on every real pattern.
+devexp_grep_canary="devexp-grep-canary-$$-${RANDOM}-${RANDOM}"
+devexp_grep_probe() { # $1=flags  $2=pattern  $3=expected status (0 hit, 1 miss)
+    local rc=0
+    devexp_grep "$1" "$2" "$devexp_grep_canary" || rc=$?
+    [ "$rc" = "$3" ]
+}
+if ! devexp_grep_probe -E  '^(zz|devexp)-grep-canary-[0-9]+-[0-9]+-[0-9]+$' 0 ||
+   ! devexp_grep_probe -E  '^(zz|qq)-grep-canary' 1 ||
+   ! devexp_grep_probe -iE '^(ZZ|DEVEXP)-GREP-CANARY-[0-9]+' 0; then
     echo "[devexp dangerous-cmd-guard] internal error -- grep answered a question with a known answer wrongly, so the command was not checked. Blocking to be safe." >&2
     exit 2
 fi
