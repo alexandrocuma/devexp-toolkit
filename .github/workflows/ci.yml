@@ -4,6 +4,28 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Weekly run of the whole suite on the default branch. Without it an advisory
+  # published while `main` is quiet waits for the next push, PR or tag; a
+  # failure here is a red `ci` run on `main`. The jobs are defined once — a
+  # scan-only workflow would be a second copy of `govulncheck` — and the two
+  # test jobs cost little and also catch drift in the runner image and the
+  # pinned actions.
+  schedule:
+    - cron: "27 6 * * 1" # Mondays 06:27 UTC
+  # Manual re-run of the same suite: after the 60-day auto-disable, or to scan a
+  # freshly published advisory without waiting for Monday. The schedule is
+  # otherwise the only unattended trigger, and a run that never starts is the
+  # one failure mode that raises no alarm.
+  workflow_dispatch:
+  # Called by release.yml on a `v*` tag, so the same jobs gate the publish.
+  workflow_call:
+
+# Every job here only reads the repo, including `govulncheck`, which repeats
+# this at job level so the scan's scope is legible where it runs. goreleaser,
+# the one job that writes, is in release.yml and raises this for itself.
+# A caller can only lower these, never raise them.
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -46,6 +68,8 @@ jobs:
 
   govulncheck:
     runs-on: ubuntu-latest
+    # Same as the workflow default above, restated because this is the job that
+    # fetches and evaluates third-party advisory data.
     permissions:
       contents: read
     steps:

@@ -8,11 +8,11 @@ For **contributors** working on the toolkit from a clone: prerequisites, build, 
 
 | Tool | Version | Source |
 |------|---------|--------|
-| Go | Go 1.21+ on `PATH`. `cli/go.mod` sets `toolchain go1.26.8` as the minimum for local builds. With the default `GOTOOLCHAIN=auto`, an older Go downloads go1.26.8 on the first build (needs network; offline it fails with `toolchain not available`), and a newer Go builds with itself. With `GOTOOLCHAIN=local` you need Go ≥ 1.25.11 (the `go` line), and the build uses that version. CI and release install exactly go1.26.8 (`go-version-file: cli/go.mod`) | `cli/go.mod:3-5`, `.github/workflows/ci.yml:15`, `.github/workflows/release.yml:23,41` |
+| Go | Go 1.21+ on `PATH`. `cli/go.mod` sets `toolchain go1.26.8` as the minimum for local builds. With the default `GOTOOLCHAIN=auto`, an older Go downloads go1.26.8 on the first build (needs network; offline it fails with `toolchain not available`), and a newer Go builds with itself. With `GOTOOLCHAIN=local` you need Go ≥ 1.25.11 (the `go` line), and the build uses that version. CI and release install exactly go1.26.8 (`go-version-file: cli/go.mod`) | `cli/go.mod:3-5`, `.github/workflows/ci.yml` (jobs `test`, `govulncheck`), `.github/workflows/release.yml` (job `goreleaser`) |
 | bash | any — every script is `#!/usr/bin/env bash` | `install.sh:1`, `scripts/stage-assets.sh:1` |
 | rsync | not pinned — copies assets for embedding | `scripts/stage-assets.sh:16,19` |
 | python3 | not pinned — Claude Code hooks and their tests pipe the JSON envelope through it | `hooks/claude-code/secret-guard.test.sh:11`, `hooks/claude-code/fail-closed.test.sh:4-5` |
-| Node.js | 22 in CI — opencode hook modules are ESM (`{"type":"module"}`) | `.github/workflows/ci.yml:29`, `hooks/opencode/package.json` |
+| Node.js | 22 in CI — opencode hook modules are ESM (`{"type":"module"}`) | `.github/workflows/ci.yml` (job `hooks`), `hooks/opencode/package.json` |
 | `claude` and/or `opencode` on `PATH` | any — `devexp install` refuses to run without one | `cli/cmd/targets.go:31` |
 | git | any — to clone | `README.md:83` |
 
@@ -51,17 +51,17 @@ The full list — `CLAUDE.md` shows only the most-used few and links here.
 | Install — interactive wizard | `./install.sh` (no flags; needs a TTY) | `cli/cmd/install.go:115-151` |
 | Install — non-interactive | `./install.sh` with any of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, `--skills-only` (`--model` alone does **not** skip the wizard) | `cli/cmd/install.go:115-119` |
 | Uninstall | `./uninstall.sh` / `./uninstall.sh --yes` | [`../guides/install.md`](../guides/install.md#uninstallsh) |
-| Test — all (what CI runs) | the four suites in [`testing.md`](testing.md#test-types) | `.github/workflows/ci.yml` |
-| Test — Go | `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover)` | `.github/workflows/ci.yml:17-21` |
+| Test — all (what CI runs) | the four suites in [`testing.md`](testing.md#test-types) | `.github/workflows/ci.yml` (also called by `release.yml` on a tag) |
+| Test — Go | `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover)` | `.github/workflows/ci.yml` (job `test`) |
 | Test — single Go test | `cd cli && go test ./internal/manifest -run 'TestStale'` | Go toolchain; verified at this commit |
 | Test — single hook | `bash hooks/claude-code/secret-guard.test.sh` · `node hooks/opencode/secret-guard.test.js` | `Run:` header line in each test file |
-| Test — hooks / installer script | `for f in hooks/claude-code/*.test.sh; do bash "$f" \|\| exit 1; done` · `for f in hooks/opencode/*.test.js; do node "$f" \|\| exit 1; done` · `for f in ./*.test.sh; do bash "$f" \|\| exit 1; done` | `.github/workflows/ci.yml:30-45` |
-| Coverage | `cd cli && go test ./... -cover` | `.github/workflows/ci.yml:21` |
-| Vulnerability scan (CI job `govulncheck`, also run before release) | `./scripts/govulncheck.sh` — every release platform; exit 3 on a called vulnerability, any other failure is infrastructure. Policy and how to respond in [`testing.md`](testing.md#vulnerability-scan) | `scripts/govulncheck.sh`, `.github/workflows/ci.yml:47-62`, `.github/workflows/release.yml:14-27` |
-| Lint / format | Not enforced — no lint job in CI and no linter config in the repo. `(cd cli && go vet ./... && gofmt -l .)` is clean at this commit and was run by hand for #97 | `.github/workflows/ci.yml`, `CHANGELOG.md:147` |
+| Test — hooks / installer script | `for f in hooks/claude-code/*.test.sh; do bash "$f" \|\| exit 1; done` · `for f in hooks/opencode/*.test.js; do node "$f" \|\| exit 1; done` · `for f in ./*.test.sh; do bash "$f" \|\| exit 1; done` | `.github/workflows/ci.yml` (job `hooks`) |
+| Coverage | `cd cli && go test ./... -cover` | `.github/workflows/ci.yml` (job `test`) |
+| Vulnerability scan (CI job `govulncheck` — on every PR and push to `main`, weekly, and before every release) | `./scripts/govulncheck.sh` — every release platform; exit 3 on a called vulnerability, any other failure is infrastructure. Policy and how to respond in [`testing.md`](testing.md#vulnerability-scan) | `scripts/govulncheck.sh`, `.github/workflows/ci.yml` (job `govulncheck`), `.github/workflows/release.yml` (job `ci`, which calls `ci.yml`) |
+| Lint / format | Not enforced — no lint job in CI and no linter config in the repo. `(cd cli && go vet ./... && gofmt -l .)` is clean at this commit and was run by hand for #97 | `.github/workflows/ci.yml`, `CHANGELOG.md` (`## [0.7.0]`, the `cmd/install.go` split entry) |
 | Shell syntax check (hooks) | `bash -n hooks/claude-code/<hook>.sh` | `docs/development/hook-authoring-guide.md` (Deployment Checklist) |
 | Type check | N/A — Go is type-checked by `go build`/`go vet`; no type checker is configured for the shell or JS hooks | `cli/go.mod`, `hooks/opencode/package.json` |
-| Release build | CI only — tag push → goreleaser. See [`../guides/release.md`](../guides/release.md) | `.github/workflows/release.yml` |
+| Release build | CI only — tag push → the whole `ci` workflow → goreleaser. See [`../guides/release.md`](../guides/release.md) | `.github/workflows/release.yml` |
 | Migrate | N/A — no database; the CLI only reads/writes files and shells out to `claude` | `cli/go.mod` (cobra, viper, promptui only) |
 
 ## Environment Variables
@@ -69,7 +69,7 @@ The full list — `CLAUDE.md` shows only the most-used few and links here.
 | Variable | Required | Default | What it controls | Source |
 |----------|----------|---------|------------------|--------|
 | `DEVEXP_DIR` | No | unset | Forces the asset root `devexp install` reads from, instead of the checkout a dev build was compiled from or the bundled assets. It is the only way to point a release binary, or a dev binary built elsewhere, at a checkout: `devexp` never uses a directory it finds on disk. A relative value is resolved to an absolute path (hook commands in `settings.json` are built from it and are always absolute), and it must be a devexp-toolkit checkout — the `.devexp-toolkit` marker file (first line `devexp-toolkit`) plus `agents/`, `skills/`, `mcps/` — otherwise install stops with an error rather than falling back to another lookup. It is also always set to the resolved repo dir in the env used to expand `${VAR}` in MCP entries | `devexpDir` / `isRepoDir` in `cli/internal/repo/repo.go`, `cli/cmd/registry.go:57` |
-| `HOME` | Yes | from shell | Root of every install destination (`~/.claude/…`, `~/.config/opencode/…`). Must be an absolute path: `devexp install`, `devexp uninstall` and `uninstall.sh` refuse to run, touching nothing, when it is unset, empty or relative | `cli/cmd/install_claude.go:20`, `cli/cmd/install_opencode.go:19`, `cli/cmd/paths.go` (`targetHome`), `cli/cmd/install.go:78`, `cli/cmd/uninstall.go:80` |
+| `HOME` | Yes | from shell | Root of every install destination (`~/.claude/…`, `~/.config/opencode/…`). Must be an absolute path: `devexp install`, `devexp uninstall` and `uninstall.sh` refuse to run, touching nothing, when it is unset, empty or relative | `cli/cmd/install_claude.go`, `cli/cmd/install_opencode.go`, `cli/cmd/paths.go` (`targetHome`), `cli/cmd/install.go:78`, `cli/cmd/uninstall.go:80` |
 | `PATH` | Yes | from shell | Which of `claude` / `opencode` is found decides the install targets | `cli/cmd/targets.go:57-72` |
 | `UI_INSPECTOR_DIR` | Only for the `ui-inspector` MCP | empty | Absolute path of a `mcp-ui-inspector` clone, expanded into that MCP's args. Unset → the MCP is skipped with a `[REQUIRED]` notice | `mcps/.env.example`, `mcps/registry.json:15,18` |
 | any var named in an MCP's `required_env` | Per MCP | — | Value substituted for `${VAR}` in MCP args/headers — applies to registry MCPs and to org MCPs added under `mcps` in `devexp.config.json` | `cli/internal/mcp/claude.go:12-19,52`, `cli/internal/config/config.go:33-35` |
