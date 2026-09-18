@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-09-17
+
 ### Added
 
 - **The vulnerability scan runs weekly, and can be started by hand (#155).**
