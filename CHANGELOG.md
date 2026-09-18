@@ -27,11 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the command it is about to run. The cut now also refuses to create anything
   unless the tag is actually on the remote (`git ls-remote … | grep -q .`,
   because `ls-remote` exits 0 either way) and unless the changelog section it
-  extracted is non-empty. An unpublished release is
-  reported as not yet shipped, with the target that publishes it named, and
-  the failure path — delete the unpublished release, fix, cut the next patch,
-  never move the tag — is spelled out. The `gen-docs` / `update-docs` Release
-  Guide template has a matching `Release object:` line.
+  extracted is non-empty, and every refusal in the phase now fires before the
+  push. The tag name and message come from the guide's Cut format too, so the
+  release commands carry a tag like `<target>@<version>` in a monorepo instead
+  of a hardcoded `v<version>`. An unpublished release is reported as not yet
+  shipped: the target that publishes it is bound watch-only, so its pipeline
+  is watched and verified, and the delivery's worktree, plan and scratch are
+  not retired until the release object is public. The failure path — check it
+  is still unpublished, delete it, fix, cut the next patch, never move the
+  tag — is spelled out for both platform CLIs. The `gen-docs` / `update-docs`
+  Release Guide template has a matching `Release object:` line.
 
 ## [0.9.2] - 2026-09-17
 

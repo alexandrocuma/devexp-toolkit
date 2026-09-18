@@ -87,7 +87,7 @@ ls package.json go.mod pyproject.toml Cargo.toml version.go VERSION 2>/dev/null 
 gh auth status >/dev/null 2>&1 && echo "platform: github" || { glab auth status >/dev/null 2>&1 && echo "platform: gitlab" || echo "platform: none — tag only"; }
 ```
 
-**The cut itself**, once: read the guide's **Cut** section read-only and classify it against Phase 6's table. A Cut that mentions a release object without a runnable command, or still carries `[CONFIRM]`, blocks the cut the way a missing prerequisite blocks a target — report it here and do not offer the gate; `/devxp` is the fix. Row 1 resolves the exact command the gate will show.
+**The cut itself**, once, and only where a guide exists: extract its **Cut** section read-only with Phase 6's `sed` range, apply Phase 6's empty-output guard (an unmatched heading is not a silent guide), and classify the result against Phase 6's table — improvising an extraction here is how the gate ends up promising the generic commands that Phase 6 then refuses to run. A Cut that mentions a release object without a runnable command, or still carries `[CONFIRM]`, blocks the cut the way a missing prerequisite blocks a target — report it here and do not offer the gate; `/devxp` is the fix. Row 1 resolves the exact command the gate will show, and the target whose **Build** publishes it when that command leaves the release unpublished — name it here, because Phase 6 binds it watch-only after the gate. With no guide at all this is `generic — no release guide`; Phase 0's cut-only offer already covered it.
 
 **Per target**, check the guide's **Prerequisites** read-only: the named CLI reports an authenticated session (its own status/whoami subcommand), the named CI secret or connector is present. Never trigger an auth flow and never ask for a credential. A target whose prerequisites are missing, or whose steps still contain a `[CONFIRM]` marker, is **blocked** — it is reported and not attempted; the rest of the release can still proceed.
 
@@ -102,7 +102,7 @@ Release preflight — <ticket or branch>
   Current version: <vX.Y.Z> → proposed <vX.Y.Z> (<patch|minor|major>)
   Platform       : <github | gitlab | none — tag only>
   Release guide  : <docs/guides/release.md, last verified YYYY-MM-DD | missing — cut only>
-  Release object : <from the guide's Cut: `<command>` | generic — Cut is silent | blocked — Cut unfinished, run /devxp>
+  Release object : <from the guide's Cut: `<command>` (published by <target>) | generic — Cut is silent | generic — no release guide | blocked — Cut unfinished, run /devxp>
 
   Targets:
   | Target | Kind    | Build no.       | Channel → production              | Rollback             | Status   |
@@ -197,19 +197,7 @@ Empty output is not proof the guide is silent — the heading may simply be word
 
 Never let the third row slide into the second. A repo whose guide asks for anything other than a plain published release is exactly the repo where a guess ships an empty release to users. Stopping costs nothing *here*; after the tag push it costs a public tag that may already have started a pipeline.
 
-Commit and tag — with the guide's Cut format for the release commit, the tag name and the tag message wherever it states them. The tag the cut actually pushes is what every command below uses, never a literal `v<version>`:
-
-```bash
-tag="v<version>"        # or the guide's format, e.g. <target>@<version>
-git add CHANGELOG.md <version-file> <target build-number files>
-git commit -m "chore: release v<version>"
-git tag -a "$tag" -m "Release v<version>"
-git push && git push --tags
-```
-
-**Tag push is the point of no return for the cut.** Everything before it is local and revertible; everything after is public. If a step here fails, stop — do not proceed to Phase 7, and do not retry a push that may have partially succeeded without checking `git ls-remote --tags origin` first.
-
-The release notes are always the version's own `CHANGELOG.md` section, passed as a **file**. A multiline body inlined into `--notes` is at the mercy of the shell:
+Build the release notes next, still before anything is pushed. They are always the version's own `CHANGELOG.md` section — which Phase 4 already finalised, so nothing here needs the commit — passed as a **file**, because a multiline body inlined into `--notes` is at the mercy of the shell:
 
 ```bash
 notes="/tmp/.release-${ticket}-notes.md"   # retired with the scratch in Phase 8, when the release completes with a ticket id
@@ -217,9 +205,21 @@ awk -v v="<version>" '$0 ~ "^## \\[" v "\\]" {f=1; next} f && /^## \[/ {exit} f'
 [ -s "$notes" ] || { echo "no [<version>] section in CHANGELOG.md — stop"; exit 1; }
 ```
 
-`<version>` here is the bare version as the changelog heading writes it, **without** the `v` the tag carries — the commonest way to get an empty file, and an empty notes file ships a release with no notes.
+`<version>` here is the bare version as the changelog heading writes it, **without** the `v` the tag carries — the commonest way to get an empty file, and an empty notes file ships a release with no notes. Every refusal in this phase is now pre-push; keep it that way.
 
-Then confirm the tag reached the remote. This is read-only and cheap, so it runs before **any** release-creation command, including a guide-provided one that omits `--verify-tag` — row 1 forbids changing that command, not checking before it:
+Then commit and tag — with the guide's Cut format for the release commit, the tag name and the tag message wherever it states them. The tag the cut actually pushes is what every command below uses, never a literal `v<version>`:
+
+```bash
+tag="v<version>"        # or the guide's format, e.g. <target>@<version>
+git add CHANGELOG.md <version-file> <target build-number files>
+git commit -m "chore: release v<version>"
+git tag -a "$tag" -m "Release v<version>"   # or the guide's tag-message format
+git push && git push --tags
+```
+
+**Tag push is the point of no return for the cut.** Everything before it is local and revertible; everything after is public. If a step here fails, stop — do not proceed to Phase 7, and do not retry a push that may have partially succeeded without checking `git ls-remote --tags origin` first.
+
+Confirm the tag reached the remote. This is read-only and cheap, so it runs before **any** release-creation command, including a guide-provided one that omits `--verify-tag` — row 1 forbids changing that command, not checking before it:
 
 ```bash
 git ls-remote --tags origin "refs/tags/$tag" | grep -q . \
@@ -246,13 +246,16 @@ With no platform detected, the tag **is** the release. Report that rather than f
 **If that publisher fails or never runs**, follow the guide's steps for the target. Where it gives none, the generic shape is **confirm it is still unpublished, then delete it** — a re-run of the publisher, by you or by the user in the platform's UI, can publish it while you are standing here:
 
 ```bash
-gh release view   "$tag" --json isDraft,isPrerelease   # must still show it unpublished
-gh release delete "$tag" --yes                         # never --cleanup-tag
+gh   release view   "$tag" --json isDraft,isPrerelease   # GitHub — must still show it unpublished
+gh   release delete "$tag" --yes                         # never --cleanup-tag
+glab release view   "$tag"                               # GitLab — same check, read the release's state
+glab release delete "$tag" --yes                         # never --with-tag
 ```
 
 If it has since been published it is a normal release: do not delete it — that is the deletion a rollback forbids — roll forward instead. Either way, fix on a branch and cut the next patch version. The tag stays; tags are never moved, deleted or re-pushed.
 
 If the guide says a target's pipeline is **triggered by the tag** (CI builds and deploys on tag push), the push has already started that target's ship — Phase 7 then *watches* that pipeline instead of running its build/distribute commands.
+
 ---
 
 ### Phase 7 — Ship Targets  *(each target gated on its own; skipped when cut-only)*
@@ -310,7 +313,7 @@ mkdir -p ~/.claude/agent-memory/release
 
 ### Phase 8 — Retire Delivery Artifacts  *(only when the release is complete)*
 
-**Gate strictly on completion.** The release is complete when the cut succeeded, the release object is published (or the user has explicitly accepted it staying unpublished), **and** every bound target is `shipped` or explicitly `skipped`. If any step failed or was declined, or any target is `awaiting-external`, `blocked` or `failed`, skip this phase entirely and preserve everything — worktree, plan, scratch, release state — for the resumed run. Scope every action to this ticket; the repo-wide sweep belongs to `/improve` (C2) and `/cleanup`.
+**Gate strictly on completion.** The release is complete when the cut succeeded, the release object is published, **and** every bound target is `shipped` or explicitly `skipped`. A release object still unpublished leaves its watch-only target `awaiting-external`, which already holds this phase — `/release <ticket>` retires the artifacts once the publisher has run. If any step failed or was declined, or any target is `awaiting-external`, `blocked` or `failed`, skip this phase entirely and preserve everything — worktree, plan, scratch, release state — for the resumed run. Scope every action to this ticket; the repo-wide sweep belongs to `/improve` (C2) and `/cleanup`.
 
 **Safety gate — bind and verify the id before any deletion.** Every `rm` below is keyed to `$ticket`. An empty id turns an id-scoped glob into a blanket wipe (`/tmp/*$ticket*` → `/tmp/*`), so **abort cleanup entirely if the id is empty or unsafe:**
 
@@ -363,6 +366,7 @@ With `$ticket` verified, retire each artifact:
   | Target  | Build | Channel reached          | State                                | Verification          |
   |---------|-------|--------------------------|--------------------------------------|-----------------------|
   | api     | —     | production               | shipped                              | health 200, err 0.1%  |
+  | cli     | —     | published release        | shipped (watch-only — published it)  | not a draft, 5 assets |
   | ios     | 42    | store review             | awaiting-external @ review           | beta: crash-free 99.8%|
   | android | 1042  | —                        | blocked — CLI not authenticated      | —                     |
 
