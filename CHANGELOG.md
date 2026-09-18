@@ -7,8 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The vulnerability scan runs weekly, and can be started by hand (#155).**
+  `ci.yml` gained a `schedule:` trigger (Mondays 06:27 UTC, off the hour where
+  GitHub drops scheduled runs less often), so an advisory published while
+  `main` is quiet no longer waits for the next push, pull request or tag. The
+  schedule runs the whole `ci` workflow rather than a second copy of the
+  `govulncheck` job, and a failure is a red `ci` run on `main`. It deliberately
+  opens no issue: that would mean a write-scoped token on a workflow whose
+  point is a read-only one, plus dedup so a standing advisory doesn't file one
+  issue a week. `workflow_dispatch:` came with it, because a public repo's
+  schedules are disabled after 60 days without activity and a schedule that
+  never fires raises no alarm — the manual trigger is how you confirm the scan
+  works again, or scan a new advisory without waiting for Monday.
+
+### Changed
+
+- **A tag can no longer publish from a commit whose tests fail (#155).**
+  `ci.yml` gained a `workflow_call` trigger and `release.yml` now calls it,
+  instead of carrying its own copy of the `govulncheck` job. A release run is
+  `ci / test`, `ci / hooks`, `ci / govulncheck` and then `goreleaser`, which
+  `needs:` the call — so every CI job must pass on the tagged commit before
+  anything is published. `goreleaser` is still the only job with
+  `contents: write`, the scan keeps its read-only token and
+  `persist-credentials: false`, and the job definitions now exist in one place.
+
 ### Fixed
 
+- **Docs no longer cite line numbers that had drifted (#155).** `setup.md`,
+  `testing.md` and `release.md` each pointed at a changelog line that had since
+  moved to an unrelated entry. Changelog references are now version headings,
+  and the workflow and Go-test references that had drifted (or that this
+  change would have moved) now name the job, step or symbol instead of a line.
 - **A slow security guard no longer lets a tool call through unscanned (#162).**
   Claude Code does not block a tool call when a *command* hook times out — the
   call continues through the normal permission flow — and its default timeout
