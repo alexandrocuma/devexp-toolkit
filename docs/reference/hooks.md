@@ -273,12 +273,16 @@ this existed stops running on the 600 s default at its next install.
 |---|---|---|
 | Mechanism | `scan-budget.sh` re-runs the guard under a `python3` watchdog in a session of its own and `SIGKILL`s the process group at the deadline | a deadline started at handler entry, checked as the scan runs; the check throws a `ScanBudgetError`, which is how `tool.execute.before` refuses a call |
 | Covers | the whole hook run — reading the envelope, `json.load`, the regex work and every `grep` | the scan, at the granularity of one unit of work: one pattern, one rule against one line, one token, and the masking pass `dangerous-cmd-guard` runs first |
-| Cost | one extra `python3` **and** one extra `bash` — the guard is re-run as a child, not `exec`'d — so roughly **+60 to +85 ms** per guarded tool call on current hardware, about double a guard's run (median of 30 warmed runs against `origin/main`, same machine: `dangerous-cmd-guard` 66 → 129 ms, `secret-guard` 46 → 130 ms, `secret-in-write-guard` 46 → 130 ms; one Bash tool call, two guards in parallel, 66 → 130 ms. An independent run on the same head measured 69 → 144, 50 → 135 and 50 → 137 ms) | none measurable — the masking pass's budget checks are sampled by position and came out within noise (−6% to +2%) |
+| Cost | one extra `python3` **and** one extra `bash` — the guard is re-run as a child, not `exec`'d — so roughly **+60 to +85 ms** per guarded tool call on current hardware, about double a guard's run (median of 30 warmed runs against `origin/main`, same machine: `dangerous-cmd-guard` 66 → 129 ms, `secret-guard` 46 → 130 ms, `secret-in-write-guard` 46 → 130 ms; one Bash tool call, two guards in parallel, 66 → 130 ms. An independent run on the same head measured 69 → 144, 50 → 135 and 50 → 137 ms) | **about +1 µs** on ordinary input, and **+2 to +4%** on the largest inputs the guards accept (median of 7 batches per input, pre-#162 handlers vs current, same process: an 800k-token command 255 → 264 ms and 256 → 262 ms on a second run, a 200k-line command 180 → 183 ms, a 200k-token read 32.6 → 32.7 ms, a 2 MB write within noise). Ordinary input is where it does not show: a `ls -la` scan is ~1 µs either way |
 | On a hit | exit 2 with a message naming the budget | a thrown block with the same message |
 
-**How often the opencode side looks at the clock.** Reading it is not free — on
-an 800k-token command, checking per token costs about 9% over sampling — so
-there is one rule rather than a choice per guard: check every unit where units
+**How often the opencode side looks at the clock.** Reading it is not free, and
+the sampling rule is what keeps the cost in the row above down to a few percent.
+Checking at *every* token instead costs about **6 to 10%** where the token loop
+dominates (measured against the sampled code on the same inputs: a 200k-line
+command 187 → 206 ms, a 200k-token read 33.4 → 35.3 ms), and unsampling the
+masking pass as well costs about **45%** of an 800k-token command. So there is
+one rule rather than a choice per guard: check every unit where units
 are few and each is expensive (the 11 regexes of a write), and sample every 1024
 where units are many and each is cheap (a token, a line of a command that may
 hold hundreds of thousands). The masking pass is sampled by position, every

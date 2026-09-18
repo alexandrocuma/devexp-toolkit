@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registry so a new `fail_closed` guard is covered the day it is registered.
   The opencode twins need nothing: their guards are in-process JavaScript with
   no child process and no interpreter resolved from `PATH`.
+- **The opencode scan budget's documented cost was wrong (#168).**
+  `docs/reference/hooks.md` gave it as "none measurable"; measured against the
+  pre-#162 handlers it is about +1 µs on ordinary input and +2 to +4% on the
+  largest inputs the guards accept. The section now carries those numbers, and
+  keeps them apart from the cost of checking the clock at *every* token, which
+  is what the figure below the table was always about.
+
 ## [0.9.3] - 2026-09-17
 
 ### Added
