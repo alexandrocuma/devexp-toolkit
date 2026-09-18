@@ -48,23 +48,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `fail_closed` guard now enforces its own wall-clock scan budget and blocks
   when it is exceeded, in both twins.
 
-  The budget is `DEVEXP_SCAN_BUDGET_MS`, 15 seconds by default, shared by
-  `secret-guard`, `secret-in-write-guard` and `dangerous-cmd-guard`. It is sized
-  from the worst cases the timing tests measure — around a second for a
-  multi-megabyte input, under 0.1 s for ordinary input — with room for a much
-  slower machine, so ordinary work never meets it. In Claude Code a shared
-  `hooks/claude-code/scan-budget.sh` runs the guard under a watchdog that covers
-  the whole hook, every interpreter and `grep` included, and exits 2 at the
-  deadline; a run whose status is neither allow nor block, and a watchdog that
-  cannot start at all, block as well. In opencode, where a plugin hook has no
-  timeout and runs in the server process, the deadline is checked at every unit
-  of the scan and the check refuses the call.
+  The budget is `DEVEXP_SCAN_BUDGET_MS`, 15 seconds by default and capped at 44,
+  shared by `secret-guard`, `secret-in-write-guard` and `dangerous-cmd-guard`.
+  It is sized from the worst cases the timing tests measure — around a second
+  for a multi-megabyte input, under 0.1 s for ordinary input — with room for a
+  much slower machine, so ordinary work never meets it. A larger value is
+  clamped rather than honoured, with a notice: above the registered hook timeout
+  Claude Code would cancel the guard first, so the one knob on offer could
+  otherwise put the bug back. Only a plain ASCII non-negative integer counts, on
+  both sides, so the twins read the same variable the same way.
+
+  In Claude Code a shared `hooks/claude-code/scan-budget.sh` runs the guard
+  under a watchdog that covers the whole hook, every interpreter and `grep`
+  included, and exits 2 at the deadline; a run whose status is neither allow nor
+  block, and a watchdog that cannot start at all, block as well. So does every
+  way the prologue itself can fail, before any budget exists — a missing,
+  unreadable or unparsable helper — which needs a trap rather than an `if`,
+  because `set -e` abandons the script at the failing `.` and then reports 0,
+  and 0 reads as *allow*. The marker that tells the budgeted run apart travels
+  in argv, not the environment, so an ambient variable cannot switch the budget
+  off — and a depth counter that *is* read from the environment, because all it
+  can do is block, stops the guard if that marker ever stops being recognised
+  rather than letting it fork without bound. It costs one extra `python3` and
+  one extra `bash` per guarded tool call, roughly +70 ms on current hardware.
+
+  In opencode, where a plugin hook has no timeout and runs in the server
+  process, the deadline is checked as the scan runs — including inside
+  `dangerous-cmd-guard`'s masking pass, its largest single piece of work — and
+  the check refuses the call.
 
   Each of these guards is also registered with an explicit hook `timeout` of 45
-  seconds — three times the budget — so the guard's own block always lands
-  first. The installer writes that field and brings an existing registration to
-  it, so a machine installed before this stops running on the 600-second default
-  at its next install. `docs/reference/hooks.md` has the full behaviour.
+  seconds — three times the default budget, and just above the cap — so the
+  guard's own block always lands first. The installer writes that field and
+  brings an existing registration to it, so a machine installed before this
+  stops running on the 600-second default at its next install.
+  `docs/reference/hooks.md` has the full behaviour.
 
 ## [0.9.2] - 2026-09-17
 

@@ -226,14 +226,29 @@ other way round: it puts no timeout on a plugin hook and runs it in its server
 process, so a slow scan stalls the session and a hook that never returns hangs
 the call for good.
 
-**The budget.** `DEVEXP_SCAN_BUDGET_MS`, default **15000 ms**, per guard
-invocation. Both twins read the variable and carry the same default
-(`DEVEXP_SCAN_BUDGET_DEFAULT_MS` in `hooks/claude-code/scan-budget.sh`,
-`SCAN_BUDGET_DEFAULT_MS` in `hooks/opencode/utils.js`); the test suites pin them
-to each other. Only a plain non-negative integer counts — anything else falls
-back to the default, so a typo can neither widen the budget nor disable the
-guard. `0` means "already over budget" and blocks immediately; it is the test
-seam, not a setting to use.
+**The budget.** `DEVEXP_SCAN_BUDGET_MS`, default **15000 ms**, ceiling
+**44000 ms**, per guard invocation. Both twins read the variable and carry the
+same default and ceiling (`DEVEXP_SCAN_BUDGET_DEFAULT_MS` and
+`DEVEXP_SCAN_BUDGET_MAX_MS` in `hooks/claude-code/scan-budget.sh`,
+`SCAN_BUDGET_DEFAULT_MS` and `SCAN_BUDGET_MAX_MS` in `hooks/opencode/utils.js`);
+the test suites pin them to each other and to the registry.
+
+Only a plain **ASCII** non-negative integer counts, with surrounding spaces
+trimmed — anything else falls back to the default, so a typo can neither widen
+the budget nor disable the guard. (Python's `str.isdigit()` is not that test: it
+accepts a non-ASCII decimal digit such as `U+0663` and a digit-like character
+such as `U+00B2`, which is why the shell side spells it `[0-9]` like the JS
+side's `\d`.) `0` means "already over budget" and blocks immediately; it is the
+test seam, not a setting to use.
+
+**A value above the ceiling is clamped, not honoured**, with a one-line notice
+on stderr (once per process). A budget at or above the registered hook timeout
+would reinstate the bug this exists to prevent: Claude Code would cancel the
+guard first, and a cancelled command hook does not block the tool call. The
+ceiling sits just under the registered 45 s, and `scan-budget.test.sh` and the Go
+registry test both fail if a timeout ever drops to or below it. opencode has no
+such timeout, but shares the ceiling: a ten-minute budget there is a tool call
+that can stall for ten minutes.
 
 15 s is sized from the worst cases measured on the crafted inputs the timing
 tests use — about 1 s for a 2 MB write through `secret-in-write-guard`, about
@@ -243,8 +258,8 @@ input — and sits above the ceilings those suites already accept as "not slow"
 still never trips it.
 
 **The hook timeout.** Each of these guards sets `claude_code.timeout: 45` in the
-registry, three times the budget, so the guard's own exit 2 always lands before
-Claude Code cancels it. The installer writes the field into the registration and
+registry — three times the default budget, and just above the ceiling — so the
+guard's own exit 2 always lands before Claude Code cancels it. The installer writes the field into the registration and
 brings an existing one to the registry's value, so a machine installed before
 this existed stops running on the 600 s default at its next install.
 
@@ -252,19 +267,42 @@ this existed stops running on the 600 s default at its next install.
 
 | | Claude Code | opencode |
 |---|---|---|
-| Mechanism | `scan-budget.sh` re-runs the guard under a `python3` watchdog in a session of its own and `SIGKILL`s the process group at the deadline | a deadline started at handler entry, checked at every unit of the scan; the check throws, which is how `tool.execute.before` refuses a call |
-| Covers | the whole hook run — reading the envelope, `json.load`, the regex work and every `grep` | the scan, at the granularity of one unit of work: one pattern, one rule against one line, one token |
-| Cost | one extra interpreter start per guarded tool call | none |
+| Mechanism | `scan-budget.sh` re-runs the guard under a `python3` watchdog in a session of its own and `SIGKILL`s the process group at the deadline | a deadline started at handler entry, checked as the scan runs; the check throws a `ScanBudgetError`, which is how `tool.execute.before` refuses a call |
+| Covers | the whole hook run — reading the envelope, `json.load`, the regex work and every `grep` | the scan, at the granularity of one unit of work: one pattern, one rule against one line, one token, and the masking pass `dangerous-cmd-guard` runs first |
+| Cost | one extra `python3` **and** one extra `bash` — the guard is re-run as a child, not `exec`'d — so roughly **+70 ms** per guarded tool call on current hardware (measured, warm, 20 runs: `dangerous-cmd-guard` 72 → 138 ms, `secret-guard` 51 → 118 ms, `secret-in-write-guard` 52 → 121 ms; one Bash tool call, two guards in parallel, 72 → 143 ms) | none measurable — the masking pass's budget checks are sampled by position and came out within noise (−6% to +2%) |
 | On a hit | exit 2 with a message naming the budget | a thrown block with the same message |
+
+**How often the opencode side looks at the clock.** Reading it is not free — on
+an 800k-token command, checking per token costs about 9% over sampling — so
+there is one rule rather than a choice per guard: check every unit where units
+are few and each is expensive (the 11 regexes of a write), and sample every 1024
+where units are many and each is cheap (a token, a line of a command that may
+hold hundreds of thousands). The masking pass is sampled by position, every
+65536 characters of the parse and nodes of the walk. Either way the overshoot is
+one unit of work.
 
 A single regex call cannot be interrupted from inside JavaScript, so the opencode
 side gives up at the first check after the budget rather than mid-pattern. That
 side has no fail-open path to begin with: the outcome there is a refused call,
-never one that proceeds unscanned.
+never one that proceeds unscanned. A spent budget throws a distinct
+`ScanBudgetError` so that `maskInert`'s catch — which turns anything the parser
+refuses into "scan the whole command" — lets it past instead of swallowing it.
 
 The shell twin also blocks on any child status that is neither allow (0) nor
 block (2), and when the watchdog itself cannot run — a guard whose decision
-cannot be read must not be taken for "allowed".
+cannot be read must not be taken for "allowed". The same goes for the window
+before the budget exists: each guard opens with a prologue trap, because an
+`if ! . …` cannot floor it (under `set -e` bash leaves the script where the `.`
+failed, and for a missing, unreadable or unparsable file it then reports 0 to an
+EXIT trap, which reads as *allow*). Reaching that trap at all is a block. The
+marker that tells the budgeted run apart travels in **argv**, not the
+environment, so an ambient variable — a settings `env` entry, a shell profile, a
+CI image — cannot switch the budget off. A second marker, a depth counter, *is*
+read from the environment, because the only thing it can do is block: if the
+argv marker ever stopped being recognised, each budgeted run would start a
+watchdog of its own and the guard would fork without bound (a watchdog kills
+only its own child's process group, and every level makes a new session). At the
+limit the guard stops with an internal error instead of multiplying.
 
 **Where the twins differ.** The Claude Code budget starts before the guard can
 tell which tool it was handed and covers process startup; the opencode budget
