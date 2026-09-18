@@ -9,8 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Any combination of install targets, and a `--target` flag (#111).** `devexp install --target claude,kimi` installs for exactly those CLIs; the flag is repeatable and comma-separated. When more than one CLI is detected the interactive prompt is now a checklist rather than a three-way "Claude Code / opencode / Both" choice, so any combination of the three can be picked. Deselecting everything is refused instead of being read as "install for all", and asking for a CLI that is not installed is refused instead of quietly falling back to another.
 - **Kimi Code CLI detection (#111).** devexp recognises Kimi Code CLI `0.31.0` or newer on `PATH` from the bare semver `kimi --version` prints. An older one is skipped with the minimum named, and the legacy Python kimi-cli — which ships a binary of the same name, with overlapping version numbers, and is told apart by its `kimi, version <x>` output — is skipped as unsupported rather than mistaken for Kimi Code. A binary that answers with anything else is skipped rather than guessed at, and the probe is the first exec in the installer with a timeout, so a `kimi` that blocks cannot hang an install.
 - **Kimi Code CLI target paths (#111).** `kimiTargetPaths` resolves the agents and skills directories, `mcp.json`, `config.toml`, the devexp manifest and the backup directory under `$KIMI_CODE_HOME`, defaulting to `~/.kimi-code`. Nothing installs there yet (#112-#114); the paths exist so a `$KIMI_CODE_HOME` devexp must not write to — relative, the filesystem root, or the home directory itself — is refused now rather than discovered later.
+
+### Fixed
+
+- **A non-interactive install with more than one CLI installed nothing (#111).** With both `claude` and `opencode` on `PATH` and no terminal — CI, or a piped install — the installer reached the "Platform" prompt, failed reading stdin and exited non-zero having installed nothing. Without a terminal it now installs for every detected CLI; with one it still asks.
 
 ## [0.9.4] - 2026-09-18
 

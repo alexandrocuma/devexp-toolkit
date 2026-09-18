@@ -10,10 +10,13 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spf13/pflag"
 
 	"devexp/internal/config"
 	"devexp/internal/hooks"
@@ -1087,63 +1090,157 @@ func TestRunRemove(t *testing.T) {
 
 // ── Target selection ──────────────────────────────────────────────────────────
 
+func TestParseTarget(t *testing.T) {
+	tests := map[string]struct {
+		in      string
+		want    target
+		wantErr bool
+	}{
+		"claude":            {in: "claude", want: targetClaude},
+		"claude-code alias": {in: "claude-code", want: targetClaude},
+		"opencode":          {in: "opencode", want: targetOpencode},
+		"kimi":              {in: "kimi", want: targetKimi},
+		"kimi-code alias":   {in: "kimi-code", want: targetKimi},
+		"case insensitive":  {in: "Claude", want: targetClaude},
+		"padded":            {in: "  kimi  ", want: targetKimi},
+		// The old prompt's answers are not target ids.
+		"Both":          {in: "Both", wantErr: true},
+		"empty":         {in: "", wantErr: true},
+		"unknown value": {in: "vscode", wantErr: true},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := parseTarget(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("parseTarget(%q) = %q, want an error", tt.in, got)
+				}
+				// The error must tell the user what is accepted instead.
+				for _, id := range allTargets {
+					if !strings.Contains(err.Error(), string(id)) {
+						t.Errorf("error %q does not list the valid id %q", err, id)
+					}
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Errorf("parseTarget(%q) = %q, %v; want %q", tt.in, got, err, tt.want)
+			}
+		})
+	}
+}
+
 // selectTargets is the rule the flag path and the wizard both resolve targets
 // with. It is pure, so every combination is checkable here — including the
-// both-CLI branch, which no dry-run on a single-CLI machine can reach.
+// multi-CLI branches, which no dry-run on a single-CLI machine can reach.
 func TestSelectTargets(t *testing.T) {
+	kimi := func(s kimiStatus, v string) kimiDetection {
+		return kimiDetection{status: s, version: v, raw: v}
+	}
+
 	tests := map[string]struct {
-		hasClaude, hasOpencode bool
-		choice                 string
-		wantClaude, wantOpen   bool
-		wantErr                bool
+		det     detection
+		chosen  []target
+		want    []target
+		wantErr string // a substring of the expected error; "" means none
 	}{
+		// ── The two-CLI rows this table had before, one for one ───────────────
 		"only claude installed": {
-			hasClaude: true, wantClaude: true,
+			det: detection{claude: true}, want: []target{targetClaude},
 		},
 		"only opencode installed": {
-			hasOpencode: true, wantOpen: true,
+			det: detection{opencode: true}, want: []target{targetOpencode},
 		},
 		"both installed, user picks Claude Code": {
-			hasClaude: true, hasOpencode: true, choice: "Claude Code",
-			wantClaude: true,
+			det: detection{claude: true, opencode: true}, chosen: []target{targetClaude},
+			want: []target{targetClaude},
 		},
 		"both installed, user picks opencode": {
-			hasClaude: true, hasOpencode: true, choice: "opencode",
-			wantOpen: true,
+			det: detection{claude: true, opencode: true}, chosen: []target{targetOpencode},
+			want: []target{targetOpencode},
 		},
-		"both installed, user picks Both": {
-			hasClaude: true, hasOpencode: true, choice: "Both",
-			wantClaude: true, wantOpen: true,
+		"both installed, user picks both": {
+			// Answered out of order; the result is still canonical order.
+			det: detection{claude: true, opencode: true}, chosen: []target{targetOpencode, targetClaude},
+			want: []target{targetClaude, targetOpencode},
 		},
-		"both installed, unrecognised choice selects neither": {
-			hasClaude: true, hasOpencode: true, choice: "something else",
+		// Previously "unrecognised choice selects neither": the installer
+		// installed nothing and still printed "All done." That was a bug, so
+		// this row now asserts the refusal rather than the silence.
+		"both installed, unrecognised choice is refused": {
+			det: detection{claude: true, opencode: true}, chosen: []target{target("something else")},
+			wantErr: "unknown target",
 		},
 		"neither installed is an error": {
-			wantErr: true,
+			wantErr: "no supported CLI detected",
 		},
-		// choice only matters when both are present; a stray value must not
-		// override what is actually installed.
-		"choice is ignored when only one CLI is present": {
-			hasClaude: true, choice: "opencode",
-			wantClaude: true,
+		// Was "choice is ignored when only one CLI is present" — it no longer
+		// is. Asking for a CLI that is not installed is refused rather than
+		// quietly satisfied by a different one.
+		"no choice with one CLI installs for that one": {
+			det: detection{claude: true}, want: []target{targetClaude},
+		},
+		"choosing a CLI that is not installed is refused": {
+			det: detection{claude: true}, chosen: []target{targetOpencode},
+			wantErr: "opencode",
+		},
+
+		// ── Three targets ─────────────────────────────────────────────────────
+		"all three available and no choice installs for all": {
+			det:  detection{claude: true, opencode: true, kimi: kimi(kimiOK, "0.42.0")},
+			want: []target{targetClaude, targetOpencode, targetKimi},
+		},
+		"kimi can be picked alone": {
+			det: detection{claude: true, kimi: kimi(kimiOK, "0.42.0")}, chosen: []target{targetKimi},
+			want: []target{targetKimi},
+		},
+		"duplicates collapse": {
+			det: detection{kimi: kimi(kimiOK, "0.42.0")}, chosen: []target{targetKimi, targetKimi},
+			want: []target{targetKimi},
+		},
+		// ui.MultiSelect returns nil when every item is deselected, and nil
+		// means "all" in every other selection resolver (registry.go). Target
+		// selection must never make that mistake.
+		"deselecting everything is refused, never read as all": {
+			det: detection{claude: true, opencode: true}, chosen: []target{},
+			wantErr: "no target selected",
+		},
+		"a too-old kimi cannot be chosen, and the minimum is named": {
+			det: detection{claude: true, kimi: kimi(kimiTooOld, "0.30.0")}, chosen: []target{targetKimi},
+			wantErr: kimiMinVersion,
+		},
+		"legacy kimi-cli cannot be chosen": {
+			det:    detection{claude: true, kimi: kimiDetection{status: kimiLegacy, raw: "kimi, version 1.50.0"}},
+			chosen: []target{targetKimi}, wantErr: "legacy kimi-cli",
+		},
+		// A too-old Kimi and nothing else must not read as "nothing installed".
+		"no usable CLI still explains the skipped kimi": {
+			det:     detection{kimi: kimi(kimiTooOld, "0.30.0")},
+			wantErr: kimiMinVersion,
 		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			claude, open, err := selectTargets(tt.hasClaude, tt.hasOpencode, tt.choice)
-			if tt.wantErr {
+			got, err := selectTargets(tt.det, tt.chosen)
+			if tt.wantErr != "" {
 				if err == nil {
-					t.Fatalf("expected an error, got nil")
+					t.Fatalf("= %v, want an error containing %q", got, tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("error = %q, want it to contain %q", err, tt.wantErr)
+				}
+				if got != nil {
+					t.Errorf("= %v, want no targets alongside the error", got)
 				}
 				return
 			}
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if claude != tt.wantClaude || open != tt.wantOpen {
-				t.Errorf("= (claude=%v, opencode=%v), want (claude=%v, opencode=%v)",
-					claude, open, tt.wantClaude, tt.wantOpen)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("= %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -1174,65 +1271,202 @@ func captureStdout(t *testing.T, fn func()) string {
 	return <-done
 }
 
-// announceTargets is the I/O half: it decides nothing and only reports. The
-// both-CLI arm is unreachable here because it calls ui.SelectPlatform, which
-// needs a TTY.
+// announceTargets is the I/O half: it decides nothing and only reports.
 //
 // Asserting the announcement text matters: without it every case would assert
-// the same empty choice, and the test would pass unchanged if both arms printed
-// the same thing — or nothing at all.
+// the same nothing, and the test would pass unchanged if every arm printed the
+// same thing — or nothing at all.
 func TestAnnounceTargets(t *testing.T) {
 	tests := map[string]struct {
-		hasClaude, hasOpencode bool
-		wantOut                string
-		wantAbsent             string
+		det        detection
+		wantOut    []string
+		wantAbsent []string
 	}{
 		"claude only announces Claude Code": {
-			hasClaude: true,
-			wantOut:   "Detected: Claude Code",
-			// must not claim opencode is present
-			wantAbsent: "opencode",
+			det:     detection{claude: true},
+			wantOut: []string{"Detected: Claude Code"},
+			// must not claim the other two are present
+			wantAbsent: []string{"opencode", "Kimi"},
 		},
 		"opencode only announces opencode": {
-			hasOpencode: true,
-			wantOut:     "Detected: opencode",
-			wantAbsent:  "Claude Code",
+			det:        detection{opencode: true},
+			wantOut:    []string{"Detected: opencode"},
+			wantAbsent: []string{"Claude Code", "Kimi"},
 		},
-		"neither present announces nothing": {
-			wantOut: "",
+		"a usable kimi is announced like any other target": {
+			det:        detection{kimi: kimiDetection{status: kimiOK, version: "0.42.0", raw: "0.42.0"}},
+			wantOut:    []string{"Detected: Kimi Code CLI"},
+			wantAbsent: []string{"Claude Code", "opencode"},
 		},
+		"all three are announced in canonical order": {
+			det: detection{claude: true, opencode: true,
+				kimi: kimiDetection{status: kimiOK, version: "0.42.0", raw: "0.42.0"}},
+			wantOut: []string{"Detected: Claude Code, opencode, Kimi Code CLI"},
+		},
+		"a too-old kimi is skipped with the minimum named": {
+			det: detection{claude: true,
+				kimi: kimiDetection{status: kimiTooOld, version: "0.30.0", raw: "0.30.0"}},
+			wantOut: []string{"Detected: Claude Code", "0.30.0", kimiMinVersion, "skipping Kimi"},
+			// it is skipped, so it must not appear as detected
+			wantAbsent: []string{"Detected: Claude Code, Kimi Code CLI"},
+		},
+		"the legacy kimi-cli is named as such": {
+			det: detection{claude: true,
+				kimi: kimiDetection{status: kimiLegacy, raw: "kimi, version 1.50.0"}},
+			wantOut:    []string{"legacy kimi-cli", "kimi, version 1.50.0"},
+			wantAbsent: []string{"Detected: Claude Code, Kimi Code CLI"},
+		},
+		"an unrecognisable kimi is skipped, not guessed at": {
+			det:        detection{claude: true, kimi: kimiDetection{status: kimiUnknown, raw: "Usage: kimi"}},
+			wantOut:    []string{"could not identify", "Usage: kimi"},
+			wantAbsent: []string{"Detected: Claude Code, Kimi Code CLI"},
+		},
+		"nothing present announces nothing": {},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			var choice string
-			var err error
-			out := captureStdout(t, func() {
-				choice, err = announceTargets(tt.hasClaude, tt.hasOpencode)
-			})
+			out := captureStdout(t, func() { announceTargets(tt.det) })
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			// An empty choice means no prompt was shown, which is what separates
-			// these arms from the both-CLI one.
-			if choice != "" {
-				t.Errorf("choice = %q, want empty (no prompt should be shown)", choice)
-			}
-			if tt.wantOut == "" {
+			if len(tt.wantOut) == 0 {
 				if strings.TrimSpace(out) != "" {
 					t.Errorf("announced %q, want nothing", out)
 				}
 				return
 			}
-			if !strings.Contains(out, tt.wantOut) {
-				t.Errorf("announced %q, want it to contain %q", out, tt.wantOut)
+			for _, want := range tt.wantOut {
+				if !strings.Contains(out, want) {
+					t.Errorf("announced %q, want it to contain %q", out, want)
+				}
 			}
-			if tt.wantAbsent != "" && strings.Contains(out, tt.wantAbsent) {
-				t.Errorf("announced %q, must not mention %q", out, tt.wantAbsent)
+			for _, absent := range tt.wantAbsent {
+				if strings.Contains(out, absent) {
+					t.Errorf("announced %q, must not mention %q", out, absent)
+				}
 			}
 		})
 	}
+}
+
+// resolveTargets is the shell: which of --target, the prompt or "everything
+// detected" decides. Its two I/O seams are package vars so the decision can be
+// checked without a terminal.
+func TestResolveTargets(t *testing.T) {
+	// swapSeams replaces the TTY check and the prompt for one test, recording
+	// what the prompt was offered and restoring both afterwards.
+	swapSeams := func(t *testing.T, tty bool, answer []target, answerErr error) *[][]target {
+		t.Helper()
+		origTTY, origPrompt := stdinIsTerminal, promptTargets
+		t.Cleanup(func() { stdinIsTerminal, promptTargets = origTTY, origPrompt })
+		var offered [][]target
+		stdinIsTerminal = func() bool { return tty }
+		promptTargets = func(available []target) ([]target, error) {
+			offered = append(offered, slices.Clone(available))
+			return answer, answerErr
+		}
+		return &offered
+	}
+
+	both := detection{claude: true, opencode: true}
+	three := detection{claude: true, opencode: true,
+		kimi: kimiDetection{status: kimiOK, version: "0.42.0", raw: "0.42.0"}}
+
+	t.Run("--target wins outright and never prompts", func(t *testing.T) {
+		offered := swapSeams(t, true, nil, nil)
+		got, err := resolveTargets(three, []string{"kimi", "claude"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if want := []target{targetClaude, targetKimi}; !slices.Equal(got, want) {
+			t.Errorf("= %v, want %v", got, want)
+		}
+		if len(*offered) != 0 {
+			t.Errorf("prompted %v; --target must not prompt", *offered)
+		}
+	})
+
+	// The flag is registered as a string slice, so one comma-separated value
+	// and a repeated flag must both arrive as separate ids.
+	t.Run("--target is comma-separated and repeatable", func(t *testing.T) {
+		swapSeams(t, false, nil, nil)
+		var raw []string
+		fs := pflag.NewFlagSet("target", pflag.ContinueOnError)
+		fs.StringSliceVar(&raw, "target", nil, "")
+		if err := fs.Parse([]string{"--target", "claude,kimi", "--target", "opencode"}); err != nil {
+			t.Fatalf("Parse error = %v", err)
+		}
+		got, err := resolveTargets(three, raw)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if want := []target{targetClaude, targetOpencode, targetKimi}; !slices.Equal(got, want) {
+			t.Errorf("= %v, want %v", got, want)
+		}
+	})
+
+	t.Run("an unknown --target is refused, listing the valid ids", func(t *testing.T) {
+		swapSeams(t, false, nil, nil)
+		_, err := resolveTargets(three, []string{"vscode"})
+		if err == nil || !strings.Contains(err.Error(), "kimi") {
+			t.Fatalf("err = %v, want a refusal listing the valid ids", err)
+		}
+	})
+
+	t.Run("more than one target and a terminal prompts", func(t *testing.T) {
+		offered := swapSeams(t, true, []target{targetOpencode}, nil)
+		got, err := resolveTargets(both, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !slices.Equal(got, []target{targetOpencode}) {
+			t.Errorf("= %v, want the prompt's answer [opencode]", got)
+		}
+		if len(*offered) != 1 || !slices.Equal((*offered)[0], []target{targetClaude, targetOpencode}) {
+			t.Errorf("offered %v, want one prompt over [claude opencode]", *offered)
+		}
+	})
+
+	// Before this, a machine with two CLIs and no terminal reached the prompt,
+	// failed reading stdin and installed nothing.
+	t.Run("more than one target without a terminal installs for all of them", func(t *testing.T) {
+		offered := swapSeams(t, false, nil, nil)
+		got, err := resolveTargets(both, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !slices.Equal(got, []target{targetClaude, targetOpencode}) {
+			t.Errorf("= %v, want both targets", got)
+		}
+		if len(*offered) != 0 {
+			t.Errorf("prompted %v with no terminal", *offered)
+		}
+	})
+
+	t.Run("a single target is never prompted for", func(t *testing.T) {
+		offered := swapSeams(t, true, nil, nil)
+		got, err := resolveTargets(detection{claude: true}, nil)
+		if err != nil || !slices.Equal(got, []target{targetClaude}) {
+			t.Fatalf("= %v, %v; want [claude]", got, err)
+		}
+		if len(*offered) != 0 {
+			t.Errorf("prompted %v for a single target", *offered)
+		}
+	})
+
+	t.Run("deselecting everything at the prompt is refused", func(t *testing.T) {
+		swapSeams(t, true, []target{}, nil)
+		got, err := resolveTargets(both, nil)
+		if err == nil || !strings.Contains(err.Error(), "no target selected") {
+			t.Fatalf("= %v, %v; want a refusal, never every target", got, err)
+		}
+	})
+
+	t.Run("a failed prompt is reported, not worked around", func(t *testing.T) {
+		swapSeams(t, true, nil, errors.New("^D"))
+		if _, err := resolveTargets(both, nil); err == nil || !strings.Contains(err.Error(), "^D") {
+			t.Fatalf("err = %v, want the prompt's own error", err)
+		}
+	})
 }
 
 // fakeCLI puts an executable named bin on a PATH containing only that dir, so
@@ -1265,24 +1499,55 @@ func fakeCLIScript(t *testing.T, name, body string) {
 func TestDetectTargets(t *testing.T) {
 	t.Run("finds claude alone", func(t *testing.T) {
 		fakeCLI(t, "claude")
-		claude, open, err := detectTargets()
-		if err != nil || !claude || open {
-			t.Errorf("= (%v, %v, %v), want (true, false, nil)", claude, open, err)
+		got := detectTargets()
+		if !got.claude || got.opencode || got.kimi.status != kimiAbsent {
+			t.Errorf("= %+v, want claude only", got)
 		}
 	})
 
 	t.Run("finds opencode alone", func(t *testing.T) {
 		fakeCLI(t, "opencode")
-		claude, open, err := detectTargets()
-		if err != nil || claude || !open {
-			t.Errorf("= (%v, %v, %v), want (false, true, nil)", claude, open, err)
+		got := detectTargets()
+		if got.claude || !got.opencode || got.kimi.status != kimiAbsent {
+			t.Errorf("= %+v, want opencode only", got)
 		}
 	})
 
-	t.Run("errors when neither is on PATH", func(t *testing.T) {
+	t.Run("finds nothing when no CLI is on PATH", func(t *testing.T) {
 		fakeCLI(t)
-		if _, _, err := detectTargets(); err == nil {
-			t.Errorf("expected an error when no CLI is installed")
+		got := detectTargets()
+		if len(got.available()) != 0 {
+			t.Errorf("= %+v, want no available target", got)
+		}
+		// Nothing installed is not the same as something unusable.
+		if len(got.notices()) != 0 {
+			t.Errorf("notices = %v, want none", got.notices())
+		}
+	})
+
+	// The version probe is a real exec here, which is the only place the whole
+	// detection path — PATH lookup, probe, classification — runs end to end.
+	t.Run("probes a kimi that is on PATH", func(t *testing.T) {
+		fakeCLI(t, "claude")
+		fakeCLIScript(t, "kimi", "printf '0.42.0\\n'")
+		got := detectTargets()
+		if got.kimi.status != kimiOK || got.kimi.version != "0.42.0" {
+			t.Errorf("kimi = %+v, want a usable 0.42.0", got.kimi)
+		}
+		if !slices.Equal(got.available(), []target{targetClaude, targetKimi}) {
+			t.Errorf("available = %v, want [claude kimi]", got.available())
+		}
+	})
+
+	t.Run("does not mistake the legacy kimi-cli for Kimi Code", func(t *testing.T) {
+		fakeCLI(t)
+		fakeCLIScript(t, "kimi", "printf 'kimi, version 1.50.0\\n'")
+		got := detectTargets()
+		if got.kimi.status != kimiLegacy {
+			t.Errorf("kimi = %+v, want kimiLegacy", got.kimi)
+		}
+		if len(got.available()) != 0 {
+			t.Errorf("available = %v, want none", got.available())
 		}
 	})
 }
@@ -2359,6 +2624,111 @@ func treeState(t *testing.T, root string) map[string]string {
 	return snap
 }
 
+// TestInstallCmd_KimiSelection: Kimi is a target the user can pick, and
+// picking it installs nothing until #112-#114 land. The point of these cases
+// is that "nothing" stays nothing — no file under the Kimi home, and no output
+// that could be read as a successful install.
+func TestInstallCmd_KimiSelection(t *testing.T) {
+	// setup gives the run a scratch HOME, a PATH holding only the fakes it
+	// asks for, and a `kimi` stub answering with the version the real CLI
+	// prints. KIMI_CODE_HOME is cleared so the default root is used — under
+	// the scratch HOME, never the developer's own ~/.kimi-code.
+	setup := func(t *testing.T, kimiVersion string, clis ...string) (home, calls string) {
+		t.Helper()
+		home = t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("KIMI_CODE_HOME", "")
+		calls = loggingCLI(t, clis...)
+		fakeCLIScript(t, "kimi", "printf '"+kimiVersion+"\\n'")
+		t.Setenv("DEVEXP_DIR", refusalRepo(t))
+		return home, calls
+	}
+
+	t.Run("kimi alone installs nothing and refuses to report success", func(t *testing.T) {
+		home, calls := setup(t, "0.42.0")
+		before := treeState(t, home)
+
+		// Deliberately not a dry run: this is the real install path.
+		out, err := executeRoot(t, "install", "--target", "kimi")
+
+		if err == nil || !strings.Contains(err.Error(), "nothing was installed") {
+			t.Errorf("error = %v, want a run that installed nothing to say so\n%s", err, out)
+		}
+		if strings.Contains(out, "All done.") {
+			t.Errorf("reported success for a run that installed nothing:\n%s", out)
+		}
+		if !strings.Contains(out, "not a supported install target yet") {
+			t.Errorf("output never says Kimi is unsupported:\n%s", out)
+		}
+		if after := treeState(t, home); !reflect.DeepEqual(before, after) {
+			t.Errorf("wrote under the Kimi home:\nbefore %v\nafter  %v", before, after)
+		}
+		noCalls(t, calls)
+	})
+
+	t.Run("kimi alongside a real target is skipped, and said to be", func(t *testing.T) {
+		home, _ := setup(t, "0.42.0", "claude")
+
+		out, err := executeRoot(t, "install", "--dry-run", "--target", "claude,kimi")
+
+		if err != nil {
+			t.Fatalf("install error = %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Installing for Claude Code") {
+			t.Errorf("the real target did not run:\n%s", out)
+		}
+		// The per-target notice scrolls past in a multi-target run, so the
+		// summary has to repeat it.
+		if !strings.Contains(out, "Skipped: Kimi Code CLI") {
+			t.Errorf("the summary does not name Kimi as skipped:\n%s", out)
+		}
+		if _, err := os.Stat(filepath.Join(home, ".kimi-code")); !os.IsNotExist(err) {
+			t.Errorf("the Kimi home exists after a run that installs nothing for Kimi (%v)", err)
+		}
+	})
+
+	t.Run("a KIMI_CODE_HOME devexp will not install into is refused", func(t *testing.T) {
+		for _, bad := range []string{"relative/dir", "/"} {
+			setup(t, "0.42.0")
+			t.Setenv("KIMI_CODE_HOME", bad)
+
+			out, err := executeRoot(t, "install", "--target", "kimi")
+
+			if err == nil || !strings.Contains(err.Error(), "KIMI_CODE_HOME") {
+				t.Errorf("KIMI_CODE_HOME=%q: error = %v, want a refusal naming it\n%s", bad, err, out)
+			}
+		}
+	})
+
+	t.Run("a too-old kimi cannot be selected, and the minimum is named", func(t *testing.T) {
+		setup(t, "0.30.0", "claude")
+
+		out, err := executeRoot(t, "install", "--dry-run", "--target", "kimi")
+
+		if err == nil || !strings.Contains(err.Error(), kimiMinVersion) {
+			t.Errorf("error = %v, want a refusal naming %s\n%s", err, kimiMinVersion, out)
+		}
+		if strings.Contains(out, "Installing for Kimi Code CLI") {
+			t.Errorf("ran the Kimi installer for a too-old CLI:\n%s", out)
+		}
+	})
+
+	t.Run("the legacy kimi-cli is not offered as Kimi Code", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("KIMI_CODE_HOME", "")
+		loggingCLI(t, "claude")
+		fakeCLIScript(t, "kimi", "printf 'kimi, version 1.50.0\\n'")
+		t.Setenv("DEVEXP_DIR", refusalRepo(t))
+
+		out, err := executeRoot(t, "install", "--dry-run", "--target", "kimi")
+
+		if err == nil || !strings.Contains(err.Error(), "legacy kimi-cli") {
+			t.Errorf("error = %v, want the legacy CLI to be named\n%s", err, out)
+		}
+	})
+}
+
 // TestInstallCmd_RefusesBadHome: `devexp install` refuses an unset, empty or
 // relative HOME before it does anything — before resolving the assets (a
 // standalone binary extracts them under the user cache dir, which a relative
@@ -2418,6 +2788,9 @@ func TestDoInstall_RefusesBadHome(t *testing.T) {
 	targets := map[string]func(*installOpts) error{
 		"claude":   doInstallClaude,
 		"opencode": doInstallOpencode,
+		// Kimi installs nothing yet, but it resolves its paths through the
+		// same check, so a bad HOME must stop it just as early.
+		"kimi": doInstallKimi,
 	}
 	for tname, install := range targets {
 		for hname, setHome := range badHomes {

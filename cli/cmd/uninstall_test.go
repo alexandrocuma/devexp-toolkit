@@ -405,7 +405,17 @@ func executeRoot(t *testing.T, args ...string) (string, error) {
 		rootCmd.SetArgs(nil)
 		rootCmd.SetOut(nil)
 		rootCmd.SetErr(nil)
-		reset := func(f *pflag.Flag) { f.Value.Set(f.DefValue); f.Changed = false } //nolint:errcheck
+		// A slice flag's DefValue renders as "[]", which Set would parse as the
+		// one-element slice ["[]"] rather than as empty. SliceValue.Replace is
+		// the only reset that round-trips.
+		reset := func(f *pflag.Flag) {
+			if sv, ok := f.Value.(pflag.SliceValue); ok {
+				sv.Replace(nil) //nolint:errcheck
+			} else {
+				f.Value.Set(f.DefValue) //nolint:errcheck
+			}
+			f.Changed = false
+		}
 		rootCmd.Flags().VisitAll(reset)
 		for _, c := range rootCmd.Commands() {
 			c.Flags().VisitAll(reset)
