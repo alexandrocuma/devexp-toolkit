@@ -273,16 +273,27 @@ this existed stops running on the 600 s default at its next install.
 |---|---|---|
 | Mechanism | `scan-budget.sh` re-runs the guard under a `python3` watchdog in a session of its own and `SIGKILL`s the process group at the deadline | a deadline started at handler entry, checked as the scan runs; the check throws a `ScanBudgetError`, which is how `tool.execute.before` refuses a call |
 | Covers | the whole hook run — reading the envelope, `json.load`, the regex work and every `grep` | the scan, at the granularity of one unit of work: one pattern, one rule against one line, one token, and the masking pass `dangerous-cmd-guard` runs first |
-| Cost | one extra `python3` **and** one extra `bash` — the guard is re-run as a child, not `exec`'d — so roughly **+60 to +85 ms** per guarded tool call on current hardware, about double a guard's run (median of 30 warmed runs against `origin/main`, same machine: `dangerous-cmd-guard` 66 → 129 ms, `secret-guard` 46 → 130 ms, `secret-in-write-guard` 46 → 130 ms; one Bash tool call, two guards in parallel, 66 → 130 ms. An independent run on the same head measured 69 → 144, 50 → 135 and 50 → 137 ms) | **about +1 µs** on ordinary input, and **+2 to +4%** on the largest inputs the guards accept (median of 7 batches per input, pre-#162 handlers vs current, same process: an 800k-token command 255 → 264 ms and 256 → 262 ms on a second run, a 200k-line command 180 → 183 ms, a 200k-token read 32.6 → 32.7 ms, a 2 MB write within noise). Ordinary input is where it does not show: a `ls -la` scan is ~1 µs either way |
+| Cost | one extra `python3` **and** one extra `bash` — the guard is re-run as a child, not `exec`'d — so roughly **+60 to +85 ms** per guarded tool call on current hardware, about double a guard's run (median of 30 warmed runs against `origin/main`, same machine: `dangerous-cmd-guard` 66 → 129 ms, `secret-guard` 46 → 130 ms, `secret-in-write-guard` 46 → 130 ms; one Bash tool call, two guards in parallel, 66 → 130 ms. An independent run on the same head measured 69 → 144, 50 → 135 and 50 → 137 ms) | **under 0.05 ms**, on any input the guards accept — counted, not timed (below) |
 | On a hit | exit 2 with a message naming the budget | a thrown block with the same message |
 
-**How often the opencode side looks at the clock.** Reading it is not free, and
-the sampling rule is what keeps the cost in the row above down to a few percent.
-Checking at *every* token instead costs about **6 to 10%** where the token loop
-dominates (measured against the sampled code on the same inputs: a 200k-line
-command 187 → 206 ms, a 200k-token read 33.4 → 35.3 ms), and unsampling the
-masking pass as well costs about **45%** of an 800k-token command. So there is
-one rule rather than a choice per guard: check every unit where units
+**How often the opencode side looks at the clock, and what that costs.** Count
+the reads rather than timing them: on a 250 ms scan, end-to-end timing cannot
+resolve the difference at all — paired runs of the pre-#162 handlers against the
+current ones swing between −3% and +12% from run to run, which is GC and JIT
+variance, not the budget. The counts are deterministic and reproduce exactly:
+
+| Input | Clock reads, sampled | At ~22 ns each |
+|---|---|---|
+| an 800k-token command | 145 (134 of them the masking pass) | 0.003 ms of a 277 ms scan |
+| a 200k-line command | 2,025 | 0.045 ms of a 183 ms scan |
+| `ls -la` | 13 | 0.0003 ms |
+
+That is the row above. Checking at *every* token instead is what costs something
+real: 800k reads is about 18 ms on that command, and measured against the
+sampled code it came out at **6 to 10%** where the token loop dominates (a
+200k-line command 187 → 206 ms, a 200k-token read 33.4 → 35.3 ms) — unsample the
+masking pass as well and an 800k-token command costs about **45%** more. So
+there is one rule rather than a choice per guard: check every unit where units
 are few and each is expensive (the 11 regexes of a write), and sample every 1024
 where units are many and each is cheap (a token, a line of a command that may
 hold hundreds of thousands). The masking pass is sampled by position, every
@@ -339,12 +350,27 @@ Two things now have to report back, because either can be replaced on its own:
 | The guard's own scan | the scanning program ran to the end and has a verdict | the first line of the output the guard already captures; `devexp_scan_result` blocks when it is missing and strips it before the verdict is read |
 | The budget watchdog | it started the guarded run and has its status in hand | a descriptor opened for it alone (`DEVEXP_SCAN_BUDGET_PROOF_FD`), so the guarded run never inherits it and the guard's stdout still passes through untouched; exit 0 without it blocks |
 
-Both tokens are minted per invocation, so nothing can carry one in advance, and
-neither is something a program produces on the way past: silence, an empty line,
-a generic success message, an echo of the guard's input or of its arguments, a
-crash part-way through the scan, and a wrapper that runs some other program all
-arrive without the token, and all of them block. Each token is matched whole, so
-a marker with anything around it is not one.
+Both tokens are minted per invocation, so nothing can carry one in advance —
+not a guess at the shape, and not a real token captured from an earlier
+invocation, which belongs to a run that is over and is refused by the next one.
+Neither token is something a program produces on the way past either: silence,
+an empty line, a generic success message, an echo of the guard's input or of its
+arguments, a crash part-way through the scan, and a wrapper that runs some other
+program all arrive without the token, and all of them block. Each token is
+matched whole, so a marker with anything around it is not one.
+
+The watchdog's descriptor reaches the watchdog and nothing else, which is a
+property of `close_fds` on its `Popen` and is spelled out there rather than
+inherited from a default. It matters because the guard reads that channel to
+end-of-file: anything the guarded run leaves behind that held the descriptor
+would keep the guard waiting past its budget and past the hook timeout — the
+#162 fail-open, reached by another road. Both halves are pinned by tests.
+
+The channel is a duplicate of the guard's own stdout, so a caller that provides
+none — a harness, a wrapper — would once have ended the guard mid-prologue with
+a raw shell error. The guard asks first, quietly, and sends the guarded run's
+stdout to `/dev/null` when there is nowhere else for it to go, so a missing
+stdout costs nothing but that output.
 
 What this does **not** stop is a program written to imitate the protocol on
 purpose: the program that produces the proof is the one under suspicion, so
@@ -356,18 +382,37 @@ use.
 **`grep` is proved the same way** in `dangerous-cmd-guard`, where `matches`
 reads its exit status and nothing else. v0.9.1 made a grep *error* (a status
 above 1) block, but "no match" was still believed, so a `grep` that answered "no
-match" to everything would have reported every command as clean. Before the
-patterns run, the guard now asks one question whose answer it knows — two lines,
-one of which matches a pattern made up on the spot — and blocks unless the count
-comes back as exactly one. A grep that never matches, always matches, errors or
-miscounts is caught by the same check.
+match" to everything would have reported every command as clean.
 
-**Cost:** no new process except that one `grep`, and no new interpreter start.
-Measured against v0.9.3 (median of 30 warmed runs each, alternating between the
-two trees on one machine): `secret-guard` 140.0 → 142.3 ms, `dangerous-cmd-guard`
-141.8 → 143.1 ms, `secret-in-write-guard` 143.1 → 144.2 ms, and one Bash tool
-call running two guards at once 203.7 → 204.8 ms — **+0 to +6 ms** across two
-independent runs, against the +60 to +85 ms the budget itself costs.
+Before the patterns run, the guard asks three questions whose answers it knows,
+against a subject made up on the spot: a hit, a miss, and a case-insensitive
+hit. What makes them worth anything is that they go through `devexp_grep`, the
+one place a pattern is handed to grep — the same `-q`, the same `-e`, the same
+here-string that every real check uses. A question asked in some other mode
+would certify a code path the guard never takes: a grep honest under `-c` and
+blind under `-q` passes such a check and then reports every blocked pattern as
+clean, which is what a first version of this did. The probe patterns are
+ERE-only (alternation, `+`), so a dropped `-E` fails the first probe rather than
+turning every real pattern into a literal that matches nothing.
+
+So the claim is bounded, and this is its shape: **a grep that answers wrongly in
+the mode the checks use is caught** — never matching, always matching, blind or
+always-true under `-q`, blind under `-i`, silently dropping `-E`, erroring, or
+returning a status that carries no information. A grep that answers all three
+probes correctly and then lies about one particular pattern is not caught, and
+is the same class as an interpreter built to imitate the protocol.
+
+**Cost:** no new process except the three `grep` probes, and no new interpreter
+start. Measured against v0.9.3 (median of 30 warmed runs each, alternating
+between the two trees on one machine, three consecutive runs): `secret-guard`
+131.4 → 132.4 ms, `dangerous-cmd-guard` 129.0 → 130.5 ms, `secret-in-write-guard`
+131.2 → 132.4 ms, and one Bash tool call running two guards at once
+187.7 → 189.7 ms — **+0 to +2 ms**, against the +60 to +85 ms the budget itself
+costs. The probes account for most of it: timed on their own they are 5.2 ms of
+`grep` against the 2.2 ms the single count-mode question cost. (A first round of
+measurements, taken while the machine was busy, showed swings of tens of
+milliseconds in both directions; the per-probe timing is what the figure rests
+on.)
 
 **opencode needs none of this.** Its three `fail_closed` guards are in-process
 JavaScript: no child process, no interpreter resolved from `PATH`, and a refusal

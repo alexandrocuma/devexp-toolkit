@@ -21,23 +21,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which decides actually ran — the scanning step reports a per-invocation token
   back as the first line of the output the guard already captures, and the
   budget watchdog reports one of its own on a descriptor opened for it alone.
-  A missing token blocks, whatever the exit status. `grep`, whose status is the
-  only thing `dangerous-cmd-guard`'s pattern checks read, now has to answer a
-  question with a known answer before it is trusted: v0.9.1 made a grep *error*
-  block, but "no match" was still believed. The budget's own properties are
-  unchanged (prologue floor, argv sentinel, depth counter, ceiling, the 0-or-2
-  rule), and the added cost is +0 to +6 ms per guarded call against v0.9.3 —
-  one extra `grep`, no extra interpreter start.
-  `hooks/claude-code/interpreter-proof.test.sh` covers it, and reads the
-  registry so a new `fail_closed` guard is covered the day it is registered.
-  The opencode twins need nothing: their guards are in-process JavaScript with
-  no child process and no interpreter resolved from `PATH`.
-- **The opencode scan budget's documented cost was wrong (#168).**
-  `docs/reference/hooks.md` gave it as "none measurable"; measured against the
-  pre-#162 handlers it is about +1 µs on ordinary input and +2 to +4% on the
-  largest inputs the guards accept. The section now carries those numbers, and
-  keeps them apart from the cost of checking the clock at *every* token, which
-  is what the figure below the table was always about.
+  A missing token blocks, whatever the exit status. A token is refused unless it
+  is this invocation's own, so one captured from an earlier run does not carry
+  over, and the descriptor the watchdog reports on reaches the watchdog alone —
+  anything the guarded run left holding it would keep the guard waiting past its
+  budget, which is the #162 fail-open by another road.
+  `grep`, whose status is the only thing `dangerous-cmd-guard`'s pattern checks
+  read, now has to answer three questions with known answers — a hit, a miss and
+  a case-insensitive hit — **in the mode those checks use**, through the one
+  function that hands a pattern to grep: same `-q`, same `-e`, same here-string,
+  and ERE-only patterns so a dropped `-E` fails a probe rather than turning
+  every real pattern into a literal. A grep honest in some other mode and blind
+  under `-q` would otherwise pass and report every blocked command as clean.
+  v0.9.1 made a grep *error* block; "no match" was still believed.
+  The budget's own properties are unchanged (prologue floor, argv sentinel,
+  depth counter, ceiling, the 0-or-2 rule), a caller with no stdout still gets a
+  decision instead of a wedged guard, and the added cost is +0 to +2 ms per
+  guarded call against v0.9.3 — three short `grep` probes (5.2 ms of `grep`
+  against 2.2 ms, timed on their own), no extra interpreter start. `hooks/claude-code/interpreter-proof.test.sh` covers all of it, and
+  takes its list of guards from the registry so a new `fail_closed` guard is
+  covered the day it is registered. The opencode twins need nothing: their
+  guards are in-process JavaScript with no child process and no interpreter
+  resolved from `PATH`.
+- **The opencode scan budget's documented cost is now measured rather than
+  asserted (#168).** `docs/reference/hooks.md` gave it as "none measurable"
+  while the paragraph under it quoted 9% for a *different* comparison, so the
+  two read as a contradiction. Timing the handlers end to end cannot settle it —
+  paired runs against the pre-#162 code swing between −3% and +12% on a 250 ms
+  scan, which is GC and JIT variance — so the section now counts the clock reads
+  instead, which is deterministic: 145 on an 800k-token command, 2,025 on a
+  200k-line command, 13 on `ls -la`, at about 22 ns each. Under 0.05 ms on any
+  input the guards accept. The 9% figure is kept as what it always was, the cost
+  of checking at *every* token rather than sampling, with the arithmetic that
+  makes it plausible (800k reads ≈ 18 ms) and the measurement beside it.
 
 ## [0.9.3] - 2026-09-17
 
