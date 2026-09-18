@@ -23,7 +23,7 @@ Two rules keep it safe to execute:
 /devxp     detect targets (generic file shapes) → write / refresh the guide
 /refine    grooming-agent → "Affected Release Targets" + release impact in the plan
 /deliver   Phase 4.5 release readiness per affected target
-/release   cut once → ship each affected target from the guide
+/release   cut once (tag + release object from the guide's Cut) → ship each affected target from the guide
 /monitor   verify each target's declared post-release signals
 /cleanup   a ticket with a pending target is live — never retired
 /improve   same rule in the hygiene sweep
