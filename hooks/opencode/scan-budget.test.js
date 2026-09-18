@@ -17,9 +17,9 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { SCAN_BUDGET_DEFAULT_MS, scanBudgetMs, startScanBudget } from './utils.js';
+import { SCAN_BUDGET_DEFAULT_MS, SCAN_BUDGET_MAX_MS, ScanBudgetError, scanBudgetMs, startScanBudget } from './utils.js';
 import { secretGuard } from './secret-guard.js';
-import { dangerousCmdGuard } from './dangerous-cmd-guard.js';
+import { dangerousCmdGuard, maskInert } from './dangerous-cmd-guard.js';
 import { secretInWriteGuard } from './secret-in-write-guard.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -54,7 +54,13 @@ for (const [raw, want] of [
   ['0', 0], ['250', 250], ['  250  ', 250], ['15000', 15000],
   ['abc', SCAN_BUDGET_DEFAULT_MS], ['-1', SCAN_BUDGET_DEFAULT_MS], ['1e3', SCAN_BUDGET_DEFAULT_MS],
   ['10s', SCAN_BUDGET_DEFAULT_MS], ['', SCAN_BUDGET_DEFAULT_MS], [' ', SCAN_BUDGET_DEFAULT_MS],
-  ['1.5', SCAN_BUDGET_DEFAULT_MS], ['0x10', SCAN_BUDGET_DEFAULT_MS],
+  ['1.5', SCAN_BUDGET_DEFAULT_MS], ['0x10', SCAN_BUDGET_DEFAULT_MS], ['12 34', SCAN_BUDGET_DEFAULT_MS],
+  // `\d` is ASCII-only here; the Python twin now spells it `[0-9]` so that a
+  // non-ASCII decimal digit and a digit-like character read the same on both.
+  ['\u0663', SCAN_BUDGET_DEFAULT_MS], ['\u00b2', SCAN_BUDGET_DEFAULT_MS],
+  // Above the ceiling the value is capped, not honoured.
+  [String(SCAN_BUDGET_MAX_MS + 1), SCAN_BUDGET_MAX_MS], ['600000', SCAN_BUDGET_MAX_MS],
+  [String(SCAN_BUDGET_MAX_MS), SCAN_BUDGET_MAX_MS], [String(SCAN_BUDGET_MAX_MS - 1), SCAN_BUDGET_MAX_MS - 1],
 ]) {
   const got = scanBudgetMs({ DEVEXP_SCAN_BUDGET_MS: raw });
   check(`budget ${JSON.stringify(raw)} reads as ${want}`, got === want, `got ${got}`);
@@ -65,7 +71,7 @@ const threw = (fn) => { try { fn(); return null; } catch (e) { return e.message;
 check('a zero budget is over at the first check',
   (threw(startScanBudget('g', { DEVEXP_SCAN_BUDGET_MS: '0' })) ?? '').includes('Blocked:'));
 check('a real budget is not spent at the first check',
-  threw(startScanBudget('g', { DEVEXP_SCAN_BUDGET_MS: '60000' })) === null);
+  threw(startScanBudget('g', { DEVEXP_SCAN_BUDGET_MS: '30000' })) === null);
 check('the message names the guard',
   (threw(startScanBudget('secret-guard', { DEVEXP_SCAN_BUDGET_MS: '0' })) ?? '').startsWith('[devexp secret-guard] '));
 
@@ -101,6 +107,39 @@ for (const ms of [0, 1, 250, 1250]) {
   const sh = shellSeconds(ms);
   check(`${ms} ms reads as the same seconds in both twins`, js !== undefined && js === sh, `js=${js} shell=${sh}`);
 }
+check('the ceiling is above the default', SCAN_BUDGET_MAX_MS > SCAN_BUDGET_DEFAULT_MS,
+  `${SCAN_BUDGET_MAX_MS} vs ${SCAN_BUDGET_DEFAULT_MS}`);
+check('both twins cap the budget at the same ceiling',
+  SCAN_BUDGET_MAX_MS === Number(
+    /^DEVEXP_SCAN_BUDGET_MAX_MS=(\d+)$/m.exec(
+      spawnSync('cat', [join(CC, 'scan-budget.sh')], { encoding: 'utf8' }).stdout)?.[1]),
+  `js=${SCAN_BUDGET_MAX_MS}`);
+
+// The clamp is said out loud, but once per process: this runs on every tool
+// call, and a notice per call would bury the guards' own messages.
+{
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    const { startScanBudget } = await import(${JSON.stringify(new URL('./utils.js', import.meta.url).href)});
+    for (let i = 0; i < 3; i++) startScanBudget('secret-guard');
+  `], { env: { ...process.env, DEVEXP_SCAN_BUDGET_MS: '600000' }, encoding: 'utf8' });
+  const notices = (child.stderr.match(/DEVEXP_SCAN_BUDGET_MS of 600 s/g) ?? []).length;
+  check('a budget above the ceiling is reported once per process', notices === 1,
+    `${notices} notices: ${child.stderr.trim().slice(0, 160)}`);
+}
+{
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    const { startScanBudget } = await import(${JSON.stringify(new URL('./utils.js', import.meta.url).href)});
+    startScanBudget('secret-guard');
+  `], { env: { ...process.env, DEVEXP_SCAN_BUDGET_MS: String(SCAN_BUDGET_MAX_MS) }, encoding: 'utf8' });
+  check('a budget at the ceiling is not reported', child.stderr.trim() === '', child.stderr.trim().slice(0, 160));
+}
+
+// A spent budget is its own kind of refusal, so code that turns a guard's own
+// exceptions into "scan everything" can tell the two apart.
+check('a spent budget throws a ScanBudgetError',
+  (() => { try { startScanBudget('g', { DEVEXP_SCAN_BUDGET_MS: '0' })(); return false; }
+           catch (e) { return e instanceof ScanBudgetError && e.name === 'ScanBudgetError'; } })());
+
 check('both twins carry the same default budget',
   SCAN_BUDGET_DEFAULT_MS === Number(
     /^DEVEXP_SCAN_BUDGET_DEFAULT_MS=(\d+)$/m.exec(
@@ -230,6 +269,43 @@ for (const [guard, factory, call] of INSIDE) {
     msg !== null && msg.includes('budget'), `after ${took.toFixed(0)} ms: ${msg}`);
   check(`${guard} finishes the same input under the real budget`,
     (await withBudget(null, () => runJs(factory, call))) === null);
+}
+
+// ── The masking pass carries the budget too ─────────────────────────────────
+// It is the largest single piece of work on this side, and it sits inside a
+// `catch` that turns anything it throws into "scan the whole command" — so a
+// spent budget has to travel through it rather than be read as an
+// unclassifiable command.
+{
+  const long = `echo ${rep('a', 2_000_000)}`;
+  const t0 = performance.now();
+  let thrown = null;
+  try { maskInert(long, startScanBudget('dangerous-cmd-guard', { DEVEXP_SCAN_BUDGET_MS: '1' })); }
+  catch (e) { thrown = e; }
+  check('maskInert gives up from inside the masking pass',
+    thrown instanceof ScanBudgetError, `after ${(performance.now() - t0).toFixed(0)} ms: ${thrown}`);
+  check('maskInert still masks the same command under the real budget',
+    maskInert(long, startScanBudget('dangerous-cmd-guard', {})).startsWith('echo  '));
+  // What the catch is actually for: a command the parser refuses is scanned whole.
+  check('maskInert still falls back to the raw command when the parse fails',
+    maskInert('echo "unterminated', startScanBudget('dangerous-cmd-guard', {})) === 'echo "unterminated');
+}
+
+// ── The twins agree on the values that used to divide them ──────────────────
+// Before #167 the shell read U+0663 as 3 ms (blocking every call) and raised on
+// U+00B2, and did not trim; `scan-budget.test.sh` pins the shell side of this.
+for (const [label, budget, wantBlock] of [
+  ['a non-ASCII digit', '\u0663', false],
+  ['a digit-like character', '\u00b2', false],
+  ['spaces around a zero', '  0  ', true],
+  ['spaces around a real budget', '  30000  ', false],
+]) {
+  const call = { tool: 'bash', args: { command: 'ls -la' } };
+  const js = await withBudget(budget, () => runJs(dangerousCmdGuard, call));
+  const sh = runSh('dangerous-cmd-guard.sh', { tool_name: 'Bash', tool_input: { command: 'ls -la' } }, budget);
+  const jsBlocked = js !== null;
+  check(`twins agree on ${label}`, jsBlocked === (sh.rc === 2) && jsBlocked === wantBlock,
+    `js=${jsBlocked ? js : 'allow'} shell=rc ${sh.rc}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

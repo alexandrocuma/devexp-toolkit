@@ -1986,9 +1986,10 @@ func readNumber(t *testing.T, path, name string) int {
 // TestRepoRegistry_FailClosedTimeouts pins the relationship the scan budget
 // depends on: a timed-out command hook does not block the tool call, so every
 // guard that enforces a budget must be registered with a Claude Code timeout
-// strictly above that budget — otherwise Claude Code cancels the guard before
-// it can exit 2, and the call goes through unscanned (#162). It also pins the
-// two twins to one default, so a change to either is a change to both.
+// strictly above the largest budget it can run with — otherwise Claude Code
+// cancels the guard before it can exit 2, and the call goes through unscanned
+// (#162). It also pins the two twins to one default and one ceiling, so a
+// change to either is a change to both.
 func TestRepoRegistry_FailClosedTimeouts(t *testing.T) {
 	root := filepath.Join("..", "..", "..")
 	registry, err := LoadRegistry(filepath.Join(root, "hooks", "registry.json"))
@@ -1996,10 +1997,21 @@ func TestRepoRegistry_FailClosedTimeouts(t *testing.T) {
 		t.Fatalf("LoadRegistry() error = %v", err)
 	}
 
-	budgetMs := readNumber(t, filepath.Join(root, "hooks", "claude-code", "scan-budget.sh"), "DEVEXP_SCAN_BUDGET_DEFAULT_MS")
-	jsBudgetMs := readNumber(t, filepath.Join(root, "hooks", "opencode", "utils.js"), "SCAN_BUDGET_DEFAULT_MS")
-	if budgetMs != jsBudgetMs {
+	sh := filepath.Join(root, "hooks", "claude-code", "scan-budget.sh")
+	js := filepath.Join(root, "hooks", "opencode", "utils.js")
+	budgetMs := readNumber(t, sh, "DEVEXP_SCAN_BUDGET_DEFAULT_MS")
+	if jsBudgetMs := readNumber(t, js, "SCAN_BUDGET_DEFAULT_MS"); budgetMs != jsBudgetMs {
 		t.Errorf("scan budget = %d ms in the Claude Code twin, %d ms in the opencode twin; they must agree", budgetMs, jsBudgetMs)
+	}
+	// The ceiling, not the default, is the largest budget a guard can run with:
+	// DEVEXP_SCAN_BUDGET_MS is clamped to it, so it is what has to clear the
+	// registered timeout.
+	maxMs := readNumber(t, sh, "DEVEXP_SCAN_BUDGET_MAX_MS")
+	if jsMaxMs := readNumber(t, js, "SCAN_BUDGET_MAX_MS"); maxMs != jsMaxMs {
+		t.Errorf("scan budget ceiling = %d ms in the Claude Code twin, %d ms in the opencode twin; they must agree", maxMs, jsMaxMs)
+	}
+	if budgetMs > maxMs {
+		t.Errorf("default scan budget %d ms is above its own %d ms ceiling", budgetMs, maxMs)
 	}
 
 	guarded := 0
@@ -2009,8 +2021,8 @@ func TestRepoRegistry_FailClosedTimeouts(t *testing.T) {
 		}
 		guarded++
 		cc := h.Targets[TargetClaudeCode]
-		if cc.Timeout*1000 <= budgetMs {
-			t.Errorf("%s: claude_code.timeout = %ds, want more than the %d ms scan budget", h.Name, cc.Timeout, budgetMs)
+		if cc.Timeout*1000 <= maxMs {
+			t.Errorf("%s: claude_code.timeout = %ds, want more than the %d ms scan budget ceiling", h.Name, cc.Timeout, maxMs)
 		}
 	}
 	if guarded != 3 {

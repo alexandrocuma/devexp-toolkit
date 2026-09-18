@@ -13,7 +13,10 @@
 #   - a value that is not a non-negative integer is ignored, so a typo can
 #     neither widen the budget nor disable the guard;
 #   - a run that is neither allow (0) nor block (2) blocks;
-#   - the guard's body runs exactly once under the wrapper.
+#   - the guard's body runs exactly once under the wrapper;
+#   - every way the prologue can fail blocks, before any budget exists;
+#   - the budget cannot be switched off from the environment;
+#   - a budget above the ceiling is clamped, not honoured.
 #
 # Run: bash hooks/claude-code/scan-budget.test.sh
 set -uo pipefail
@@ -129,7 +132,10 @@ done
 # ── A value that is not a non-negative integer is ignored ────────────────────
 # Falling back to the default is the only safe reading: a typo must not widen
 # the budget, and must not block every call either.
-for bad in "abc" "-1" "1e3" "10s" "" " " "1.5" "0x10"; do
+# U+0663 and U+00B2 are the ones that matter: Python's str.isdigit() accepts
+# both, so before #167 one of them set a 3 ms budget that blocked every call and
+# the other raised inside the watchdog. The JS twin's \d never did.
+for bad in "abc" "-1" "1e3" "10s" "" " " "1.5" "0x10" "٣" "²" "12 34"; do
     got=$(run dangerous-cmd-guard "$bad" "$(allow_envelope dangerous-cmd-guard)")
     check "budget \"$bad\" falls back to the default (allows)" \
         "$([ "$got" = "0||" ] && echo 0 || echo 1)" "got $got"
@@ -138,6 +144,12 @@ got=$(run dangerous-cmd-guard "abc" "$(block_envelope dangerous-cmd-guard)")
 check 'budget "abc" still blocks a destructive command' \
     "$([ "${got%%|*}" = 2 ] && echo 0 || echo 1)" "rc=${got%%|*}"
 
+# Surrounding spaces are trimmed, as the JS twin trims them: "  0  " is a zero
+# budget on both sides, not a typo that falls back to the default.
+got=$(run dangerous-cmd-guard "  0  " "$(allow_envelope dangerous-cmd-guard)")
+check 'budget "  0  " is trimmed and read as 0' \
+    "$([ "${got%%|*}" = 2 ] && echo 0 || echo 1)" "rc=${got%%|*} ${got##*|}"
+
 # ── The two twins carry the same default ────────────────────────────────────
 sh_default=$(sed -n 's/^DEVEXP_SCAN_BUDGET_DEFAULT_MS=\([0-9]*\)$/\1/p' "$DIR/scan-budget.sh")
 js_default=$(sed -n 's/^export const SCAN_BUDGET_DEFAULT_MS = \([0-9]*\);$/\1/p' "$DIR/../opencode/utils.js")
@@ -145,9 +157,32 @@ check "both twins default to the same budget" \
     "$([ -n "$sh_default" ] && [ "$sh_default" = "$js_default" ] && echo 0 || echo 1)" \
     "shell=$sh_default js=$js_default"
 
+# ── A budget above the ceiling is clamped, out loud ──────────────────────────
+# The one knob the docs advertise could otherwise reinstate the bug this guards
+# against: above the registered hook timeout, Claude Code cancels the guard
+# first, and a cancelled command hook does not block the tool call.
+sh_max=$(sed -n 's/^DEVEXP_SCAN_BUDGET_MAX_MS=\([0-9]*\)$/\1/p' "$DIR/scan-budget.sh")
+js_max=$(sed -n 's/^export const SCAN_BUDGET_MAX_MS = \([0-9]*\);$/\1/p' "$DIR/../opencode/utils.js")
+check "both twins cap the budget at the same ceiling" \
+    "$([ -n "$sh_max" ] && [ "$sh_max" = "$js_max" ] && echo 0 || echo 1)" "shell=$sh_max js=$js_max"
+check "the default is within the ceiling" \
+    "$([ "$sh_default" -le "$sh_max" ] && echo 0 || echo 1)" "default=$sh_default max=$sh_max"
+
+got=$(run dangerous-cmd-guard 600000 "$(allow_envelope dangerous-cmd-guard)")
+rc=${got%%|*}; err=${got##*|}
+ok=1
+case "$rc" in 0) case "$err" in *"DEVEXP_SCAN_BUDGET_MS of 600 s"*"Using 44 s"*) ok=0 ;; esac ;; esac
+check "a budget of 600 s is clamped to the ceiling, with a notice" "$ok" "rc=$rc $(printf '%.130s' "$err")"
+
+got=$(run dangerous-cmd-guard "$sh_max" "$(allow_envelope dangerous-cmd-guard)")
+check "a budget at the ceiling passes without a notice" \
+    "$([ "$got" = "0||" ] && echo 0 || echo 1)" "got $(printf '%.90s' "$got")"
+
 # ── Every fail-closed guard is registered with a timeout above the budget ────
 # A timed-out command hook does not block the tool call, so Claude Code must
 # never cancel a guard before the guard's own budget can.
+# The ceiling, not just the default, has to clear every registered timeout:
+# the ceiling is the largest budget a guard can actually run with.
 registry_check=$(python3 -I -c '
 import json, sys
 registry, budget_ms = json.load(open(sys.argv[1])), int(sys.argv[2])
@@ -155,8 +190,8 @@ bad = [h["name"] for h in registry
        if h.get("opencode", {}).get("fail_closed")
        and h.get("claude_code", {}).get("timeout", 0) * 1000 <= budget_ms]
 n = sum(1 for h in registry if h.get("opencode", {}).get("fail_closed"))
-print("%d %s" % (n, ",".join(bad) or "-"))' "$DIR/../registry.json" "$sh_default")
-check "every fail-closed guard has a timeout above the budget" \
+print("%d %s" % (n, ",".join(bad) or "-"))' "$DIR/../registry.json" "$sh_max")
+check "every fail-closed guard has a timeout above the ceiling" \
     "$([ "$registry_check" = "3 -" ] && echo 0 || echo 1)" "got \"$registry_check\", want \"3 -\""
 
 # ── A run that is neither allow nor block, blocks ────────────────────────────
@@ -226,6 +261,104 @@ bash "$TMP/once-guard.sh" </dev/null >/dev/null 2>&1; rc=$?
 runs=$(wc -l < "$TMP/ran" | tr -d ' ')
 check "the guard body runs once and its status is passed through" \
     "$([ "$rc" = 0 ] && [ "$runs" = 1 ] && echo 0 || echo 1)" "rc=$rc runs=$runs"
+
+# ── Every way the prologue can fail blocks ──────────────────────────────────
+# The window before devexp_scan_budget exists has no watchdog under it, and an
+# `if ! . …` cannot floor it: under `set -e` bash leaves the script where the
+# `.` failed, and for several of these it then reports 0 to an EXIT trap --
+# which reads as "allow". So each case is checked for exit 2 by itself.
+SAND="$TMP/sandbox"
+mkdir -p "$SAND"
+cp "$DIR/secret-guard.sh" "$SAND/secret-guard.sh"
+
+prologue_case() { # $1=label  $2=expected message fragment ("-" for any)
+    local label="$1" want="$2" out rc
+    out=$(printf '%s' "$(allow_envelope secret-guard)" | bash "$SAND/secret-guard.sh" 2>&1); rc=$?
+    local ok=1
+    if [ "$rc" = 2 ]; then
+        case "$want" in
+            -) ok=0 ;;
+            *) case "$out" in *"$want"*) ok=0 ;; esac ;;
+        esac
+    fi
+    check "prologue: $label blocks" "$ok" "rc=$rc $(printf '%.100s' "$out")"
+    rm -rf "$SAND/scan-budget.sh"
+}
+
+# Sanity: with the helper in place the sandboxed copy behaves normally.
+cp "$DIR/scan-budget.sh" "$SAND/scan-budget.sh"
+out=$(printf '%s' "$(allow_envelope secret-guard)" | bash "$SAND/secret-guard.sh" 2>&1); rc=$?
+check "prologue: the sandbox copy allows ordinary input" \
+    "$([ "$rc" = 0 ] && [ -z "$out" ] && echo 0 || echo 1)" "rc=$rc $out"
+rm -f "$SAND/scan-budget.sh"
+
+prologue_case "a missing helper" "could not read its scan budget helper"
+ln -s /no/such/target "$SAND/scan-budget.sh"
+prologue_case "an unreadable helper" "could not read its scan budget helper"
+printf 'x=1\n' > "$SAND/scan-budget.sh"
+prologue_case "a helper with no entry point" "defines no entry point"
+printf 'if then fi\n' > "$SAND/scan-budget.sh"
+prologue_case "a helper bash cannot parse" -
+mkdir "$SAND/scan-budget.sh"
+prologue_case "a helper that is a directory" -
+
+# ── The budget cannot be switched off from the environment ──────────────────
+# The marker that tells the budgeted run apart travels in argv, not the
+# environment: a settings `env` entry, a shell profile or a CI image would
+# otherwise silently disable every guard's budget.
+cp "$DIR/scan-budget.sh" "$SAND/scan-budget.sh"
+for var in DEVEXP_SCAN_BUDGET_RUNNING DEVEXP_SCAN_BUDGET_SENTINEL DEVEXP_BUDGET_CHILD; do
+    for value in 1 --devexp-budgeted; do
+        out=$(printf '%s' "$(allow_envelope secret-guard)" \
+            | env "$var=$value" DEVEXP_SCAN_BUDGET_MS=0 bash "$SAND/secret-guard.sh" 2>&1); rc=$?
+        ok=1
+        [ "$rc" = 2 ] && case "$out" in *budget*) ok=0 ;; esac
+        check "an ambient $var=$value does not disable the budget" "$ok" "rc=$rc $(printf '%.80s' "$out")"
+    done
+done
+
+# ── Re-entry is bounded, and bounded by blocking ────────────────────────────
+# The sentinel is the only thing that stops a budgeted run from starting a
+# watchdog of its own, and each watchdog kills only its own child's process
+# group, in a session of its own -- so if the sentinel ever stopped being
+# recognised the guard would fork without bound. The depth counter is read from
+# the environment on purpose: the only thing it can do is block.
+for depth in 1 2 9; do
+    out=$(printf '%s' "$(allow_envelope secret-guard)" \
+        | DEVEXP_SCAN_BUDGET_DEPTH="$depth" bash "$SAND/secret-guard.sh" 2>&1); rc=$?
+    ok=1
+    [ "$rc" = 2 ] && case "$out" in *"re-entered itself"*) ok=0 ;; esac
+    check "an ambient depth of $depth blocks" "$ok" "rc=$rc $(printf '%.80s' "$out")"
+done
+for depth in 0 "" "abc" "-1"; do
+    out=$(printf '%s' "$(allow_envelope secret-guard)" \
+        | DEVEXP_SCAN_BUDGET_DEPTH="$depth" bash "$SAND/secret-guard.sh" 2>&1); rc=$?
+    check "an ambient depth of \"$depth\" reads as none" \
+        "$([ "$rc" = 0 ] && [ -z "$out" ] && echo 0 || echo 1)" "rc=$rc $(printf '%.80s' "$out")"
+done
+
+# The guard itself, with the sentinel deliberately broken: it has to stop, and
+# stop quickly, rather than multiply.
+BROKEN="$TMP/broken"
+mkdir -p "$BROKEN"
+cp "$DIR/secret-guard.sh" "$DIR/scan-budget.sh" "$BROKEN/"
+python3 -I - "$BROKEN/scan-budget.sh" <<'MUTPY' || fail=$((fail+1))
+import sys
+path = sys.argv[1]
+text = open(path).read()
+anchor = 'if [ "$arg" = "$DEVEXP_SCAN_BUDGET_SENTINEL" ]; then'
+assert text.count(anchor) == 1, "the sentinel check moved; update this test"
+open(path, "w").write(text.replace(anchor, "if false; then", 1))
+MUTPY
+start=$(python3 -I -c 'import time; print(time.time())')
+out=$(printf '%s' "$(allow_envelope secret-guard)" | bash "$BROKEN/secret-guard.sh" 2>&1); rc=$?
+elapsed=$(python3 -I -c 'import sys, time; print("%.2f" % (time.time() - float(sys.argv[1])))' "$start")
+ok=1
+[ "$rc" = 2 ] && case "$out" in *"re-entered itself"*)
+    [ "$(python3 -I -c 'import sys; print(1 if float(sys.argv[1]) < 10 else 0)' "$elapsed")" = 1 ] && ok=0 ;;
+esac
+check "a guard that cannot recognise the sentinel stops instead of forking" "$ok" \
+    "rc=$rc after ${elapsed}s: $(printf '%.80s' "$out")"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
