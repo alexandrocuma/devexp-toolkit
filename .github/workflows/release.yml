@@ -9,25 +9,18 @@ permissions:
   contents: read
 
 jobs:
-  # Runs before goreleaser in its own read-only job: a called vulnerability
-  # (or a scan that can't complete) means nothing is published.
-  govulncheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: cli/go.mod
-          cache-dependency-path: cli/go.sum
-
-      - name: govulncheck
-        run: ./scripts/govulncheck.sh
+  # The whole ci workflow — Go tests, the three script suites and the
+  # vulnerability scan — on the tagged commit (a local `uses:` path resolves at
+  # the caller's ref). Defined once, in ci.yml; nothing is copied here. The
+  # call succeeds only when every job inside it does, and it inherits this
+  # workflow's read-only token.
+  ci:
+    uses: ./.github/workflows/ci.yml
 
   goreleaser:
-    needs: govulncheck
+    # A failing test suite or a called vulnerability skips this job, so a tag
+    # whose commit doesn't pass CI publishes nothing.
+    needs: ci
     runs-on: ubuntu-latest
     permissions:
       contents: write
