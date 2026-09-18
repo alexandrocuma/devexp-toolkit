@@ -532,23 +532,40 @@ def scan_text(cmd):
 
 d = json.load(sys.stdin)
 command = d.get('tool_input', {}).get('command', '')
-sys.stdout.write(scan_text(command if isinstance(command, str) else str(command)) + 'x')
+scanned = scan_text(command if isinstance(command, str) else str(command))
+# The first line is proof that this scan ran (#168). Written only here, once
+# scan_text has returned, so a run that skipped the masking pass -- or stopped
+# part-way through it -- cannot produce it; the shell blocks when it is
+# missing, whatever this process's exit status.
+sys.stdout.write(sys.argv[1] + '\n' + scanned + 'x')
 PY
 
 # The trailing "x" keeps $(...) from trimming newlines that belong to the text.
-scan=$(printf '%s' "$input" | python3 -I -c "$GUARD_PY") || {
+scan=$(printf '%s' "$input" | python3 -I -c "$GUARD_PY" "$DEVEXP_SCAN_PROOF") || {
     echo "[devexp dangerous-cmd-guard] internal error -- the guard could not read its input, so it did not run. Blocking to be safe; the interpreter's error is above." >&2
     exit 2
 }
+devexp_scan_result dangerous-cmd-guard "$scan"
+scan="$devexp_scanned"
 scan=${scan%x}
 
+# The one place a pattern is handed to grep. Every check below goes through it,
+# and so do the probes that certify it (#168) — a question asked in some other
+# mode certifies a code path the guard never takes.
+#
 # grep reads a here-string, not a pipe: with pipefail, a pipe writer killed by
 # SIGPIPE when `grep -q` stops at its first match fails the pipeline and turns
 # a match into "no match". `-e` keeps a pattern from being read as an option.
+devexp_grep() { # $1=grep flags  $2=pattern  $3=subject -> 0 hit, 1 miss, else grep's own status
+    local rc=0
+    grep -q "$1" -e "$2" <<<"$3" || rc=$?
+    return "$rc"
+}
+
 # Any grep error blocks.
 matches() { # $1=grep flags  $2=pattern
     local rc=0
-    grep -q "$1" -e "$2" <<<"$scan" || rc=$?
+    devexp_grep "$1" "$2" "$scan" || rc=$?
     case "$rc" in
         0) return 0 ;;
         1) return 1 ;;
@@ -556,6 +573,47 @@ matches() { # $1=grep flags  $2=pattern
            exit 2 ;;
     esac
 }
+
+# `matches` reads grep's exit status and nothing else, so every check below is
+# only as good as that status (#168). These probes ask questions whose answers
+# are known, through devexp_grep — the same call shape, `-q` and `-e` and a
+# here-string included — because a grep honest in some other mode and blind
+# under `-q` would otherwise pass and then report every command clean.
+#
+# A shared call shape is not enough on its own: a grep can also differ in the
+# regular expressions it understands. `\s` is a GNU extension, so a strict-POSIX
+# or busybox-style grep reads it as a literal `s` and quietly under-matches
+# every pattern below that uses it — no error, no match, every command clean.
+# That is an accident waiting on someone's PATH, not an attack, so each probe
+# pattern carries the same vocabulary the real patterns do: `\s`, `\b`, `\S`, a
+# POSIX class, a bracket range, a literal brace, alternation, a group, `+`, `*`,
+# `?` and both anchors. interpreter-proof.test.sh reads the patterns below and
+# fails if one of them uses a construct no probe exercises, so the two cannot
+# drift apart.
+#
+# The subject is two lines and the answer is on the second, because a grep that
+# only ever sees the first line would otherwise pass every probe and then miss
+# any dangerous command that is not on line 1.
+#
+# Three probes, and each is the only one that catches something:
+#   * a hit, so a grep that never matches — or refuses one of the constructs,
+#     or drops -E, or reads only the first line — cannot pass;
+#   * a miss with the same vocabulary, so one that matches everything cannot;
+#   * a case-insensitive hit, because half the checks below use -iE.
+devexp_grep_canary="devexp-grep-canary-$$-${RANDOM}-${RANDOM}"
+devexp_grep_subject="not-the-canary
+$devexp_grep_canary {end}"
+devexp_grep_probe() { # $1=flags  $2=pattern  $3=expected status (0 hit, 1 miss)
+    local rc=0
+    devexp_grep "$1" "$2" "$devexp_grep_subject" || rc=$?
+    [ "$rc" = "$3" ]
+}
+if ! devexp_grep_probe -E  '^(zz|devexp)\b-grep-canary-[0-9]+-[0-9]*[0-9]-[0-9]+\s+[{][a-z]\S*[[:alpha:]]}?$' 0 ||
+   ! devexp_grep_probe -E  '^(zz|qq)\b-grep-canary-[0-9]+-[0-9]*[0-9]-[0-9]+\s+[{][a-z]\S*[[:alpha:]]}?$' 1 ||
+   ! devexp_grep_probe -iE '^(ZZ|DEVEXP)\b-GREP-CANARY-[0-9]+-[0-9]*[0-9]-[0-9]+\s+[{][A-Z]\S*[[:alpha:]]}?$' 0; then
+    echo "[devexp dangerous-cmd-guard] internal error -- grep answered a question with a known answer wrongly, so the command was not checked. Blocking to be safe." >&2
+    exit 2
+fi
 
 # ── Blocked patterns ───────────────────────────────────────────────────────────
 

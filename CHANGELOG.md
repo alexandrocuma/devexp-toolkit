@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A security guard could allow a tool call when its scanning step never ran
+  (#168).** The Claude Code guards do their parsing and matching in a program
+  run through an interpreter found on `PATH`, and the shell could read only
+  that program's exit status — so anything on `PATH` that reported success
+  without doing the work (a wrapper, a shim, a broken virtualenv) read as "the
+  scan found nothing", and the call went through unscanned. The scan budget
+  (#162) widened it: the watchdog runs through the same interpreter, so such a
+  stand-in answered before the guard had even read the envelope. Every
+  `fail_closed` guard now allows only against positive proof that the code
+  which decides actually ran — the scanning step reports a per-invocation token
+  back as the first line of the output the guard already captures, and the
+  budget watchdog reports one of its own on a descriptor opened for it alone.
+  A missing token blocks, whatever the exit status. A token is refused unless it
+  is this invocation's own, so one captured from an earlier run does not carry
+  over, and the descriptor the watchdog reports on reaches the watchdog alone —
+  anything the guarded run left holding it would keep the guard waiting past its
+  budget, which is the #162 fail-open by another road.
+  `grep`, whose status is the only thing `dangerous-cmd-guard`'s pattern checks
+  read, now has to answer three questions with known answers — a hit, a miss and
+  a case-insensitive hit — **in the mode and the dialect those checks use**,
+  through the one function that hands a pattern to grep: same `-q`, same `-e`,
+  same here-string, patterns carrying the same constructs the real ones do
+  (`\s`, `\b`, `\S`, a POSIX class, a bracket range, a literal brace,
+  alternation, `+`, `*`, `?`, both anchors), and a two-line subject whose answer
+  is on the second line. A grep honest in some other mode and blind under `-q`
+  would otherwise pass and report every blocked command as clean; so would one
+  that reads `\s` as a literal, which is what a strict-POSIX or busybox grep
+  does — an accident on somebody's PATH, not an attack. The suite fails if a
+  pattern ever uses a construct no probe exercises, or if a second `grep`
+  invocation appears anywhere in the guards. v0.9.1 made a grep *error* block;
+  "no match" was still believed.
+  The budget's own properties are unchanged (prologue floor, argv sentinel,
+  depth counter, ceiling, the 0-or-2 rule), a caller with no stdout still gets a
+  decision instead of a wedged guard, and the added cost is +1 ms per guarded
+  call for the two secret guards and +6 ms for `dangerous-cmd-guard` (40 paired
+  runs against v0.9.3; the three probes are 4.9 ms of `grep` against 2.0 ms,
+  timed on their own), no extra interpreter start. The distribution has a tail
+  the same machine shows in v0.9.3 — an occasional run costing ~50 ms more —
+  and two more short-lived processes make hitting it likelier, 2 runs in 40
+  becoming 14. `hooks/claude-code/interpreter-proof.test.sh` covers all of it, and
+  takes its list of guards from the registry so a new `fail_closed` guard is
+  covered the day it is registered. The opencode twins need nothing: their
+  guards are in-process JavaScript with no child process and no interpreter
+  resolved from `PATH`.
+- **The opencode scan budget's documented cost is now measured rather than
+  asserted (#168).** `docs/reference/hooks.md` gave it as "none measurable"
+  while the paragraph under it quoted 9% for a *different* comparison, so the
+  two read as a contradiction. Timing the handlers end to end cannot settle it —
+  paired runs against the pre-#162 code swing between −3% and +12% on a 250 ms
+  scan, which is GC and JIT variance — so the section now counts the clock reads
+  instead, which is deterministic: 145 on an 800k-token command, 2,025 on a
+  200k-line command, 13 on `ls -la`, at about 22 ns each. Under 0.05 ms on any
+  input the guards accept — a floor rather than the whole cost, since what is
+  counted is the clock reads and not the per-unit branch, the sampling counter
+  or the deadline object each handler builds. The 9% figure is kept as what it always was, the cost
+  of checking at *every* token rather than sampling, with the arithmetic that
+  makes it plausible (800k reads ≈ 18 ms) and the measurement beside it.
+
 ## [0.9.3] - 2026-09-17
 
 ### Added

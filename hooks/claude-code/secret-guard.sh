@@ -109,10 +109,9 @@ def plausible_path(tok):
         return False
     return not any(c in tok for c in PROGRAM_CHARS)
 
+found = ''
 if tool_name == 'Read':
-    hit = is_secret(tool_input.get('file_path', ''))
-    if hit:
-        print(hit)
+    found = is_secret(tool_input.get('file_path', '')) or ''
 elif tool_name == 'Bash':
     cmd = HEREDOC.sub(' ', tool_input.get('command', ''))
     try:
@@ -135,12 +134,19 @@ elif tool_name == 'Bash':
             continue
         hit = is_secret(token)
         if hit:
-            print(hit)
+            found = hit
             break
-") || {
+
+# Proof that this scan ran (#168). Written only here, once the scan is over and
+# a verdict is in hand, so nothing that skipped the work can produce it; the
+# shell blocks when it is missing, whatever this process's exit status.
+sys.stdout.write(sys.argv[1] + '\n' + found)
+" "$DEVEXP_SCAN_PROOF") || {
     echo "[devexp secret-guard] internal error -- the guard could not read its input, so it did not run. Blocking to be safe; the interpreter's error is above." >&2
     exit 2
 }
+devexp_scan_result secret-guard "$result"
+result="$devexp_scanned"
 
 if [[ -n "$result" ]]; then
     echo "[devexp secret-guard] Blocked access to \"$result\". This file may contain secrets. If intentional, confirm with the user first." >&2
