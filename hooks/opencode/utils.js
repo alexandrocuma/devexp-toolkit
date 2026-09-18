@@ -54,11 +54,26 @@ export class ScanBudgetError extends Error {
   }
 }
 
-/** `\d` is ASCII-only in JavaScript; the Python twin spells it `[0-9]` for the same reason. */
+/** A plain ASCII non-negative integer in `name`, or null. `\d` is ASCII-only in
+ * JavaScript; the Python twin spells it `[0-9]` for the same reason. */
+function envInt(env, name) {
+  const raw = env?.[name];
+  return typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : null;
+}
+
+/**
+ * The ceiling in force. DEVEXP_SCAN_BUDGET_CEILING_MS may only LOWER it, never
+ * raise it, so an ambient value cannot undo the cap — the worst it can do is
+ * block sooner. It is what lets a test watch the cap take effect.
+ */
+export function scanBudgetCeilingMs(env = process.env) {
+  const override = envInt(env, 'DEVEXP_SCAN_BUDGET_CEILING_MS');
+  return override === null ? SCAN_BUDGET_MAX_MS : Math.min(SCAN_BUDGET_MAX_MS, override);
+}
+
 export function scanBudgetMs(env = process.env) {
-  const raw = env?.DEVEXP_SCAN_BUDGET_MS;
-  const ms = typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : SCAN_BUDGET_DEFAULT_MS;
-  return Math.min(ms, SCAN_BUDGET_MAX_MS);
+  const ms = envInt(env, 'DEVEXP_SCAN_BUDGET_MS') ?? SCAN_BUDGET_DEFAULT_MS;
+  return Math.min(ms, scanBudgetCeilingMs(env));
 }
 
 /** The budget in seconds, spelled as the Claude Code twin's `%.4g` spells it. */
@@ -77,12 +92,12 @@ let clampNoticed = false;
  */
 export function startScanBudget(guard, env = process.env) {
   const ms = scanBudgetMs(env);
-  const raw = env?.DEVEXP_SCAN_BUDGET_MS;
-  if (!clampNoticed && typeof raw === 'string' && /^\d+$/.test(raw.trim()) && Number(raw.trim()) > SCAN_BUDGET_MAX_MS) {
+  const asked = envInt(env, 'DEVEXP_SCAN_BUDGET_MS');
+  if (!clampNoticed && asked !== null && asked > ms) {
     clampNoticed = true;
     console.error(
-      `[devexp ${guard}] Note: DEVEXP_SCAN_BUDGET_MS of ${budgetSeconds(Number(raw.trim()))} s is above the ` +
-      `${budgetSeconds(SCAN_BUDGET_MAX_MS)} s ceiling the guards share. Using ${budgetSeconds(ms)} s.`
+      `[devexp ${guard}] Note: DEVEXP_SCAN_BUDGET_MS of ${budgetSeconds(asked)} s is above the ` +
+      `${budgetSeconds(scanBudgetCeilingMs(env))} s ceiling the guards share. Using ${budgetSeconds(ms)} s.`
     );
   }
   const deadline = performance.now() + ms;

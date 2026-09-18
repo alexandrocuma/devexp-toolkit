@@ -242,7 +242,10 @@ side's `\d`.) `0` means "already over budget" and blocks immediately; it is the
 test seam, not a setting to use.
 
 **A value above the ceiling is clamped, not honoured**, with a one-line notice
-on stderr (once per process). A budget at or above the registered hook timeout
+on stderr (once per process). `DEVEXP_SCAN_BUDGET_CEILING_MS` may *lower* the
+ceiling and never raise it — the worst an ambient value can do is make a guard
+block sooner — which is what lets the suites watch a clamped budget bite without
+waiting 44 seconds for one. A budget at or above the registered hook timeout
 would reinstate the bug this exists to prevent: Claude Code would cancel the
 guard first, and a cancelled command hook does not block the tool call. The
 ceiling sits just under the registered 45 s, and `scan-budget.test.sh` and the Go

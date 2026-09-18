@@ -17,7 +17,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { SCAN_BUDGET_DEFAULT_MS, SCAN_BUDGET_MAX_MS, ScanBudgetError, scanBudgetMs, startScanBudget } from './utils.js';
+import { SCAN_BUDGET_DEFAULT_MS, SCAN_BUDGET_MAX_MS, ScanBudgetError, scanBudgetCeilingMs, scanBudgetMs, startScanBudget } from './utils.js';
 import { secretGuard } from './secret-guard.js';
 import { dangerousCmdGuard, maskInert } from './dangerous-cmd-guard.js';
 import { secretInWriteGuard } from './secret-in-write-guard.js';
@@ -107,6 +107,16 @@ for (const ms of [0, 1, 250, 1250]) {
   const sh = shellSeconds(ms);
   check(`${ms} ms reads as the same seconds in both twins`, js !== undefined && js === sh, `js=${js} shell=${sh}`);
 }
+// The ceiling may be lowered for a test and never raised, so the seam cannot
+// undo the cap: the worst an ambient value can do is make a guard block sooner.
+check('the ceiling seam lowers the ceiling',
+  scanBudgetCeilingMs({ DEVEXP_SCAN_BUDGET_CEILING_MS: '300' }) === 300);
+check('the ceiling seam cannot raise the ceiling',
+  scanBudgetCeilingMs({ DEVEXP_SCAN_BUDGET_CEILING_MS: '600000' }) === SCAN_BUDGET_MAX_MS);
+check('a junk ceiling is ignored',
+  scanBudgetCeilingMs({ DEVEXP_SCAN_BUDGET_CEILING_MS: 'abc' }) === SCAN_BUDGET_MAX_MS);
+check('a lowered ceiling is the budget actually in force',
+  scanBudgetMs({ DEVEXP_SCAN_BUDGET_CEILING_MS: '300', DEVEXP_SCAN_BUDGET_MS: '60000' }) === 300);
 check('the ceiling is above the default', SCAN_BUDGET_MAX_MS > SCAN_BUDGET_DEFAULT_MS,
   `${SCAN_BUDGET_MAX_MS} vs ${SCAN_BUDGET_DEFAULT_MS}`);
 check('both twins cap the budget at the same ceiling',
@@ -253,6 +263,11 @@ for (const c of CASES) {
 // input under the real budget is allowed, so what refuses it is the clock.
 const rep = (unit, n) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
 const HEAD = '-'.repeat(5) + 'BEGIN RSA PRIVATE KEY' + '-'.repeat(5) + '\n';
+// A command whose cost is almost all in the masking parse: ~800 ms here, and a
+// couple of milliseconds when the budget is checked from inside it. The bound
+// sits between the two with room for a machine several times slower.
+const SLOW_TO_PARSE = `echo ${rep('a ', 8_000_000)}`;
+const MASK_BUDGET_MS = 300;
 const INSIDE = [
   ['secret-in-write-guard', secretInWriteGuard,
     { tool: 'write', args: { filePath: 'big.txt', content: rep(HEAD + rep('A'.repeat(31) + '.', 600), 2_000_000) } }],
@@ -267,6 +282,17 @@ const INSIDE = [
   ['secret-guard', secretGuard,
     { tool: 'bash', args: { command: rep('a ', 2_000_000) } }],
 ];
+
+// The same again through the handler, with a bound: if blockReason stopped
+// handing the budget to maskInert, this would still be refused -- but only
+// after the whole parse.
+{
+  const t0 = performance.now();
+  const msg = await withBudget('1', () => runJs(dangerousCmdGuard, { tool: 'bash', args: { command: SLOW_TO_PARSE } }));
+  const took = performance.now() - t0;
+  check('dangerous-cmd-guard carries the budget into the masking pass',
+    msg !== null && msg.includes('budget') && took < MASK_BUDGET_MS, `after ${took.toFixed(0)} ms: ${msg}`);
+}
 for (const [guard, factory, call] of INSIDE) {
   const t0 = performance.now();
   const msg = await withBudget('1', () => runJs(factory, call));
@@ -284,12 +310,26 @@ for (const [guard, factory, call] of INSIDE) {
 // unclassifiable command.
 {
   const long = `echo ${rep('a', 2_000_000)}`;
+  // Whether it refuses is not the test: the walk's own first check would catch
+  // that even with an unbudgeted parse. The test is *when*. This shape spends
+  // its time in the parse -- 8 MB of words is about 800 ms of it here -- so
+  // from inside the refusal lands in single-digit milliseconds, and from the
+  // far end of the parse it cannot.
+  // Counted rather than timed: a budget the pass consults once on its way out
+  // is indistinguishable from one it consults throughout if all you measure is
+  // that it eventually refused.
+  let consulted = 0;
+  maskInert(SLOW_TO_PARSE, () => { consulted += 1; });
+  check('maskInert consults the budget as it goes, not once at the end',
+    consulted > 10, `consulted ${consulted} time(s)`);
+
   const t0 = performance.now();
   let thrown = null;
-  try { maskInert(long, startScanBudget('dangerous-cmd-guard', { DEVEXP_SCAN_BUDGET_MS: '1' })); }
+  try { maskInert(SLOW_TO_PARSE, startScanBudget('dangerous-cmd-guard', { DEVEXP_SCAN_BUDGET_MS: '1' })); }
   catch (e) { thrown = e; }
-  check('maskInert gives up from inside the masking pass',
-    thrown instanceof ScanBudgetError, `after ${(performance.now() - t0).toFixed(0)} ms: ${thrown}`);
+  const took = performance.now() - t0;
+  check('maskInert gives up from inside the masking pass, not at the end of it',
+    thrown instanceof ScanBudgetError && took < MASK_BUDGET_MS, `after ${took.toFixed(0)} ms: ${thrown}`);
   check('maskInert still masks the same command under the real budget',
     maskInert(long, startScanBudget('dangerous-cmd-guard', {})).startsWith('echo  '));
   // What the catch is actually for: a command the parser refuses is scanned whole.

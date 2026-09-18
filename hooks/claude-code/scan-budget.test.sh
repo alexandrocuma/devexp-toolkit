@@ -178,6 +178,26 @@ got=$(run dangerous-cmd-guard "$sh_max" "$(allow_envelope dangerous-cmd-guard)")
 check "a budget at the ceiling passes without a notice" \
     "$([ "$got" = "0||" ] && echo 0 || echo 1)" "got $(printf '%.90s' "$got")"
 
+# The cap is not just announced, it takes effect. Watching a 44 s budget bite
+# would mean waiting 44 s, so the ceiling is lowered for this one case -- it may
+# only ever be lowered, never raised, so the seam cannot undo the cap.
+err="$TMP/clamp-err"
+out=$(printf '%s' "$big" | DEVEXP_SCAN_BUDGET_CEILING_MS=300 DEVEXP_SCAN_BUDGET_MS=60000 \
+    bash "$DIR/secret-in-write-guard.sh" 2>"$err"); rc=$?
+ok=1
+[ "$rc" = 2 ] && case "$(cat "$err")" in *"within its 0.3 s budget"*) ok=0 ;; esac
+check "a clamped budget is the one actually enforced" "$ok" \
+    "rc=$rc $(printf '%.110s' "$(cat "$err")")"
+
+# And the seam is one-way: an ambient ceiling above the real one changes nothing.
+out=$(printf '%s' "$(allow_envelope dangerous-cmd-guard)" \
+    | DEVEXP_SCAN_BUDGET_CEILING_MS=600000 DEVEXP_SCAN_BUDGET_MS=600000 \
+      bash "$DIR/dangerous-cmd-guard.sh" 2>"$err"); rc=$?
+ok=1
+[ "$rc" = 0 ] && case "$(cat "$err")" in *"Using 44 s"*) ok=0 ;; esac
+check "the ceiling seam cannot raise the ceiling" "$ok" \
+    "rc=$rc $(printf '%.110s' "$(cat "$err")")"
+
 # ── Every fail-closed guard is registered with a timeout above the budget ────
 # A timed-out command hook does not block the tool call, so Claude Code must
 # never cancel a guard before the guard's own budget can.
@@ -271,8 +291,8 @@ SAND="$TMP/sandbox"
 mkdir -p "$SAND"
 cp "$DIR/secret-guard.sh" "$SAND/secret-guard.sh"
 
-prologue_case() { # $1=label  $2=expected message fragment ("-" for any)
-    local label="$1" want="$2" out rc
+prologue_case() { # $1=label  $2=expected message fragment ("-" for any)  $3=noise that must not appear
+    local label="$1" want="$2" noise="${3:-}" out rc
     out=$(printf '%s' "$(allow_envelope secret-guard)" | bash "$SAND/secret-guard.sh" 2>&1); rc=$?
     local ok=1
     if [ "$rc" = 2 ]; then
@@ -280,6 +300,11 @@ prologue_case() { # $1=label  $2=expected message fragment ("-" for any)
             -) ok=0 ;;
             *) case "$out" in *"$want"*) ok=0 ;; esac ;;
         esac
+    fi
+    # The guard has to say what happened itself. A shell error reaching the user
+    # instead means the case was caught by the floor rather than named.
+    if [ "$ok" = 0 ] && [ -n "$noise" ]; then
+        case "$out" in *"$noise"*) ok=1 ;; esac
     fi
     check "prologue: $label blocks" "$ok" "rc=$rc $(printf '%.100s' "$out")"
     rm -rf "$SAND/scan-budget.sh"
@@ -296,7 +321,7 @@ prologue_case "a missing helper" "could not read its scan budget helper"
 ln -s /no/such/target "$SAND/scan-budget.sh"
 prologue_case "an unreadable helper" "could not read its scan budget helper"
 printf 'x=1\n' > "$SAND/scan-budget.sh"
-prologue_case "a helper with no entry point" "defines no entry point"
+prologue_case "a helper with no entry point" "defines no entry point" "command not found"
 printf 'if then fi\n' > "$SAND/scan-budget.sh"
 prologue_case "a helper bash cannot parse" -
 mkdir "$SAND/scan-budget.sh"

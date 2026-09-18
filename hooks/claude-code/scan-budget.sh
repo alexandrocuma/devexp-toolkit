@@ -46,7 +46,8 @@
 # trips it.
 DEVEXP_SCAN_BUDGET_DEFAULT_MS=15000
 
-# The ceiling, in milliseconds. A budget at or above the hook `timeout` in
+# The ceiling, in milliseconds (DEVEXP_SCAN_BUDGET_CEILING_MS may lower it, and
+# only lower it). A budget at or above the hook `timeout` in
 # hooks/registry.json reinstates the bug this exists to prevent: Claude Code
 # would cancel the guard first, and a cancelled command hook does not block the
 # tool call. A larger DEVEXP_SCAN_BUDGET_MS is therefore clamped to this, with
@@ -78,6 +79,14 @@ import os, re, signal, subprocess, sys
 guard, raw, default, ceiling, sentinel, depth_var = sys.argv[1:7]
 cmd = sys.argv[7:]
 ceiling = int(ceiling)
+
+# DEVEXP_SCAN_BUDGET_CEILING_MS may only LOWER the ceiling, never raise it, so
+# an ambient value cannot undo the cap -- the worst it can do is block sooner.
+# It is what lets a test watch the cap take effect: with the real ceiling, the
+# only way to see a clamped budget bite is to wait 44 seconds for it.
+_env_ceiling = os.environ.get('DEVEXP_SCAN_BUDGET_CEILING_MS', '').strip()
+if re.fullmatch(r'[0-9]+', _env_ceiling):
+    ceiling = min(ceiling, int(_env_ceiling))
 # One watchdog runs the guard; the guard does not run another. Anything past
 # that is re-entry, which can only mean the sentinel stopped being recognised.
 MAX_DEPTH = 1
