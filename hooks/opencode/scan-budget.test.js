@@ -258,6 +258,12 @@ const INSIDE = [
     { tool: 'write', args: { filePath: 'big.txt', content: rep(HEAD + rep('A'.repeat(31) + '.', 600), 2_000_000) } }],
   ['dangerous-cmd-guard', dangerousCmdGuard,
     { tool: 'bash', args: { command: rep('echo a\n', 2_000_000) } }],
+  // The same guard again, with `esac` in it: maskInert hands a command it
+  // cannot classify straight back, so the masking pass does nothing and only a
+  // check inside the rule loop can refuse this one. Without it the budget has
+  // no say over the rules at all.
+  ['dangerous-cmd-guard (rules, masking skipped)', dangerousCmdGuard,
+    { tool: 'bash', args: { command: 'esac\n' + rep('echo a\n', 2_000_000) } }],
   ['secret-guard', secretGuard,
     { tool: 'bash', args: { command: rep('a ', 2_000_000) } }],
 ];
