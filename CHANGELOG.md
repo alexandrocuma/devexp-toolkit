@@ -40,6 +40,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   moved to an unrelated entry. Changelog references are now version headings,
   and the workflow and Go-test references that had drifted (or that this
   change would have moved) now name the job, step or symbol instead of a line.
+- **`/release` creates the platform release the way the repo's release guide
+  says (#154).** Phase 6 now reads the guide's **Cut** section first. When it
+  gives the release-creation command, `/release` runs exactly that — in this
+  repo a draft that goreleaser publishes after the build succeeds, so a failed
+  or blocked build no longer leaves an empty release marked Latest. When the
+  Cut section says nothing about creating a release, the generic commands are
+  used, and they now verify the tag reached the remote (`--verify-tag`, or a
+  `git ls-remote` check before `glab`, which has no such flag and would
+  otherwise tag the default branch itself) and pass the version's changelog
+  section as a notes file instead of an inline `--notes` string the shell can
+  mangle. The generic path never adds `--draft` on its own: in a repo with no
+  publisher step the draft would stay unpublished forever. A Cut section that
+  mentions release creation without a runnable command stops the cut and sends
+  the user to `/devxp`, rather than guessing — classified in the read-only
+  preflight, so the stop happens before the tag is pushed and the gate shows
+  the command it is about to run. The cut now also refuses to create anything
+  unless the tag is actually on the remote (`git ls-remote … | grep -q .`,
+  because `ls-remote` exits 0 either way) and unless the changelog section it
+  extracted is non-empty, and every refusal in the phase now fires before the
+  push. The tag name and message come from the guide's Cut format too, so the
+  release commands carry a tag like `<target>@<version>` in a monorepo instead
+  of a hardcoded `v<version>`. An unpublished release is reported as not yet
+  shipped: the target that publishes it is bound watch-only, so its pipeline
+  is watched and verified, and the delivery's worktree, plan and scratch are
+  not retired until the release object is public. The failure path — check it
+  is still unpublished, delete it, fix, cut the next patch, never move the
+  tag — is spelled out for both platform CLIs. The `gen-docs` / `update-docs`
+  Release Guide template has a matching `Release object:` line.
 
 ## [0.9.2] - 2026-09-17
 
