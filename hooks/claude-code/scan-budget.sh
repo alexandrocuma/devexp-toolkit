@@ -1,5 +1,33 @@
 #!/usr/bin/env bash
-# devexp: the scan budget shared by the fail-closed security guards.
+# devexp: the scan budget shared by the fail-closed security guards, and the
+# proof of work each of them allows on.
+#
+# PROOF OF WORK (#168). A guard must not exit 0 unless its OWN scanning code
+# ran and decided to allow. The shell can only read an external program's exit
+# status, so before this every program that reported success — a wrapper, a
+# shim, a broken virtualenv, a stand-in that does nothing — was read as "the
+# scan found nothing", and the tool call went through unscanned. The budget
+# widened that: the wrapper below runs through the same interpreter, so a
+# stand-in answers before the guard has even read the envelope.
+#
+# So a guard now allows only against positive proof, on a channel the shell
+# reads, that the code which decides actually ran:
+#
+#   * the guard's own scanning step reports DEVEXP_SCAN_PROOF back, and
+#     devexp_scan_result blocks when that token is missing, whatever the exit
+#     status (see below);
+#   * the watchdog reports a token of its own back on
+#     DEVEXP_SCAN_BUDGET_PROOF_FD, and devexp_scan_budget honours exit 0 only
+#     when it is there.
+#
+# Both tokens are minted per invocation, so nothing can carry one in advance,
+# and neither is anything a program produces on the way past: silence, an empty
+# line, a generic success message, an echo of the guard's input, a crash
+# part-way through the scan and a wrapper that runs some other program all
+# arrive without the token, and all of them block. What this does NOT stop is a
+# program built to imitate this protocol on purpose — the program that produces
+# the proof is the one under suspicion, so there is no channel it cannot see.
+# The property is "the scanning code ran", not "the interpreter is honest".
 #
 # Claude Code runs a `PreToolUse` command hook with a timeout of 600 seconds by
 # default, and a timed-out command hook does NOT block the tool call — the call
@@ -73,12 +101,49 @@ DEVEXP_SCAN_BUDGET_SENTINEL='--devexp-budgeted'
 # instead of letting it multiply.
 DEVEXP_SCAN_BUDGET_DEPTH_VAR='DEVEXP_SCAN_BUDGET_DEPTH'
 
+# The descriptor the watchdog reports its own token back on. Not stdout: the
+# guard's stdout has to reach Claude Code unchanged, and a channel the guarded
+# run inherits is one a hung child could hold open past the deadline. This one
+# is opened by devexp_scan_budget for the watchdog alone — subprocess closes
+# everything above stderr in the child — so nothing but the watchdog can write
+# to it, and nothing writes to it by accident.
+#
+# A redirection needs a literal number, so the `9>&1` in devexp_scan_budget
+# spells it out; interpreter-proof.test.sh fails if the two ever disagree.
+DEVEXP_SCAN_BUDGET_PROOF_FD=9
+
+# The token a guard's own scanning step must report back before the guard may
+# allow. Minted per process, so it cannot be baked into anything; it travels to
+# the scanning step as an argument and comes back as the first line of the
+# output the guard already captures. See devexp_scan_result.
+DEVEXP_SCAN_PROOF="devexp-scanned-$$-${RANDOM}${RANDOM}${RANDOM}"
+
+# Set by devexp_scan_result to the scanning step's own output, once the proof
+# has been taken off the front of it.
+devexp_scanned=''
+
+# devexp_scan_result — check that the scanning step reported back, and leave
+# what it actually said in devexp_scanned. A step that says nothing, says
+# something else, or stops part-way through has not decided anything, so the
+# guard blocks rather than reading its silence as "nothing found".
+devexp_scan_result() { # $1=guard name  $2=the scanning step's raw output
+    local guard="$1" out="$2"
+    if [ "$out" = "$DEVEXP_SCAN_PROOF" ]; then
+        devexp_scanned=''
+    elif [ "${out%%$'\n'*}" = "$DEVEXP_SCAN_PROOF" ]; then
+        devexp_scanned="${out#*$'\n'}"
+    else
+        echo "[devexp $guard] internal error -- the scan did not report back, so the input was not checked. Blocking to be safe." >&2
+        exit 2
+    fi
+}
+
 # The program is fixed text; nothing from the tool input reaches it.
 IFS= read -r -d '' DEVEXP_SCAN_BUDGET_PY <<'PY' || true
 import os, re, signal, subprocess, sys
 
-guard, raw, default, ceiling, sentinel, depth_var = sys.argv[1:7]
-cmd = sys.argv[7:]
+guard, raw, default, ceiling, sentinel, depth_var, proof, proof_fd = sys.argv[1:9]
+cmd = sys.argv[9:]
 ceiling = int(ceiling)
 
 # DEVEXP_SCAN_BUDGET_CEILING_MS may only LOWER the ceiling, never raise it, so
@@ -165,6 +230,15 @@ except subprocess.TimeoutExpired:
     block(over)
 
 if rc in (0, 2):
+    # Proof that this watchdog ran the guard and has its decision in hand
+    # (#168). Written here and nowhere else: not on the way in, not on any
+    # path that never started the guard. Every exit above is a block, which
+    # needs no proof -- only an allow does.
+    try:
+        os.write(int(proof_fd), (proof + '\n').encode())
+    except OSError as err:
+        block('[devexp %s] internal error -- the scan budget could not report that the guard ran '
+              '(%s), so its decision cannot be trusted. Blocking to be safe.\n' % (guard, err))
     raise SystemExit(rc)
 block('[devexp %s] internal error -- the guard exited %d, which is neither allow (0) nor '
       'block (2), so its decision is unknown. Blocking to be safe.\n' % (guard, rc))
@@ -195,22 +269,49 @@ devexp_scan_budget() {
         fi
     done
 
-    local rc=0
-    python3 -I -S -c "$DEVEXP_SCAN_BUDGET_PY" \
-        "$guard" "${DEVEXP_SCAN_BUDGET_MS-}" "$DEVEXP_SCAN_BUDGET_DEFAULT_MS" \
-        "$DEVEXP_SCAN_BUDGET_MAX_MS" "$DEVEXP_SCAN_BUDGET_SENTINEL" \
-        "$DEVEXP_SCAN_BUDGET_DEPTH_VAR" \
-        "${BASH:-bash}" "$0" ${1+"$@"} || rc=$?
+    # The watchdog's own token, minted here, for this invocation only. It comes
+    # back on DEVEXP_SCAN_BUDGET_PROOF_FD, which is this command substitution:
+    # the watchdog's stdout is restored to the guard's own (fd 8) first, so the
+    # guarded run still writes where it always did and only the token is read
+    # back here.
+    local nonce="devexp-budget-$$-${RANDOM}${RANDOM}${RANDOM}"
+    local rc=0 proof=''
+
+    # The constants are read here, before the command substitution below and
+    # not inside it: a helper that carries this function but not the constants
+    # must end the guard under its prologue trap, as it did before the proof
+    # channel existed. Inside a substitution `set -u` would only end the
+    # subshell, and the guard would name the wrong thing.
+    local program="$DEVEXP_SCAN_BUDGET_PY" \
+          default="$DEVEXP_SCAN_BUDGET_DEFAULT_MS" \
+          ceiling="$DEVEXP_SCAN_BUDGET_MAX_MS" \
+          sentinel="$DEVEXP_SCAN_BUDGET_SENTINEL" \
+          depth_var="$DEVEXP_SCAN_BUDGET_DEPTH_VAR" \
+          proof_fd="$DEVEXP_SCAN_BUDGET_PROOF_FD"
+
+    exec 8>&1
+    proof=$(python3 -I -S -c "$program" \
+        "$guard" "${DEVEXP_SCAN_BUDGET_MS-}" "$default" "$ceiling" "$sentinel" \
+        "$depth_var" "$nonce" "$proof_fd" \
+        "${BASH:-bash}" "$0" ${1+"$@"} 9>&1 1>&8) || rc=$?
+    exec 8>&-
     if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then
         # The watchdog itself could not run (no python3, killed, …). It is the
         # only thing standing between a slow scan and an unscanned tool call,
         # so its own failure blocks too.
         echo "[devexp $guard] internal error -- the scan budget could not run (exit $rc), so the guard did not run. Blocking to be safe." >&2
         rc=2
+    elif [ "$rc" = 0 ] && [ "$proof" != "$nonce" ]; then
+        # Exit 0 with no proof: something answered for the watchdog without
+        # running it, so no guard ran and nothing was scanned (#168). An allow
+        # here is the fail-open this whole file exists to prevent.
+        echo "[devexp $guard] internal error -- the scan budget ended without proof that the guard ran, so its allow cannot be trusted. Blocking to be safe." >&2
+        rc=2
     fi
-    # After the line above, not before it: the constants are dereferenced on the
-    # `python3` line itself, so clearing the trap any earlier reopens the very
-    # window this guards.
+    # After the lines above, not before them: the constants are dereferenced
+    # inside this function, and the decision is only in hand once the status
+    # and the proof have both been read, so clearing the trap any earlier
+    # reopens the very window this guards.
     trap - EXIT
     exit "$rc"
 }

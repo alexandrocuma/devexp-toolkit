@@ -134,14 +134,23 @@ PATTERNS = [
     # and an escape's letter never starts one.
     ('a private key block',               r'-----BEGIN [A-Z ]{0,40}(PRIVATE|SECRET) KEY(?:(?!-----(?:END|BEGIN))[\s\S]){0,500}?(?<!\x5c)(?:(?:[A-Za-z0-9+/]|\x5c\/){32}|(?:[A-Za-z0-9+/]|\x5c\/){16,31}(?:\x5cr)?\x5cn(?:[A-Za-z0-9+/]|\x5c\/){16})'),
 ]
+found = ''
 for name, pattern in PATTERNS:
     if re.search(pattern, content, re.M):
-        print(name)
+        found = name
         break
-") || {
+
+# Proof that this scan ran (#168). Written only here, once every pattern has
+# had its turn, so a run that skipped the work -- or stopped part-way through
+# it -- cannot produce it; the shell blocks when it is missing, whatever this
+# process's exit status.
+sys.stdout.write(sys.argv[1] + '\n' + found)
+" "$DEVEXP_SCAN_PROOF") || {
     echo "[devexp secret-in-write-guard] internal error -- the guard could not read its input, so it did not run. Blocking to be safe; the interpreter's error is above." >&2
     exit 2
 }
+devexp_scan_result secret-in-write-guard "$label"
+label="$devexp_scanned"
 
 if [[ -n "$label" ]]; then
     echo "[devexp secret-in-write-guard] Blocked: content appears to contain $label. Remove the secret before writing." >&2

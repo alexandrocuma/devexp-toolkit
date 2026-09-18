@@ -23,7 +23,7 @@ Hooks intercept tool calls automatically — no user action required. Some are s
 hooks/
   registry.json               # Source of truth — one entry per hook
   claude-code/                # One .sh file per hook + tests
-  └── scan-budget.sh           # Shared: the wall-clock scan budget the fail-closed guards run under
+  └── scan-budget.sh           # Shared: the wall-clock scan budget the fail-closed guards run under, and the proof of work they allow on
   └── secret-guard.sh
   └── secret-in-write-guard.sh
   └── dangerous-cmd-guard.sh
@@ -38,6 +38,7 @@ hooks/
   └── dangerous-cmd-guard.test.sh
   └── fail-closed.test.sh      # Guards fail closed / advisory hooks fail open but loud
   └── scan-budget.test.sh      # The scan budget: forced hits block, ordinary input is untouched
+  └── interpreter-proof.test.sh # A guard allows only against proof its own scan ran
   opencode/                   # One .js module per hook + shared utils + entry point + tests
   └── utils.js                # Shared helpers: scanBudgetMs/startScanBudget, findRoot, which, runLinter, runCommand (async spawn), countLines
   └── secret-guard.js
@@ -204,7 +205,7 @@ The opencode rules are not copies of the grep patterns, because JavaScript's reg
 
 The test suites run the same cases against both. The opencode suite also times crafted 100 KB and 1 MB lines, and the Claude Code suite times a 400 KB pipeline.
 
-In `dangerous-cmd-guard.sh`, all parsing happens in the `python3 -I` step, where the tool input is data on stdin. `grep` reads the result from a here-string, so no pipe writer is killed by SIGPIPE when `grep -q` exits early. Any interpreter or `grep` error blocks.
+In `dangerous-cmd-guard.sh`, all parsing happens in the `python3 -I` step, where the tool input is data on stdin. `grep` reads the result from a here-string, so no pipe writer is killed by SIGPIPE when `grep -q` exits early. Any interpreter or `grep` error blocks, and so does an interpreter or `grep` that answers without doing the work — see [Proof of Work](#proof-of-work).
 
 ---
 
@@ -315,6 +316,63 @@ parity tests use a zero budget or the real one.
 
 ---
 
+## Proof of Work
+
+**A guard exits 0 only against proof that its own scanning code ran** (#168).
+
+The Claude Code guards parse and match in a program they run through an
+interpreter found on `PATH`, and the shell can read only that program's exit
+status. So anything on `PATH` that reported success without doing the work — a
+wrapper, a shim, a broken virtualenv, a stand-in that does nothing — read as
+"the scan found nothing", and the tool call went through unscanned. The budget
+widened it: the watchdog runs through the same interpreter, so a stand-in
+answered before the guard had read the envelope at all.
+
+Two things now have to report back, because either can be replaced on its own:
+
+| | What it proves | Channel |
+|---|---|---|
+| The guard's own scan | the scanning program ran to the end and has a verdict | the first line of the output the guard already captures; `devexp_scan_result` blocks when it is missing and strips it before the verdict is read |
+| The budget watchdog | it started the guarded run and has its status in hand | a descriptor opened for it alone (`DEVEXP_SCAN_BUDGET_PROOF_FD`), so the guarded run never inherits it and the guard's stdout still passes through untouched; exit 0 without it blocks |
+
+Both tokens are minted per invocation, so nothing can carry one in advance, and
+neither is something a program produces on the way past: silence, an empty line,
+a generic success message, an echo of the guard's input or of its arguments, a
+crash part-way through the scan, and a wrapper that runs some other program all
+arrive without the token, and all of them block. Each token is matched whole, so
+a marker with anything around it is not one.
+
+What this does **not** stop is a program written to imitate the protocol on
+purpose: the program that produces the proof is the one under suspicion, so
+there is no channel it cannot see. The property is *the scanning code ran*, not
+*the interpreter is honest*. Pinning an absolute interpreter path is not the
+answer either — it breaks the virtualenvs and version managers people actually
+use.
+
+**`grep` is proved the same way** in `dangerous-cmd-guard`, where `matches`
+reads its exit status and nothing else. v0.9.1 made a grep *error* (a status
+above 1) block, but "no match" was still believed, so a `grep` that answered "no
+match" to everything would have reported every command as clean. Before the
+patterns run, the guard now asks one question whose answer it knows — two lines,
+one of which matches a pattern made up on the spot — and blocks unless the count
+comes back as exactly one. A grep that never matches, always matches, errors or
+miscounts is caught by the same check.
+
+**Cost:** no new process except that one `grep`, and no new interpreter start.
+Measured against v0.9.3 (median of 30 warmed runs each, alternating between the
+two trees on one machine): `secret-guard` 140.0 → 142.3 ms, `dangerous-cmd-guard`
+141.8 → 143.1 ms, `secret-in-write-guard` 143.1 → 144.2 ms, and one Bash tool
+call running two guards at once 203.7 → 204.8 ms — **+0 to +6 ms** across two
+independent runs, against the +60 to +85 ms the budget itself costs.
+
+**opencode needs none of this.** Its three `fail_closed` guards are in-process
+JavaScript: no child process, no interpreter resolved from `PATH`, and a refusal
+is a thrown error rather than an exit status someone else can produce. The two
+twins therefore differ here on purpose, and `interpreter-proof.test.sh` covers
+the shell side alone.
+
+---
+
 ## CLI Compatibility
 
 | | Claude Code | opencode |
@@ -356,6 +414,8 @@ parity tests use a zero budget or the real one.
 3. Add the entry to `hooks/registry.json`, including the opencode mapping — `opencode.module`, `opencode.export`, and `opencode.fail_closed: true` for security guards. `devexp-plugin.js` is never edited per hook.
 
    A **security guard** also takes a [scan budget](#the-scan-budget): source `scan-budget.sh` and call `devexp_scan_budget <hook-name> "$@"` at the top of the `.sh` (copy the block from an existing guard, including its fail-closed load), start a budget in the `.js` handler and check it at every unit of the scan, and give the registry entry a `claude_code.timeout` above the budget. `scan-budget.test.sh` fails if a `fail_closed` guard has no such timeout.
+
+   It also owes a [proof of work](#proof-of-work): pass `"$DEVEXP_SCAN_PROOF"` to its scanning program, have that program write the token as the first line of its output once the scan is over, and hand the output to `devexp_scan_result <hook-name>` before reading the verdict out of `devexp_scanned`. `interpreter-proof.test.sh` fails if a `fail_closed` guard skips it.
 
 4. Add mirrored tests (`<hook-name>.test.sh` / `<hook-name>.test.js`), a `check` line in `hooks/claude-code/fail-closed.test.sh`, and update this catalog, the file tree above and the hook counts — see [workflows → Add a hook](../guides/workflows.md#add-a-hook).
 

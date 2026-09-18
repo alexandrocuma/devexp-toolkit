@@ -322,6 +322,7 @@ opencode has no `file.edited` plugin hook: file events reach plugins only throug
 - [ ] Mirrored tests added: `hooks/claude-code/<hook-name>.test.sh` and `hooks/opencode/<hook-name>.test.js` (pattern: `secret-guard.test.sh` ↔ `secret-guard.test.js`)
 - [ ] `check <hook-name> 2 guard` or `check <hook-name> 0 advisory` line added to `hooks/claude-code/fail-closed.test.sh`
 - [ ] For a guard: scan budget wired in both twins, and `claude_code.timeout` above it in the registry (`hooks/claude-code/scan-budget.test.sh` checks the timeout)
+- [ ] For a guard: the shell side proves its scan ran — `"$DEVEXP_SCAN_PROOF"` passed to the scanning program, the token written as the first line of its output once the scan is over, and the output read back through `devexp_scan_result` (`hooks/claude-code/interpreter-proof.test.sh` checks it; see [reference/hooks → Proof of Work](../reference/hooks.md#proof-of-work))
 - [ ] Hook catalog, file tree and counts updated (`docs/reference/hooks.md`, `hooks/README.md`, `README.md`, `CLAUDE.md`)
 - [ ] `bash -n hooks/claude-code/<hook-name>.sh` passes
 - [ ] `node --input-type=module` import test passes

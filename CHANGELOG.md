@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A security guard could allow a tool call when its scanning step never ran
+  (#168).** The Claude Code guards do their parsing and matching in a program
+  run through an interpreter found on `PATH`, and the shell could read only
+  that program's exit status — so anything on `PATH` that reported success
+  without doing the work (a wrapper, a shim, a broken virtualenv) read as "the
+  scan found nothing", and the call went through unscanned. The scan budget
+  (#162) widened it: the watchdog runs through the same interpreter, so such a
+  stand-in answered before the guard had even read the envelope. Every
+  `fail_closed` guard now allows only against positive proof that the code
+  which decides actually ran — the scanning step reports a per-invocation token
+  back as the first line of the output the guard already captures, and the
+  budget watchdog reports one of its own on a descriptor opened for it alone.
+  A missing token blocks, whatever the exit status. `grep`, whose status is the
+  only thing `dangerous-cmd-guard`'s pattern checks read, now has to answer a
+  question with a known answer before it is trusted: v0.9.1 made a grep *error*
+  block, but "no match" was still believed. The budget's own properties are
+  unchanged (prologue floor, argv sentinel, depth counter, ceiling, the 0-or-2
+  rule), and the added cost is +0 to +6 ms per guarded call against v0.9.3 —
+  one extra `grep`, no extra interpreter start.
+  `hooks/claude-code/interpreter-proof.test.sh` covers it, and reads the
+  registry so a new `fail_closed` guard is covered the day it is registered.
+  The opencode twins need nothing: their guards are in-process JavaScript with
+  no child process and no interpreter resolved from `PATH`.
 ## [0.9.3] - 2026-09-17
 
 ### Added

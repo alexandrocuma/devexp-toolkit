@@ -532,14 +532,21 @@ def scan_text(cmd):
 
 d = json.load(sys.stdin)
 command = d.get('tool_input', {}).get('command', '')
-sys.stdout.write(scan_text(command if isinstance(command, str) else str(command)) + 'x')
+scanned = scan_text(command if isinstance(command, str) else str(command))
+# The first line is proof that this scan ran (#168). Written only here, once
+# scan_text has returned, so a run that skipped the masking pass -- or stopped
+# part-way through it -- cannot produce it; the shell blocks when it is
+# missing, whatever this process's exit status.
+sys.stdout.write(sys.argv[1] + '\n' + scanned + 'x')
 PY
 
 # The trailing "x" keeps $(...) from trimming newlines that belong to the text.
-scan=$(printf '%s' "$input" | python3 -I -c "$GUARD_PY") || {
+scan=$(printf '%s' "$input" | python3 -I -c "$GUARD_PY" "$DEVEXP_SCAN_PROOF") || {
     echo "[devexp dangerous-cmd-guard] internal error -- the guard could not read its input, so it did not run. Blocking to be safe; the interpreter's error is above." >&2
     exit 2
 }
+devexp_scan_result dangerous-cmd-guard "$scan"
+scan="$devexp_scanned"
 scan=${scan%x}
 
 # grep reads a here-string, not a pipe: with pipefail, a pipe writer killed by
@@ -556,6 +563,20 @@ matches() { # $1=grep flags  $2=pattern
            exit 2 ;;
     esac
 }
+
+# `matches` reads grep's exit status and nothing else, so every check below is
+# only as good as that status (#168). One question with a known answer proves it
+# carries information: two lines, one of which matches a pattern made up here,
+# so the count is 1 for a working grep — and neither 0 (a grep that never
+# matches would report every command as clean) nor 2 (one that matches
+# everything, which over-blocks but would also mean the status says nothing).
+# The canary is alphanumerics and dashes only, so it is its own regex.
+devexp_grep_canary="devexp-grep-canary-$$-${RANDOM}"
+devexp_grep_answer=$(grep -cE "^$devexp_grep_canary\$" <<<"$devexp_grep_canary"$'\nnot-the-canary') || devexp_grep_answer='-'
+if [ "$devexp_grep_answer" != 1 ]; then
+    echo "[devexp dangerous-cmd-guard] internal error -- grep answered a question with a known answer wrongly, so the command was not checked. Blocking to be safe." >&2
+    exit 2
+fi
 
 # ── Blocked patterns ───────────────────────────────────────────────────────────
 
