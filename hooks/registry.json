@@ -5,7 +5,8 @@
     "claude_code": {
       "event": "PreToolUse",
       "matcher": "Read|Bash",
-      "script": "hooks/claude-code/secret-guard.sh"
+      "script": "hooks/claude-code/secret-guard.sh",
+      "timeout": 45
     },
     "opencode": {
       "event": "tool.execute.before",
@@ -21,7 +22,8 @@
     "claude_code": {
       "event": "PreToolUse",
       "matcher": "Bash",
-      "script": "hooks/claude-code/dangerous-cmd-guard.sh"
+      "script": "hooks/claude-code/dangerous-cmd-guard.sh",
+      "timeout": 45
     },
     "opencode": {
       "event": "tool.execute.before",
@@ -67,7 +69,8 @@
     "claude_code": {
       "event": "PreToolUse",
       "matcher": "Write|Edit|MultiEdit|NotebookEdit",
-      "script": "hooks/claude-code/secret-in-write-guard.sh"
+      "script": "hooks/claude-code/secret-in-write-guard.sh",
+      "timeout": 45
     },
     "opencode": {
       "event": "tool.execute.before",

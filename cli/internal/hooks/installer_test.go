@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -1948,4 +1950,227 @@ func TestInstallClaude_SymlinkedSettings(t *testing.T) {
 			t.Errorf("a settings.json was created at the link's destination")
 		}
 	})
+}
+
+// ── The scan budget's hook timeout (#162) ────────────────────────────────────
+
+// ccHookTimeout is ccHook with a claude_code.timeout, as the fail-closed guards
+// carry in the real registry.
+func ccHookTimeout(name string, enabled bool, event, matcher, script string, timeout int) Hook {
+	h := ccHook(name, enabled, event, matcher, script)
+	spec := h.Targets[TargetClaudeCode]
+	spec.Timeout = timeout
+	h.Targets[TargetClaudeCode] = spec
+	return h
+}
+
+// readNumber returns the integer assigned to name in the file at path, as
+// `name = 1234` or `name=1234` spell it in a shell or a JS source.
+func readNumber(t *testing.T, path, name string) int {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	}
+	m := regexp.MustCompile(regexp.QuoteMeta(name) + `\s*=\s*(\d+)`).FindSubmatch(data)
+	if m == nil {
+		t.Fatalf("%s: no assignment to %s", path, name)
+	}
+	n, err := strconv.Atoi(string(m[1]))
+	if err != nil {
+		t.Fatalf("%s: %s = %q, not a number", path, name, m[1])
+	}
+	return n
+}
+
+// TestRepoRegistry_FailClosedTimeouts pins the relationship the scan budget
+// depends on: a timed-out command hook does not block the tool call, so every
+// guard that enforces a budget must be registered with a Claude Code timeout
+// strictly above the largest budget it can run with — otherwise Claude Code
+// cancels the guard before it can exit 2, and the call goes through unscanned
+// (#162). It also pins the two twins to one default and one ceiling, so a
+// change to either is a change to both.
+func TestRepoRegistry_FailClosedTimeouts(t *testing.T) {
+	root := filepath.Join("..", "..", "..")
+	registry, err := LoadRegistry(filepath.Join(root, "hooks", "registry.json"))
+	if err != nil {
+		t.Fatalf("LoadRegistry() error = %v", err)
+	}
+
+	sh := filepath.Join(root, "hooks", "claude-code", "scan-budget.sh")
+	js := filepath.Join(root, "hooks", "opencode", "utils.js")
+	budgetMs := readNumber(t, sh, "DEVEXP_SCAN_BUDGET_DEFAULT_MS")
+	if jsBudgetMs := readNumber(t, js, "SCAN_BUDGET_DEFAULT_MS"); budgetMs != jsBudgetMs {
+		t.Errorf("scan budget = %d ms in the Claude Code twin, %d ms in the opencode twin; they must agree", budgetMs, jsBudgetMs)
+	}
+	// The ceiling, not the default, is the largest budget a guard can run with:
+	// DEVEXP_SCAN_BUDGET_MS is clamped to it, so it is what has to clear the
+	// registered timeout.
+	maxMs := readNumber(t, sh, "DEVEXP_SCAN_BUDGET_MAX_MS")
+	if jsMaxMs := readNumber(t, js, "SCAN_BUDGET_MAX_MS"); maxMs != jsMaxMs {
+		t.Errorf("scan budget ceiling = %d ms in the Claude Code twin, %d ms in the opencode twin; they must agree", maxMs, jsMaxMs)
+	}
+	if budgetMs > maxMs {
+		t.Errorf("default scan budget %d ms is above its own %d ms ceiling", budgetMs, maxMs)
+	}
+
+	guarded := 0
+	for _, h := range registry {
+		if !h.Targets[TargetOpencode].FailClosed {
+			continue
+		}
+		guarded++
+		cc := h.Targets[TargetClaudeCode]
+		if cc.Timeout*1000 <= maxMs {
+			t.Errorf("%s: claude_code.timeout = %ds, want more than the %d ms scan budget ceiling", h.Name, cc.Timeout, maxMs)
+		}
+	}
+	if guarded != 3 {
+		t.Errorf("found %d fail-closed guards, want 3", guarded)
+	}
+}
+
+func TestInstallClaude_Timeout(t *testing.T) {
+	tests := map[string]struct {
+		setup func(t *testing.T, repoDir, settingsPath string) Registry
+		want  func(repoDir string) []hookCmd
+	}{
+		"writes the registry timeout on a new registration": {
+			setup: func(t *testing.T, repoDir, settingsPath string) Registry {
+				createScript(t, repoDir, "hooks/claude-code/foo.sh")
+				return Registry{ccHookTimeout("foo", true, "PreToolUse", "Bash", "hooks/claude-code/foo.sh", 45)}
+			},
+			want: func(repoDir string) []hookCmd {
+				return []hookCmd{{Type: "command", Command: filepath.Join(repoDir, "hooks/claude-code/foo.sh"), Timeout: 45}}
+			},
+		},
+		// The case that matters for every machine devexp is already installed
+		// on: the registration is there, so registerHook used to stop at it and
+		// the guard kept Claude Code's 600-second default for ever.
+		"adds the timeout to a registration that predates it": {
+			setup: func(t *testing.T, repoDir, settingsPath string) Registry {
+				scriptAbs := createScript(t, repoDir, "hooks/claude-code/foo.sh")
+				writeSettingsHooks(t, settingsPath, hooksMapT{
+					"PreToolUse": {{Matcher: "Bash", Hooks: []hookCmd{{Type: "command", Command: scriptAbs}}}},
+				})
+				return Registry{ccHookTimeout("foo", true, "PreToolUse", "Bash", "hooks/claude-code/foo.sh", 45)}
+			},
+			want: func(repoDir string) []hookCmd {
+				return []hookCmd{{Type: "command", Command: filepath.Join(repoDir, "hooks/claude-code/foo.sh"), Timeout: 45}}
+			},
+		},
+		"brings a timeout that drifted back to the registry's": {
+			setup: func(t *testing.T, repoDir, settingsPath string) Registry {
+				scriptAbs := createScript(t, repoDir, "hooks/claude-code/foo.sh")
+				writeSettingsHooks(t, settingsPath, hooksMapT{
+					"PreToolUse": {{Matcher: "Bash", Hooks: []hookCmd{{Type: "command", Command: scriptAbs, Timeout: 5}}}},
+				})
+				return Registry{ccHookTimeout("foo", true, "PreToolUse", "Bash", "hooks/claude-code/foo.sh", 45)}
+			},
+			want: func(repoDir string) []hookCmd {
+				return []hookCmd{{Type: "command", Command: filepath.Join(repoDir, "hooks/claude-code/foo.sh"), Timeout: 45}}
+			},
+		},
+		"carries the timeout when the matcher moves": {
+			setup: func(t *testing.T, repoDir, settingsPath string) Registry {
+				scriptAbs := createScript(t, repoDir, "hooks/claude-code/foo.sh")
+				writeSettingsHooks(t, settingsPath, hooksMapT{
+					"PreToolUse": {{Matcher: "Write", Hooks: []hookCmd{{Type: "command", Command: scriptAbs}}}},
+				})
+				return Registry{ccHookTimeout("foo", true, "PreToolUse", "Bash", "hooks/claude-code/foo.sh", 45)}
+			},
+			want: func(repoDir string) []hookCmd {
+				return []hookCmd{{Type: "command", Command: filepath.Join(repoDir, "hooks/claude-code/foo.sh"), Timeout: 45}}
+			},
+		},
+		// An advisory hook declares none, and a timeout on its registration is
+		// the user's: devexp never takes away a field it didn't ask for.
+		"leaves a user's timeout alone when the registry declares none": {
+			setup: func(t *testing.T, repoDir, settingsPath string) Registry {
+				scriptAbs := createScript(t, repoDir, "hooks/claude-code/foo.sh")
+				writeSettingsHooks(t, settingsPath, hooksMapT{
+					"PreToolUse": {{Matcher: "Bash", Hooks: []hookCmd{{Type: "command", Command: scriptAbs, Timeout: 7}}}},
+				})
+				return Registry{ccHook("foo", true, "PreToolUse", "Bash", "hooks/claude-code/foo.sh")}
+			},
+			want: func(repoDir string) []hookCmd {
+				return []hookCmd{{Type: "command", Command: filepath.Join(repoDir, "hooks/claude-code/foo.sh"), Timeout: 7}}
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			repoDir := t.TempDir()
+			settingsPath := filepath.Join(t.TempDir(), "settings.json")
+			registry := tt.setup(t, repoDir, settingsPath)
+
+			if err := InstallClaude(registry, repoDir, settingsPath, nil, false); err != nil {
+				t.Fatalf("InstallClaude() error = %v", err)
+			}
+			got := readHooks(t, settingsPath)
+			want := hooksMapT{"PreToolUse": {{Matcher: "Bash", Hooks: tt.want(repoDir)}}}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("hooks = %+v, want %+v", got, want)
+			}
+
+			// Installing again must change nothing: the timeout is converged,
+			// so the second run has no reason to rewrite settings.json.
+			before, err := os.ReadFile(settingsPath)
+			if err != nil {
+				t.Fatalf("ReadFile error = %v", err)
+			}
+			if err := InstallClaude(registry, repoDir, settingsPath, nil, false); err != nil {
+				t.Fatalf("second InstallClaude() error = %v", err)
+			}
+			after, err := os.ReadFile(settingsPath)
+			if err != nil {
+				t.Fatalf("ReadFile error = %v", err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Errorf("a second install rewrote settings.json:\n%s\nwant:\n%s", after, before)
+			}
+		})
+	}
+}
+
+// TestInstallClaude_TimeoutKeepsOtherFields checks the timeout goes in through
+// the same machinery that preserves a handler's other members (#137): the
+// user's own keys, and their order, survive.
+func TestInstallClaude_TimeoutKeepsOtherFields(t *testing.T) {
+	repoDir := t.TempDir()
+	scriptAbs := createScript(t, repoDir, "hooks/claude-code/foo.sh")
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	settings := `{
+  "model": "opus",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"type": "command", "command": ` + strconv.Quote(scriptAbs) + `, "statusMessage": "scanning", "async": false}
+        ]
+      }
+    ]
+  }
+}`
+	if err := os.WriteFile(settingsPath, []byte(settings), 0644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+
+	registry := Registry{ccHookTimeout("foo", true, "PreToolUse", "Bash", "hooks/claude-code/foo.sh", 45)}
+	if err := InstallClaude(registry, repoDir, settingsPath, nil, false); err != nil {
+		t.Fatalf("InstallClaude() error = %v", err)
+	}
+
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("ReadFile error = %v", err)
+	}
+	out := string(data)
+	for _, want := range []string{`"model": "opus"`, `"statusMessage": "scanning"`, `"async": false`, `"timeout": 45`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("settings.json is missing %s:\n%s", want, out)
+		}
+	}
 }

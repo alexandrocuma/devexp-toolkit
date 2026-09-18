@@ -12,10 +12,13 @@
  *   Mentions (#81). A shell token only counts as a path if it plausibly is
  *   one — heredoc bodies, program text and bare extensions are not reads.
  *
+ * The scan runs under a wall-clock budget and refuses the call when it is
+ * exceeded (#162) — see startScanBudget in utils.js.
+ *
  * Tests: node hooks/opencode/secret-guard.test.js
  */
 
-import { basename } from './utils.js';
+import { basename, startScanBudget } from './utils.js';
 
 const SECRET_NAMES = new Set([
   '.env', '.env.local', '.env.production', '.env.staging',
@@ -58,12 +61,20 @@ export function plausiblePath(tok) {
 
 const SEARCHERS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack']);
 
-export function secretInCommand(cmd) {
+/**
+ * `overBudget` throws when the scan budget is spent. A command can hold
+ * hundreds of thousands of tokens and each one costs very little to check, so
+ * it is sampled at the cadence `startScanBudget` explains rather than read on
+ * every token.
+ */
+export function secretInCommand(cmd, overBudget = () => {}) {
   if (!cmd) return null;
   const stripped = cmd.replace(HEREDOC, ' ');
   const tokens = stripped.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
   let skipPattern = false;
-  for (const token of tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    if ((i & 1023) === 0) overBudget();
+    const token = tokens[i];
     const clean = token.replace(/^['"]|['"]$/g, '');
     // A searcher's first non-flag argument is a pattern, never a path.
     // Auditing for leaked key names is security work, not a secret read.
@@ -82,6 +93,10 @@ export function secretInCommand(cmd) {
 export async function secretGuard(_ctx) {
   return {
     'tool.execute.before': async (input, output) => {
+      if (input.tool !== 'read' && input.tool !== 'bash') return;
+      const overBudget = startScanBudget('secret-guard');
+      overBudget();
+
       if (input.tool === 'read') {
         const filePath = output.args?.filePath ?? '';
         if (filePath && isSecretFile(filePath)) {
@@ -90,8 +105,8 @@ export async function secretGuard(_ctx) {
             `This file may contain secrets. If intentional, confirm with the user first.`
           );
         }
-      } else if (input.tool === 'bash') {
-        const hit = secretInCommand(output.args?.command ?? '');
+      } else {
+        const hit = secretInCommand(output.args?.command ?? '', overBudget);
         if (hit) {
           throw new Error(
             `[devexp secret-guard] Blocked access to "${hit}". ` +

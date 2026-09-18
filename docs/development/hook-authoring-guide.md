@@ -174,6 +174,8 @@ If the interpreter fails, never swallow it (`2>/dev/null || echo ""` turns a cra
 
 Add every new hook to `fail-closed.test.sh` with its kind.
 
+A guard also needs a **scan budget**: Claude Code does not block the tool call when a command hook times out, so a guard that is slow on some input fails open. Source `scan-budget.sh` and call `devexp_scan_budget <hook-name> "$@"` at the top of the script, check the budget at every unit of the scan in the JS twin, and give the registry entry a `claude_code.timeout` above it. See [reference/hooks → The Scan Budget](../reference/hooks.md#the-scan-budget).
+
 Examples: `hooks/claude-code/secret-guard.sh` (guard) and `hooks/claude-code/lint-on-save.sh` (advisory); rationale in [conventions → Error Handling](conventions.md#error-handling).
 
 ---
@@ -319,6 +321,7 @@ opencode has no `file.edited` plugin hook: file events reach plugins only throug
 - [ ] Extraction fails closed (guard) or open-but-loud (advisory) — see [Failing on bad input](#boilerplate)
 - [ ] Mirrored tests added: `hooks/claude-code/<hook-name>.test.sh` and `hooks/opencode/<hook-name>.test.js` (pattern: `secret-guard.test.sh` ↔ `secret-guard.test.js`)
 - [ ] `check <hook-name> 2 guard` or `check <hook-name> 0 advisory` line added to `hooks/claude-code/fail-closed.test.sh`
+- [ ] For a guard: scan budget wired in both twins, and `claude_code.timeout` above it in the registry (`hooks/claude-code/scan-budget.test.sh` checks the timeout)
 - [ ] Hook catalog, file tree and counts updated (`docs/reference/hooks.md`, `hooks/README.md`, `README.md`, `CLAUDE.md`)
 - [ ] `bash -n hooks/claude-code/<hook-name>.sh` passes
 - [ ] `node --input-type=module` import test passes

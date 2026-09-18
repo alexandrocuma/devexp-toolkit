@@ -77,10 +77,24 @@ check graphify-read-guard       '{"tool_name":"Read","tool_input":{"file_path":"
 check graphify-session-sentinel '{"tool_name":"Bash","tool_input":{"command":"graphify query \"x\""}}'
 check graphify-grep-nudge       '{"tool_name":"Grep","tool_input":{"pattern":"x"}}'
 
-# Every hook that starts a Python interpreter must be covered above.
+# Every file here that starts a Python interpreter must be covered above --
+# every file, not just the ones hooks/registry.json registers, because the next
+# shared helper that runs python3 is exactly what this is for.
+#
+# HELPERS are the exceptions: sourced by the guards, with no envelope of their
+# own, so they are covered transitively -- every check above runs scan-budget.sh
+# from the crowded working directory too, and a module it picked up there would
+# show in the sentinel. Adding one is deliberate, and it must exist.
+HELPERS="scan-budget"
+
+for name in $HELPERS; do
+  [ -f "$DIR/$name.sh" ] || { fail=$((fail+1)); printf 'FAIL %-26s is allowlisted but does not exist\n' "$name"; }
+done
+
 for f in "$DIR"/*.sh; do
   case "$f" in *.test.sh) continue ;; esac
   name=$(basename "$f" .sh)
+  case " $HELPERS " in *" $name "*) continue ;; esac
   grep -q python3 "$f" || continue
   if ! grep -q "^check $name " "$0"; then
     fail=$((fail+1)); printf 'FAIL %-26s runs python3 but is not covered by this test\n' "$name"
