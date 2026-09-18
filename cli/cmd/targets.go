@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/chzyer/readline"
+
 	"devexp/internal/ui"
 )
 
@@ -196,11 +198,14 @@ func detectTargets() detection {
 	}
 }
 
-// stdinIsTerminal reports whether there is anyone there to prompt. A package
-// var so tests can answer for it.
+// stdinIsTerminal reports whether there is anyone there to prompt. It asks the
+// library promptui itself prompts through, so the answer is exactly "can a
+// prompt be shown here": a mode check would not do, because os.ModeCharDevice
+// is set for /dev/null too, and an install with stdin redirected from it would
+// prompt and then fail reading the answer. A package var so tests can answer
+// for it.
 var stdinIsTerminal = func() bool {
-	fi, err := os.Stdin.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+	return readline.IsTerminal(int(os.Stdin.Fd()))
 }
 
 // promptTargets asks which of the available targets to install for. It returns

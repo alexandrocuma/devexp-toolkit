@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **A non-interactive install with more than one CLI installed nothing (#111).** With both `claude` and `opencode` on `PATH` and no terminal — CI, or a piped install — the installer reached the "Platform" prompt, failed reading stdin and exited non-zero having installed nothing. Without a terminal it now installs for every detected CLI; with one it still asks.
+- **A non-interactive install with more than one CLI installed nothing (#111).** With both `claude` and `opencode` on `PATH` and no terminal — CI, or a piped install — the installer reached the "Platform" prompt, failed reading stdin and exited non-zero having installed nothing. Without a terminal it now installs for every detected CLI; with one it still asks. "Without a terminal" is decided by the same terminal check promptui prompts through, so stdin redirected from `/dev/null` counts as non-interactive even though it is a character device.
 
 ## [0.9.4] - 2026-09-18
 
