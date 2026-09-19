@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // ── Install target paths ──────────────────────────────────────────────────────
@@ -142,6 +144,27 @@ func resolveKimiHome(kimiCodeHome, home string) (string, error) {
 	// for Kimi it cannot, by design.
 	if root == string(filepath.Separator) || root == home || strings.HasPrefix(home, root+string(filepath.Separator)) {
 		return "", fmt.Errorf("KIMI_CODE_HOME is %q, which devexp will not install into", root)
+	}
+	// From #113 this path is written into the installed agent and skill
+	// bodies, which are prompts a model reads, so what it may contain is no
+	// longer only devexp's problem:
+	//
+	//   - A control character — a newline above all — would put attacker-chosen
+	//     lines inside every installed agent's instructions. Nothing downstream
+	//     can tell those apart from the agent's own text.
+	//   - Bytes that are not valid UTF-8 cannot survive the round trip. Kimi
+	//     reads these files as UTF-8 and would substitute replacement
+	//     characters, so the rewritten reference would point at a path that
+	//     does not exist, silently (#140, the same class for settings.json).
+	//     macOS refuses such a directory name outright; Linux does not.
+	//
+	// Both are refused here rather than escaped at each use, because this is
+	// the one gate every Kimi destination is built from.
+	if i := strings.IndexFunc(root, unicode.IsControl); i >= 0 {
+		return "", fmt.Errorf("KIMI_CODE_HOME is %q, which contains a control character devexp will not write into an agent file", root)
+	}
+	if !utf8.ValidString(root) {
+		return "", fmt.Errorf("KIMI_CODE_HOME is %q, which is not valid UTF-8 and cannot be written into an agent file unchanged", root)
 	}
 	return root, nil
 }
