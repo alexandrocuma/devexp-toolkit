@@ -3,8 +3,10 @@ package hooks
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -279,13 +281,27 @@ func TestInstallKimiRefusesToRemoveAnythingButItsOwn(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	bad := []string{"../config.toml.keepme", "/etc/passwd", "claude-code/../../x.sh", "kimi/adapter.sh\nfake"}
+	// The name the comment on isKimiHookPath warns about, with a real file to
+	// lose: two levels up from the hooks directory is the Kimi root's parent,
+	// which for the default root is $HOME.
+	sshKey := filepath.Join(filepath.Dir(filepath.Dir(hooksDir)), ".ssh", "id_rsa")
+	if err := os.MkdirAll(filepath.Dir(sshKey), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(sshKey, []byte("not a key\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	bad := []string{"../config.toml.keepme", "../../.ssh/id_rsa", "/etc/passwd", "claude-code/../../x.sh", "kimi/adapter.sh\nfake"}
 	got, out, err := installKimi(t, repo, hooksDir, configPath, nil, bad, false)
 	if err != nil {
 		t.Fatalf("InstallKimi: %v\n%s", err, out)
 	}
 	if _, err := os.Stat(outside); err != nil {
 		t.Errorf("a traversal in the manifest removed a file outside the hooks directory: %v", err)
+	}
+	if _, err := os.Stat(sshKey); err != nil {
+		t.Errorf("a two-level traversal in the manifest removed %q: %v", sshKey, err)
 	}
 	for _, name := range bad {
 		if !slices.Contains(got, name) {
@@ -357,5 +373,108 @@ func TestInstallKimiFailedRegistrationRecordsTheScripts(t *testing.T) {
 	}
 	if strings.Contains(readFile(t, configPath), kimiBlockBegin) {
 		t.Errorf("a refused config.toml was rewritten:\n%s", readFile(t, configPath))
+	}
+}
+
+// ── the fallback timeout ─────────────────────────────────────────────────────
+//
+// A hook Kimi kills at its timeout does not block the tool call: runHook
+// returns allowResult for the timeout kill like every other non-2 outcome. So
+// a guard cancelled mid-scan is an ALLOW, and the registered timeout has to
+// clear the ceiling of the guards' own scan budget — the largest budget a
+// guard can actually run with — or the budget's own exit 2 never lands.
+//
+// scan-budget.test.sh checks the timeouts the registry SPELLS OUT. This checks
+// the one it does not: kimiDefaultTimeout, which SelectKimi supplies when a
+// kimi block omits `timeout`, and which exists for exactly this reason. Kimi's
+// own default is 30 seconds, below the ceiling, so leaving the constant
+// unpinned means a value that silently disarms every guard it applies to.
+//
+// The ceiling is read out of the shell that enforces it, so lowering one and
+// not the other is caught rather than mirrored.
+func TestKimiDefaultTimeoutClearsTheScanBudgetCeiling(t *testing.T) {
+	ceilingMs := scanBudgetCeilingMs(t)
+	if kimiDefaultTimeout*1000 <= ceilingMs {
+		t.Fatalf("kimiDefaultTimeout is %ds, which is not above the %dms scan-budget ceiling — Kimi would kill a guard mid-scan, and it reads a killed hook as an allow", kimiDefaultTimeout, ceilingMs)
+	}
+	if kimiDefaultTimeout > kimiMaxTimeout || kimiDefaultTimeout < kimiMinTimeout {
+		t.Errorf("kimiDefaultTimeout is %d, outside Kimi's %d..%d, so the entry would be invalid", kimiDefaultTimeout, kimiMinTimeout, kimiMaxTimeout)
+	}
+
+	// And the path that uses it: a kimi block with no timeout of its own.
+	registry, err := ParseRegistry([]byte(`[
+  {"name": "no-timeout-guard", "enabled": true,
+   "kimi": {"event": "PreToolUse", "matcher": "^Bash$", "script": "hooks/claude-code/secret-guard.sh", "fail_closed": true}}
+]`))
+	if err != nil {
+		t.Fatalf("ParseRegistry: %v", err)
+	}
+	selected, _ := SelectKimi(registry, nil)
+	if len(selected) != 1 {
+		t.Fatalf("SelectKimi selected %d hooks, want 1", len(selected))
+	}
+	if selected[0].Timeout*1000 <= ceilingMs {
+		t.Errorf("a kimi block with no timeout is registered with %ds, which does not clear the %dms ceiling", selected[0].Timeout, ceilingMs)
+	}
+}
+
+// scanBudgetCeilingMs reads DEVEXP_SCAN_BUDGET_MAX_MS out of the shell helper
+// that enforces it.
+func scanBudgetCeilingMs(t *testing.T) int {
+	t.Helper()
+	path := filepath.Join("..", "..", "..", "hooks", "claude-code", "scan-budget.sh")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	m := regexp.MustCompile(`(?m)^DEVEXP_SCAN_BUDGET_MAX_MS=(\d+)`).FindSubmatch(data)
+	if m == nil {
+		t.Fatalf("%s no longer sets DEVEXP_SCAN_BUDGET_MAX_MS, so the ceiling this test compares against is gone", path)
+	}
+	n, err := strconv.Atoi(string(m[1]))
+	if err != nil {
+		t.Fatalf("DEVEXP_SCAN_BUDGET_MAX_MS is not a number: %v", err)
+	}
+	return n
+}
+
+// ── the installed mode ───────────────────────────────────────────────────────
+//
+// The Kimi root sits beside the user's provider API keys, and a checkout with
+// a slack umask must not widen what lands in it. The copy masks the source's
+// mode to the owner's bits and forces read+execute, so a source that is
+// world-writable arrives 0700 and a source that is not executable arrives
+// executable anyway — a guard the adapter cannot run is an allow.
+func TestInstallKimiNarrowsTheInstalledMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX modes")
+	}
+	repo := kimiRepo(t)
+	src := filepath.Join(repo, "hooks", "claude-code", "secret-guard.sh")
+	if err := os.Chmod(src, 0o777); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	notExec := filepath.Join(repo, "hooks", "kimi", "adapter.sh")
+	if err := os.Chmod(notExec, 0o644); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	configPath, hooksDir := kimiHome(t, "")
+
+	if _, out, err := installKimi(t, repo, hooksDir, configPath, nil, nil, false); err != nil {
+		t.Fatalf("InstallKimi: %v\n%s", err, out)
+	}
+
+	for rel, want := range map[string]os.FileMode{
+		"claude-code/secret-guard.sh": 0o700, // 0777 narrowed to the owner
+		"kimi/adapter.sh":             0o700, // 0644 given back its execute bit
+	} {
+		info, err := os.Stat(filepath.Join(hooksDir, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Errorf("%s: %v", rel, err)
+			continue
+		}
+		if got := info.Mode().Perm(); got != want {
+			t.Errorf("%s installed %v, want %v", rel, got, want)
+		}
 	}
 }
