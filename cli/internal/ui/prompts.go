@@ -56,20 +56,6 @@ func SelectScope() (Scope, error) {
 	return Scope(idx), err
 }
 
-// ── Platform ──────────────────────────────────────────────────────────────────
-
-func SelectPlatform() (string, error) {
-	p := promptui.Select{
-		Label: "Platform",
-		Items: []string{"Claude Code", "opencode", "Both"},
-	}
-	_, result, err := p.Run()
-	return result, err
-}
-
-// SelectCLI is an alias kept for backward compatibility.
-func SelectCLI() (string, error) { return SelectPlatform() }
-
 // ── Multi-select ──────────────────────────────────────────────────────────────
 
 // MultiSelect shows a toggleable checklist; all items start selected.

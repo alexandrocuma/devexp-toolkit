@@ -43,22 +43,18 @@ func runWizard(repoDir string, registry []mcp.MCP, agentNames []string) (*wizard
 	fmt.Println()
 
 	// ── Section 1: Platform ───────────────────────────────────────────────────
-	// Shares announceTargets/selectTargets with the flag path, so the rule for
-	// which CLIs to install for lives in exactly one place. The trailing blank
-	// line stays here: the flag path's caller prints its own.
-	hasClaude := commandExists("claude")
-	hasOpencode := commandExists("opencode")
-
-	choice, err := announceTargets(hasClaude, hasOpencode)
+	// Shares detectTargets/announceTargets/resolveTargets with the flag path, so
+	// the rule for which CLIs to install for lives in exactly one place. The
+	// wizard passes no --target values, and it always has a terminal, so more
+	// than one detected CLI prompts and a single one does not. The trailing
+	// blank line stays here: the flag path's caller prints its own.
+	det := detectTargets()
+	announceTargets(det)
+	targets, err := resolveTargets(det, nil)
 	if err != nil {
 		return nil, err
 	}
-	installClaude, installOpencode, err := selectTargets(hasClaude, hasOpencode, choice)
-	if err != nil {
-		return nil, err
-	}
-	result.installClaude = installClaude
-	result.installOpencode = installOpencode
+	result.targets = targets
 	fmt.Println()
 
 	// ── Section 2: Agents ─────────────────────────────────────────────────────

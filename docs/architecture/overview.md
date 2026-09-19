@@ -76,8 +76,10 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
       → cli/internal/config/dotenv.go LoadDotenv(<repo>/mcps/.env)
       → cli/cmd/registry.go buildEnv(): OS env + DEVEXP_DIR + dotenv (dotenv wins)
       → any of --dry-run/--reinstall-mcps/--*-only set?
-          yes → cli/cmd/targets.go detectTargets() (PATH lookup of claude/opencode; prompts only if both)
-          no  → cli/cmd/wizard.go runWizard() (action → scope → announceTargets/selectTargets
+          yes → cli/cmd/targets.go detectTargets() (PATH lookup of claude/opencode/kimi; kimi is
+                also version-probed) → announceTargets → resolveTargets(--target | checklist when
+                >1 and a TTY | every detected CLI)
+          no  → cli/cmd/wizard.go runWizard() (action → scope → detect/announce/resolveTargets
                 → agent/MCP/hook multi-selects; "Remove" → runRemove → bash uninstall.sh)
       → installOpts{...}; selected* nil = "all minus config-disabled"
         (resolveAgentDisabled/resolveHookDisabled in cli/cmd/registry.go)
@@ -177,6 +179,7 @@ Hook commands point into the install root, so editing a registered script in the
 |------------|----------|-------------|
 | `claude` CLI | Detecting the install target; registering and removing MCPs (`claude mcp list/add/remove`) | `cli/cmd/targets.go` (`commandExists`), `cli/internal/mcp/claude.go` |
 | `opencode` CLI | Detecting the install target only (on PATH). Its config file is edited directly | `cli/cmd/targets.go`, `cli/internal/mcp/opencode.go` |
+| `kimi` CLI | Detecting the install target, and one bounded `kimi --version` probe to tell Kimi Code CLI from the unsupported legacy kimi-cli. Nothing is installed for it yet (#112-#114) | `cli/cmd/kimi_detect.go`, `cli/cmd/paths.go` (`kimiTargetPaths`) |
 | `~/.claude/settings.json` | Hook registration (only the `hooks` value is rewritten; other bytes and users' hook fields are kept) | `cli/internal/hooks/installer.go`, `cli/internal/hooks/settings.go` |
 | User cache dir (`os.UserCacheDir()/devexp/assets`, `…/assets-dev` for dev builds) | Assets extracted from the embedded FS when no clone is found | `cli/internal/repo/repo.go` |
 | cobra, viper, promptui | Commands; reading `devexp.config.json`; the interactive wizard (needs a TTY) | `cli/cmd/root.go`, `cli/internal/config/config.go`, `cli/internal/ui/prompts.go` |

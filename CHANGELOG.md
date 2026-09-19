@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Any combination of install targets, and a `--target` flag (#111).** `devexp install --target claude,kimi` installs for exactly those CLIs; the flag is repeatable and comma-separated. When more than one CLI is detected the interactive prompt is now a checklist rather than a three-way "Claude Code / opencode / Both" choice, so any combination of the three can be picked. Deselecting everything is refused instead of being read as "install for all", and asking for a CLI that is not installed is refused instead of quietly falling back to another.
+- **Kimi Code CLI is a selectable target that installs nothing yet (#111).** It can be picked in the wizard or with `--target kimi`, and doing so writes nothing: agents, skills, MCPs and hooks arrive in #112-#114. So that it cannot be mistaken for a successful install, the run names the directory it left untouched, a multi-target run repeats it in the summary, and a run whose every target installs nothing exits non-zero instead of printing `All done.`
+- **Kimi Code CLI detection (#111).** devexp recognises Kimi Code CLI `0.31.0` or newer on `PATH` from the bare semver `kimi --version` prints. An older one is skipped with the minimum named, and the legacy Python kimi-cli — which ships a binary of the same name, with overlapping version numbers, and is told apart by its `kimi, version <x>` output — is skipped as unsupported rather than mistaken for Kimi Code. A binary that answers with anything else is skipped rather than guessed at, and the probe is the first exec in the installer with a timeout, so a `kimi` that blocks cannot hang an install.
+- **Kimi Code CLI target paths (#111).** `kimiTargetPaths` resolves the agents and skills directories, `mcp.json`, `config.toml`, the devexp manifest and the backup directory under `$KIMI_CODE_HOME`, defaulting to `~/.kimi-code`. Nothing installs there yet (#112-#114); the paths exist so a `$KIMI_CODE_HOME` devexp must not write to — relative, the filesystem root, the home directory itself, or anything containing the home directory — is refused now rather than discovered later. An unrelated absolute path such as `/opt/kimi` is deliberately allowed: removals stay guarded there because the guard root is the Kimi root's parent, not `$HOME`.
+
+### Fixed
+
+- **A non-interactive install with more than one CLI reached a prompt nobody could answer (#111).** With both `claude` and `opencode` on `PATH` and no terminal — CI, a closed stdin, or a pipe — the installer showed the "Platform" prompt anyway. With stdin at EOF it died there (`Error: ^D`, exit 1, nothing installed); with a pipe it silently consumed whatever was piped in as the answer. Both now install for **every detected CLI** without prompting.
+
+  **If a script of yours pipes an answer into the installer** (`printf '\n' | ./install.sh`, `yes | …`), it used to install for the one target that answer selected and will now install for all of them — including first-time writes under `~/.config/opencode/`. Pass `--target claude` (or whichever you meant) to pin the old outcome explicitly. This is the one change in this release that alters what an existing two-target install does.
+
+  "No terminal" is decided by the same terminal check promptui prompts through, so stdin redirected from `/dev/null` counts as non-interactive even though it is a character device.
+
+- **A failed install no longer dumps the usage block or says everything twice (#111).** `devexp install` errors are printed once, by the same code that sets the exit status, and the flag list is shown only when a flag was actually wrong. It matters because selecting only a target that installs nothing yet is a deliberate non-zero exit, and the notice explaining it was ending up three screens above the usage dump.
+- **A `kimi` that fails is reported as a failure (#111).** A binary that printed a usable version and then exited non-zero was reported as unidentifiable output, with no hint that the command had failed at all; a timed-out probe surfaced under the same heading. The notice now names the failure and quotes whatever the probe managed to print.
+- **Foreign text reaching the terminal is quoted and capped (#111).** The Kimi root comes from `$KIMI_CODE_HOME` and the probe notice repeats whatever `kimi` wrote, so both are printed quoted, and the probe output is truncated — an embedded newline could otherwise forge a line of devexp output and an escape sequence could reach the terminal. Same rule the stale-file removal already follows.
+
+### Changed
+
+- **The multi-CLI announcement is comma-separated (#111).** `Detected: Claude Code and opencode` is now `Detected: Claude Code, opencode`, because the "and" form does not extend to three targets. Nothing in the repo greps it, but a script of yours might.
+
 ## [0.9.4] - 2026-09-18
 
 ### Fixed
