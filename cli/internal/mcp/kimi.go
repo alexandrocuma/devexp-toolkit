@@ -11,7 +11,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 
 	"devexp/internal/fsutil"
 	"devexp/internal/ui"
@@ -84,7 +87,7 @@ func kimiEntryFor(r resolved) kimiEntry {
 // content — so a second install reports "already configured" and leaves the
 // file alone (#159).
 func InstallKimi(mcps []MCP, env map[string]string, path string, owned map[string]string, dryRun, reinstall bool) (map[string]string, error) {
-	doc, servers, err := loadKimiConfig(path)
+	doc, servers, nullServers, err := loadKimiConfig(path)
 	if err != nil {
 		names := make([]string, 0, len(mcps))
 		for _, m := range mcps {
@@ -93,24 +96,38 @@ func InstallKimi(mcps []MCP, env map[string]string, path string, owned map[strin
 		return owned, &ConfigRefusedError{Path: path, Reason: err, Servers: names}
 	}
 
-	warnInvalidEntries(path, servers, owned)
+	warnInvalidEntries(path, servers, owned, nullServers)
 
 	newOwned := make(map[string]string, len(mcps))
-	changed := false
+	// keepOwned carries an MCP devexp could not configure this run forward as
+	// still devexp's. "I cannot write this right now" — an unset required_env
+	// in a fresh clone, in CI, in another shell — is not "this is no longer
+	// installed", and pruning treats anything missing from newOwned as the
+	// latter. Without this, re-running without mcps/.env deletes a working
+	// entry the user never asked to lose.
+	keepOwned := func(name string) {
+		if h := owned[name]; h != "" {
+			newOwned[name] = h
+		}
+	}
+	var changes []kimiChange
 
 	for _, m := range mcps {
 		if m.scope() == "project" {
 			ui.Skipped(m.Name, "project-scoped MCPs are not installed for Kimi")
+			keepOwned(m.Name)
 			continue
 		}
 		r := resolveMCP(m, env)
 		if len(r.missing) > 0 {
 			printRequired(m, r.missing)
+			keepOwned(m.Name)
 			continue
 		}
 		raw, err := encodeJSON(kimiEntryFor(r))
 		if err != nil {
 			ui.Warn(fmt.Sprintf("%s — could not be encoded for mcp.json (%v); skipping it", m.Name, err))
+			keepOwned(m.Name)
 			continue
 		}
 		if err := validateKimiEntry(raw); err != nil {
@@ -118,47 +135,44 @@ func InstallKimi(mcps []MCP, env map[string]string, path string, owned map[strin
 			// keeps the file loadable; writing it would cost the user every
 			// other MCP server in it.
 			ui.Warn(fmt.Sprintf("%s — devexp would write an entry Kimi rejects (%v); skipping it", m.Name, err))
+			keepOwned(m.Name)
 			continue
 		}
 		hash := entryFingerprint(raw)
 
 		existing, exists := servers.get(m.Name)
-		ours := exists && owned[m.Name] != "" && entryFingerprint(existing) == owned[m.Name]
 		switch {
 		case exists && entryFingerprint(existing) == hash:
-			// Already exactly what devexp installs. Claiming it is what makes
-			// the second run of a fresh install a no-op.
+			// Already exactly what devexp installs, so there is nothing to
+			// write — but ownership is only carried forward, never claimed
+			// here. An entry that merely happens to match is the user's, and
+			// adopting it would let a later run, with this MCP deselected,
+			// delete something they wrote. The cost is that a lost manifest
+			// leaves devexp's own entry unmanaged until --reinstall-mcps.
 			ui.Skipped(m.Name, "already configured")
-			newOwned[m.Name] = hash
+			keepOwned(m.Name)
 			continue
-		case exists && !ours && !reinstall:
+		case exists && !ownsEntry(existing, owned[m.Name]) && !reinstall:
 			ui.Skipped(m.Name, "a user-defined entry with this name exists — left untouched (--reinstall-mcps replaces it)")
 			continue
 		case !exists:
-			if dryRun {
-				ui.DryRun(fmt.Sprintf("add mcpServers.%s (%s) to %q", m.Name, r.transport, path))
-				continue
-			}
-			servers.set(m.Name, raw)
-			ui.Added(m.Name)
+			changes = append(changes, kimiChange{verb: "add", name: m.Name, transport: r.transport})
 		default:
-			if dryRun {
-				ui.DryRun(fmt.Sprintf("update mcpServers.%s (%s) in %q", m.Name, r.transport, path))
-				continue
-			}
-			servers.set(m.Name, raw)
-			ui.Updated(m.Name)
+			changes = append(changes, kimiChange{verb: "update", name: m.Name, transport: r.transport})
 		}
+		servers.set(m.Name, raw)
 		newOwned[m.Name] = hash
-		changed = true
 	}
 
-	changed = pruneKimiEntries(servers, owned, newOwned, path, dryRun) || changed
+	changes = append(changes, pruneKimiEntries(servers, owned, newOwned)...)
 
 	if dryRun {
+		for _, c := range changes {
+			ui.DryRun(c.describe(path))
+		}
 		return owned, nil
 	}
-	if !changed {
+	if len(changes) == 0 {
 		return newOwned, nil
 	}
 
@@ -178,8 +192,41 @@ func InstallKimi(mcps []MCP, env map[string]string, path string, owned map[strin
 	if err := fsutil.WriteFileAtomic(path, data, 0o600); err != nil {
 		return owned, fmt.Errorf("mcp: %w", err)
 	}
+	// Only now: a "+ context7" printed before a write that then failed is the
+	// line a skimming reader keeps, and it would be a lie.
+	for _, c := range changes {
+		c.report()
+	}
 	fmt.Printf("  Saved: %q\n", path)
 	return newOwned, nil
+}
+
+// kimiChange is one edit to mcpServers, held back until it is on disk.
+type kimiChange struct {
+	verb      string // add | update | remove
+	name      string
+	transport string // empty for a removal
+}
+
+func (c kimiChange) describe(path string) string {
+	switch c.verb {
+	case "remove":
+		return fmt.Sprintf("remove mcpServers.%s from %q", c.name, path)
+	case "update":
+		return fmt.Sprintf("update mcpServers.%s (%s) in %q", c.name, c.transport, path)
+	}
+	return fmt.Sprintf("add mcpServers.%s (%s) to %q", c.name, c.transport, path)
+}
+
+func (c kimiChange) report() {
+	switch c.verb {
+	case "remove":
+		ui.Removed(c.name)
+	case "update":
+		ui.Updated(c.name)
+	default:
+		ui.Added(c.name)
+	}
 }
 
 // pruneKimiEntries removes the entries devexp wrote on an earlier run and does
@@ -187,8 +234,8 @@ func InstallKimi(mcps []MCP, env map[string]string, path string, owned map[strin
 // registry — the same way a stale agent or skill file is removed. Only an
 // entry still identical to what devexp wrote goes; one the user has edited
 // since stays, and stops being devexp's.
-func pruneKimiEntries(servers *jsonObject, owned, newOwned map[string]string, path string, dryRun bool) bool {
-	changed := false
+func pruneKimiEntries(servers *jsonObject, owned, newOwned map[string]string) []kimiChange {
+	var changes []kimiChange
 	for _, name := range sortedKeys(owned) {
 		if _, stillInstalled := newOwned[name]; stillInstalled {
 			continue
@@ -197,29 +244,41 @@ func pruneKimiEntries(servers *jsonObject, owned, newOwned map[string]string, pa
 		if !exists {
 			continue
 		}
-		if entryFingerprint(existing) != owned[name] {
+		if !ownsEntry(existing, owned[name]) {
 			ui.Skipped(name, "no longer installed by devexp, but the entry has been edited — left in place and no longer tracked")
 			continue
 		}
-		if dryRun {
-			ui.DryRun(fmt.Sprintf("remove mcpServers.%s from %q", name, path))
-			continue
-		}
 		servers.del(name)
-		ui.Removed(name)
-		changed = true
+		changes = append(changes, kimiChange{verb: "remove", name: name})
 	}
-	return changed
+	return changes
+}
+
+// ownsEntry reports whether existing is the entry devexp recorded under this
+// name. An empty record never matches, and neither does an entry that cannot
+// be fingerprinted — both fingerprint to "", and comparing them equal would
+// let devexp rewrite or delete an entry it never wrote.
+func ownsEntry(existing json.RawMessage, recorded string) bool {
+	if recorded == "" {
+		return false
+	}
+	return entryFingerprint(existing) == recorded
 }
 
 // warnInvalidEntries reports entries that are already in the file and already
 // unloadable. devexp leaves them alone — writing does not make them worse —
 // but the user has to be told, because while one of them is there Kimi loads
 // no MCP server at all, devexp's included, and says so only in its log.
-func warnInvalidEntries(path string, servers *jsonObject, owned map[string]string) {
+func warnInvalidEntries(path string, servers *jsonObject, owned map[string]string, nullServers bool) {
+	// "mcpServers": null is not "no servers" — Kimi requires an object and
+	// rejects the whole file without one. Writing below repairs it; saying so
+	// matters for the run that writes nothing.
+	if nullServers {
+		ui.Warn(fmt.Sprintf(`%q has "mcpServers": null, which Kimi rejects — while it is there Kimi loads no MCP servers at all. devexp repairs it if it writes anything below; if it writes nothing, replace it with {} by hand.`, path))
+	}
 	for _, name := range servers.keys {
 		raw, _ := servers.get(name)
-		if entryFingerprint(raw) == owned[name] && owned[name] != "" {
+		if ownsEntry(raw, owned[name]) {
 			continue // devexp's own, and about to be revalidated or replaced
 		}
 		if err := validateKimiEntry(raw); err != nil {
@@ -284,34 +343,41 @@ func verifyKimiConfig(data []byte, wrote map[string]string) error {
 // it is not JSONC), a top level that is not an object, or an "mcpServers" that
 // is not one. Returned are the whole document and its servers object; every
 // value devexp does not touch passes through as the bytes it was read as.
-func loadKimiConfig(path string) (*jsonObject, *jsonObject, error) {
+func loadKimiConfig(path string) (doc, servers *jsonObject, nullServers bool, err error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return newJSONObject(), newJSONObject(), nil
+		return newJSONObject(), newJSONObject(), false, nil
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
-		return newJSONObject(), newJSONObject(), nil
+		return newJSONObject(), newJSONObject(), false, nil
 	}
 	return parseKimiConfig(data, path)
 }
 
-func parseKimiConfig(data []byte, path string) (*jsonObject, *jsonObject, error) {
+// parseKimiConfig also reports an "mcpServers" that is present and null. Kimi
+// rejects the whole file for it, so it is not the same as an absent key, but
+// merging into an empty object and writing a real one repairs the file — so
+// it is a notice, not a refusal.
+func parseKimiConfig(data []byte, path string) (*jsonObject, *jsonObject, bool, error) {
 	doc, err := decodeObject(data)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%q is not a JSON object devexp can merge into (%v)", path, err)
+		return nil, nil, false, fmt.Errorf("%q is not a JSON object devexp can merge into (%v)", path, err)
 	}
 	raw, ok := doc.get("mcpServers")
-	if !ok || string(raw) == "null" {
-		return doc, newJSONObject(), nil
+	if !ok {
+		return doc, newJSONObject(), false, nil
+	}
+	if string(bytes.TrimSpace(raw)) == "null" {
+		return doc, newJSONObject(), true, nil
 	}
 	servers, err := decodeObject(raw)
 	if err != nil {
-		return nil, nil, fmt.Errorf(`%q: "mcpServers" is not a JSON object (%v)`, path, err)
+		return nil, nil, false, fmt.Errorf(`%q: "mcpServers" is not a JSON object (%v)`, path, err)
 	}
-	return doc, servers, nil
+	return doc, servers, false, nil
 }
 
 // ── Kimi's entry schema ───────────────────────────────────────────────────────
@@ -373,6 +439,9 @@ func validateKimiEntry(raw json.RawMessage) error {
 // string url means http, and sse is never inferred.
 func entryTransport(obj map[string]json.RawMessage) (string, error) {
 	if raw, ok := obj["transport"]; ok {
+		if err := notNull(raw, "transport"); err != nil {
+			return "", err
+		}
 		var t string
 		if err := json.Unmarshal(raw, &t); err != nil {
 			return "", errors.New(`"transport" is not a string`)
@@ -392,15 +461,43 @@ func entryTransport(obj map[string]json.RawMessage) (string, error) {
 	return "", errors.New(`has no "transport", and no "command" or "url" to infer one from`)
 }
 
+// isJSONString reports whether raw is a JSON string. A null is not one: Kimi
+// infers the transport with `typeof obj.command === "string"`, so an entry
+// with a null command and a real url is an http entry to Kimi, not a broken
+// stdio one — and encoding/json would decode that null into a string without
+// complaining.
 func isJSONString(raw json.RawMessage) bool {
+	if isJSONNull(raw) {
+		return false
+	}
 	var s string
 	return len(raw) > 0 && json.Unmarshal(raw, &s) == nil
+}
+
+func isJSONNull(raw json.RawMessage) bool {
+	return string(bytes.TrimSpace(raw)) == "null"
+}
+
+// notNull rejects an explicit JSON null in a declared field. encoding/json
+// decodes null into a slice, map, bool or string without complaining, but
+// zod's .optional() means absent: a null fails the arm, the discriminated
+// union throws, and Kimi rejects the entire file — which is every MCP server
+// the user has, not just this entry. Verified against 2.0.1 for args, env,
+// cwd, enabled and headers.
+func notNull(raw json.RawMessage, key string) error {
+	if isJSONNull(raw) {
+		return fmt.Errorf("%q is null, which Kimi does not accept (leave it out instead)", key)
+	}
+	return nil
 }
 
 func stringField(obj map[string]json.RawMessage, key string) error {
 	raw, ok := obj[key]
 	if !ok {
 		return nil
+	}
+	if err := notNull(raw, key); err != nil {
+		return err
 	}
 	if !isJSONString(raw) {
 		return fmt.Errorf("%q is not a string", key)
@@ -412,6 +509,9 @@ func requiredStringField(obj map[string]json.RawMessage, key string) error {
 	raw, ok := obj[key]
 	if !ok {
 		return fmt.Errorf("has no %q", key)
+	}
+	if err := notNull(raw, key); err != nil {
+		return err
 	}
 	var s string
 	if err := json.Unmarshal(raw, &s); err != nil {
@@ -432,26 +532,57 @@ func requiredIfPresent(obj map[string]json.RawMessage, key string) error {
 	return requiredStringField(obj, key)
 }
 
+// urlField mirrors what Kimi's url() actually checks, which is `new URL` on
+// the trimmed value: a scheme, and — for the schemes the URL standard calls
+// special — a host. It deliberately insists on nothing else. Requiring
+// http/https would warn about a file:// entry that loads, and Go's url.Parse
+// alone would accept "not a url" as a relative path and a port of any length
+// that the URL constructor refuses.
+//
+// Where url.Parse fails but the URL constructor does not — a stray %zz, a tab
+// — this accepts, because the warning it feeds says the user's entry is
+// costing them every MCP server in the file, and that has to be true.
 func urlField(obj map[string]json.RawMessage, key string) error {
 	if err := requiredStringField(obj, key); err != nil {
 		return err
 	}
-	var s string
-	json.Unmarshal(obj[key], &s) //nolint:errcheck // requiredStringField checked it
-	// Kimi validates with zod's url(), i.e. the URL constructor. A scheme and
-	// a host is what that needs for the schemes an MCP server can be reached
-	// over; Go's url.Parse alone would accept "not a url" as a relative path.
-	u, err := url.Parse(s)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return fmt.Errorf("%q is not a URL", key)
+	var v string
+	json.Unmarshal(obj[key], &v) //nolint:errcheck // requiredStringField checked it
+	v = strings.TrimSpace(v)     // zod trims before parsing
+	if !urlSchemeRe.MatchString(v) {
+		return fmt.Errorf("%q is not a URL (it has no scheme)", key)
+	}
+	u, err := url.Parse(v)
+	if err != nil {
+		return nil
+	}
+	if specialURLScheme[strings.ToLower(u.Scheme)] && u.Host == "" {
+		return fmt.Errorf("%q is not a URL (%s: needs a host)", key, u.Scheme)
+	}
+	if port := u.Port(); port != "" {
+		n, convErr := strconv.Atoi(port)
+		if convErr != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("%q has a port Kimi's URL parser rejects", key)
+		}
 	}
 	return nil
 }
+
+var (
+	// urlSchemeRe is RFC 3986's scheme, which is what `new URL` insists on.
+	urlSchemeRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*:`)
+	// specialURLScheme lists the schemes the URL standard requires a host
+	// for. file is special too, but its host may be empty.
+	specialURLScheme = map[string]bool{"http": true, "https": true, "ws": true, "wss": true, "ftp": true}
+)
 
 func stringsField(obj map[string]json.RawMessage, key string) error {
 	raw, ok := obj[key]
 	if !ok {
 		return nil
+	}
+	if err := notNull(raw, key); err != nil {
+		return err
 	}
 	var items []string
 	if err := json.Unmarshal(raw, &items); err != nil {
@@ -465,6 +596,9 @@ func stringMapField(obj map[string]json.RawMessage, key string) error {
 	if !ok {
 		return nil
 	}
+	if err := notNull(raw, key); err != nil {
+		return err
+	}
 	var m map[string]string
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return fmt.Errorf("%q is not an object of strings", key)
@@ -477,6 +611,9 @@ func boolField(obj map[string]json.RawMessage, key string) error {
 	if !ok {
 		return nil
 	}
+	if err := notNull(raw, key); err != nil {
+		return err
+	}
 	var b bool
 	if err := json.Unmarshal(raw, &b); err != nil {
 		return fmt.Errorf("%q is not true or false", key)
@@ -488,6 +625,9 @@ func intField(obj map[string]json.RawMessage, key string, lo, hi int64) error {
 	raw, ok := obj[key]
 	if !ok {
 		return nil
+	}
+	if err := notNull(raw, key); err != nil {
+		return err
 	}
 	var n json.Number
 	if err := json.Unmarshal(raw, &n); err != nil {
@@ -504,6 +644,9 @@ func enumField(obj map[string]json.RawMessage, key string, allowed ...string) er
 	raw, ok := obj[key]
 	if !ok {
 		return nil
+	}
+	if err := notNull(raw, key); err != nil {
+		return err
 	}
 	var s string
 	if err := json.Unmarshal(raw, &s); err != nil {

@@ -15,6 +15,49 @@ import (
 // Every schema rule asserted here was confirmed against the real Kimi Code CLI
 // 2.0.1: each invalid case below made it log "mcp config initial load failed"
 // and load no MCP server at all, and each valid one loaded.
+// TestValidateKimiEntry_URL: Kimi validates with zod's url(), which is
+// `new URL(value.trim())` — no protocol constraint, and no host constraint
+// beyond what the URL standard imposes itself. Every row here was measured
+// against the real 2.0.1. It matters in both directions: this feeds a warning
+// that tells the user an entry is costing them every MCP server in the file.
+func TestValidateKimiEntry_URL(t *testing.T) {
+	cases := map[string]struct {
+		url  string
+		want bool // whether Kimi loads it
+	}{
+		"a plain https url":         {url: "https://e.com/mcp", want: true},
+		"a port":                    {url: "http://e.com:8080/mcp", want: true},
+		"an ipv6 host":              {url: "http://[::1]:8080/mcp", want: true},
+		"an uppercase scheme":       {url: "HTTPS://E.com", want: true},
+		"a non-http scheme":         {url: "ftp://e.com/x", want: true},
+		"a file url with no host":   {url: "file:///etc/passwd", want: true},
+		"surrounding whitespace":    {url: "  https://e.com/mcp  ", want: true},
+		"a stray percent escape":    {url: "https://e.com/%zz", want: true},
+		"an embedded tab":           {url: "https://e.com\t/mcp", want: true},
+		"a space in the userinfo":   {url: "https://user:pa ss@e.com/mcp", want: true},
+		"no scheme at all":          {url: "not a url", want: false},
+		"a scheme and nothing else": {url: "https://", want: false},
+		"a port out of range":       {url: "https://e.com:99999999999999/mcp", want: false},
+		"a port of zero":            {url: "https://e.com:0/mcp", want: false},
+		"an empty string":           {url: "", want: false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			entry, err := json.Marshal(map[string]string{"transport": "http", "url": tc.url})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := validateKimiEntry(entry)
+			if tc.want && got != nil {
+				t.Errorf("rejected %q (%v), but Kimi loads it", tc.url, got)
+			}
+			if !tc.want && got == nil {
+				t.Errorf("accepted %q, but Kimi rejects the whole file for it", tc.url)
+			}
+		})
+	}
+}
+
 func TestValidateKimiEntry(t *testing.T) {
 	cases := map[string]struct {
 		entry   string
@@ -47,6 +90,28 @@ func TestValidateKimiEntry(t *testing.T) {
 		"an unknown executor":             {entry: `{"command":"sh","executor":"docker"}`, wantErr: `"executor" is "docker"`},
 		"an empty bearer token env var":   {entry: `{"transport":"http","url":"https://e.com","bearerTokenEnvVar":""}`, wantErr: `"bearerTokenEnvVar" is empty`},
 		"an entry that is not an object":  {entry: `"nope"`, wantErr: "is not a JSON object"},
+
+		// encoding/json decodes null into a slice, map, bool or string without
+		// complaining; zod's .optional() means absent, and Kimi rejects the
+		// whole file for an explicit null. Each of these was confirmed against
+		// the real 2.0.1.
+		"null args":           {entry: `{"command":"echo","args":null}`, wantErr: `"args" is null`},
+		"null env":            {entry: `{"command":"echo","env":null}`, wantErr: `"env" is null`},
+		"null cwd":            {entry: `{"command":"echo","cwd":null}`, wantErr: `"cwd" is null`},
+		"null enabled":        {entry: `{"command":"echo","enabled":null}`, wantErr: `"enabled" is null`},
+		"null headers":        {entry: `{"transport":"http","url":"https://e.com","headers":null}`, wantErr: `"headers" is null`},
+		"null transport":      {entry: `{"transport":null,"command":"echo"}`, wantErr: `"transport" is null`},
+		"null timeout":        {entry: `{"command":"echo","startupTimeoutMs":null}`, wantErr: `"startupTimeoutMs" is null`},
+		"null executor":       {entry: `{"command":"echo","executor":null}`, wantErr: `"executor" is null`},
+		"null tool list":      {entry: `{"command":"echo","enabledTools":null}`, wantErr: `"enabledTools" is null`},
+		"null bearer env var": {entry: `{"transport":"http","url":"https://e.com","bearerTokenEnvVar":null}`, wantErr: `"bearerTokenEnvVar" is null`},
+		"null url":            {entry: `{"transport":"http","url":null}`, wantErr: `"url" is null`},
+		"null command":        {entry: `{"transport":"stdio","command":null}`, wantErr: `"command" is null`},
+		// Kimi strips unknown keys before validating, null or not.
+		"an unknown key that is null": {entry: `{"command":"echo","whatever":null}`},
+		// Kimi infers from `typeof obj.command === "string"`, so a null
+		// command beside a real url is an http entry, not a broken stdio one.
+		"a null command beside a url": {entry: `{"command":null,"url":"https://e.com/mcp"}`},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -603,6 +668,11 @@ func TestInstallKimi_RefusesAReadOnlyFile(t *testing.T) {
 	if !strings.Contains(err.Error(), "left untouched") {
 		t.Errorf("error = %v, want it to say the file was left alone", err)
 	}
+	// The change lines are held back until the write succeeds: "+ context7"
+	// above a failure is the line a skimming reader keeps.
+	if strings.Contains(out, "\033[0m context7") || strings.Contains(out, "Saved:") {
+		t.Errorf("reported a change that never reached the file:\n%s", out)
+	}
 	if data, _ := os.ReadFile(path); string(data) != content {
 		t.Errorf("the file changed:\n%s", data)
 	}
@@ -638,5 +708,209 @@ func TestVerifyKimiConfig(t *testing.T) {
 				t.Errorf("error = %v, want it to contain %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// An entry with an explicit null is one Kimi rejects, and it takes every other
+// MCP server in the file with it — so the warning that exists to say that has
+// to fire for it. This is the case the validator used to wave through.
+func TestInstallKimi_WarnsAboutANullField(t *testing.T) {
+	path := kimiFile(t, `{"mcpServers":{"theirs":{"command":"echo","args":null}}}`)
+	_, out, err := install(t, path, []MCP{context7}, nil, nil, false, false)
+	if err != nil {
+		t.Fatalf("error = %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "no MCP servers at all") || !strings.Contains(out, `"args" is null`) {
+		t.Errorf("output does not report the null field:\n%s", out)
+	}
+}
+
+// An MCP that is selected but cannot be configured this run — an unset
+// required_env in a fresh clone or in CI, a project-scoped entry, a registry
+// entry devexp cannot write validly — is not an MCP that was deselected. The
+// entry devexp wrote last run stays, and stays devexp's.
+func TestInstallKimi_KeepsAnEntryItCannotConfigureThisRun(t *testing.T) {
+	needsEnv := MCP{
+		Name:        "ui-inspector",
+		Command:     "node",
+		Args:        []string{"${UI_INSPECTOR_DIR}/dist/index.js"},
+		RequiredEnv: []string{"UI_INSPECTOR_DIR"},
+	}
+	cases := map[string]struct {
+		mcp  MCP
+		env  map[string]string
+		want string // what the output has to say
+	}{
+		"a required env var is unset this run": {mcp: needsEnv, want: "[REQUIRED]"},
+		"the registry made it project-scoped": {
+			mcp:  MCP{Name: "ui-inspector", Command: "node", Scope: "project"},
+			want: "project-scoped",
+		},
+		"the registry entry became one Kimi rejects": {
+			mcp:  MCP{Name: "ui-inspector", Transport: "http", URL: "not a url"},
+			want: "Kimi rejects",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := kimiFile(t, "")
+			env := map[string]string{"UI_INSPECTOR_DIR": "/opt/ui"}
+			owned, out, err := install(t, path, []MCP{needsEnv}, env, nil, false, false)
+			if err != nil {
+				t.Fatalf("first install: %v\n%s", err, out)
+			}
+			before, _ := os.ReadFile(path)
+
+			// Second run: same selection, but this one cannot write it.
+			again, out, err := install(t, path, []MCP{tc.mcp}, tc.env, owned, false, false)
+
+			if err != nil {
+				t.Fatalf("second install: %v\n%s", err, out)
+			}
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("output does not explain the skip (%q):\n%s", tc.want, out)
+			}
+			// ui.Removed's exact marker: the [REQUIRED] block and the
+			// warnings name the MCP too, and only this line is a deletion.
+			if strings.Contains(out, "\033[0;31m-\033[0m ui-inspector") {
+				t.Errorf("the entry was deleted:\n%s", out)
+			}
+			if strings.Contains(out, "Saved:") {
+				t.Errorf("the file was rewritten for an MCP that could not be configured:\n%s", out)
+			}
+			if after, _ := os.ReadFile(path); string(after) != string(before) {
+				t.Errorf("the file changed:\nbefore %s\nafter  %s", before, after)
+			}
+			if again["ui-inspector"] != owned["ui-inspector"] {
+				t.Errorf("ownership was dropped for an MCP that is still selected: %v", again)
+			}
+		})
+	}
+}
+
+// An entry that merely happens to match what devexp installs is the user's.
+// Adopting it would let a later run, with that MCP deselected, delete
+// something they wrote.
+func TestInstallKimi_DoesNotAdoptAnIdenticalUserEntry(t *testing.T) {
+	identical := `{
+  "mcpServers": {
+    "context7": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ]
+    }
+  }
+}
+`
+	path := kimiFile(t, identical)
+	owned, out, err := install(t, path, []MCP{context7}, nil, nil, false, false)
+	if err != nil {
+		t.Fatalf("error = %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "already configured") {
+		t.Errorf("output does not report the match:\n%s", out)
+	}
+	if _, claimed := owned["context7"]; claimed {
+		t.Errorf("devexp adopted an entry it never wrote: %v", owned)
+	}
+
+	// The run that used to delete it: the MCP is no longer selected.
+	_, out, err = install(t, path, nil, nil, owned, false, false)
+	if err != nil {
+		t.Fatalf("second install: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(path); string(got) != identical {
+		t.Errorf("a user-written entry was deleted:\n%s", got)
+	}
+}
+
+// "mcpServers": null is not "no servers" — Kimi rejects the whole file for it.
+func TestInstallKimi_NullMcpServers(t *testing.T) {
+	t.Run("it is reported, and writing repairs the file", func(t *testing.T) {
+		path := kimiFile(t, `{"note":"mine","mcpServers":null}`)
+		_, out, err := install(t, path, []MCP{context7}, nil, nil, false, false)
+		if err != nil {
+			t.Fatalf("error = %v\n%s", err, out)
+		}
+		if !strings.Contains(out, `"mcpServers": null`) {
+			t.Errorf("output does not report it:\n%s", out)
+		}
+		if _, ok := serversOf(t, path)["context7"]; !ok {
+			t.Errorf("the file was not repaired")
+		}
+		if readJSON(t, path)["note"] != "mine" {
+			t.Errorf("the user's key was lost")
+		}
+	})
+
+	// The run that writes nothing is the one where the notice is all the user
+	// gets, so it has to be there.
+	t.Run("it is reported even when nothing is written", func(t *testing.T) {
+		content := `{"mcpServers":null}`
+		path := kimiFile(t, content)
+		_, out, err := install(t, path, nil, nil, nil, false, false)
+		if err != nil {
+			t.Fatalf("error = %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "loads no MCP servers at all") {
+			t.Errorf("output does not report it:\n%s", out)
+		}
+		if got, _ := os.ReadFile(path); string(got) != content {
+			t.Errorf("the file changed:\n%s", got)
+		}
+	})
+}
+
+func TestOwnsEntry(t *testing.T) {
+	entry := json.RawMessage(`{"command":"npx"}`)
+	fingerprint := entryFingerprint(entry)
+
+	cases := map[string]struct {
+		existing json.RawMessage
+		recorded string
+		want     bool
+	}{
+		"the entry devexp recorded": {existing: entry, recorded: fingerprint, want: true},
+		"an entry that has changed": {existing: json.RawMessage(`{"command":"mine"}`), recorded: fingerprint},
+		"nothing recorded":          {existing: entry, recorded: ""},
+		// Both sides fingerprint to "" here. Comparing them equal would let
+		// devexp claim — and then overwrite or delete — an entry it never
+		// wrote, which is the hand-edited or truncated manifest case.
+		"an unfingerprintable entry against an empty record": {existing: json.RawMessage(`{oops`), recorded: ""},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := ownsEntry(tc.existing, tc.recorded); got != tc.want {
+				t.Errorf("ownsEntry(%s, %q) = %v, want %v", tc.existing, tc.recorded, got, tc.want)
+			}
+		})
+	}
+}
+
+// The fingerprint decides whether an entry is still the one devexp wrote, so
+// it has to see numbers as the file wrote them. Through float64, 1.0 and 1 are
+// the same value and a 20-digit integer is neither of the numbers it was.
+func TestEntryFingerprint_NumbersAsWritten(t *testing.T) {
+	pairs := [][2]string{
+		{`{"toolTimeoutMs":1.0}`, `{"toolTimeoutMs":1}`},
+		{`{"n":10000000000000000001}`, `{"n":10000000000000000002}`},
+	}
+	for _, pair := range pairs {
+		a, b := entryFingerprint(json.RawMessage(pair[0])), entryFingerprint(json.RawMessage(pair[1]))
+		if a == "" || b == "" {
+			t.Fatalf("no fingerprint for %s / %s", pair[0], pair[1])
+		}
+		if a == b {
+			t.Errorf("%s and %s fingerprint the same — numbers are being rounded through float64", pair[0], pair[1])
+		}
+	}
+	// The same bytes, differently formatted, still have to match: re-indenting
+	// a file is not an edit.
+	spaced := entryFingerprint(json.RawMessage("{\n  \"command\" : \"npx\"\n}"))
+	if spaced != entryFingerprint(json.RawMessage(`{"command":"npx"}`)) {
+		t.Errorf("whitespace changed the fingerprint")
 	}
 }
