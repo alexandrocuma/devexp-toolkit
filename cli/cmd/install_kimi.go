@@ -50,6 +50,20 @@ func doInstallKimi(opts *installOpts) error {
 	// later version adds — is carried forward rather than dropped (#108).
 	newManifest := *old
 
+	// Deferred, so the record survives a step that fails after an earlier one
+	// wrote. Before #113 there was nothing after the MCP step to fail; now a
+	// failing agent or skill install would return with mcp.json already
+	// merged and its ownership unrecorded, and the next run would read
+	// devexp's own entries as the user's and never touch them again. The
+	// manifest is the only ownership record Kimi has.
+	if !opts.dryRun {
+		defer func() {
+			if err := manifest.Save(p.manifest, &newManifest); err != nil {
+				ui.Warn(fmt.Sprintf("save manifest: %v", err))
+			}
+		}()
+	}
+
 	// How the installed agents are named in the bodies that reference them,
 	// which is not the same as where they are written: the tilde form with the
 	// default root, an absolute path with a custom one (kimiAgentsRef).
@@ -118,12 +132,6 @@ func doInstallKimi(opts *installOpts) error {
 
 		kept := removeStale(p.home, p.skills, old.Skills, installedSkills, staleDir, (*os.Root).RemoveAll, opts.dryRun)
 		newManifest.Skills = append(installedSkills, kept...)
-	}
-
-	if !opts.dryRun {
-		if err := manifest.Save(p.manifest, &newManifest); err != nil {
-			ui.Warn(fmt.Sprintf("save manifest: %v", err))
-		}
 	}
 
 	ui.Success("Kimi Code CLI installation complete.")

@@ -34,6 +34,9 @@ func kimiAssetRepo(t *testing.T) string {
 			"\n\nRead `~/.claude/agents/other.md` and follow it.\nAtlas at `~/.claude/agent-memory/x/`.\n"
 	}
 	files := map[string]string{
+		// One stdio MCP, so the MCP step actually writes and the three kinds
+		// of asset are exercised together rather than two of them in isolation.
+		"mcps/registry.json":           `[{"name": "probe", "command": "echo", "args": ["hi"], "scope": "user"}]`,
 		"agents/dev-agent.md":          agent("dev-agent", "Read, Bash, Agent, WebFetch"),
 		"agents/other.md":              agent("other", "Read, Grep"),
 		"agents/README.md":             "# never installed\n",
@@ -759,5 +762,37 @@ func assertHostileRootRefused(t *testing.T, repoDir, watch string) {
 	}
 	if after := treeState(t, watch); !reflect.DeepEqual(before, after) {
 		t.Errorf("a refused root still wrote something:\nbefore %v\nafter  %v", before, after)
+	}
+}
+
+// The manifest is the only record of which mcp.json entries are devexp's. A
+// step that fails after the MCP step has already merged must not take that
+// record down with it: the next run would read devexp's own entries as the
+// user's and never update or remove them again.
+//
+// The agent step is made to fail by removing the source directory it reads,
+// which is the same failure shape as an unreadable asset root.
+func TestDoInstallKimi_ManifestSurvivesALaterFailure(t *testing.T) {
+	repoDir := kimiAssetRepo(t)
+	p := kimiScratch(t, "")
+	if err := os.RemoveAll(filepath.Join(repoDir, "agents")); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := kimiRun(t, repoDir, &installOpts{})
+
+	if err == nil {
+		t.Fatalf("doInstallKimi() error = nil, want the unreadable agents directory to fail the target\n%s", out)
+	}
+	if !exists(p.manifest) {
+		t.Fatal("no manifest was written, so the MCP entries devexp just wrote are now indistinguishable from the user's")
+	}
+	saved := readCmdFile(t, p.manifest)
+	if !strings.Contains(saved, "mcps") {
+		t.Errorf("the manifest does not record the MCP servers written before the failure:\n%s", saved)
+	}
+	// And the step that did run really did write.
+	if !exists(p.mcp) {
+		t.Error("the MCP step did not write mcp.json, so this test proves nothing")
 	}
 }
