@@ -68,14 +68,8 @@ func AddClaude(m MCP, env map[string]string, dryRun bool) error {
 		}
 	}
 	if len(missing) > 0 {
-		ui.Required(m.Name, missing)
-		if m.SetupInstructions != "" {
-			fmt.Println()
-			for _, line := range strings.Split(m.SetupInstructions, "\n") {
-				fmt.Printf("  %s\n", line)
-			}
-		}
-		fmt.Printf("\n  %s will not be available until these are set.\n\n", m.Name)
+		// The same notice every target prints (resolve.go).
+		printRequired(m, missing)
 		return nil
 	}
 
