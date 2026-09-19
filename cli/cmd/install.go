@@ -81,10 +81,21 @@ var installers = map[target]func(*installOpts) error{
 	targetKimi:     doInstallKimi,
 }
 
-// notYetSupported lists targets whose installer writes nothing yet, so a run
-// that selected only these can be told it installed nothing instead of being
-// congratulated. #112-#114 remove the Kimi entry as they fill it in.
-var notYetSupported = map[target]bool{targetKimi: true}
+// notYetSupported lists, per target, the asset kinds its installer does not
+// write yet, so a partial install is never reported as a complete one. Kimi
+// installs MCP servers from #112; #113 removes agents and skills, #114 hooks
+// and with them the entry, this map, partialTargets and installsNothing.
+var notYetSupported = map[target][]string{
+	targetKimi: {"agents", "skills", "hooks"},
+}
+
+// installsNothing reports whether t writes nothing at all under opts, so a run
+// made up only of such targets exits non-zero instead of printing "All done."
+// (#111). Kimi installs MCP servers and nothing else yet, so asking it for
+// agents or skills alone is the one combination that installs nothing.
+func installsNothing(t target, opts *installOpts) bool {
+	return t == targetKimi && (opts.agentsOnly || opts.skillsOnly)
+}
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -220,19 +231,31 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		if err := install(opts); err != nil {
 			return fmt.Errorf("%s install: %w", string(t), err)
 		}
-		if !notYetSupported[t] {
+		if !installsNothing(t, opts) {
 			installed++
 		}
 	}
 
-	// A run whose every target installs nothing yet has not succeeded, whatever
+	// A run whose every target installed nothing has not succeeded, whatever
 	// each installer printed on its way past. It exits non-zero rather than
-	// letting "All done." stand in for an install that never happened.
-	if skipped := skippedTargets(targets); len(skipped) > 0 {
-		if installed == 0 {
-			return fmt.Errorf("nothing was installed: %s", labelList(skipped)+" is not a supported install target yet (#110)")
+	// letting "All done." stand in for an install that never happened (#111).
+	if installed == 0 {
+		return fmt.Errorf("nothing was installed: %s installs MCP servers only so far (#113, #114), and this run asked for agents or skills alone", labelList(targets))
+	}
+	// The per-target notice scrolls past in a multi-target run, so what a
+	// partly-supported target did not install is repeated in the summary. A
+	// target that installed nothing at all this run is left out: its own
+	// installer has just said so in full, and the summary line would claim
+	// the parts it does support were installed when they were not.
+	said := false
+	for _, t := range partialTargets(targets) {
+		if installsNothing(t, opts) {
+			continue
 		}
-		ui.Warn("Skipped: " + labelList(skipped) + " — not a supported install target yet (#110).")
+		ui.Warn(fmt.Sprintf("%s: %s are not installed for it yet (#113, #114).", t.label(), joinAnd(notYetSupported[t])))
+		said = true
+	}
+	if said {
 		fmt.Println()
 	}
 
@@ -240,15 +263,29 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// skippedTargets returns the selected targets that installed nothing.
-func skippedTargets(targets []target) []target {
+// partialTargets returns the selected targets that still install only part of
+// what devexp ships.
+func partialTargets(targets []target) []target {
 	var out []target
 	for _, t := range targets {
-		if notYetSupported[t] {
+		if len(notYetSupported[t]) > 0 {
 			out = append(out, t)
 		}
 	}
 	return out
+}
+
+// joinAnd renders a list the way a sentence needs it: "agents, skills and
+// hooks". The target announcement deliberately uses commas throughout
+// (announceTargets), but these are read as prose, not as a set.
+func joinAnd(items []string) string {
+	switch len(items) {
+	case 0:
+		return ""
+	case 1:
+		return items[0]
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
 }
 
 // labelList renders targets the way the user sees them named.

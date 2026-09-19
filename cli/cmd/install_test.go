@@ -2810,9 +2810,11 @@ func TestInstallCmd_NonInteractive(t *testing.T) {
 }
 
 // TestInstallCmd_KimiSelection: Kimi is a target the user can pick, and
-// picking it installs nothing until #112-#114 land. The point of these cases
-// is that "nothing" stays nothing — no file under the Kimi home, and no output
-// that could be read as a successful install.
+// picking it installs its MCP servers — and, until #113 and #114 land, says
+// what it did not install. The point of these cases is that neither half can
+// be misread: a run that installed MCP servers says so, and a run that could
+// only have installed the parts Kimi does not have yet still refuses to report
+// success.
 func TestInstallCmd_KimiSelection(t *testing.T) {
 	// setup gives the run a scratch HOME, a PATH holding only the fakes it
 	// asks for, and a `kimi` stub answering with the version the real CLI
@@ -2829,26 +2831,86 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		return home, calls
 	}
 
-	t.Run("kimi alone installs nothing and refuses to report success", func(t *testing.T) {
-		home, calls := setup(t, "0.42.0")
-		before := treeState(t, home)
+	t.Run("kimi alone installs its MCP servers", func(t *testing.T) {
+		home, calls := setup(t, "2.0.1")
 
 		// Deliberately not a dry run: this is the real install path.
 		out, err := executeRoot(t, "install", "--target", "kimi")
+
+		if err != nil {
+			t.Fatalf("install error = %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "All done.") {
+			t.Errorf("a run that installed MCP servers did not report success:\n%s", out)
+		}
+		mcpPath := filepath.Join(home, ".kimi-code", "mcp.json")
+		data, err := os.ReadFile(mcpPath)
+		if err != nil {
+			t.Fatalf("read %s: %v\n%s", mcpPath, err, out)
+		}
+		if !strings.Contains(string(data), `"probe"`) {
+			t.Errorf("the registry MCP is not in mcp.json:\n%s", data)
+		}
+		// The ownership record is what lets a later run tell devexp's entry
+		// from the user's, so --mcps-only has to save it too.
+		manifestPath := filepath.Join(home, ".kimi-code", ".devexp-manifest.json")
+		saved, err := os.ReadFile(manifestPath)
+		if err != nil {
+			t.Fatalf("read %s: %v", manifestPath, err)
+		}
+		if !strings.Contains(string(saved), `"mcps"`) || !strings.Contains(string(saved), "probe") {
+			t.Errorf("the manifest does not record what devexp wrote:\n%s", saved)
+		}
+		// What is still missing has to be said, or a partial install reads as
+		// a complete one.
+		for _, want := range []string{"agents, skills and hooks", "#113"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output never says %q is still missing:\n%s", want, out)
+			}
+		}
+		if strings.Contains(out, "Usage:") {
+			t.Errorf("usage dumped on a successful run:\n%s", out)
+		}
+		// Nothing about Kimi goes through another CLI.
+		noCalls(t, calls)
+	})
+
+	// A second run is the one that proves the merge is a merge: the file it
+	// already wrote is left exactly as it is (#159).
+	t.Run("a second run changes nothing", func(t *testing.T) {
+		home, _ := setup(t, "2.0.1")
+		if out, err := executeRoot(t, "install", "--target", "kimi", "--mcps-only"); err != nil {
+			t.Fatalf("first install error = %v\n%s", err, out)
+		}
+		before := treeBytes(t, filepath.Join(home, ".kimi-code"))
+
+		out, err := executeRoot(t, "install", "--target", "kimi", "--mcps-only")
+
+		if err != nil {
+			t.Fatalf("second install error = %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "already configured") {
+			t.Errorf("the second run does not say the entry was already there:\n%s", out)
+		}
+		if after := treeBytes(t, filepath.Join(home, ".kimi-code")); !reflect.DeepEqual(before, after) {
+			t.Errorf("a second install rewrote the Kimi files:\nbefore %v\nafter  %v", before, after)
+		}
+	})
+
+	// #111's guarantee, kept and narrowed: Kimi installs MCP servers and
+	// nothing else yet, so asking it for agents or skills alone installs
+	// nothing at all, and that is not "All done."
+	t.Run("kimi with --agents-only installs nothing and refuses to report success", func(t *testing.T) {
+		home, calls := setup(t, "2.0.1")
+		before := treeState(t, home)
+
+		out, err := executeRoot(t, "install", "--target", "kimi", "--agents-only")
 
 		if err == nil || !strings.Contains(err.Error(), "nothing was installed") {
 			t.Errorf("error = %v, want a run that installed nothing to say so\n%s", err, out)
 		}
 		if strings.Contains(out, "All done.") {
 			t.Errorf("reported success for a run that installed nothing:\n%s", out)
-		}
-		if !strings.Contains(out, "not a supported install target yet") {
-			t.Errorf("output never says Kimi is unsupported:\n%s", out)
-		}
-		// The root is environment-derived, so it is quoted like everything
-		// else devexp prints from outside itself (backup.go).
-		if !strings.Contains(out, strconv.Quote(filepath.Join(home, ".kimi-code"))) {
-			t.Errorf("output does not quote the Kimi root:\n%s", out)
 		}
 		// This exit is a documented outcome, not a misuse: the notice
 		// explaining it must not be pushed off-screen by a usage dump, and
@@ -2865,8 +2927,8 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		noCalls(t, calls)
 	})
 
-	t.Run("kimi alongside a real target is skipped, and said to be", func(t *testing.T) {
-		home, _ := setup(t, "0.42.0", "claude")
+	t.Run("kimi alongside a real target says what it did not install", func(t *testing.T) {
+		home, _ := setup(t, "2.0.1", "claude")
 
 		out, err := executeRoot(t, "install", "--dry-run", "--target", "claude,kimi")
 
@@ -2878,11 +2940,30 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		}
 		// The per-target notice scrolls past in a multi-target run, so the
 		// summary has to repeat it.
-		if !strings.Contains(out, "Skipped: Kimi Code CLI") {
-			t.Errorf("the summary does not name Kimi as skipped:\n%s", out)
+		if !strings.Contains(out, "Kimi Code CLI: agents, skills and hooks are not installed for it yet") {
+			t.Errorf("the summary does not say what Kimi is still missing:\n%s", out)
 		}
 		if _, err := os.Stat(filepath.Join(home, ".kimi-code")); !os.IsNotExist(err) {
-			t.Errorf("the Kimi home exists after a run that installs nothing for Kimi (%v)", err)
+			t.Errorf("a dry run created the Kimi home (%v)", err)
+		}
+	})
+
+	// The summary is the line that survives the scroll, so it must not claim
+	// the parts Kimi does support were installed when this run installed
+	// nothing for it at all. The per-target notice above it says the rest.
+	t.Run("the summary says nothing about kimi when kimi installed nothing", func(t *testing.T) {
+		setup(t, "2.0.1", "claude")
+
+		out, err := executeRoot(t, "install", "--dry-run", "--target", "claude,kimi", "--agents-only")
+
+		if err != nil {
+			t.Fatalf("install error = %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Nothing to install for Kimi Code CLI") {
+			t.Errorf("the Kimi installer did not say it had nothing to do:\n%s", out)
+		}
+		if strings.Contains(out, "are not installed for it yet") {
+			t.Errorf("the summary implies MCP servers were installed for Kimi:\n%s", out)
 		}
 	})
 
@@ -2906,21 +2987,27 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 
 	// A KIMI_CODE_HOME is whatever the environment says. Unquoted, an embedded
 	// newline forges a line of devexp output and an escape sequence reaches
-	// the terminal.
+	// the terminal — so every path the Kimi install prints is quoted, the
+	// install itself included.
 	t.Run("a hostile KIMI_CODE_HOME cannot forge output", func(t *testing.T) {
-		home, _ := setup(t, "0.42.0")
-		t.Setenv("KIMI_CODE_HOME", filepath.Join(home, "k")+"\n[devexp] Installed 34 agent(s).\x1b[2J")
+		home, _ := setup(t, "2.0.1")
+		root := filepath.Join(home, "k") + "\n[devexp] Installed 34 agent(s).\x1b[2J"
+		t.Setenv("KIMI_CODE_HOME", root)
 
 		out, err := executeRoot(t, "install", "--target", "kimi")
 
-		if err == nil {
-			t.Fatalf("install succeeded; want the run to report it installed nothing\n%s", out)
+		if err != nil {
+			t.Fatalf("install error = %v\n%s", err, out)
 		}
 		if strings.Contains(out, "\n[devexp] Installed 34 agent(s).") {
 			t.Errorf("an environment value forged a line of devexp output:\n%q", out)
 		}
 		if strings.Contains(out, "\x1b[2J") {
 			t.Errorf("an escape sequence from the environment reached the terminal:\n%q", out)
+		}
+		// It is still the directory that was used, quoted.
+		if !strings.Contains(out, strconv.Quote(filepath.Join(root, "mcp.json"))) {
+			t.Errorf("output does not name the file it wrote, quoted:\n%q", out)
 		}
 	})
 
@@ -3364,6 +3451,243 @@ func TestDoInstallOpencode_UnmergeableConfig(t *testing.T) {
 		})
 		if err == nil {
 			t.Errorf("doInstallOpencode() = nil, want the registry error")
+		}
+	})
+}
+
+// ── Kimi MCP install ──────────────────────────────────────────────────────────
+
+// runKimi drives doInstallKimi directly, the way runOpencode does, so the
+// cases below need no cobra, no PATH and no terminal.
+func runKimi(t *testing.T, repoDir string, opts installOpts) (string, error) {
+	t.Helper()
+	opts.repoDir = repoDir
+	if opts.cfg == nil {
+		opts.cfg = &config.Config{}
+	}
+	if opts.env == nil {
+		opts.env = map[string]string{}
+	}
+	var err error
+	out := captureStdout(t, func() { err = doInstallKimi(&opts) })
+	return out, err
+}
+
+// kimiRepo is a repo holding one MCP with no required env, so an install has
+// exactly one entry to write.
+func kimiRepo(t *testing.T) string {
+	t.Helper()
+	repoDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoDir, "mcps"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	registry := `[{"name": "probe", "command": "echo", "args": ["hi"], "scope": "user"}]`
+	if err := os.WriteFile(filepath.Join(repoDir, "mcps", "registry.json"), []byte(registry), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return repoDir
+}
+
+func TestDoInstallKimi_MCPs(t *testing.T) {
+	// setup points the install at a scratch Kimi root, never the developer's
+	// own ~/.kimi-code.
+	setup := func(t *testing.T) (root, repoDir string) {
+		t.Setenv("HOME", t.TempDir())
+		root = filepath.Join(t.TempDir(), "kimi-home")
+		t.Setenv("KIMI_CODE_HOME", root)
+		return root, kimiRepo(t)
+	}
+
+	t.Run("--mcps-only writes mcp.json and saves the ownership record", func(t *testing.T) {
+		root, repoDir := setup(t)
+
+		out, err := runKimi(t, repoDir, installOpts{mcpsOnly: true})
+
+		if err != nil {
+			t.Fatalf("install error = %v\n%s", err, out)
+		}
+		if data, err := os.ReadFile(filepath.Join(root, "mcp.json")); err != nil || !strings.Contains(string(data), `"probe"`) {
+			t.Errorf("mcp.json = %s (%v)", data, err)
+		}
+		// The opencode path returns before its manifest save on --mcps-only;
+		// for Kimi the manifest is the MCP ownership record, so it has to be
+		// written on exactly this run.
+		saved, err := os.ReadFile(filepath.Join(root, ".devexp-manifest.json"))
+		if err != nil || !strings.Contains(string(saved), "probe") {
+			t.Errorf("manifest = %s (%v)", saved, err)
+		}
+	})
+
+	t.Run("a dry run writes nothing at all", func(t *testing.T) {
+		root, repoDir := setup(t)
+
+		out, err := runKimi(t, repoDir, installOpts{dryRun: true})
+
+		if err != nil {
+			t.Fatalf("install error = %v\n%s", err, out)
+		}
+		if _, err := os.Stat(root); !os.IsNotExist(err) {
+			t.Errorf("the Kimi root exists after a dry run (%v)", err)
+		}
+	})
+
+	t.Run("--agents-only installs nothing and says why", func(t *testing.T) {
+		root, repoDir := setup(t)
+
+		out, err := runKimi(t, repoDir, installOpts{agentsOnly: true})
+
+		if err != nil {
+			t.Fatalf("install error = %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "MCP servers only") {
+			t.Errorf("output does not explain that there was nothing to do:\n%s", out)
+		}
+		if _, err := os.Stat(root); !os.IsNotExist(err) {
+			t.Errorf("something was written for a run with nothing to install (%v)", err)
+		}
+	})
+
+	// The Kimi root is whatever $KIMI_CODE_HOME says, and a path is bytes: it
+	// need not be text at all. Nothing in the MCP install encodes it — the
+	// entries hold commands and URLs, the manifest names and fingerprints — so
+	// on a file system that accepts such a name the install has to work, and
+	// the name has to come back as the bytes it went in as. (APFS rejects it
+	// outright with EILSEQ, and the install then fails with the mkdir error
+	// rather than writing somewhere else.)
+	t.Run("a root whose name is not valid UTF-8 still installs", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		root := filepath.Join(t.TempDir(), "kimi-\xff-home")
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Skipf("this file system will not hold a non-UTF-8 directory name: %v", err)
+		}
+		t.Setenv("KIMI_CODE_HOME", root)
+		repoDir := kimiRepo(t)
+
+		out, err := runKimi(t, repoDir, installOpts{mcpsOnly: true})
+
+		if err != nil {
+			t.Fatalf("install error = %v\n%s", err, out)
+		}
+		if data, err := os.ReadFile(filepath.Join(root, "mcp.json")); err != nil || !strings.Contains(string(data), `"probe"`) {
+			t.Errorf("mcp.json = %s (%v)", data, err)
+		}
+	})
+
+	// An mcp.json devexp cannot merge into costs the MCP step, not the run:
+	// #113 and #114 will have agents, skills and hooks to install after it.
+	t.Run("an unmergeable mcp.json warns, leaves the file alone and carries on", func(t *testing.T) {
+		root, repoDir := setup(t)
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		broken := "{ not json"
+		if err := os.WriteFile(filepath.Join(root, "mcp.json"), []byte(broken), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		out, err := runKimi(t, repoDir, installOpts{})
+
+		if err != nil {
+			t.Fatalf("install error = %v, want the run to continue\n%s", err, out)
+		}
+		for _, want := range []string{"MCP servers skipped", `"mcpServers"`, "probe"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output is missing %q:\n%s", want, out)
+			}
+		}
+		if data, _ := os.ReadFile(filepath.Join(root, "mcp.json")); string(data) != broken {
+			t.Errorf("the file changed:\n%s", data)
+		}
+	})
+
+	// Losing the manifest must never cost the user their entry. Without the
+	// ownership record devexp's own entry is indistinguishable from one the
+	// user wrote, so it is treated as the user's: left exactly as it is, and
+	// --reinstall-mcps is how you take it back.
+	t.Run("a lost manifest makes devexp leave its own entry alone", func(t *testing.T) {
+		root, repoDir := setup(t)
+		if out, err := runKimi(t, repoDir, installOpts{mcpsOnly: true}); err != nil {
+			t.Fatalf("first install: %v\n%s", err, out)
+		}
+		if err := os.Remove(filepath.Join(root, ".devexp-manifest.json")); err != nil {
+			t.Fatal(err)
+		}
+		before, _ := os.ReadFile(filepath.Join(root, "mcp.json"))
+
+		out, err := runKimi(t, repoDir, installOpts{mcpsOnly: true})
+
+		if err != nil {
+			t.Fatalf("install error = %v\n%s", err, out)
+		}
+		if after, _ := os.ReadFile(filepath.Join(root, "mcp.json")); string(after) != string(before) {
+			t.Errorf("the entry changed:\n%s", after)
+		}
+	})
+
+	// The review repro: an MCP whose required env var is set on one run and
+	// not the next — a fresh clone, CI, another shell — must not lose the
+	// entry devexp already wrote. "I cannot configure this now" is not "this
+	// is no longer installed".
+	t.Run("an unset required env var does not delete last run's entry", func(t *testing.T) {
+		root, repoDir := setup(t)
+		registry := `[{"name": "probe", "command": "node", "args": ["${PROBE_DIR}/index.js"], "required_env": ["PROBE_DIR"]}]`
+		if err := os.WriteFile(filepath.Join(repoDir, "mcps", "registry.json"), []byte(registry), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		withEnv := installOpts{mcpsOnly: true, env: map[string]string{"PROBE_DIR": "/opt/probe"}}
+		if out, err := runKimi(t, repoDir, withEnv); err != nil {
+			t.Fatalf("first install: %v\n%s", err, out)
+		}
+		mcpPath := filepath.Join(root, "mcp.json")
+		before, _ := os.ReadFile(mcpPath)
+		if !strings.Contains(string(before), "/opt/probe") {
+			t.Fatalf("the first install did not write the entry:\n%s", before)
+		}
+
+		out, err := runKimi(t, repoDir, installOpts{mcpsOnly: true})
+
+		if err != nil {
+			t.Fatalf("second install: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "[REQUIRED]") {
+			t.Errorf("output does not say why it was skipped:\n%s", out)
+		}
+		if after, _ := os.ReadFile(mcpPath); string(after) != string(before) {
+			t.Errorf("the working entry was changed or deleted:\nbefore %s\nafter  %s", before, after)
+		}
+		// Ownership has to survive too, or the next run with the variable set
+		// would find its own entry and call it the user's.
+		saved, _ := os.ReadFile(filepath.Join(root, ".devexp-manifest.json"))
+		if !strings.Contains(string(saved), "probe") {
+			t.Errorf("ownership was dropped:\n%s", saved)
+		}
+	})
+
+	t.Run("--reinstall-mcps takes a user-named entry back", func(t *testing.T) {
+		root, repoDir := setup(t)
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mine := `{"mcpServers":{"probe":{"command":"mine"}}}`
+		if err := os.WriteFile(filepath.Join(root, "mcp.json"), []byte(mine), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if out, err := runKimi(t, repoDir, installOpts{mcpsOnly: true}); err != nil {
+			t.Fatalf("install error = %v\n%s", err, out)
+		}
+		if data, _ := os.ReadFile(filepath.Join(root, "mcp.json")); string(data) != mine {
+			t.Errorf("a user entry was overwritten without --reinstall-mcps:\n%s", data)
+		}
+
+		out, err := runKimi(t, repoDir, installOpts{mcpsOnly: true, reinstallMCPs: true})
+
+		if err != nil {
+			t.Fatalf("reinstall error = %v\n%s", err, out)
+		}
+		data, _ := os.ReadFile(filepath.Join(root, "mcp.json"))
+		if !strings.Contains(string(data), `"echo"`) {
+			t.Errorf("--reinstall-mcps did not replace the entry:\n%s", data)
 		}
 	})
 }

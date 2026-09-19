@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -51,6 +52,28 @@ func TestLoad(t *testing.T) {
 				return path
 			},
 			want: &Manifest{Plugins: []string{"devexp.js", "devexp/hooks.json"}},
+		},
+		"mcp ownership round-trips": {
+			setup: func(t *testing.T, dir string) string {
+				path := filepath.Join(dir, "manifest.json")
+				data := `{"agents":null,"skills":null,"mcps":{"context7":"abc123"}}`
+				if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+					t.Fatalf("WriteFile: %v", err)
+				}
+				return path
+			},
+			want: &Manifest{MCPs: map[string]string{"context7": "abc123"}},
+		},
+		"a manifest from before Kimi loads with nil MCPs": {
+			setup: func(t *testing.T, dir string) string {
+				path := filepath.Join(dir, "manifest.json")
+				data := `{"agents":["a.md"],"skills":[],"plugins":["devexp.js"]}`
+				if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+					t.Fatalf("WriteFile: %v", err)
+				}
+				return path
+			},
+			want: &Manifest{Agents: []string{"a.md"}, Skills: []string{}, Plugins: []string{"devexp.js"}},
 		},
 		"malformed JSON returns an empty manifest and the error": {
 			setup: func(t *testing.T, dir string) string {
@@ -206,6 +229,31 @@ func TestSave_OmitsNilPlugins(t *testing.T) {
 	want := "{\n  \"agents\": [\n    \"a.md\"\n  ],\n  \"skills\": [\n    \"graphify\"\n  ]\n}"
 	if string(data) != want {
 		t.Errorf("Save() wrote %q, want %q", data, want)
+	}
+}
+
+// TestSave_MCPs: the Kimi manifest carries the fingerprints of the entries
+// devexp wrote into mcp.json, and an empty map is omitted like Plugins, so the
+// other two targets' manifests keep their exact shape (TestSave_OmitsNilPlugins).
+func TestSave_MCPs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "manifest.json")
+	want := &Manifest{Agents: []string{}, Skills: []string{}, MCPs: map[string]string{"context7": "abc123"}}
+	if err := Save(path, want); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !strings.Contains(string(data), `"mcps"`) || !strings.Contains(string(data), "abc123") {
+		t.Errorf("Save() wrote %s, want the mcp ownership in it", data)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("round trip = %+v, want %+v", got, want)
 	}
 }
 
