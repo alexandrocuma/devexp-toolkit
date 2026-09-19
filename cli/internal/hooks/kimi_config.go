@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -287,23 +288,36 @@ func editKimiHooks(configPath, block string, dryRun bool) (bool, error) {
 	}
 
 	eol := lineEnding(old)
+	// What is on disk, kept whole: the no-change test and the wording below
+	// both compare against the file as the user has it, not against the
+	// adopted copy.
+	orig := old
+	adopted := 0
+	if begins, ends := findKimiMarkers(old); len(begins) == 0 && len(ends) == 0 {
+		old, adopted = adoptUnmarkedKimiHooks(old)
+	}
+
 	data, err := spliceKimiBlock(old, withKimiEOL(block, eol), eol)
 	if err != nil {
 		return false, fmt.Errorf("hooks: %q was left untouched: %w", configPath, err)
 	}
-	if bytes.Equal(data, old) {
+	if bytes.Equal(data, orig) {
 		return false, nil
 	}
 	if err := verifyKimiHooks(data, block); err != nil {
 		return false, fmt.Errorf("hooks: %q was left untouched: the file devexp was about to write %w", configPath, err)
 	}
 	warnForeignKimiHooks(configPath, old)
+	if adopted > 0 {
+		ui.Warn(fmt.Sprintf("%q holds %d devexp hook entr%s with no devexp markers around them — Kimi rewrites config.toml on login and drops every comment, markers included. devexp has recognised them by their command and is rewriting them as one marked block, rather than appending a second copy of every hook.",
+			configPath, adopted, map[bool]string{true: "y", false: "ies"}[adopted == 1]))
+	}
 
 	verb := "update"
 	switch {
 	case block == "":
 		verb = "remove"
-	case len(bytes.TrimSpace(old)) == 0:
+	case len(bytes.TrimSpace(orig)) == 0:
 		verb = "add"
 	}
 	if dryRun {
@@ -385,6 +399,138 @@ func findKimiMarkers(content []byte) (begins, ends []int) {
 		off = next
 	}
 	return begins, ends
+}
+
+// ── Recovering from a config.toml Kimi rewrote ────────────────────────────────
+//
+// Kimi's own writer round-trips config.toml through parse -> stringify, and
+// stringify emits no comments. So the moment the user logs in — or changes any
+// setting from inside Kimi — devexp's two marker lines are gone while the
+// [[hooks]] tables between them stay. Left alone, the next install finds no
+// markers, appends its block, and the user has every guard registered TWICE:
+// each tool call scanned twice, each block reason printed twice, and no way to
+// tell which copy is which.
+//
+// The entries themselves survive that rewrite intact, and they are
+// recognisable: their command is devexp's adapter invocation, which nothing
+// else has a reason to be. So when there are no markers at all, an entry that
+// runs devexp's adapter is adopted as devexp's — lifted out of the file here
+// and written back inside fresh markers by the same splice that would have
+// appended them.
+//
+// Only when there are NO markers. A file that still has them is the
+// authoritative answer to "which lines are devexp's", and an entry a user
+// deliberately wrote outside the block to run the adapter their own way is
+// theirs to keep.
+
+// kimiAdapterRe recognises devexp's adapter in a rendered command. It matches
+// the path tail rather than the whole command, because the install root moves:
+// a user who repoints $KIMI_CODE_HOME, or a devexp that changes how it quotes,
+// must still recognise the entries the previous install wrote.
+var kimiAdapterRe = regexp.MustCompile(`(^|[^\w.-])kimi[/\\]adapter\.sh($|[^\w.-])`)
+
+// kimiCommandRe matches the `command = "..."` line of a [[hooks]] table. Only
+// a basic string: that is what renderKimiBlock writes, and an entry devexp did
+// not write is not devexp's to adopt.
+var kimiCommandRe = regexp.MustCompile(`^\s*command\s*=\s*(".*")\s*$`)
+
+// adoptUnmarkedKimiHooks removes the [[hooks]] tables whose command runs
+// devexp's adapter, and reports how many it took out. The caller then appends
+// the current block, so the net effect is that the stripped entries come back
+// with their markers.
+//
+// It works on lines rather than on the parsed document because everything
+// outside devexp's own entries has to survive byte for byte, and a TOML
+// round-trip would not keep the user's formatting, key order or comments.
+// verifyKimiHooks re-reads the result either way.
+func adoptUnmarkedKimiHooks(content []byte) ([]byte, int) {
+	lines, offsets := kimiLines(content)
+	var out []byte
+	kept, adopted := 0, 0
+	for i := 0; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) != "[[hooks]]" {
+			continue
+		}
+		end := kimiTableEnd(lines, i)
+		if !kimiTableIsDevexp(lines[i+1 : end]) {
+			i = end - 1
+			continue
+		}
+		// Blank lines immediately before the table go with it, so adopting
+		// does not leave a gap growing by one line per install. A comment is
+		// never absorbed: it may be the user's, about what follows.
+		start := i
+		for start > 0 && strings.TrimSpace(lines[start-1]) == "" {
+			start--
+		}
+		out = append(out, content[kept:offsets[start]]...)
+		kept = offsets[end]
+		adopted++
+		i = end - 1
+	}
+	if adopted == 0 {
+		return content, 0
+	}
+	return append(out, content[kept:]...), adopted
+}
+
+// kimiTableEnd returns the index just past the last line of the table opened
+// at lines[start]: the next table header, or the end of the file, with any
+// trailing blank and comment lines given back so they stay with what follows
+// them rather than being adopted along with the table.
+func kimiTableEnd(lines []string, start int) int {
+	end := len(lines)
+	for j := start + 1; j < len(lines); j++ {
+		if strings.HasPrefix(strings.TrimSpace(lines[j]), "[") {
+			end = j
+			break
+		}
+	}
+	for end > start+1 {
+		t := strings.TrimSpace(lines[end-1])
+		if t != "" && !strings.HasPrefix(t, "#") {
+			break
+		}
+		end--
+	}
+	return end
+}
+
+// kimiTableIsDevexp reports whether a [[hooks]] table's body holds a command
+// that runs devexp's adapter.
+func kimiTableIsDevexp(body []string) bool {
+	for _, line := range body {
+		m := kimiCommandRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		var doc struct {
+			C string `toml:"c"`
+		}
+		if err := toml.Unmarshal([]byte("c = "+m[1]), &doc); err != nil {
+			return false
+		}
+		return kimiAdapterRe.MatchString(doc.C)
+	}
+	return false
+}
+
+// kimiLines splits content into lines (each keeping its own line ending) and
+// the byte offset each one starts at, plus a final offset for the end of the
+// content, so a run of lines maps straight back to a byte range.
+func kimiLines(content []byte) ([]string, []int) {
+	var lines []string
+	offsets := []int{}
+	for off := 0; off < len(content); {
+		next := len(content)
+		if end := bytes.IndexByte(content[off:], '\n'); end >= 0 {
+			next = off + end + 1
+		}
+		lines = append(lines, string(content[off:next]))
+		offsets = append(offsets, off)
+		off = next
+	}
+	return lines, append(offsets, len(content))
 }
 
 // appendKimiBlock puts block at the end of the file, after a blank line. The
