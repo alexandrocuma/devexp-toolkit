@@ -148,6 +148,14 @@ func InstallKimi(srcDir, targetDir, agentsDir string, disabled []string, dryRun 
 		}
 		kept, err := copyDir(skillDir, destDir, dryRun, subst)
 		if err != nil {
+			// copyDir creates the destination before it writes into it, so a
+			// failure part-way leaves a directory that is devexp's. The name
+			// goes back with the error, or the caller records a tree it owns
+			// but cannot account for. Checked rather than assumed: a failure
+			// in MkdirAll itself leaves nothing behind.
+			if _, statErr := os.Lstat(destDir); statErr == nil {
+				installed = append(installed, name)
+			}
 			return installed, err
 		}
 		if dryRun {

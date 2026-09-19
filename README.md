@@ -87,7 +87,7 @@ cd devexp-toolkit
 
 `install.sh` builds the `devexp` Go CLI from `cli/` (only when `bin/devexp` doesn't exist yet) and execs `devexp install`. Because `devexp` reads agents, skills, hooks, and MCPs live from disk when run inside a clone, editing them needs no rebuild — just re-run `./install.sh`. After pulling Go changes under `cli/`, rebuild with `rm bin/devexp && ./install.sh` ([Updating](docs/guides/install.md#updating)).
 
-The installer detects which AI coding CLI(s) you have installed — **Claude Code**, **opencode** and **Kimi Code CLI** — and when more than one is present it asks which to target, in any combination. Without a terminal it installs for all of them. Kimi Code gets MCP servers so far; agents, skills and hooks are still to come ([details](docs/guides/install.md#kimi-code-cli)).
+The installer detects which AI coding CLI(s) you have installed — **Claude Code**, **opencode** and **Kimi Code CLI** — and when more than one is present it asks which to target, in any combination. Without a terminal it installs for all of them. Kimi Code gets MCP servers, agents and skills; hooks are still to come ([details](docs/guides/install.md#kimi-code-cli)).
 
 ### Common flags
 

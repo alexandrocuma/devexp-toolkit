@@ -140,7 +140,7 @@ Unlike the Claude Code target, there's **no backup step**.
 
 ### Install: Kimi Code CLI
 
-`runInstall` → `cli/cmd/install_kimi.go` `doInstallKimi(opts)`, with paths from `kimiTargetPaths($KIMI_CODE_HOME, $HOME, now)`. MCP servers are all it installs so far; agents and skills are #113, hooks #114, and every run names what it did not install (`notYetSupported` in `cli/cmd/install.go`). `--agents-only`/`--skills-only` therefore install nothing, and a Kimi-only run of that shape exits non-zero.
+`runInstall` → `cli/cmd/install_kimi.go` `doInstallKimi(opts)`, with paths from `kimiTargetPaths($KIMI_CODE_HOME, $HOME, now)`. It installs MCP servers, then agents, then skills, in `doInstallClaude`'s order; hooks are #114, and every run names what it did not install (`notYetSupported` in `cli/cmd/install.go`). Each of `--mcps-only`/`--agents-only`/`--skills-only` installs exactly its own kind, so no flag combination leaves a Kimi run with nothing to do.
 
 1. `loadOldManifest` reads `$KIMI/.devexp-manifest.json`; the whole struct is carried forward, so nothing a later version adds is dropped.
 2. `installMCPsKimi` → `cli/internal/mcp/kimi.go` `InstallKimi` merges the registry into the `mcpServers` object of `$KIMI/mcp.json`:
@@ -151,7 +151,7 @@ Unlike the Claude Code target, there's **no backup step**.
    - A file that is not strict JSON, whose top level is not an object, or whose `mcpServers` is not one, is left untouched (`mcp.ConfigRefusedError`): the MCP step is skipped with a warning and the run continues.
 3. `manifest.Save` writes `$KIMI/.devexp-manifest.json`, including on `--mcps-only`, because for Kimi the manifest *is* the MCP ownership record (skipped in dry-run).
 
-Every path this target prints is quoted: the root comes from `$KIMI_CODE_HOME`. There is no backup step and nothing is exec'd — Kimi has no `mcp add` command.
+Every path this target prints is quoted: the root comes from `$KIMI_CODE_HOME`. Nothing is exec'd — Kimi has no `mcp add` command — and the MCP step has no backup, because it merges into `mcp.json` rather than replacing it; the agent and skill steps back up what is already there, as the Claude Code install does.
 
 ### A tool call at runtime (after install)
 

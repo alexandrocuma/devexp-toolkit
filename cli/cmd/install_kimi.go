@@ -97,6 +97,17 @@ func doInstallKimi(opts *installOpts) error {
 			opts.dryRun,
 		)
 		if err != nil {
+			// A step that fails part-way has still written files, and it hands
+			// them back with the error. Record them — merged with what was
+			// already recorded — or the next run compares against a list that
+			// never learned about them: a since-deselected agent is never
+			// pruned, and until #115 ./uninstall.sh cannot remove it either.
+			//
+			// Stale removal is skipped on this path on purpose. The install
+			// set is half-finished, so everything the step never reached would
+			// look stale, and pruning against it would delete agents this run
+			// simply did not get to.
+			newManifest.Agents = mergeInstalled(old.Agents, installedAgents)
 			return err
 		}
 		ui.Success(fmt.Sprintf("Installed %d agent(s).", len(installedAgents)))
@@ -125,6 +136,8 @@ func doInstallKimi(opts *installOpts) error {
 			opts.dryRun,
 		)
 		if err != nil {
+			// As for agents above: keep what was written, prune nothing.
+			newManifest.Skills = mergeInstalled(old.Skills, installedSkills)
 			return err
 		}
 		ui.Success(fmt.Sprintf("Installed %d skill(s).", len(installedSkills)))
@@ -148,6 +161,12 @@ func doInstallKimi(opts *installOpts) error {
 		fmt.Printf("  Skills : %q\n", p.skills)
 	}
 	fmt.Println()
+	// Said here rather than in install.go's per-target notice, which lists the
+	// asset kinds still to come: this is not a missing kind but a missing way
+	// out. Telling someone what was written without telling them it cannot be
+	// removed cleanly is half the story, and #115 is what closes it.
+	ui.Warn("./uninstall.sh cannot remove a Kimi Code CLI install yet (#115) — until it can, what is listed above has to be removed by hand.")
+	fmt.Println()
 	ui.Info("Restart Kimi Code CLI to activate.")
 	fmt.Println()
 	return nil
@@ -168,4 +187,26 @@ func installMCPsKimi(opts *installOpts, p kimiPaths, owned map[string]string) (m
 	newOwned, err := mcp.InstallKimi(registry, opts.env, p.mcp, owned, opts.dryRun, opts.reinstallMCPs)
 	fmt.Println()
 	return newOwned, err
+}
+
+// mergeInstalled is what the manifest records when a step failed part-way: the
+// names it did write, plus everything the previous run recorded. Order is
+// what was installed first, then what is only in the old record, so a reader
+// sees this run's set before the leftovers; duplicates are dropped.
+//
+// The union rather than either side alone: the new names are files that exist
+// and must be tracked, and the old ones may still be on disk untouched, since
+// a failed run removed nothing.
+func mergeInstalled(old, installed []string) []string {
+	seen := make(map[string]bool, len(installed)+len(old))
+	out := make([]string, 0, len(installed)+len(old))
+	for _, group := range [][]string{installed, old} {
+		for _, name := range group {
+			if !seen[name] {
+				seen[name] = true
+				out = append(out, name)
+			}
+		}
+	}
+	return out
 }

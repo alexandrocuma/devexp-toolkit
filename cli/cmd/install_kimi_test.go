@@ -174,6 +174,11 @@ func TestDoInstallKimi_FreshInstall(t *testing.T) {
 	if !strings.Contains(installed, p.agentsRef+"/other.md") {
 		t.Errorf("the body reference was not repointed at the Kimi install (%s):\n%s", p.agentsRef, installed)
 	}
+	// Telling a user what was written without telling them it cannot be
+	// removed cleanly is half the story.
+	if !strings.Contains(out, "uninstall.sh cannot remove a Kimi Code CLI install yet") {
+		t.Errorf("the run does not say the install cannot be removed yet:\n%s", out)
+	}
 	if !strings.Contains(installed, "${base_prompt}") {
 		t.Errorf("the installed agent does not opt into Kimi's base prompt:\n%s", installed)
 	}
@@ -794,5 +799,135 @@ func TestDoInstallKimi_ManifestSurvivesALaterFailure(t *testing.T) {
 	// And the step that did run really did write.
 	if !exists(p.mcp) {
 		t.Error("the MCP step did not write mcp.json, so this test proves nothing")
+	}
+}
+
+func TestMergeInstalled(t *testing.T) {
+	tests := map[string]struct{ old, installed, want []string }{
+		"what was written comes first, then what only the old record had": {
+			old: []string{"a.md", "b.md"}, installed: []string{"c.md"},
+			want: []string{"c.md", "a.md", "b.md"},
+		},
+		"a name in both appears once": {
+			old: []string{"a.md", "b.md"}, installed: []string{"b.md", "c.md"},
+			want: []string{"b.md", "c.md", "a.md"},
+		},
+		"nothing written keeps the old record": {
+			old: []string{"a.md"}, installed: nil, want: []string{"a.md"},
+		},
+		"no old record keeps what was written": {
+			old: nil, installed: []string{"a.md"}, want: []string{"a.md"},
+		},
+		"both empty": {old: nil, installed: nil, want: []string{}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := mergeInstalled(tt.old, tt.installed); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("mergeInstalled(%v, %v) = %v, want %v", tt.old, tt.installed, got, tt.want)
+			}
+		})
+	}
+}
+
+// A failure PART-WAY THROUGH a step, as opposed to between two steps. The step
+// hands its partial result back with the error, and dropping it leaves files on
+// disk that the manifest never learned about: a later run would not prune a
+// since-deselected one, and until #115 ./uninstall.sh could not remove it.
+func TestDoInstallKimi_ManifestRecordsAPartialStep(t *testing.T) {
+	for _, kind := range []string{"agents", "skills"} {
+		t.Run(kind, func(t *testing.T) {
+			repoDir := kimiAssetRepo(t)
+			p := kimiScratch(t, "")
+			// A destination that is a directory: the atomic writer refuses a
+			// non-regular target, so this one write fails while others land.
+			var blocked string
+			if kind == "agents" {
+				blocked = filepath.Join(p.agents, "other.md")
+			} else {
+				blocked = filepath.Join(p.skills, "graphify", "SKILL.md")
+			}
+			if err := os.MkdirAll(blocked, 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			out, err := kimiRun(t, repoDir, &installOpts{})
+
+			if err == nil {
+				t.Fatalf("doInstallKimi() error = nil, want the blocked write to fail the target\n%s", out)
+			}
+			gotAgents, gotSkills := kimiManifest(t, p.manifest)
+			got := gotAgents
+			if kind == "skills" {
+				got = gotSkills
+			}
+			if len(got) == 0 {
+				t.Fatalf("the manifest records no %s, but the step wrote some before failing:\n%s", kind, out)
+			}
+			// Everything on disk that devexp wrote must be in the record.
+			var onDisk []string
+			if kind == "agents" {
+				entries, _ := os.ReadDir(p.agents)
+				for _, e := range entries {
+					if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+						onDisk = append(onDisk, e.Name())
+					}
+				}
+			} else {
+				entries, _ := os.ReadDir(p.skills)
+				for _, e := range entries {
+					if e.IsDir() {
+						onDisk = append(onDisk, e.Name())
+					}
+				}
+			}
+			recorded := map[string]bool{}
+			for _, n := range got {
+				recorded[n] = true
+			}
+			for _, n := range onDisk {
+				if !recorded[n] {
+					t.Errorf("%s is on disk but not in the manifest, so a later run cannot prune it", n)
+				}
+			}
+			// The earlier step's record survives too (the deferred save).
+			data := readCmdFile(t, p.manifest)
+			if kind == "skills" && !strings.Contains(data, "dev-agent.md") {
+				t.Errorf("the agent step's record was lost when the skill step failed:\n%s", data)
+			}
+			if !strings.Contains(data, "mcps") {
+				t.Errorf("the MCP ownership record was lost:\n%s", data)
+			}
+		})
+	}
+}
+
+// Stale removal is skipped when a step failed part-way: the install set is
+// half-finished, so everything the step never reached would look stale.
+func TestDoInstallKimi_PartialStepPrunesNothing(t *testing.T) {
+	repoDir := kimiAssetRepo(t)
+	p := kimiScratch(t, "")
+	if out, err := kimiRun(t, repoDir, &installOpts{}); err != nil {
+		t.Fatalf("first install error = %v\n%s", err, out)
+	}
+	// A second agent from the first run that the failing run will not reach.
+	survivor := filepath.Join(p.agents, "other.md")
+	if !exists(survivor) {
+		t.Fatalf("fixture changed: %s was not installed", survivor)
+	}
+	os.Remove(filepath.Join(p.agents, "dev-agent.md")) //nolint:errcheck
+	if err := os.MkdirAll(filepath.Join(p.agents, "dev-agent.md"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := kimiRun(t, repoDir, &installOpts{})
+
+	if err == nil {
+		t.Fatalf("doInstallKimi() error = nil, want the blocked write to fail\n%s", out)
+	}
+	if !exists(survivor) {
+		t.Errorf("a half-finished run pruned an agent it simply never reached:\n%s", out)
+	}
+	if strings.Contains(out, "no longer in this release") {
+		t.Errorf("a half-finished run reported something as stale:\n%s", out)
 	}
 }
