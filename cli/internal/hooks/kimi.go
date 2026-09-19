@@ -8,8 +8,20 @@ import "strings"
 // per event, the tool envelope on stdin, exit 2 to block with stderr as the
 // reason — so the Claude Code guard scripts are the same scripts. What differs
 // is everything around them. Measured against Kimi Code CLI 2.0.1: the shipped
-// bundle's agent-core-v2 hook runner, and `kimi doctor config` run over
-// candidate files in a throwaway KIMI_CODE_HOME.
+// bundle's agent-core-v2 hook runner — matchHooks.ts AND the runHook.ts it
+// calls, because half of what matters happens in the outer frame — and
+// `kimi doctor config` run over candidate files in a throwaway
+// KIMI_CODE_HOME.
+//
+//   - The envelope on stdin is snake_case at the TOP LEVEL and nowhere else.
+//     runMatchedHooks builds the payload camelCase and puts it through
+//     toHookInputData — `Object.entries` + camelToSnake, so exactly one level
+//     deep — before runHook spawns anything. A guard therefore receives
+//     `tool_name` and `tool_input` already spelled the way it reads them, and
+//     a `tool_input` whose keys are still the tool's own (`path`, not
+//     `file_path`). Reading runHook alone, without its caller, is what made
+//     the first adapter look for `toolName`, find nothing, and fail closed on
+//     every tool call in the session.
 //
 //   - `permissionDecision: "ask"` is ALLOWED. runHook's structuredOutput blocks
 //     only on "deny"; everything else falls through to allowResult. So a guard

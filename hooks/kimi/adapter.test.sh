@@ -40,20 +40,50 @@ DESTRUCTIVE=$(printf '%s%s' 'rm -r' 'f /')
 # ── helpers ─────────────────────────────────────────────────────────────────
 
 # A Kimi PreToolUse envelope: camelCase, tool arguments under toolInput.
-envelope() { # $1=toolName  $2..=key=value
-  python3 -c '
+# ── the envelope Kimi actually writes ────────────────────────────────────────
+# matchHooks.ts builds the PreToolUse payload camelCase and then runs
+# toHookInputData over it — Object.entries + camelToSnake, ONE level deep —
+# before runHook ever spawns the command. So the top level arrives snake_case
+# and `tool_input` arrives exactly as the tool named its arguments. Both
+# helpers below start from the same pre-conversion object; `envelope` applies
+# Kimi's conversion, `camel_envelope` does not, so the adapter is held to both
+# spellings.
+KIMI_ENVELOPE_PY='
 import json, sys
+
+def camel_to_snake(key):  # Kimi: value.replaceAll(/[A-Z]/g, ch => `_${ch.toLowerCase()}`)
+    out = []
+    for ch in key:
+        if "A" <= ch <= "Z":
+            out.append("_" + ch.lower())
+        else:
+            out.append(ch)
+    return "".join(out)
+
 args = {}
-for pair in sys.argv[2:]:
+for pair in sys.argv[3:]:
     key, _, value = pair.partition("=")
     args[key] = value
-print(json.dumps({
+raw = {
     "hookEventName": "PreToolUse",
     "sessionId": "session-abc",
-    "toolCallId": "call-1",
-    "toolName": sys.argv[1],
+    "clientType": "cli",
+    "sessionTitle": "a session",
+    "toolName": sys.argv[2],
     "toolInput": args,
-}))' "$@"
+    "toolCallId": "call-1",
+}
+if sys.argv[1] == "converted":
+    raw = {camel_to_snake(k): v for k, v in raw.items()}
+print(json.dumps(raw))
+'
+
+envelope() { # $1=toolName  $2..=key=value — what Kimi really sends
+  python3 -c "$KIMI_ENVELOPE_PY" converted "$@"
+}
+
+camel_envelope() { # $1=toolName  $2..=key=value — the pre-conversion shape
+  python3 -c "$KIMI_ENVELOPE_PY" raw "$@"
 }
 
 run() { # $1=guard-or-empty  $2=payload on stdin
@@ -131,6 +161,17 @@ expect 'an empty toolName blocks'         2 "$SECRET_GUARD" '{"toolName": "", "t
 expect 'a non-string toolName blocks'     2 "$SECRET_GUARD" '{"toolName": 7, "toolInput": {}}'
 expect 'a missing toolInput blocks'       2 "$SECRET_GUARD" '{"toolName": "Read"}'
 expect 'a non-object toolInput blocks'    2 "$SECRET_GUARD" '{"toolName": "Read", "toolInput": "README.md"}'
+# The same refusals against the spelling Kimi really sends. Both have to fail
+# closed, or the adapter would block on one shape and wave through the other.
+expect 'a missing tool_name blocks'       2 "$SECRET_GUARD" '{"tool_input": {"path": "README.md"}}'
+expect 'an empty tool_name blocks'        2 "$SECRET_GUARD" '{"tool_name": "", "tool_input": {}}'
+expect 'a non-string tool_name blocks'    2 "$SECRET_GUARD" '{"tool_name": 7, "tool_input": {}}'
+expect 'a missing tool_input blocks'      2 "$SECRET_GUARD" '{"tool_name": "Read"}'
+expect 'a non-object tool_input blocks'   2 "$SECRET_GUARD" '{"tool_name": "Read", "tool_input": "README.md"}'
+# Neither spelling present at all — the shape a third Kimi rename would send.
+expect 'neither spelling blocks'          2 "$SECRET_GUARD" '{"toolname": "Read", "toolinput": {}}'
+# And the one that matters most: the real envelope must NOT be refused.
+expect 'the real envelope is not refused' 0 "$SECRET_GUARD" "$(envelope Read 'path=README.md')"
 run "$SECRET_GUARD" '{"toolName": "Read", '
 check 'a malformed envelope says why on stderr' \
   "$(grep -q 'devexp kimi-adapter' "$ERR" && echo 0 || echo 1)"
@@ -275,15 +316,26 @@ printf '%s' "\$#" >"$TMP/argc"
 exit 0
 SH
 )
-FULL='{"hookEventName": "PreToolUse", "sessionId": "s-1", "toolCallId": "call-9",
-       "transcriptPath": "/t.jsonl", "cwd": "/repo", "somethingNew": {"a": 1},
-       "toolName": "Read",
-       "toolInput": {"path": "src/app.ts", "line_offset": 10, "n_lines": 20,
-                     "unmappedArg": "kept"}}'
-run "$RECORD" "$FULL"
-check 'a translated envelope is accepted' "$([ "$RC" = 0 ] && echo 0 || echo 1)"
-check 'the envelope is translated faithfully' \
-  "$(python3 -c '
+# The real envelope first: snake_case at the top level, Kimi's own names
+# inside tool_input. `somethingNew` stands for a key a later Kimi adds and
+# converts; `unmappedArg` for a tool argument, which Kimi never converts.
+REAL='{"hook_event_name": "PreToolUse", "session_id": "s-1", "tool_call_id": "call-9",
+       "client_type": "cli", "session_title": "a session", "cwd": "/repo",
+       "something_new": {"a": 1},
+       "tool_name": "Read",
+       "tool_input": {"path": "src/app.ts", "line_offset": 10, "n_lines": 20,
+                      "unmappedArg": "kept"}}'
+# The same facts unconverted. Kimi does not send this today; the adapter
+# accepts it so a change on Kimi's side cannot turn every tool call into a
+# block, which is what reading runHook without its caller once cost us.
+CAMEL='{"hookEventName": "PreToolUse", "sessionId": "s-1", "toolCallId": "call-9",
+        "clientType": "cli", "sessionTitle": "a session", "cwd": "/repo",
+        "somethingNew": {"a": 1},
+        "toolName": "Read",
+        "toolInput": {"path": "src/app.ts", "line_offset": 10, "n_lines": 20,
+                      "unmappedArg": "kept"}}'
+
+TRANSLATION_PY='
 import json, sys
 d = json.load(open(sys.argv[1]))
 problems = []
@@ -294,20 +346,47 @@ want("tool_name", "Read")
 want("tool_call_id", "call-9")
 want("session_id", "s-1")
 want("hook_event_name", "PreToolUse")
-want("transcript_path", "/t.jsonl")
+want("client_type", "cli")
+want("session_title", "a session")
 want("cwd", "/repo")
-want("somethingNew", {"a": 1})
+# A top-level key with no Claude Code meaning still arrives snake_case: that
+# is Kimi own rule, and the adapter applies the same one.
+want("something_new", {"a": 1})
 ti = d.get("tool_input", {})
 if ti.get("file_path") != "src/app.ts": problems.append("file_path=%r" % ti.get("file_path"))
 if "path" in ti: problems.append("path survived the rename")
 if ti.get("line_offset") != 10: problems.append("line_offset dropped")
+# Nothing inside tool_input is renamed, because Kimi renames nothing there.
 if ti.get("unmappedArg") != "kept": problems.append("unmappedArg dropped")
-for camel in ("toolName", "toolInput", "toolCallId", "sessionId"):
+for camel in ("toolName", "toolInput", "toolCallId", "sessionId", "somethingNew"):
     if camel in d: problems.append("%s not renamed" % camel)
 if problems:
     sys.stderr.write("; ".join(problems) + "\n")
     sys.exit(1)
-' "$TMP/seen.json" && echo 0 || echo 1)"
+'
+
+for spelling in real camel; do
+  case "$spelling" in
+    real)  PAYLOAD_IN="$REAL" ;;
+    camel) PAYLOAD_IN="$CAMEL" ;;
+  esac
+  run "$RECORD" "$PAYLOAD_IN"
+  check "a $spelling-spelled envelope is accepted" "$([ "$RC" = 0 ] && echo 0 || echo 1)"
+  check "a $spelling-spelled envelope is translated faithfully" \
+    "$(python3 -c "$TRANSLATION_PY" "$TMP/seen.json" && echo 0 || echo 1)"
+done
+
+# The regression itself: the exact shape Kimi sends must not be refused.
+run "$RECORD" "$(envelope Read 'path=src/app.ts')"
+check 'the envelope helper produces what Kimi sends, and it is accepted' \
+  "$([ "$RC" = 0 ] && echo 0 || echo 1)"
+check 'that envelope reaches the guard as tool_name/file_path' \
+  "$(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+sys.exit(0 if d.get("tool_name") == "Read"
+         and d.get("tool_input", {}).get("file_path") == "src/app.ts" else 1)' \
+    "$TMP/seen.json" && echo 0 || echo 1)"
 check 'the guard is run with no arguments' \
   "$([ "$(cat "$TMP/argc")" = 0 ] && echo 0 || echo 1)"
 check 'the adapter does not mint the scan proof' \

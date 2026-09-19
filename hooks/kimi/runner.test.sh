@@ -10,9 +10,26 @@
 # Kimi and a devexp guard — how runHook spawns the registered command — and
 # drives the real adapter and the real guards through it.
 #
-# WHAT IT REPRODUCES, from agent-core-v2's
-# features/externalHooks/internal/runHook.ts in Kimi Code CLI 2.0.1:
+# WHAT IT REPRODUCES, from agent-core-v2's externalHooks in Kimi Code CLI
+# 2.0.1 — BOTH frames, because the payload is built in the outer one:
 #
+#   internal/matchHooks.ts
+#     const inputData = toHookInputData({ hookEventName: event,
+#                                         sessionId: args.sessionId ?? "",
+#                                         ...args.inputData });
+#     await Promise.all(matched.map((hook) => runHook(hostProcess, hook.command,
+#                                                     inputData, {...})));
+#     function toHookInputData(input) {
+#       const result = {};
+#       for (const [key, value] of Object.entries(input))
+#         result[camelToSnake(key)] = value;
+#       return result;
+#     }
+#     function camelToSnake(value) {
+#       return value.replaceAll(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`);
+#     }
+#
+#   internal/runHook.ts
 #     proc = await hostProcess.spawn(command, [], { shell: true, cwd, env });
 #     ...
 #     proc.stdin.end(JSON.stringify(input));
@@ -24,8 +41,17 @@
 #   * `spawn(command, [], { shell: true })` is Node's: on POSIX it execs
 #     `/bin/sh -c <command>` with NO further arguments. So the command is run
 #     here exactly as rendered, through `sh -c`, with nothing appended.
-#   * the envelope is `JSON.stringify(input)` on the child's stdin — Kimi's own
-#     camelCase shape, `toolName`/`toolInput`, not Claude Code's.
+#   * the envelope is `JSON.stringify(inputData)` on the child's stdin, and
+#     `inputData` has been through `toHookInputData`. That conversion is ONE
+#     level deep (`Object.entries`), so the TOP LEVEL is snake_case —
+#     `tool_name`, `tool_input`, `hook_event_name`, `session_id`,
+#     `client_type`, `session_title`, `tool_call_id` — and everything inside
+#     `tool_input` keeps the tool's own spelling, so a Read still names its
+#     file in `path`. `kimi_envelope` below applies exactly that function, so
+#     what goes down the pipe is the shape a session produces.
+#     (An earlier version of this file wrote the pre-conversion camelCase
+#     object straight to stdin. It passed against a shape Kimi never sends,
+#     while the adapter refused every real tool call.)
 #   * exit 2 is the block, and the trimmed stderr is the reason the user sees.
 #     Every other exit — and a spawn failure, and the timeout kill — is an
 #     ALLOW, which is why "did it exit 2?" is the whole test.
@@ -72,6 +98,42 @@ destructive="rm $rm_flag /"
 env_file="$work/project/.env"
 mkdir -p "$(dirname "$env_file")"
 printf 'TOKEN=placeholder\n' > "$env_file"
+
+# ── the envelope, built the way matchHooks.ts builds it ──────────────────────
+# The pre-conversion object is assembled camelCase, exactly as
+# runPreToolUse -> withSessionFacts -> triggerInner -> runMatchedHooks do, and
+# then toHookInputData is applied over the top level. `spelling` is "converted"
+# for what Kimi sends and "raw" for the shape before the conversion, which the
+# adapter also has to accept.
+KIMI_ENVELOPE_PY='
+import json, sys
+
+def camel_to_snake(key):  # value.replaceAll(/[A-Z]/g, ch => `_${ch.toLowerCase()}`)
+    out = []
+    for ch in key:
+        out.append("_" + ch.lower() if "A" <= ch <= "Z" else ch)
+    return "".join(out)
+
+spelling, tool_name = sys.argv[1], sys.argv[2]
+tool_input = json.loads(sys.argv[3])
+raw = {
+    "hookEventName": "PreToolUse",
+    "sessionId": "s1",
+    "clientType": "cli",
+    "sessionTitle": "a session",
+    "toolName": tool_name,
+    "toolInput": tool_input,
+    "toolCallId": "call-1",
+}
+# toHookInputData: one level deep, so tool_input is handed over untouched.
+if spelling == "converted":
+    raw = {camel_to_snake(k): v for k, v in raw.items()}
+sys.stdout.write(json.dumps(raw))
+'
+
+kimi_envelope() { # $1=spelling  $2=toolName  $3=toolInput JSON
+    python3 -c "$KIMI_ENVELOPE_PY" "$1" "$2" "$3"
+}
 
 # ── the runner ───────────────────────────────────────────────────────────────
 # command: the rendered [[hooks]] command. envelope: what Kimi writes to stdin.
@@ -127,38 +189,81 @@ check_allowed() { # $1=label  $2=guard  $3=envelope
     echo "PASS: $label"
 }
 
-# ── acceptance criterion 1: reading a .env is blocked ────────────────────────
-# Kimi's Read names the file in `path`; the adapter is what turns that into the
-# `file_path` the guard reads.
-check_blocked "a Read of .env is blocked" secret-guard.sh \
-    "$(printf '{"hookEventName":"PreToolUse","sessionId":"s1","toolName":"Read","toolInput":{"path":"%s"}}' "$env_file")" \
-    ".env"
+# ── the acceptance criteria, once per spelling ───────────────────────────────
+# "converted" is what a real Kimi session sends. "raw" is the same facts
+# before toHookInputData, which the adapter also accepts so a change on Kimi's
+# side cannot turn every guarded tool call into a block.
+for spelling in converted raw; do
+    echo "--- envelope spelling: $spelling ---"
 
-# ReadMediaFile is the same read under another name, and the matcher lets it
-# through to the guard, so the adapter has to rename it or the guard has no
-# case for it and allows.
-check_blocked "a ReadMediaFile of .env is blocked too" secret-guard.sh \
-    "$(printf '{"hookEventName":"PreToolUse","sessionId":"s1","toolName":"ReadMediaFile","toolInput":{"path":"%s"}}' "$env_file")" \
-    ".env"
+    # ── criterion 1: reading a .env is blocked ───────────────────────────────
+    # Kimi's Read names the file in `path`, INSIDE tool_input, which Kimi never
+    # converts; the adapter is what turns that into the `file_path` the guard
+    # reads.
+    check_blocked "a Read of .env is blocked" secret-guard.sh \
+        "$(kimi_envelope "$spelling" Read "$(printf '{"path": "%s"}' "$env_file")")" \
+        ".env"
 
-# ── acceptance criterion 2: a destructive command is blocked ─────────────────
-check_blocked "a destructive shell command is blocked" dangerous-cmd-guard.sh \
-    "$(printf '{"hookEventName":"PreToolUse","sessionId":"s1","toolName":"Bash","toolInput":{"command":"%s"}}' "$destructive")" \
-    "Blocked"
+    # ReadMediaFile is the same read under another name, and the matcher lets
+    # it through to the guard, so the adapter has to rename it or the guard has
+    # no case for it and allows.
+    check_blocked "a ReadMediaFile of .env is blocked too" secret-guard.sh \
+        "$(kimi_envelope "$spelling" ReadMediaFile "$(printf '{"path": "%s"}' "$env_file")")" \
+        ".env"
 
-# ── acceptance criterion 3: a write carrying a secret is blocked ─────────────
-check_blocked "a Write carrying a secret is blocked" secret-in-write-guard.sh \
-    "$(printf '{"hookEventName":"PreToolUse","sessionId":"s1","toolName":"Write","toolInput":{"path":"%s/app.py","content":"AWS_ACCESS_KEY_ID = \\"%s\\"\\n"}}' "$work" "$aws_key")" \
-    "AWS"
+    # ── criterion 2: a destructive command is blocked ────────────────────────
+    check_blocked "a destructive shell command is blocked" dangerous-cmd-guard.sh \
+        "$(kimi_envelope "$spelling" Bash "$(printf '{"command": "%s"}' "$destructive")")" \
+        "Blocked"
 
-# ── and the other half: ordinary work still runs ─────────────────────────────
-# A guard that blocked everything would pass all three criteria and be useless.
-check_allowed "an ordinary Read is allowed" secret-guard.sh \
-    "$(printf '{"hookEventName":"PreToolUse","sessionId":"s1","toolName":"Read","toolInput":{"path":"%s/project/README.md"}}' "$work")"
-check_allowed "an ordinary command is allowed" dangerous-cmd-guard.sh \
-    '{"hookEventName":"PreToolUse","sessionId":"s1","toolName":"Bash","toolInput":{"command":"ls -la"}}'
-check_allowed "an ordinary Write is allowed" secret-in-write-guard.sh \
-    "$(printf '{"hookEventName":"PreToolUse","sessionId":"s1","toolName":"Write","toolInput":{"path":"%s/app.py","content":"print(1)\\n"}}' "$work")"
+    # ── criterion 3: a write carrying a secret is blocked ────────────────────
+    check_blocked "a Write carrying a secret is blocked" secret-in-write-guard.sh \
+        "$(kimi_envelope "$spelling" Write "$(printf '{"path": "%s/app.py", "content": "AWS_ACCESS_KEY_ID = \\"%s\\"\\n"}' "$work" "$aws_key")")" \
+        "AWS"
+
+    # ── and the other half: ordinary work still runs ─────────────────────────
+    # A guard that blocked everything would pass all three criteria and be
+    # useless — and that is exactly what an adapter reading the wrong spelling
+    # did, so these cases are the regression, not a nicety.
+    check_allowed "an ordinary Read is allowed" secret-guard.sh \
+        "$(kimi_envelope "$spelling" Read "$(printf '{"path": "%s/project/README.md"}' "$work")")"
+    check_allowed "an ordinary command is allowed" dangerous-cmd-guard.sh \
+        "$(kimi_envelope "$spelling" Bash '{"command": "ls -la"}')"
+    check_allowed "an ordinary Write is allowed" secret-in-write-guard.sh \
+        "$(kimi_envelope "$spelling" Write "$(printf '{"path": "%s/app.py", "content": "print(1)\\n"}' "$work")")"
+done
+
+# The shape itself, asserted rather than assumed: what goes down the pipe for
+# the "converted" spelling must be snake_case at the top level and untouched
+# inside tool_input. If this drifts, every PASS above is about a shape Kimi
+# does not send.
+echo "--- the envelope shape ---"
+shape_rc=0
+kimi_envelope converted Read '{"path": "/x/.env", "lineOffset": 3}' | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+problems = []
+for key in ("hook_event_name", "session_id", "client_type", "session_title",
+            "tool_name", "tool_input", "tool_call_id"):
+    if key not in d:
+        problems.append("missing %s" % key)
+for key in ("hookEventName", "sessionId", "toolName", "toolInput", "toolCallId"):
+    if key in d:
+        problems.append("%s was not converted" % key)
+ti = d.get("tool_input", {})
+if ti.get("path") != "/x/.env":
+    problems.append("tool_input.path was renamed to %r" % list(ti))
+if ti.get("lineOffset") != 3:
+    problems.append("a tool argument was converted, and Kimi converts none")
+if problems:
+    sys.stderr.write("; ".join(problems) + "\n")
+    sys.exit(1)
+' || shape_rc=$?
+if [ "$shape_rc" = 0 ]; then
+    pass=$((pass + 1)); echo "PASS: the envelope is snake_case at the top level only"
+else
+    fail=$((fail + 1)); echo "FAIL: the envelope is not the shape Kimi sends"
+fi
 
 # The command line rendered here is KimiCommand's rule spelled out; that the
 # installer renders the same one, and registers it against scripts that exist,

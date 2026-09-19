@@ -10,15 +10,46 @@
 # writes `JSON.stringify(input)` to its stdin, so the guard's path has to
 # travel in the command line the installer renders.
 #
-# WHAT IT TRANSLATES. Kimi's PreToolUse envelope is camelCase and its tool
-# arguments are its own; the guards read Claude Code's snake_case envelope:
+# WHAT IT TRANSLATES. Kimi's envelope is snake_case at the TOP LEVEL ONLY, and
+# its tool arguments are its own. Measured against Kimi Code CLI 2.0.1, in
+# matchHooks.ts, which is what calls runHook:
 #
-#   toolName -> tool_name        toolInput -> tool_input
-#   toolCallId -> tool_call_id   hookEventName -> hook_event_name
-#   sessionId -> session_id      transcriptPath -> transcript_path
+#     const inputData = toHookInputData({ hookEventName: event,
+#                                         sessionId: args.sessionId ?? "",
+#                                         ...args.inputData });
+#     ...
+#     function toHookInputData(input) {
+#       const result = {};
+#       for (const [key, value] of Object.entries(input))
+#         result[camelToSnake(key)] = value;
+#       return result;
+#     }
+#     function camelToSnake(value) {
+#       return value.replaceAll(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`);
+#     }
 #
-#   Read / ReadMediaFile / Write / Edit:  path -> file_path
-#   Bash:                                 command, cwd, … unchanged
+# `Object.entries` is one level deep, so the conversion reaches the top-level
+# keys and NOTHING inside them. A real PreToolUse envelope is therefore:
+#
+#   {"hook_event_name": "PreToolUse", "session_id": …, "client_type": …,
+#    "session_title": …, "tool_name": "Read", "tool_input": {"path": …},
+#    "tool_call_id": …}
+#
+# — already the spelling the guards read at the top level, and still Kimi's
+# own spelling inside `tool_input`. So the two halves of the translation are:
+#
+#   * top level: `camelToSnake` again, reproduced here. It is a no-op on the
+#     keys Kimi has already converted (they hold no capital), and it converts
+#     a key that ever arrives unconverted, so one code path serves both.
+#   * inside `tool_input`, which Kimi never touches:
+#       Read / ReadMediaFile / Write / Edit:  path -> file_path
+#       Bash:                                 command, cwd, … unchanged
+#
+# (An earlier version of this adapter read `toolName`/`toolInput` and nothing
+# else, from runHook alone without its caller. Against a real envelope it
+# found neither and blocked every tool call — safe, but unusable, and the
+# only escape a user had was to switch the guards off. Both spellings are
+# accepted now, the snake_case one FIRST, because it is what Kimi sends.)
 #
 # ReadMediaFile becomes Read: it is the same read of the same `path`, and the
 # guards match on the Claude Code tool name, so without this the registry's
@@ -99,14 +130,33 @@ TOOL_NAMES = {'ReadMediaFile': 'Read'}
 # Tools whose Kimi `path` is Claude Code's `file_path`.
 PATH_TOOLS = {'Read', 'Write', 'Edit'}
 
-# Top-level camelCase facts that have a Claude Code spelling. Any other key
-# travels unchanged.
-TOP_LEVEL = {
-    'toolCallId': 'tool_call_id',
-    'hookEventName': 'hook_event_name',
-    'sessionId': 'session_id',
-    'transcriptPath': 'transcript_path',
-}
+
+def camel_to_snake(key):
+    # Kimi's own camelToSnake, character for character:
+    #   value.replaceAll(/[A-Z]/g, ch => `_${ch.toLowerCase()}`)
+    # A key Kimi has already converted holds no capital, so this leaves it
+    # exactly as it is.
+    out = []
+    for ch in key:
+        if 'A' <= ch <= 'Z':
+            out.append('_')
+            out.append(ch.lower())
+        else:
+            out.append(ch)
+    return ''.join(out)
+
+
+def pick(envelope, snake, camel):
+    # snake_case FIRST: it is what Kimi sends. The camelCase spelling is
+    # accepted too, so an envelope that reached this script unconverted — a
+    # future Kimi, another caller, a hand-written test — still translates
+    # rather than being refused.
+    if snake in envelope:
+        return snake, envelope[snake]
+    if camel in envelope:
+        return camel, envelope[camel]
+    return None, None
+
 
 def fail(message):
     sys.stderr.write('[devexp kimi-adapter] %s\n' % message)
@@ -122,20 +172,20 @@ if not isinstance(envelope, dict):
     fail('internal error -- the hook input is not a JSON object, so it could not be '
          'translated and no guard ran. Blocking to be safe.')
 
-tool_name = envelope.get('toolName')
+name_key, tool_name = pick(envelope, 'tool_name', 'toolName')
 if not isinstance(tool_name, str) or not tool_name:
-    fail('internal error -- the hook input carries no usable "toolName", so the guard '
-         'would have had nothing to scan. Blocking to be safe.')
-tool_input = envelope.get('toolInput')
+    fail('internal error -- the hook input carries no usable "tool_name" (or "toolName"), '
+         'so the guard would have had nothing to scan. Blocking to be safe.')
+input_key, tool_input = pick(envelope, 'tool_input', 'toolInput')
 if not isinstance(tool_input, dict):
-    fail('internal error -- the hook input carries no usable "toolInput" for %s, so the '
-         'guard would have had nothing to scan. Blocking to be safe.' % tool_name)
+    fail('internal error -- the hook input carries no usable "tool_input" (or "toolInput") '
+         'for %s, so the guard would have had nothing to scan. Blocking to be safe.' % tool_name)
 
 out = {}
 for key, value in envelope.items():
-    if key in ('toolName', 'toolInput'):
+    if key in (name_key, input_key):
         continue
-    out[TOP_LEVEL.get(key, key)] = value
+    out[camel_to_snake(key)] = value
 
 claude_name = TOOL_NAMES.get(tool_name, tool_name)
 args = dict(tool_input)
