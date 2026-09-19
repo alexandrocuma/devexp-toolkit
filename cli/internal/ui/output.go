@@ -19,7 +19,7 @@ func Success(msg string) { fmt.Printf("%s[devexp]%s %s\n", colorGreen, colorRese
 func Warn(msg string)    { fmt.Printf("%s[devexp]%s %s\n", colorYellow, colorReset, msg) }
 func Error(msg string)   { fmt.Fprintf(os.Stderr, "%s[devexp] ERROR:%s %s\n", colorRed, colorReset, msg) }
 
-func Added(name string)           { fmt.Printf("  %s+%s %s\n", colorGreen, colorReset, name) }
+func Added(name string)           { fmt.Print(AddedLine(name)) }
 func Removed(name string)         { fmt.Printf("  %s-%s %s\n", colorRed, colorReset, name) }
 func Updated(name string)         { fmt.Printf("  %s~%s %s — updated\n", colorYellow, colorReset, name) }
 func Skipped(name, reason string) { fmt.Printf("  [skip] %s — %s\n", name, reason) }
@@ -29,4 +29,10 @@ func Required(name string, keys []string) {
 	for _, k := range keys {
 		fmt.Printf("    %s=<your-value>\n", k)
 	}
+}
+
+// AddedLine is the exact line Added prints, so a test can assert that
+// something was NOT reported as installed without re-deriving the escapes.
+func AddedLine(name string) string {
+	return fmt.Sprintf("  %s+%s %s\n", colorGreen, colorReset, name)
 }

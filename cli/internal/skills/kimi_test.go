@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"devexp/internal/ui"
 )
 
 const kimiAgentsDir = "/home/u/.kimi-code/agents"
@@ -240,6 +242,13 @@ func TestInstallKimi(t *testing.T) {
 
 					if !strings.Contains(out, "is a symlink, so it was left untouched") {
 						t.Errorf("no symlink warning:\n%s", out)
+					}
+					// Warned about, and not also reported as written. The
+					// added-line marker is matched rather than the bare name,
+					// because the warning itself names the path. Without this
+					// the run says it installed a file it deliberately did not.
+					if strings.Contains(out, ui.AddedLine("graphify/SKILL.md")) {
+						t.Errorf("a symlinked destination was also reported as written:\n%s", out)
 					}
 					// The name stays in the install set so the manifest keeps
 					// tracking it and it is never reported as stale.

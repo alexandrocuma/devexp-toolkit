@@ -316,14 +316,28 @@ func TestRewriteClaudeAgentRefs(t *testing.T) {
 			kimiAgentsDir + "/a.md and " + kimiAgentsDir + "/b-c.md",
 		},
 		// Both CLIs share the memory directory deliberately (the atlas, the
-		// per-project notes), so it is not a Claude-only path.
+		// per-project notes), so it is not a Claude-only path. The markdown
+		// cases matter most: only the `agents/` segment may be rewritten, and
+		// a rule keyed on "any directory under ~/.claude" would take these too.
 		"agent memory is left alone": {
 			"at ~/.claude/agent-memory/codebase-navigator/",
 			"at ~/.claude/agent-memory/codebase-navigator/",
 		},
+		"a markdown file directly under agent memory is left alone": {
+			"see ~/.claude/agent-memory/notes.md for the history",
+			"see ~/.claude/agent-memory/notes.md for the history",
+		},
+		"a markdown file under a nested memory directory is left alone": {
+			"see ~/.claude/agent-memory/dev-agent/devexp-toolkit.md for the notes",
+			"see ~/.claude/agent-memory/dev-agent/devexp-toolkit.md for the notes",
+		},
+		"a markdown file under another ~/.claude directory is left alone": {
+			"~/.claude/skills/notes.md",
+			"~/.claude/skills/notes.md",
+		},
 		"the projects directory is left alone": {
-			"~/.claude/projects/foo/memory/MEMORY.md",
-			"~/.claude/projects/foo/memory/MEMORY.md",
+			"~/.claude/projects/foo/memory/notes.md",
+			"~/.claude/projects/foo/memory/notes.md",
 		},
 		"a bare agents directory with no filename is prose, not a reference": {
 			"deployed to ~/.claude/agents/",
