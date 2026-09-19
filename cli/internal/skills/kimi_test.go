@@ -90,6 +90,23 @@ func TestTransformSkillForKimi(t *testing.T) {
 		}
 	})
 
+	// The fence is matched on the trimmed line, as Kimi matches it. An exact
+	// comparison would reject skills Kimi accepts — a fence with trailing
+	// whitespace, and every CRLF file, whose lines end "---\r".
+	t.Run("a fence with trailing whitespace or a CR is still a fence", func(t *testing.T) {
+		for name, src := range map[string]string{
+			"trailing space":    "--- \nname: a\ndescription: \"d\"\n--- \n\n# A\n",
+			"trailing tab":      "---\t\nname: a\ndescription: \"d\"\n---\t\n\n# A\n",
+			"CRLF line endings": "---\r\nname: a\r\ndescription: \"d\"\r\n---\r\n\r\n# A\r\n",
+		} {
+			t.Run(name, func(t *testing.T) {
+				if _, err := transformSkillForKimi(src, "a", kimiAgentsDir); err != nil {
+					t.Errorf("transformSkillForKimi() error = %v, want the fence recognised as Kimi recognises it", err)
+				}
+			})
+		}
+	})
+
 	t.Run("a supported type is accepted", func(t *testing.T) {
 		for _, typ := range []string{"prompt", "inline", "flow"} {
 			if _, err := transformSkillForKimi(kimiSkill("a", "type: "+typ, "body\n"), "a", kimiAgentsDir); err != nil {

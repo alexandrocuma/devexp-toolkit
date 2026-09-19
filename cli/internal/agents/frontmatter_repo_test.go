@@ -23,13 +23,54 @@ import (
 // kimiPromptVars are every variable Kimi substitutes when it renders an agent
 // body. A shipped body must not contain one by accident: they are plausible
 // shell variable names, and `${skills}` in particular expands to the whole
-// skill catalog. `base_prompt` is excluded here — the Kimi transform adds it
-// deliberately, and it is not in any source body.
+// skill catalog.
+//
+// `base_prompt` is in the list, and that is the load-bearing entry.
+// transformForKimi appends `${base_prompt}` to every body unconditionally, and
+// Kimi's renderPrompt replaces *every* occurrence — so a source body that
+// already contained the marker would have the ~9,000-character default prompt
+// spliced in twice. This guard is the only thing that makes the unconditional
+// append safe.
 var kimiPromptVars = []string{
 	"role_additional", "product_name", "reply_style_guide", "notify_user_guidance",
 	"os", "windows_notes", "shell", "cwd", "cwd_listing", "agents_md",
 	"additional_dirs_info", "additional_dirs_section", "skills", "skills_section",
 	"plugin_sections", "base_prompt",
+}
+
+// bodyUsesKimiPromptVar reports the first Kimi prompt variable a body uses.
+// Shared by the repo guard and its own unit test, so that dropping an entry
+// from kimiPromptVars is a test failure rather than a silent widening.
+func bodyUsesKimiPromptVar(body string) (string, bool) {
+	for _, v := range kimiPromptVars {
+		if strings.Contains(body, "${"+v+"}") {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// TestKimiPromptVarsCoversBasePrompt pins the entry the shipped bodies do not
+// exercise. No source body contains ${base_prompt} today, so dropping it from
+// the list changes nothing observable about the real agents — and yet it is
+// the entry that makes transformForKimi's unconditional append safe. Kimi
+// replaces every occurrence, so a source body carrying the marker would have
+// the ~9,000-character default prompt spliced in twice.
+func TestKimiPromptVarsCoversBasePrompt(t *testing.T) {
+	for _, v := range []string{"base_prompt", "skills", "skills_section", "cwd", "os", "shell", "agents_md"} {
+		body := "# An agent\n\nSomething ${" + v + "} in the body.\n"
+		got, found := bodyUsesKimiPromptVar(body)
+		if !found {
+			t.Errorf("bodyUsesKimiPromptVar(${%s}) = not found, want it flagged — Kimi substitutes it", v)
+			continue
+		}
+		if got != v {
+			t.Errorf("bodyUsesKimiPromptVar(${%s}) = %q, want %q", v, got, v)
+		}
+	}
+	if _, found := bodyUsesKimiPromptVar("a ${not_a_kimi_variable} stays put\n"); found {
+		t.Error("bodyUsesKimiPromptVar flagged a name Kimi does not substitute")
+	}
 }
 
 func splitRepoFrontmatter(content string) (fm, body string, ok bool) {
@@ -99,10 +140,8 @@ func TestRepoAgentsFrontmatterStrictYAML(t *testing.T) {
 			if strings.TrimSpace(body) == "" {
 				t.Errorf("%s has an empty body — Kimi requires one", path)
 			}
-			for _, v := range kimiPromptVars {
-				if strings.Contains(body, "${"+v+"}") {
-					t.Errorf("%s body contains ${%s}, which Kimi substitutes when it renders the prompt", path, v)
-				}
+			if v, found := bodyUsesKimiPromptVar(body); found {
+				t.Errorf("%s body contains ${%s}, which Kimi substitutes when it renders the prompt", path, v)
 			}
 		})
 	}

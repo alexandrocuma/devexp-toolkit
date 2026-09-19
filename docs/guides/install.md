@@ -241,7 +241,9 @@ Three things differ from the Claude Code install, all because of how Kimi reads 
 - **A tool name Kimi does not have is dropped silently**, with nothing written to its log — so devexp names every dropped name at install time. `TaskList` is mapped rather than passed through: Kimi has a tool of that exact name which lists background tasks, not todos.
 - **A skill's canonical command is `/skill:<name>`.** Bare `/<name>` also resolves, but only `/skill:<name>` appears in Kimi's command listings.
 
-`color`, `memory` and `model` are dropped from agent front matter, since Kimi ignores them, and `--model` is refused with a warning: Kimi has no per-agent model.
+`color`, `memory` and `model` are dropped from agent front matter, since Kimi ignores them. `--model` is **ignored** with a warning — the install continues, and only the flag has no effect, because Kimi has no per-agent model.
+
+An installed agent holds two shapes of path, and both are deliberate. References to other **agents** are repointed at an absolute path under the Kimi root, because that is the string devexp knows is correct on this machine. References to **`~/.claude/agent-memory`** are left exactly as they are, so a Kimi session and a Claude Code session share one atlas and one set of per-project notes rather than keeping two that drift apart. Seeing both forms in the same file is not a mistake.
 
 Two `kimi` binaries exist. Kimi Code CLI answers `kimi --version` with a bare version such as `0.42.0`; the legacy Python kimi-cli (config in `~/.kimi/`) answers `kimi, version <x>` and is **not supported** — their version numbers overlap, so devexp goes by the format, not the number. An older Kimi Code is skipped with the minimum named, and a `kimi` that answers with anything else is skipped rather than guessed at.
 

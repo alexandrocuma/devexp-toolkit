@@ -207,6 +207,29 @@ func TestTransformForKimi(t *testing.T) {
 		}
 	})
 
+	// js-yaml rejects a duplicate mapping key, so an agent emitting subagents
+	// twice would vanish from Kimi with only a log line. The keys devexp writes
+	// itself are never carried through from the source.
+	t.Run("a source subagents key is replaced, not emitted twice", func(t *testing.T) {
+		out, _, err := transformForKimi(kimiAgent(
+			"name: a", `description: "d"`, "tools: Read, Agent", "subagents: whatever-the-source-said",
+		), "a", kimiAgentsDir, []string{"helper", "explore", "plan"})
+		if err != nil {
+			t.Fatalf("transformForKimi() error = %v", err)
+		}
+		if n := strings.Count(out, "subagents:"); n != 1 {
+			t.Fatalf("output has %d subagents keys, want 1 — js-yaml rejects a duplicate and Kimi would drop the agent:\n%s", n, out)
+		}
+		parsed, _ := parseKimiOutput(t, out)
+		var got []string
+		for _, v := range parsed["subagents"].([]any) {
+			got = append(got, v.(string))
+		}
+		if want := []string{"helper", "explore", "plan"}; !reflect.DeepEqual(got, want) {
+			t.Errorf("subagents = %v, want %v — computed from what this run installed", got, want)
+		}
+	})
+
 	t.Run("an unknown key is carried over rather than silently dropped", func(t *testing.T) {
 		out, _, err := transformForKimi(kimiAgent("name: a", `description: "d"`, "whenToUse: for tests"), "a", kimiAgentsDir, nil)
 		if err != nil {
@@ -290,6 +313,29 @@ func TestTransformForKimi(t *testing.T) {
 		}
 		if !strings.HasPrefix(body, "Straight into the body.") {
 			t.Errorf("body = %q, want it to start with the source body", body)
+		}
+	})
+
+	// The fence is matched on the trimmed line, as Kimi matches it. An exact
+	// comparison would reject files Kimi accepts — a fence with trailing
+	// whitespace, and every CRLF file, whose lines end "---\r". devexp would
+	// then refuse to install an agent Kimi would happily load.
+	t.Run("a fence with trailing whitespace or a CR is still a fence", func(t *testing.T) {
+		for name, src := range map[string]string{
+			"trailing space":    "--- \nname: a\ndescription: \"d\"\n--- \n\n# A\n",
+			"trailing tab":      "---\t\nname: a\ndescription: \"d\"\n---\t\n\n# A\n",
+			"CRLF line endings": "---\r\nname: a\r\ndescription: \"d\"\r\n---\r\n\r\n# A\r\n",
+		} {
+			t.Run(name, func(t *testing.T) {
+				out, _, err := transformForKimi(src, "a", kimiAgentsDir, nil)
+				if err != nil {
+					t.Fatalf("transformForKimi() error = %v, want the fence recognised as Kimi recognises it", err)
+				}
+				parsed, _ := parseKimiOutput(t, out)
+				if got, _ := parsed["name"].(string); got != "a" {
+					t.Errorf("name = %q, want %q", got, "a")
+				}
+			})
 		}
 	})
 

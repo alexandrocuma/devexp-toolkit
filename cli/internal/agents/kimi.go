@@ -156,8 +156,25 @@ func kimiTools(claude []string) (tools, dropped []string) {
 
 // rewriteClaudeAgentRefs points the body's "read ~/.claude/agents/<n>.md and
 // follow it" instructions at where devexp actually installed them for Kimi.
-// agentsDir is absolute: whether Kimi expands `~` in a file tool's path is not
-// something devexp can rely on, and an absolute path needs no such promise.
+//
+// agentsDir is absolute. Not because `~` would fail — measured against 2.0.1,
+// Read, Write, Edit, Glob and Grep all expand `~/` against the process's HOME
+// before resolving, and an expanded `~/` even counts as absolute for the
+// outside-workspace guard, where a relative path to the same file is refused.
+// It is absolute because the Kimi root is only `~/.kimi-code` when
+// $KIMI_CODE_HOME is unset; with it set to, say, /opt/kimi there is no tilde
+// form of the destination at all. One shape that is always right beats two
+// that depend on the environment.
+//
+// That is also why the `~/.claude/agent-memory` paths a few lines down stay as
+// they are rather than being made absolute: they are not this install's
+// destination but a directory both CLIs share on purpose, and `~` resolves
+// there correctly in either CLI. The two forms in one installed file are the
+// same decision seen from two sides, not an inconsistency.
+//
+// (Measured on one version of a closed-source bundle, not a documented
+// contract. resolveKimiHome refuses a root that cannot be written into a
+// prompt either way, so nothing here depends on that measurement holding.)
 //
 // It is duplicated in internal/skills rather than shared, because internal
 // packages do not import one another (docs/development/conventions.md) — the
@@ -278,8 +295,16 @@ func transformForKimi(content, fallbackName, agentsDir string, subagents []strin
 	}
 
 	// The output mapping is built key by key rather than by deleting from the
-	// input, so a key added to a source agent later is a decision here rather
-	// than something that silently reaches Kimi.
+	// input. Every key devexp has an opinion about gets a case below; anything
+	// else is carried through, because Kimi ignores what it does not know and
+	// silently dropping a key an author added is worse than passing it on.
+	//
+	// The keys devexp writes itself — name, tools, subagents — are never
+	// carried through, whatever the source says. A source that gained its own
+	// `subagents` would otherwise have the key emitted twice, and js-yaml
+	// rejects a duplicate mapping key: the agent would vanish from Kimi with
+	// nothing but a line in its log, which is the failure mode the rest of
+	// this file exists to avoid.
 	out := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	out.Content = append(out.Content, scalar("name"), scalar(parsed.name))
 
@@ -287,8 +312,11 @@ func transformForKimi(content, fallbackName, agentsDir string, subagents []strin
 	for i := 0; i+1 < len(parsed.mapping.Content); i += 2 {
 		key, val := parsed.mapping.Content[i], parsed.mapping.Content[i+1]
 		switch key.Value {
-		case "name":
-			// already emitted, from the parsed value so a missing one is filled in
+		case "name", "subagents":
+			// Both are devexp's to write: name was emitted above (from the
+			// parsed value, so a missing one is filled in), and subagents is
+			// emitted with the tools below, computed from what this run
+			// installed rather than from what the source claims.
 		case "color", "memory", "model":
 			// Read and ignored by Kimi. Dropped so an installed file does not
 			// suggest they do something.
