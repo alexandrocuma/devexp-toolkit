@@ -2940,11 +2940,30 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		}
 		// The per-target notice scrolls past in a multi-target run, so the
 		// summary has to repeat it.
-		if !strings.Contains(out, "Kimi Code CLI: agents, skills and hooks are not installed yet") {
+		if !strings.Contains(out, "Kimi Code CLI: agents, skills and hooks are not installed for it yet") {
 			t.Errorf("the summary does not say what Kimi is still missing:\n%s", out)
 		}
 		if _, err := os.Stat(filepath.Join(home, ".kimi-code")); !os.IsNotExist(err) {
 			t.Errorf("a dry run created the Kimi home (%v)", err)
+		}
+	})
+
+	// The summary is the line that survives the scroll, so it must not claim
+	// the parts Kimi does support were installed when this run installed
+	// nothing for it at all. The per-target notice above it says the rest.
+	t.Run("the summary says nothing about kimi when kimi installed nothing", func(t *testing.T) {
+		setup(t, "2.0.1", "claude")
+
+		out, err := executeRoot(t, "install", "--dry-run", "--target", "claude,kimi", "--agents-only")
+
+		if err != nil {
+			t.Fatalf("install error = %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Nothing to install for Kimi Code CLI") {
+			t.Errorf("the Kimi installer did not say it had nothing to do:\n%s", out)
+		}
+		if strings.Contains(out, "are not installed for it yet") {
+			t.Errorf("the summary implies MCP servers were installed for Kimi:\n%s", out)
 		}
 	})
 
@@ -3602,6 +3621,45 @@ func TestDoInstallKimi_MCPs(t *testing.T) {
 		}
 		if after, _ := os.ReadFile(filepath.Join(root, "mcp.json")); string(after) != string(before) {
 			t.Errorf("the entry changed:\n%s", after)
+		}
+	})
+
+	// The review repro: an MCP whose required env var is set on one run and
+	// not the next — a fresh clone, CI, another shell — must not lose the
+	// entry devexp already wrote. "I cannot configure this now" is not "this
+	// is no longer installed".
+	t.Run("an unset required env var does not delete last run's entry", func(t *testing.T) {
+		root, repoDir := setup(t)
+		registry := `[{"name": "probe", "command": "node", "args": ["${PROBE_DIR}/index.js"], "required_env": ["PROBE_DIR"]}]`
+		if err := os.WriteFile(filepath.Join(repoDir, "mcps", "registry.json"), []byte(registry), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		withEnv := installOpts{mcpsOnly: true, env: map[string]string{"PROBE_DIR": "/opt/probe"}}
+		if out, err := runKimi(t, repoDir, withEnv); err != nil {
+			t.Fatalf("first install: %v\n%s", err, out)
+		}
+		mcpPath := filepath.Join(root, "mcp.json")
+		before, _ := os.ReadFile(mcpPath)
+		if !strings.Contains(string(before), "/opt/probe") {
+			t.Fatalf("the first install did not write the entry:\n%s", before)
+		}
+
+		out, err := runKimi(t, repoDir, installOpts{mcpsOnly: true})
+
+		if err != nil {
+			t.Fatalf("second install: %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "[REQUIRED]") {
+			t.Errorf("output does not say why it was skipped:\n%s", out)
+		}
+		if after, _ := os.ReadFile(mcpPath); string(after) != string(before) {
+			t.Errorf("the working entry was changed or deleted:\nbefore %s\nafter  %s", before, after)
+		}
+		// Ownership has to survive too, or the next run with the variable set
+		// would find its own entry and call it the user's.
+		saved, _ := os.ReadFile(filepath.Join(root, ".devexp-manifest.json"))
+		if !strings.Contains(string(saved), "probe") {
+			t.Errorf("ownership was dropped:\n%s", saved)
 		}
 	})
 

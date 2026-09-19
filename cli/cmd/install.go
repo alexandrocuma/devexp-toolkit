@@ -243,11 +243,19 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("nothing was installed: %s installs MCP servers only so far (#113, #114), and this run asked for agents or skills alone", labelList(targets))
 	}
 	// The per-target notice scrolls past in a multi-target run, so what a
-	// partly-supported target did not install is repeated in the summary.
+	// partly-supported target did not install is repeated in the summary. A
+	// target that installed nothing at all this run is left out: its own
+	// installer has just said so in full, and the summary line would claim
+	// the parts it does support were installed when they were not.
+	said := false
 	for _, t := range partialTargets(targets) {
-		ui.Warn(fmt.Sprintf("%s: %s are not installed yet (#113, #114) — only MCP servers.", t.label(), joinAnd(notYetSupported[t])))
+		if installsNothing(t, opts) {
+			continue
+		}
+		ui.Warn(fmt.Sprintf("%s: %s are not installed for it yet (#113, #114).", t.label(), joinAnd(notYetSupported[t])))
+		said = true
 	}
-	if len(partialTargets(targets)) > 0 {
+	if said {
 		fmt.Println()
 	}
 
