@@ -333,3 +333,29 @@ func kimiTree(t *testing.T, dir string) []string {
 	slices.Sort(out)
 	return out
 }
+
+// The other half-finished path: the scripts are all on disk and the
+// registration is refused. The scripts are inert without a command naming
+// them, but they are real files in the user's Kimi root, and the manifest is
+// the only record that they are devexp's.
+func TestInstallKimiFailedRegistrationRecordsTheScripts(t *testing.T) {
+	repo := kimiRepo(t)
+	// A config.toml Kimi cannot read either, so devexp refuses it untouched.
+	configPath, hooksDir := kimiHome(t, "model = \"unterminated\n")
+
+	got, out, err := installKimi(t, repo, hooksDir, configPath, nil, nil, false)
+	if err == nil {
+		t.Fatalf("an unparseable config.toml was written to anyway\n%s", out)
+	}
+	for _, rel := range kimiInstallFiles(nil) {
+		if !slices.Contains(got, rel) {
+			t.Errorf("the refused registration dropped %s from the record: %v", rel, got)
+		}
+	}
+	if !slices.Contains(got, "claude-code/secret-guard.sh") {
+		t.Errorf("the refused registration dropped the guards it copied: %v", got)
+	}
+	if strings.Contains(readFile(t, configPath), kimiBlockBegin) {
+		t.Errorf("a refused config.toml was rewritten:\n%s", readFile(t, configPath))
+	}
+}
