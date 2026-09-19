@@ -1678,6 +1678,31 @@ check "kimi menu: lists Kimi as [2]" out_has "[2] Kimi Code CLI"
 check "kimi menu: choosing 1 leaves Kimi alone" calls_are ""
 check "kimi menu: and removes the Claude Code agent" test ! -f "$E/h/.claude/agents/dev-agent.md"
 
+# --yes is honoured wherever it appears, not only as $1. It was read as "$1"
+# alone, so `./uninstall.sh --quiet --yes` prompted — and now that --yes also
+# skips the target menu, a missed one is a run that hangs rather than one that
+# merely asks twice. Stdin is /dev/null, so a prompt ends the run. Found by
+# mutation (M10).
+for pos in first later; do
+    new_env
+    kimi_install "$E/h/.kimi-code"
+    printf '# agent\n' > "$E/r/agents/dev-agent.md"
+    mkdir -p "$E/h/.claude/agents"
+    printf '# agent\n' > "$E/h/.claude/agents/dev-agent.md"
+    make_kimi_stub "$E/stubs/k" K
+    case "$pos" in
+        first) args=(--yes --some-other-flag) ;;
+        later) args=(--some-other-flag --yes) ;;
+    esac
+    env -i HOME="$E/h" PATH="$E/bin:/usr/bin:/bin" CALLS="$E/calls" DEVEXP_BIN="$E/stubs/k" \
+        /bin/bash "$E/r/uninstall.sh" "${args[@]}" </dev/null > "$E/out" 2>&1
+    echo $? > "$E/rc"
+    check "--yes $pos: exits 0" rc_is 0
+    check "--yes $pos: skips the target menu" out_has "--yes: removing from every detected CLI"
+    check "--yes $pos: does not ask to confirm" out_lacks "Proceed with removal?"
+    check "--yes $pos: actually removes" test ! -f "$E/h/.claude/agents/dev-agent.md"
+done
+
 # An invalid number is refused before anything is removed.
 new_env
 kimi_install "$E/h/.kimi-code"

@@ -452,3 +452,43 @@ func TestDoUninstallKimi_BadKimiHomeRemovesNothing(t *testing.T) {
 		}
 	}
 }
+
+// TestDoUninstallKimi_CustomRootOutsideHome: kimiPaths.home is the Kimi root's
+// *parent*, not $HOME, and that is the whole reason $KIMI_CODE_HOME may point
+// outside the home directory at all. Passing $HOME to the removal guard
+// instead would make it answer "not under home" for such a root, and every
+// removal would quietly do nothing behind a warning — an uninstall that
+// reports success and removes nothing.
+//
+// Only a root outside $HOME can tell the two apart: under the default
+// ~/.kimi-code the parent *is* $HOME, so every other test here passes either
+// way. Found by mutation (M5).
+func TestDoUninstallKimi_CustomRootOutsideHome(t *testing.T) {
+	repoDir := kimiAssetRepo(t)
+	// Siblings, so the root is genuinely outside HOME rather than below it.
+	base := t.TempDir()
+	home := filepath.Join(base, "home")
+	outside := filepath.Join(base, "elsewhere", "kimi")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("KIMI_CODE_HOME", outside)
+	p := testKimiPaths(t, outside, home)
+
+	if _, err := kimiRun(t, repoDir, &installOpts{}); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	mustExist(t, filepath.Join(p.agents, "dev-agent.md"), "the install should have written into the custom root")
+
+	out, err := uninstallKimi(t, false)
+	if err != nil {
+		t.Fatalf("uninstall: %v (%s)", err, out)
+	}
+	mustNotExist(t, filepath.Join(p.agents, "dev-agent.md"), "an agent in a root outside HOME must still be removed")
+	mustNotExist(t, filepath.Join(p.skills, "graphify"), "a skill in a root outside HOME must still be removed")
+	mustNotExist(t, p.manifest, "and the record goes with them")
+	if strings.Contains(out, "not under") {
+		t.Errorf("the removal guard refused a root outside HOME:\n%s", out)
+	}
+}
