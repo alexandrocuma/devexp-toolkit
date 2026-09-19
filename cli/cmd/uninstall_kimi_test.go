@@ -801,20 +801,22 @@ func TestDoUninstallKimi_HookScriptNormalizationTwin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
-	m := readKimiManifest(t, p.manifest)
+	// True on every filesystem: the file under the other spelling survives.
 	if _, statErr := os.Lstat(onDisk); statErr != nil {
-		// The filesystem folded the two spellings together and removed it.
-		// That is the case the fold/normalization branches exist to prevent.
 		t.Fatalf("a name differing only in normalization removed %q:\n%s", onDisk, out)
 	}
-	// Either the handle can see it under the recorded spelling (APFS folds
-	// normalization, so it can) and it must be reported and kept, or it
-	// genuinely is not there and there is nothing to record.
-	if strings.Contains(out, "Unicode normalization") {
-		if len(m.Hooks) != 1 {
-			t.Errorf("a reported normalization twin was dropped from the record: %+v", m)
-		}
-		return
+
+	// Whether the branch is reachable at all depends on the filesystem, so
+	// the manifest is only read once the output says it fired. On APFS the
+	// handle resolves the recorded NFD spelling to the NFC file, and the
+	// entry must be reported and kept. On ext4 the two names are simply
+	// different, nothing of devexp's is there, and the record is correctly
+	// removed — reading it unconditionally is what broke this on CI.
+	if !strings.Contains(out, "Unicode normalization") {
+		mustNotExist(t, p.manifest, "with nothing found, nothing is kept and the record goes")
+		t.Skip("this filesystem does not fold Unicode normalization, so the branch is unreachable here")
 	}
-	t.Skip("this filesystem does not fold Unicode normalization, so the branch is unreachable here")
+	if m := readKimiManifest(t, p.manifest); len(m.Hooks) != 1 {
+		t.Errorf("a reported normalization twin was dropped from the record: %+v", m)
+	}
 }
