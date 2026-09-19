@@ -1469,6 +1469,38 @@ func TestResolveTargets(t *testing.T) {
 	})
 }
 
+// targetsFromLabels is the half of the prompt that does not need a terminal:
+// what the checklist answered, mapped back onto targets.
+func TestTargetsFromLabels(t *testing.T) {
+	available := []target{targetClaude, targetOpencode, targetKimi}
+
+	tests := map[string]struct {
+		picked []string
+		want   []target
+	}{
+		"everything picked":                {picked: []string{"Claude Code", "opencode", "Kimi Code CLI"}, want: available},
+		"one picked":                       {picked: []string{"Kimi Code CLI"}, want: []target{targetKimi}},
+		"picked out of order":              {picked: []string{"opencode", "Claude Code"}, want: []target{targetClaude, targetOpencode}},
+		"an unknown label is not a target": {picked: []string{"Both"}, want: []target{}},
+		// ui.MultiSelect returns nil when every item is deselected. That must
+		// come back as an empty selection, not as "the user was not asked",
+		// which selectTargets reads as every available target.
+		"nothing picked": {picked: nil, want: []target{}},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := targetsFromLabels(available, tt.picked)
+			if got == nil {
+				t.Fatalf("= nil; a nil answer is indistinguishable from not asking")
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("= %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // fakeCLI puts an executable named bin on a PATH containing only that dir, so
 // commandExists finds exactly what the test intends and no real CLI leaks in.
 func fakeCLI(t *testing.T, names ...string) {
@@ -2696,6 +2728,11 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 
 			if err == nil || !strings.Contains(err.Error(), "KIMI_CODE_HOME") {
 				t.Errorf("KIMI_CODE_HOME=%q: error = %v, want a refusal naming it\n%s", bad, err, out)
+			}
+			// Which target failed has to survive the wrapping, as it does for
+			// the other two.
+			if err != nil && !strings.Contains(err.Error(), "kimi install:") {
+				t.Errorf("KIMI_CODE_HOME=%q: error = %v, want it prefixed with the target", bad, err)
 			}
 		}
 	})

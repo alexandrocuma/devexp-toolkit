@@ -176,11 +176,7 @@ func suffixNotices(notices []string) string {
 // anything. It prints no trailing blank line — its callers do.
 func announceTargets(d detection) {
 	if available := d.available(); len(available) > 0 {
-		labels := make([]string, len(available))
-		for i, t := range available {
-			labels[i] = t.label()
-		}
-		ui.Info("Detected: " + strings.Join(labels, ", "))
+		ui.Info("Detected: " + strings.Join(targetLabels(available), ", "))
 	}
 	for _, n := range d.notices() {
 		ui.Warn(n)
@@ -212,21 +208,34 @@ var stdinIsTerminal = func() bool {
 // a non-nil empty slice when everything was deselected — ui.MultiSelect
 // returns nil there, and nil is what selectTargets reads as "all".
 var promptTargets = func(available []target) ([]target, error) {
-	labels := make([]string, len(available))
-	for i, t := range available {
-		labels[i] = t.label()
-	}
-	picked, err := ui.MultiSelect("Install for", labels)
+	picked, err := ui.MultiSelect("Install for", targetLabels(available))
 	if err != nil {
 		return nil, err
 	}
+	return targetsFromLabels(available, picked), nil
+}
+
+// targetLabels renders targets for a prompt, in the order given.
+func targetLabels(targets []target) []string {
+	labels := make([]string, len(targets))
+	for i, t := range targets {
+		labels[i] = t.label()
+	}
+	return labels
+}
+
+// targetsFromLabels maps a checklist's answer back onto targets. It always
+// returns a non-nil slice, so "nothing picked" stays distinguishable from "not
+// asked": ui.MultiSelect returns nil for both, and selectTargets reads nil as
+// every available target.
+func targetsFromLabels(available []target, picked []string) []target {
 	chosen := []target{}
-	for i, label := range labels {
-		if slices.Contains(picked, label) {
-			chosen = append(chosen, available[i])
+	for _, t := range available {
+		if slices.Contains(picked, t.label()) {
+			chosen = append(chosen, t)
 		}
 	}
-	return chosen, nil
+	return chosen
 }
 
 // resolveTargets is the shell around selectTargets: --target wins outright,
