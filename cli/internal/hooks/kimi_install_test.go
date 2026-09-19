@@ -292,7 +292,25 @@ func TestInstallKimiRefusesToRemoveAnythingButItsOwn(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	bad := []string{"../config.toml.keepme", "../../.ssh/id_rsa", "/etc/passwd", "claude-code/../../x.sh", "kimi/adapter.sh\nfake"}
+	// Names devexp must not act on. The traversals and the absolute path are
+	// caught before the allowlist; the last four are caught ONLY by it, and
+	// each names a real file below the hooks root that has to survive.
+	bad := []string{
+		"../config.toml.keepme", "../../.ssh/id_rsa", "/etc/passwd",
+		"claude-code/../../x.sh", "kimi/adapter.sh\nfake",
+		"agents/foo.md", "notes.md", "claude-code/notes.md", "kimi/sub/x.sh",
+	}
+	inRoot := []string{"agents/foo.md", "notes.md", "claude-code/notes.md", "kimi/sub/x.sh"}
+	for _, rel := range inRoot {
+		p := filepath.Join(hooksDir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		if err := os.WriteFile(p, []byte("not devexp's\n"), 0o600); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+
 	got, out, err := installKimi(t, repo, hooksDir, configPath, nil, bad, false)
 	if err != nil {
 		t.Fatalf("InstallKimi: %v\n%s", err, out)
@@ -302,6 +320,13 @@ func TestInstallKimiRefusesToRemoveAnythingButItsOwn(t *testing.T) {
 	}
 	if _, err := os.Stat(sshKey); err != nil {
 		t.Errorf("a two-level traversal in the manifest removed %q: %v", sshKey, err)
+	}
+	// The allowlist's own job: a name INSIDE the hooks root that is still not
+	// one devexp installs.
+	for _, rel := range inRoot {
+		if _, err := os.Stat(filepath.Join(hooksDir, filepath.FromSlash(rel))); err != nil {
+			t.Errorf("a manifest entry removed %q, which devexp never installed: %v", rel, err)
+		}
 	}
 	for _, name := range bad {
 		if !slices.Contains(got, name) {
@@ -475,6 +500,49 @@ func TestInstallKimiNarrowsTheInstalledMode(t *testing.T) {
 		}
 		if got := info.Mode().Perm(); got != want {
 			t.Errorf("%s installed %v, want %v", rel, got, want)
+		}
+	}
+}
+
+// ── what may be removed from the Kimi root ───────────────────────────────────
+//
+// isKimiHookPath is the gate on a name read out of the manifest, which is a
+// file on disk and may hold anything. The traversal and absolute-path checks
+// are pinned above; this pins the ALLOWLIST, which is the only thing standing
+// between a manifest entry and a file in the Kimi root that devexp never put
+// there. Mutating the clause to `return true` leaves every other case green,
+// because they are all caught by an earlier check.
+func TestIsKimiHookPath(t *testing.T) {
+	own := []string{
+		"kimi/adapter.sh",
+		"claude-code/secret-guard.sh",
+		"claude-code/scan-budget.sh",
+	}
+	for _, rel := range own {
+		if !isKimiHookPath(rel) {
+			t.Errorf("%q is a name devexp installs, and was refused", rel)
+		}
+	}
+
+	// Each of these would be deleted from the Kimi root on the next install
+	// without the allowlist. The first three are things devexp's own install
+	// puts there (agents, skills) or a user might; the last is a path devexp
+	// never writes at all.
+	notOwn := map[string]string{
+		"an agent file devexp installed":    "agents/foo.md",
+		"a file at the hooks root":          "notes.md",
+		"a note beside the guards":          "claude-code/notes.md",
+		"a nested path devexp never writes": "kimi/sub/x.sh",
+		"a directory rather than a script":  "claude-code/",
+		"a bare directory name":             "kimi",
+		"a guard without the .sh suffix":    "claude-code/secret-guard",
+		"a third directory of devexp's own": "opencode/secret-guard.js",
+		"a Windows separator":               `claude-code\secret-guard.sh`,
+		"a control character in the name":   "claude-code/secret\x1b[2Jguard.sh",
+	}
+	for why, rel := range notOwn {
+		if isKimiHookPath(rel) {
+			t.Errorf("%s (%q) was accepted as a name devexp installs, so a manifest holding it would have it removed", why, rel)
 		}
 	}
 }

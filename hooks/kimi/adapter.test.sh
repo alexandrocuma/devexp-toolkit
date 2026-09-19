@@ -376,6 +376,30 @@ for spelling in real camel; do
     "$(python3 -c "$TRANSLATION_PY" "$TMP/seen.json" && echo 0 || echo 1)"
 done
 
+# Both spellings in one envelope. It cannot happen today, but the order the
+# adapter reads them in is a stated invariant — snake_case first, because that
+# is what Kimi sends — and swapping it must not pass unnoticed.
+run "$RECORD" '{"hook_event_name": "PreToolUse",
+                "tool_name": "Read",  "toolName": "Bash",
+                "tool_input": {"path": "snake.ts"},
+                "toolInput": {"command": "echo camel"}}'
+check 'with both spellings present, snake_case wins' \
+  "$(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+problems = []
+if d.get("tool_name") != "Read":
+    problems.append("tool_name=%r, want the snake_case value" % d.get("tool_name"))
+ti = d.get("tool_input", {})
+if ti.get("file_path") != "snake.ts":
+    problems.append("tool_input came from the camelCase key: %r" % ti)
+if "command" in ti:
+    problems.append("the camelCase toolInput won")
+if problems:
+    sys.stderr.write("; ".join(problems) + "\n")
+    sys.exit(1)
+' "$TMP/seen.json" && echo 0 || echo 1)"
+
 # The regression itself: the exact shape Kimi sends must not be refused.
 run "$RECORD" "$(envelope Read 'path=src/app.ts')"
 check 'the envelope helper produces what Kimi sends, and it is accepted' \

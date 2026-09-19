@@ -94,6 +94,17 @@ var ErrKimiMarkers = errors.New("devexp's " + kimiBlockBegin + " / " + kimiBlock
 // root — the one holding kimi/ and claude-code/ — and h.Script is
 // registry-relative ("hooks/claude-code/secret-guard.sh"), so the registry's
 // own "hooks/" prefix comes off.
+//
+// CHANGING THIS RENDERING IS A BREAKING CHANGE. isKimiOwnCommand recognises a
+// previous install's entries by matching this exact text — the program, the
+// quoting, the directory layout — which is how a config.toml Kimi has stripped
+// the markers from is re-marked instead of being appended to. Render it
+// differently and the entries already in every user's config.toml stop being
+// recognised, and the next install writes a second copy of every hook: the
+// duplication that mechanism exists to prevent. A different filename or a
+// moved root is safe; a different shape is not, and needs isKimiOwnCommand to
+// learn the old shape as well as the new one.
+// TestIsKimiOwnCommand pins the two together.
 func KimiCommand(hooksDir string, h KimiHook) string {
 	script := filepath.Join(hooksDir, filepath.FromSlash(strings.TrimPrefix(h.Script, "hooks/")))
 	adapter := filepath.Join(hooksDir, "kimi", "adapter.sh")

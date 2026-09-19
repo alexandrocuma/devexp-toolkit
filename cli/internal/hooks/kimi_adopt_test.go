@@ -140,6 +140,9 @@ func TestWriteKimiHooksAdoptionLeavesLookalikesAlone(t *testing.T) {
 		"devexp's command inside a wrapper":           "myrunner bash " + shellSingleQuote(adapter) + " " + shellSingleQuote(guard),
 		"devexp's command with something after it":    "bash " + shellSingleQuote(adapter) + " " + shellSingleQuote(guard) + " ; echo done",
 		"a guard of theirs beside devexp's":           "bash '/home/u/kimi/adapter.sh' " + shellSingleQuote(guard),
+		// A quoted extra argument: the command still ends in a quote, so only
+		// the quote inside the extracted guard argument tells it from ours.
+		"devexp's command with a quoted argument": "bash " + shellSingleQuote(adapter) + " " + shellSingleQuote(guard) + " " + shellSingleQuote("--verbose"),
 	}
 
 	for name, command := range lookalikes {
@@ -200,24 +203,40 @@ func TestIsKimiOwnCommand(t *testing.T) {
 	if got := KimiCommand(hooksDir, kimiTestHooks()[0]); !isKimiOwnCommand(hooksDir, got) {
 		t.Errorf("KimiCommand renders something the recogniser rejects: %q", got)
 	}
-	notOwn := []string{
-		"",
-		own + " ",
-		"sh " + shellSingleQuote(adapter) + " " + shellSingleQuote(guard),
-		"bash " + shellSingleQuote(adapter),
-		"bash " + shellSingleQuote(filepath.Join("/other/hooks", "kimi", "adapter.sh")) + " " + shellSingleQuote(guard),
-		"bash " + shellSingleQuote(adapter) + " " + shellSingleQuote(filepath.Join(hooksDir, "kimi", "secret-guard.sh")),
-		"bash " + shellSingleQuote(adapter) + " " + shellSingleQuote(filepath.Join(hooksDir, "claude-code", "secret-guard")),
+	notOwn := map[string]string{
+		"nothing at all":                   "",
+		"a trailing space":                 own + " ",
+		"another interpreter":              "sh " + shellSingleQuote(adapter) + " " + shellSingleQuote(guard),
+		"the adapter with no guard":        "bash " + shellSingleQuote(adapter),
+		"an adapter under another root":    "bash " + shellSingleQuote(filepath.Join("/other/hooks", "kimi", "adapter.sh")) + " " + shellSingleQuote(guard),
+		"a guard from the wrong directory": "bash " + shellSingleQuote(adapter) + " " + shellSingleQuote(filepath.Join(hooksDir, "kimi", "secret-guard.sh")),
+		"a guard without the .sh suffix":   "bash " + shellSingleQuote(adapter) + " " + shellSingleQuote(filepath.Join(hooksDir, "claude-code", "secret-guard")),
+		// A second argument that is QUOTED still ends in a quote, so the
+		// bracketing check passes and only the quote INSIDE the extracted
+		// argument catches it. An unquoted `--verbose` is caught by the
+		// bracketing alone, so it pins nothing here.
+		"a quoted second argument": own + " " + shellSingleQuote("--verbose"),
+		"a quoted third argument":  own + " " + shellSingleQuote("--a") + " " + shellSingleQuote("--b"),
+		// Same shape, with the guard argument itself carrying a quote.
+		"a guard path holding a quote": "bash " + shellSingleQuote(adapter) + " " + shellSingleQuote(filepath.Join(hooksDir, "claude-code", "it's.sh")),
 	}
-	for _, c := range notOwn {
+	for why, c := range notOwn {
 		if isKimiOwnCommand(hooksDir, c) {
-			t.Errorf("a command that is not devexp's was claimed: %q", c)
+			t.Errorf("%s was claimed as devexp's: %q", why, c)
 		}
 	}
+
 	// Without a hooks root there is nothing to compare against, so nothing is
-	// ever devexp's — adoption is off rather than guessing.
+	// ever devexp's — adoption is off rather than guessing. The command that
+	// matters here is a RELATIVE one: filepath.Join("", "kimi", "adapter.sh")
+	// is "kimi/adapter.sh", so without the guard this would match, and an
+	// entry of the user's running a relative adapter would be deleted.
+	relative := "bash 'kimi/adapter.sh' 'claude-code/secret-guard.sh'"
+	if isKimiOwnCommand("", relative) {
+		t.Errorf("an unknown hooks root claimed a relative command: %q", relative)
+	}
 	if isKimiOwnCommand("", own) {
-		t.Errorf("an unknown hooks root claimed a command anyway")
+		t.Errorf("an unknown hooks root claimed an absolute command anyway")
 	}
 }
 
