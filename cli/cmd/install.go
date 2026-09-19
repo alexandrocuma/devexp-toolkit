@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -19,12 +20,16 @@ var (
 	flagMCPsOnly      bool
 	flagAgentsOnly    bool
 	flagSkillsOnly    bool
+	flagTargets       []string
 )
 
 var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install devexp agents, skills, hooks, and MCP servers",
-	RunE:  runInstall,
+	// Execute prints the error itself; without this cobra prints it too, so a
+	// failed install said everything twice. uninstallCmd already does this.
+	SilenceErrors: true,
+	RunE:          runInstall,
 }
 
 func init() {
@@ -35,6 +40,7 @@ func init() {
 	f.BoolVar(&flagMCPsOnly, "mcps-only", false, "Only register MCP servers — skip agents, skills, and hooks")
 	f.BoolVar(&flagAgentsOnly, "agents-only", false, "Only install agents — skip skills, hooks, and MCPs")
 	f.BoolVar(&flagSkillsOnly, "skills-only", false, "Only install skills — skip agents, hooks, and MCPs")
+	f.StringSliceVar(&flagTargets, "target", nil, "Install only for these CLIs ("+targetIDs()+"); repeatable or comma-separated. Default: every detected CLI")
 	rootCmd.AddCommand(installCmd)
 }
 
@@ -55,22 +61,42 @@ type installOpts struct {
 
 // wizardResult holds the answers collected from the interactive wizard.
 type wizardResult struct {
-	dryRun          bool
-	reinstallMCPs   bool
-	remove          bool
-	mcpsOnly        bool
-	agentsOnly      bool
-	skillsOnly      bool
-	installClaude   bool
-	installOpencode bool
-	selectedAgents  []string
-	selectedMCPs    []string
-	selectedHooks   []string
+	dryRun         bool
+	reinstallMCPs  bool
+	remove         bool
+	mcpsOnly       bool
+	agentsOnly     bool
+	skillsOnly     bool
+	targets        []target
+	selectedAgents []string
+	selectedMCPs   []string
+	selectedHooks  []string
 }
+
+// installers dispatches each target to its installer. Adding a CLI is adding
+// an entry here and a case in the target type, not a new branch in runInstall.
+var installers = map[target]func(*installOpts) error{
+	targetClaude:   doInstallClaude,
+	targetOpencode: doInstallOpencode,
+	targetKimi:     doInstallKimi,
+}
+
+// notYetSupported lists targets whose installer writes nothing yet, so a run
+// that selected only these can be told it installed nothing instead of being
+// congratulated. #112-#114 remove the Kimi entry as they fill it in.
+var notYetSupported = map[target]bool{targetKimi: true}
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 func runInstall(cmd *cobra.Command, args []string) error {
+	// The flags parsed, so anything that fails from here on is a run that went
+	// wrong, not a command typed wrong, and the usage block helps nobody. It
+	// matters more now that a deliberate outcome — selecting only a target
+	// that installs nothing yet — exits non-zero: the notice explaining it
+	// would otherwise be three screens above the usage dump. A bad flag still
+	// gets usage, because this line has not run yet.
+	cmd.SilenceUsage = true
+
 	// Before anything else, flags and wizard alike: repo.Resolve may already
 	// write (a standalone binary extracts its assets under the user cache dir,
 	// which a relative HOME puts under the current directory), and MCP
@@ -116,11 +142,11 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		cmd.Flags().Changed("reinstall-mcps") ||
 		cmd.Flags().Changed("mcps-only") ||
 		cmd.Flags().Changed("agents-only") ||
-		cmd.Flags().Changed("skills-only")
+		cmd.Flags().Changed("skills-only") ||
+		cmd.Flags().Changed("target")
 
 	var opts *installOpts
-	installClaude := false
-	installOpencode := false
+	var targets []target
 
 	if flagsProvided {
 		// Non-interactive: use flags directly (CI / scripting path)
@@ -128,7 +154,9 @@ func runInstall(cmd *cobra.Command, args []string) error {
 			fmt.Println("\033[1;33mDRY RUN MODE — no files will be written\033[0m")
 			fmt.Println()
 		}
-		installClaude, installOpencode, err = detectTargets()
+		det := detectTargets()
+		announceTargets(det)
+		targets, err = resolveTargets(det, flagTargets)
 		if err != nil {
 			return err
 		}
@@ -162,8 +190,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 			fmt.Println()
 		}
 
-		installClaude = wiz.installClaude
-		installOpencode = wiz.installOpencode
+		targets = wiz.targets
 		opts = &installOpts{
 			repoDir:        repoDir,
 			cfg:            cfg,
@@ -184,19 +211,53 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
-	if installClaude {
-		if err := doInstallClaude(opts); err != nil {
-			return fmt.Errorf("claude install: %w", err)
+	installed := 0
+	for _, t := range targets {
+		install, ok := installers[t]
+		if !ok {
+			return fmt.Errorf("no installer for target %q", string(t))
+		}
+		if err := install(opts); err != nil {
+			return fmt.Errorf("%s install: %w", string(t), err)
+		}
+		if !notYetSupported[t] {
+			installed++
 		}
 	}
-	if installOpencode {
-		if err := doInstallOpencode(opts); err != nil {
-			return fmt.Errorf("opencode install: %w", err)
+
+	// A run whose every target installs nothing yet has not succeeded, whatever
+	// each installer printed on its way past. It exits non-zero rather than
+	// letting "All done." stand in for an install that never happened.
+	if skipped := skippedTargets(targets); len(skipped) > 0 {
+		if installed == 0 {
+			return fmt.Errorf("nothing was installed: %s", labelList(skipped)+" is not a supported install target yet (#110)")
 		}
+		ui.Warn("Skipped: " + labelList(skipped) + " — not a supported install target yet (#110).")
+		fmt.Println()
 	}
 
 	fmt.Printf("\033[0;32m\033[1mAll done.\033[0m\n\n")
 	return nil
+}
+
+// skippedTargets returns the selected targets that installed nothing.
+func skippedTargets(targets []target) []target {
+	var out []target
+	for _, t := range targets {
+		if notYetSupported[t] {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// labelList renders targets the way the user sees them named.
+func labelList(targets []target) string {
+	labels := make([]string, len(targets))
+	for i, t := range targets {
+		labels[i] = t.label()
+	}
+	return strings.Join(labels, ", ")
 }
 
 // announceAssetRoot tells the user which directory devexp installs from and

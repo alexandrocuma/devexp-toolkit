@@ -13,7 +13,7 @@ For **contributors** working on the toolkit from a clone: prerequisites, build, 
 | rsync | not pinned — copies assets for embedding | `scripts/stage-assets.sh:16,19` |
 | python3 | not pinned — Claude Code hooks and their tests pipe the JSON envelope through it | `hooks/claude-code/secret-guard.test.sh:11`, `hooks/claude-code/fail-closed.test.sh:4-5` |
 | Node.js | 22 in CI — opencode hook modules are ESM (`{"type":"module"}`) | `.github/workflows/ci.yml` (job `hooks`), `hooks/opencode/package.json` |
-| `claude` and/or `opencode` on `PATH` | any — `devexp install` refuses to run without one | `cli/cmd/targets.go:31` |
+| `claude`, `opencode` and/or `kimi` on `PATH` | `claude`/`opencode` any; Kimi Code CLI ≥ `0.31.0` (older is skipped, and the legacy kimi-cli is not Kimi Code). `devexp install` refuses to run without at least one | `cli/cmd/targets.go` (`selectTargets`), `cli/cmd/kimi_detect.go` (`kimiMinVersion`) |
 | git | any — to clone | `README.md:83` |
 
 No lint, formatter, scanner or release tool needs to be installed locally: CI has no lint job, `scripts/govulncheck.sh` installs the pinned govulncheck into a temporary directory, and goreleaser runs only in GitHub Actions (see [`../guides/release.md`](../guides/release.md)).
@@ -29,7 +29,7 @@ cp mcps/.env.example mcps/.env        # optional — only MCPs with required_env
 ./install.sh --dry-run                # preview; installs nothing   # source: install.sh:22, cli/cmd/install.go:115
 ```
 
-Expected result: the dry run prints `DRY RUN MODE — no files will be written`, `Detected: Claude Code` (and/or opencode), the MCPs/agents/skills/hooks it would install, and ends with `All done.` Until `UI_INSPECTOR_DIR` is set it also prints `[REQUIRED] ui-inspector — missing required env vars` — a warning, not a failure (`cli/internal/ui/output.go:28`).
+Expected result: the dry run prints `DRY RUN MODE — no files will be written`, `Detected: Claude Code` (and/or `opencode`, `Kimi Code CLI`), the MCPs/agents/skills/hooks it would install, and ends with `All done.` If Kimi Code is the **only** CLI detected it instead exits non-zero with `nothing was installed` — deliberate, because nothing is installed for Kimi yet; see [Troubleshooting](#troubleshooting). Until `UI_INSPECTOR_DIR` is set it also prints `[REQUIRED] ui-inspector — missing required env vars` — a warning, not a failure (`cli/internal/ui/output.go:28`).
 
 `./install.sh` on its own would have built `bin/devexp` for you (it runs staging + `go build` when the binary is missing — `install.sh:7-20`); the explicit steps above make each stage visible. To install for real, run `./install.sh` — see [`../guides/install.md`](../guides/install.md).
 
@@ -70,7 +70,8 @@ The full list — `CLAUDE.md` shows only the most-used few and links here.
 |----------|----------|---------|------------------|--------|
 | `DEVEXP_DIR` | No | unset | Forces the asset root `devexp install` reads from, instead of the checkout a dev build was compiled from or the bundled assets. It is the only way to point a release binary, or a dev binary built elsewhere, at a checkout: `devexp` never uses a directory it finds on disk. A relative value is resolved to an absolute path (hook commands in `settings.json` are built from it and are always absolute), and it must be a devexp-toolkit checkout — the `.devexp-toolkit` marker file (first line `devexp-toolkit`) plus `agents/`, `skills/`, `mcps/` — otherwise install stops with an error rather than falling back to another lookup. It is also always set to the resolved repo dir in the env used to expand `${VAR}` in MCP entries | `devexpDir` / `isRepoDir` in `cli/internal/repo/repo.go`, `cli/cmd/registry.go:57` |
 | `HOME` | Yes | from shell | Root of every install destination (`~/.claude/…`, `~/.config/opencode/…`). Must be an absolute path: `devexp install`, `devexp uninstall` and `uninstall.sh` refuse to run, touching nothing, when it is unset, empty or relative | `cli/cmd/install_claude.go`, `cli/cmd/install_opencode.go`, `cli/cmd/paths.go` (`targetHome`), `cli/cmd/install.go:78`, `cli/cmd/uninstall.go:80` |
-| `PATH` | Yes | from shell | Which of `claude` / `opencode` is found decides the install targets | `cli/cmd/targets.go:57-72` |
+| `PATH` | Yes | from shell | Which of `claude` / `opencode` / `kimi` is found decides the install targets | `cli/cmd/targets.go` (`detectTargets`) |
+| `KIMI_CODE_HOME` | No | `~/.kimi-code` | Root of the Kimi Code install destinations. Must be absolute, and may be neither `/` nor `$HOME`; anything else is refused. Nothing is written there yet (#112-#114) | `cli/cmd/paths.go` (`resolveKimiHome`) |
 | `UI_INSPECTOR_DIR` | Only for the `ui-inspector` MCP | empty | Absolute path of a `mcp-ui-inspector` clone, expanded into that MCP's args. Unset → the MCP is skipped with a `[REQUIRED]` notice | `mcps/.env.example`, `mcps/registry.json:15,18` |
 | any var named in an MCP's `required_env` | Per MCP | — | Value substituted for `${VAR}` in MCP args/headers — applies to registry MCPs and to org MCPs added under `mcps` in `devexp.config.json` | `cli/internal/mcp/claude.go:12-19,52`, `cli/internal/config/config.go:33-35` |
 | `DEVEXP_VERSION` | No | latest release | `scripts/remote-install.sh` only — tag to download | `scripts/remote-install.sh:10,50` |
@@ -89,9 +90,11 @@ Configuration file: `devexp.config.json` at the repo root (model default, disabl
 
 **Problem:** `HOME is "", not an absolute path — refusing to install anything; set HOME and re-run` (or `refusing to remove anything` from `devexp uninstall` / `uninstall.sh`, or `refusing to install` from `remote-install.sh`) · **Cause:** `HOME` is unset, empty or relative — e.g. under `env -i` or a CI step that clears the environment — and every target path is built from it, so it would resolve under the current directory (`targetHome` in `cli/cmd/paths.go`) · **Fix:** run with an absolute `HOME`, e.g. `HOME=/Users/you ./install.sh`. Nothing was written, registered or backed up.
 
-**Problem:** `no supported CLI detected (claude or opencode)` · **Cause:** neither CLI is on `PATH` (`cli/cmd/targets.go:31`) · **Fix:** install Claude Code or opencode, or fix `PATH`.
+**Problem:** `no supported CLI detected (claude, opencode, kimi)` · **Cause:** none of them is on `PATH`, or the only one found is unusable — an older Kimi Code, or the legacy kimi-cli — in which case the error says which (`cli/cmd/targets.go`, `selectTargets`) · **Fix:** install one of them, or fix `PATH`.
 
-**Problem:** the installer opens an interactive wizard (or fails without a TTY) · **Cause:** none of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, `--skills-only` was passed — `--model` alone doesn't count (`cli/cmd/install.go:115-119`) · **Fix:** pass one of those flags for the non-interactive path.
+**Problem:** `nothing was installed: Kimi Code CLI is not a supported install target yet (#110)` · **Cause:** Kimi Code was the only selected target, and nothing is installed for it until #112-#114 land · **Fix:** nothing to fix — it is deliberate. Select another target too, or wait for those tickets.
+
+**Problem:** the installer opens an interactive wizard · **Cause:** none of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, `--skills-only`, `--target` was passed — `--model` alone doesn't count (`cli/cmd/install.go`, `flagsProvided`) · **Fix:** pass one of those flags for the non-interactive path. Without a terminal that path no longer prompts at all: it installs for every detected CLI unless `--target` says otherwise.
 
 **Problem:** `[REQUIRED] ui-inspector — missing required env vars: UI_INSPECTOR_DIR` · **Cause:** the MCP's `required_env` isn't set (`mcps/registry.json:18`) · **Fix:** set it in `mcps/.env` and re-run `./install.sh --mcps-only`; add `--reinstall-mcps` if the MCP was already registered with an old value.
 
