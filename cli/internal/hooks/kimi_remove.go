@@ -94,7 +94,12 @@ func openKimiRemovalDir(home, dir string) (*kimiDir, error) {
 		return nil, err
 	}
 	if d.blocked == "" {
-		// The directory that was checked must be the one that was opened.
+		// The directory that was checked must be the one that was opened. Like
+		// the BehindSymlink call in pruneEmptyKimiDirs, this closes a race
+		// rather than a reachable single-threaded path: nothing but a
+		// concurrent swap between the Lstat above and this Stat can make it
+		// fire, so a mutation that removes it survives every test and always
+		// will. Kept deliberately; not a missing assertion.
 		if st, err := root.Stat("."); err != nil || !os.SameFile(st, lfi) {
 			d.blocked = "changed while devexp was checking it, so nothing was removed from it"
 		}
@@ -181,6 +186,17 @@ func removeOneKimiFile(d *kimiDir, dir, rel string, dryRun bool, kept *[]string)
 		if variant, ok := foldMatchKimi(base, d.names); ok {
 			ui.Warn(fmt.Sprintf("%q left untouched: on disk only as %q, which differs in case — devexp removes only the exact name it recorded", filepath.Join(dir, base), variant))
 			*kept = append(*kept, rel)
+			return false
+		}
+		// Reachable through the pinned handle but absent from the listing:
+		// the name exists on disk under a different Unicode normalization
+		// (NFC vs NFD, routine on APFS). Nothing wrong is deleted either way,
+		// but staying silent dropped it from the manifest and stranded a real
+		// file with no record of it. Same treatment as the fold branch above,
+		// and as removeStale's own branch for this.
+		if _, err := kimiRootLstat(d.root, base); err == nil {
+			ui.Warn(fmt.Sprintf("%q left untouched: on disk only under a spelling that differs in Unicode normalization — devexp removes only the exact name it recorded", filepath.Join(dir, base)))
+			*kept = append(*kept, rel)
 		}
 		return false // already gone: not a removal, and not worth a line
 	}
@@ -264,15 +280,18 @@ func isKimiHookPath(rel string) bool {
 // it would take out the user's link, and removing through it would reach into
 // whatever it points at. Same rule as the removal itself.
 //
-// The BehindSymlink half of that is currently belt and braces, and mutation
-// testing says so: removing it changes no observable behaviour, because
-// pruning runs only when something was actually removed, a removal requires an
-// unblocked directory, and every directory pruned here lives under the same
-// hooksDir — so if one of them is behind a symlink, so is the one that would
-// have had to be unblocked. It stays because that reasoning depends on the
-// removedAny guard above, and nothing but this comment ties the two together:
-// loosen that guard and this check becomes load-bearing with no test to catch
-// it. The Lstat check beside it is not redundant and is covered.
+// **Do not delete the BehindSymlink call because a mutation test says it is
+// unreachable.** An earlier version of this comment argued it was equivalent
+// — that pruning only runs after a removal, a removal needs an unblocked
+// directory, and everything pruned is under the same hooksDir. That argument
+// is wrong, and the review proved it: replace hooks/ with a symlink *after*
+// the removals and *before* the prune, and the Lstat below follows the new
+// link and sees an ordinary directory. BehindSymlink is then the only thing
+// that refuses, and the user's dotfiles checkout is what gets pruned.
+//
+// So this covers a race the Lstat structurally cannot see — which is also why
+// no single-threaded test kills the mutant. The surviving mutant is a
+// limitation of the harness, not a missing assertion.
 func pruneEmptyKimiDirs(home, hooksDir string) {
 	prune := func(dir string) {
 		fi, err := os.Lstat(dir)

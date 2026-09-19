@@ -149,7 +149,15 @@ func saveKimiUninstallRecord(p kimiPaths, old, kept *manifest.Manifest, info os.
 		ui.Warn(fmt.Sprintf("manifest %q is a symlink, so it was left untouched — it no longer matches what is on disk", p.manifest))
 		return
 	}
-	if kimiRecordEmpty(kept) {
+	// !kimiRecordEmpty(old) as well as kimiRecordEmpty(kept): the manifest is
+	// deleted because everything it recorded is gone, which is only true if it
+	// recorded something. A manifest that parses but records nothing otherwise
+	// reproduced the original symptom in a narrower form — removed, with 34
+	// agents still on disk and the config.toml block stripped, exit 0,
+	// "Removed devexp" (PR #176 re-review). devexp's own operations cannot
+	// write one, so this is the code catching up with the rule its comment
+	// above already states, not a live bug.
+	if !kimiRecordEmpty(old) && kimiRecordEmpty(kept) {
 		if err := os.Remove(p.manifest); err != nil {
 			ui.Warn(fmt.Sprintf("could not remove manifest %q: %v", p.manifest, err))
 			return

@@ -36,13 +36,32 @@ func kimiAssetRepo(t *testing.T) string {
 	files := map[string]string{
 		// One stdio MCP, so the MCP step actually writes and the three kinds
 		// of asset are exercised together rather than two of them in isolation.
-		"mcps/registry.json":           `[{"name": "probe", "command": "echo", "args": ["hi"], "scope": "user"}]`,
-		"agents/dev-agent.md":          agent("dev-agent", "Read, Bash, Agent, WebFetch"),
-		"agents/other.md":              agent("other", "Read, Grep"),
-		"agents/README.md":             "# never installed\n",
-		"skills/graphify/SKILL.md":     skill("graphify"),
-		"skills/graphify/refs/note.md": "# a supporting file\n",
-		"skills/devxp/SKILL.md":        skill("devxp"),
+		"mcps/registry.json": `[{"name": "probe", "command": "echo", "args": ["hi"], "scope": "user"}]`,
+		// A registry with a kimi block, and the scripts it names. Without one
+		// no hook is installed for Kimi, so the manifest records no hook files
+		// — and anything asserting about the hooks path silently asserts about
+		// an empty list. That is exactly how the removal guard on the hook
+		// scripts went untested (PR #176 re-review): a fixture that installs
+		// no hooks cannot exercise them.
+		"hooks/registry.json": `[
+  {"name": "secret-guard", "enabled": true,
+   "claude_code": {"event": "PreToolUse", "matcher": "Read", "script": "hooks/claude-code/secret-guard.sh"},
+   "opencode": {"event": "tool.execute.before", "module": "hooks/opencode/secret-guard.js", "export": "secretGuard", "fail_closed": true},
+   "kimi": {"event": "PreToolUse", "matcher": "^(Read|Bash)$", "script": "hooks/claude-code/secret-guard.sh", "fail_closed": true, "timeout": 45}},
+  {"name": "dangerous-cmd-guard", "enabled": true,
+   "claude_code": {"event": "PreToolUse", "matcher": "Bash", "script": "hooks/claude-code/dangerous-cmd-guard.sh"},
+   "kimi": {"event": "PreToolUse", "matcher": "^Bash$", "script": "hooks/claude-code/dangerous-cmd-guard.sh", "fail_closed": true, "timeout": 45}}
+]`,
+		"hooks/kimi/adapter.sh":                    "#!/usr/bin/env bash\n# adapter\n",
+		"hooks/claude-code/scan-budget.sh":         "#!/usr/bin/env bash\n# budget\n",
+		"hooks/claude-code/secret-guard.sh":        "#!/usr/bin/env bash\n# guard\n",
+		"hooks/claude-code/dangerous-cmd-guard.sh": "#!/usr/bin/env bash\n# guard\n",
+		"agents/dev-agent.md":                      agent("dev-agent", "Read, Bash, Agent, WebFetch"),
+		"agents/other.md":                          agent("other", "Read, Grep"),
+		"agents/README.md":                         "# never installed\n",
+		"skills/graphify/SKILL.md":                 skill("graphify"),
+		"skills/graphify/refs/note.md":             "# a supporting file\n",
+		"skills/devxp/SKILL.md":                    skill("devxp"),
 	}
 	for rel, content := range files {
 		p := filepath.Join(repoDir, filepath.FromSlash(rel))

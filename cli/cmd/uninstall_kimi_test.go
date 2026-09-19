@@ -480,6 +480,17 @@ func TestDoUninstallKimi_CustomRootOutsideHome(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	mustExist(t, filepath.Join(p.agents, "dev-agent.md"), "the install should have written into the custom root")
+	// The hook scripts specifically: this assertion existed before the fixture
+	// installed any, so it reached an empty list and the guard on the hook
+	// path stayed untested while looking covered (PR #176 re-review). Each
+	// kind gets its own removal guard call, so each needs its own evidence.
+	before := readKimiManifest(t, p.manifest)
+	if len(before.Hooks) == 0 {
+		t.Fatal("the fixture recorded no hook scripts, so this test cannot reach the hook removal path")
+	}
+	for _, rel := range before.Hooks {
+		mustExist(t, filepath.Join(p.hooks, filepath.FromSlash(rel)), "the install should have copied the hook script")
+	}
 
 	out, err := uninstallKimi(t, false)
 	if err != nil {
@@ -487,9 +498,18 @@ func TestDoUninstallKimi_CustomRootOutsideHome(t *testing.T) {
 	}
 	mustNotExist(t, filepath.Join(p.agents, "dev-agent.md"), "an agent in a root outside HOME must still be removed")
 	mustNotExist(t, filepath.Join(p.skills, "graphify"), "a skill in a root outside HOME must still be removed")
+	// Every one of them, not just that the directory went: the mutant strands
+	// all five scripts and reports "some entries were left in place", which is
+	// a half-uninstall leaving every guard script behind.
+	for _, rel := range before.Hooks {
+		mustNotExist(t, filepath.Join(p.hooks, filepath.FromSlash(rel)), "a hook script in a root outside HOME must still be removed")
+	}
 	mustNotExist(t, p.manifest, "and the record goes with them")
 	if strings.Contains(out, "not under") {
 		t.Errorf("the removal guard refused a root outside HOME:\n%s", out)
+	}
+	if strings.Contains(out, "left in place") {
+		t.Errorf("the run reported a half-uninstall:\n%s", out)
 	}
 }
 
@@ -688,4 +708,113 @@ func TestDoUninstallKimi_SymlinkedHookScriptKept(t *testing.T) {
 	if !strings.Contains(out, "symlink") {
 		t.Errorf("the run does not say why it was left:\n%s", out)
 	}
+}
+
+// TestDoUninstallKimi_HookScriptNotARegularFile: a recorded ".sh" name that is
+// on disk as something else. The earlier repro used a *non-empty* directory,
+// where removal fails anyway and the check never had to do anything — an
+// empty directory, or a fifo, would go through the pinned handle unchecked
+// (PR #176 re-review). Both are left alone, and both stay recorded.
+func TestDoUninstallKimi_HookScriptNotARegularFile(t *testing.T) {
+	t.Run("an empty directory", func(t *testing.T) {
+		p := kimiScratch(t, "")
+		asDir := filepath.Join(p.hooks, "kimi", "adapter.sh")
+		if err := os.MkdirAll(asDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, p.manifest, `{"agents":[],"skills":[],"hooks":["kimi/adapter.sh"]}`)
+
+		out, err := uninstallKimi(t, false)
+		if err != nil {
+			t.Fatalf("uninstall: %v", err)
+		}
+		mustExist(t, asDir, "an empty directory under a recorded script name is not a script")
+		if !strings.Contains(out, "not a regular file") {
+			t.Errorf("the run does not say why it was left:\n%s", out)
+		}
+		if m := readKimiManifest(t, p.manifest); len(m.Hooks) != 1 {
+			t.Errorf("the entry devexp would not remove was dropped from the record: %+v", m)
+		}
+	})
+
+	t.Run("a fifo", func(t *testing.T) {
+		p := kimiScratch(t, "")
+		if err := os.MkdirAll(filepath.Join(p.hooks, "kimi"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		fifo := filepath.Join(p.hooks, "kimi", "adapter.sh")
+		if err := mkfifoForTest(fifo); err != nil {
+			t.Skipf("fifo unavailable: %v", err)
+		}
+		writeFile(t, p.manifest, `{"agents":[],"skills":[],"hooks":["kimi/adapter.sh"]}`)
+
+		out, err := uninstallKimi(t, false)
+		if err != nil {
+			t.Fatalf("uninstall: %v", err)
+		}
+		mustExist(t, fifo, "a fifo under a recorded script name is not a script")
+		if !strings.Contains(out, "not a regular file") {
+			t.Errorf("the run does not say why it was left:\n%s", out)
+		}
+	})
+}
+
+// TestDoUninstallKimi_EmptyManifestNotDeleted: a manifest that parses but
+// records nothing. devexp's own operations never write one, so this is not a
+// live bug — but the code deleted it whenever the kept record came out empty,
+// regardless of whether the old one held anything, which is a narrower form of
+// the symptom the unreadable-manifest fix closed: manifest gone, files on
+// disk, exit 0, "Removed devexp" (PR #176 re-review).
+func TestDoUninstallKimi_EmptyManifestNotDeleted(t *testing.T) {
+	for name, body := range map[string]string{
+		"all fields empty": `{"agents":[],"skills":[],"hooks":[],"mcps":{}}`,
+		"an empty object":  `{}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := kimiScratch(t, "")
+			agent := filepath.Join(p.agents, "dev-agent.md")
+			writeFile(t, agent, "on disk, unrecorded\n")
+			writeFile(t, p.manifest, body)
+
+			if _, err := uninstallKimi(t, false); err != nil {
+				t.Fatalf("uninstall: %v", err)
+			}
+			mustExist(t, agent, "an unrecorded file is never devexp's")
+			mustExist(t, p.manifest, "a manifest that recorded nothing was never emptied by this run")
+		})
+	}
+}
+
+// TestDoUninstallKimi_HookScriptNormalizationTwin: on APFS a name can exist
+// only under a different Unicode normalization. Nothing wrong is removed
+// either way, but the entry has to keep its place in the manifest and say so,
+// or a real file is stranded with no record — the fold branch beside it and
+// removeStale both already do this.
+func TestDoUninstallKimi_HookScriptNormalizationTwin(t *testing.T) {
+	p := kimiScratch(t, "")
+	// "é" as NFC (U+00E9) on disk; the manifest records NFD (e + U+0301).
+	onDisk := filepath.Join(p.hooks, "kimi", "caf\u00e9.sh")
+	writeFile(t, onDisk, "#!/bin/sh\n")
+	writeFile(t, p.manifest, `{"agents":[],"skills":[],"hooks":["kimi/cafe\u0301.sh"]}`)
+
+	out, err := uninstallKimi(t, false)
+	if err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	m := readKimiManifest(t, p.manifest)
+	if _, statErr := os.Lstat(onDisk); statErr != nil {
+		// The filesystem folded the two spellings together and removed it.
+		// That is the case the fold/normalization branches exist to prevent.
+		t.Fatalf("a name differing only in normalization removed %q:\n%s", onDisk, out)
+	}
+	// Either the handle can see it under the recorded spelling (APFS folds
+	// normalization, so it can) and it must be reported and kept, or it
+	// genuinely is not there and there is nothing to record.
+	if strings.Contains(out, "Unicode normalization") {
+		if len(m.Hooks) != 1 {
+			t.Errorf("a reported normalization twin was dropped from the record: %+v", m)
+		}
+		return
+	}
+	t.Skip("this filesystem does not fold Unicode normalization, so the branch is unreachable here")
 }
