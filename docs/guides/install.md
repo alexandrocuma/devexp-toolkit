@@ -28,7 +28,7 @@ You can also grab a binary manually from the [Releases page](https://github.com/
 
 If you're contributing to the toolkit — editing agents, skills, or hooks — clone the repo and use `install.sh`. `install.sh` is now a thin wrapper: if `bin/devexp` doesn't exist yet it stages the embedded assets and builds the `devexp` Go CLI from `cli/` (requires a local Go toolchain), then execs `devexp install` with whatever flags you pass through (`install.sh:7-22`). Because `devexp` prefers live files on disk over its embedded copies, asset edits never need a rebuild — only changes to the Go code under `cli/` do (see [Updating](#updating)).
 
-The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed and, when more than one is present, asks which to target (`cli/cmd/targets.go`). Supported CLIs: **Claude Code**, **opencode** and **Kimi Code CLI**. Kimi Code is detected and selectable but installs nothing yet — see [Kimi Code CLI](#kimi-code-cli) below.
+The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed and, when more than one is present, asks which to target (`cli/cmd/targets.go`). Supported CLIs: **Claude Code**, **opencode** and **Kimi Code CLI**. Kimi Code installs MCP servers so far; agents, skills and hooks are still to come — see [Kimi Code CLI](#kimi-code-cli) below.
 
 ```bash
 ./install.sh                         # interactive wizard
@@ -55,6 +55,7 @@ Passing any of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, 
   - asking for a CLI that was not detected is an error naming it, never a silent fall back to another
 - **Claude Code**: copies agents to `~/.claude/agents/`, skill directories to `~/.claude/skills/`, registers MCPs via `claude mcp add`, and registers enabled hooks in `~/.claude/settings.json` (`cli/cmd/install_claude.go`)
 - **opencode**: transforms agent frontmatter (model aliases, tool mapping, adds `mode: subagent`) and installs to `~/.config/opencode/agents/`; each skill's `SKILL.md` goes to `~/.config/opencode/commands/<name>.md`; MCPs are written to the `mcp` key of `~/.config/opencode/config.json` (a `config.json` that isn't strict JSON — including one with comments or trailing commas, which opencode itself accepts — or whose top level or `mcp` isn't an object is left untouched: the MCP step is skipped with a warning naming the file and the servers to add by hand, and agents, skills and hooks still install. With `--mcps-only` it is an error); the hook plugin goes to `~/.config/opencode/plugins/` — the entry `devexp.js` plus `devexp/` holding the selected modules, `utils.js`, `package.json` and the `hooks.json` selection (`cli/cmd/install_opencode.go`, `cli/internal/hooks/opencode.go`). With every hook disabled no plugin is installed
+- **Kimi Code CLI**: merges MCPs into the `mcpServers` key of `$KIMI_CODE_HOME/mcp.json`, resolving `${VAR}` first because Kimi expands nothing; entries devexp did not write are never touched, an unchanged file is not rewritten, and an `mcp.json` devexp cannot parse is left alone with a warning. Agents, skills and hooks are not installed yet (#113, #114), and every run says so (`cli/cmd/install_kimi.go`, `cli/internal/mcp/kimi.go`)
 - Backs up existing agents and skills before overwriting — **Claude Code target only**; the opencode install has no backup step (`backupExisting` / `backupExistingDirs` are called only from `cli/cmd/install_claude.go`)
 - The install script is **idempotent** — safe to run multiple times
 
@@ -219,27 +220,37 @@ Shows every add, update, and removal devexp would make — including stale-file 
 
 ## CLI Installation Paths
 
-`$KIMI` below is `$KIMI_CODE_HOME`, or `~/.kimi-code` when that is unset (`kimiTargetPaths` in `cli/cmd/paths.go`). Nothing is written to it yet.
+`$KIMI` below is `$KIMI_CODE_HOME`, or `~/.kimi-code` when that is unset (`kimiTargetPaths` in `cli/cmd/paths.go`). MCP servers are installed there; agents, skills and hooks are not, yet.
 
 | Component | Claude Code | opencode | Kimi Code CLI |
 |-----------|-------------|----------|---------------|
 | Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (transformed) | `$KIMI/agents/` — not installed yet (#113) |
 | Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) | `$KIMI/skills/` — not installed yet (#113) |
 | Hooks | `~/.claude/settings.json` (shell scripts) | `~/.config/opencode/plugins/devexp.js` + `devexp/` (selected modules, `utils.js`, `package.json`, `hooks.json`) | `$KIMI/config.toml` — not installed yet (#114) |
-| MCPs | via `claude mcp add` | `mcp` key of `~/.config/opencode/config.json` | `$KIMI/mcp.json` — not installed yet (#112) |
+| MCPs | via `claude mcp add` | `mcp` key of `~/.config/opencode/config.json` | `mcpServers` key of `$KIMI/mcp.json` |
 | `CLAUDE.md` / `AGENTS.md` | `~/.claude/CLAUDE.md` | `~/.config/opencode/AGENTS.md` (or project root) | Kimi reads `AGENTS.md`, never `CLAUDE.md` |
 | Agent tools | All Claude tools | `read/write/edit/bash/glob/grep/webfetch/websearch` only | Own tool names (`FetchURL`, `TodoList`, …) |
 | `Agent`, `Skill`, `Task*` tools | Supported | No opencode equivalent — dropped at transform | Sub-agents exist; the mapping lands with #113 |
 
 ### Kimi Code CLI
 
-Kimi Code CLI `0.31.0` or newer on `PATH` is detected and can be selected, in the wizard or with `--target kimi`, but **nothing is installed for it yet** — agents, skills, MCPs and hooks arrive in #112-#114. Selecting it prints a notice naming the directory that stays untouched, and a run whose only target is Kimi exits non-zero rather than reporting `All done.`
+Kimi Code CLI `0.31.0` or newer on `PATH` is detected and can be selected, in the wizard or with `--target kimi`. It installs **MCP servers only so far** — agents and skills arrive in #113, hooks in #114 — and every Kimi run says which of them it did not install, so a partial install cannot be misread as a complete one. Asking a Kimi-only run for `--agents-only` or `--skills-only` installs nothing and exits non-zero rather than reporting `All done.`
 
-Two `kimi` binaries exist. Kimi Code CLI answers `kimi --version` with a bare version such as `0.42.0`; the legacy Python kimi-cli (config in `~/.kimi/`) answers `kimi, version <x>` and is **not supported** — their version numbers overlap, so devexp goes by the format, not the number. An older Kimi Code is skipped with the minimum named, and a `kimi` that answers with anything else is skipped rather than guessed at.
+**MCP servers** go into the `mcpServers` object of `$KIMI/mcp.json`, which Kimi has no command to edit — devexp merges into the file directly (`cli/internal/mcp/kimi.go`):
+
+- **`${VAR}` is resolved at install time.** Kimi expands nothing when it reads the file — not `${VAR}`, not `$VAR`, not `~` — so a placeholder left in it would be spawned literally.
+- **Your own entries and keys are left exactly as they are.** devexp records a fingerprint of each entry it writes in the manifest, and rewrites or removes only entries that still match it. An entry you wrote, or one of devexp's you have since edited, is skipped and said to be; `--reinstall-mcps` is how you hand it back. An entry devexp wrote and no longer installs is removed, the way a stale agent file is.
+- **Nothing is written when nothing changed**, so a second install reports `already configured` and leaves the file byte-identical.
+- **Every entry is checked against Kimi's schema before the file is replaced**, and a file devexp cannot parse is refused untouched with a warning, the rest of the install carrying on. Both matter more here than elsewhere: Kimi rejects the *whole file* if a single entry is invalid, leaving you with no MCP servers at all and only a line in `$KIMI/logs/kimi-code.log` to say why. `mcp.json` is strict JSON — unlike opencode's `config.json` it is not JSONC, so a comment in it is a file Kimi cannot read either.
+- A new `mcp.json` is created `0600` (entries hold resolved values from `mcps/.env`); an existing one keeps its mode, and a symlinked one keeps the link.
+- `kimi doctor` validates `config.toml` and `tui.toml` only — it never checks `mcp.json`. To verify, start `kimi` and run `/mcp`.
+- Kimi merges three layers, later winning: `$KIMI/mcp.json`, then `<git-root>/.mcp.json`, then `<cwd>/.kimi-code/mcp.json`. devexp writes only the first, so a project file can override a devexp entry.
+
+Two `kimi` binaries exist. Kimi Code CLI answers `kimi --version` with a bare version such as `2.0.1`; the legacy Python kimi-cli (config in `~/.kimi/`) answers `kimi, version <x>` and is **not supported** — their version numbers overlap, so devexp goes by the format, not the number. An older Kimi Code is skipped with the minimum named, and a `kimi` that answers with anything else is skipped rather than guessed at.
 
 `$KIMI_CODE_HOME` must be an absolute path, and may be neither `/` nor your home directory itself; a value devexp will not install into is an error (`resolveKimiHome` in `cli/cmd/paths.go`).
 
-> **`.devexp-manifest.json`**: devexp writes `~/.claude/.devexp-manifest.json` and `~/.config/opencode/.devexp-manifest.json` to track which agent/skill files (and, for opencode, plugin files) it installed, so future updates can detect and remove files no longer shipped by the toolkit (see [Updating](#updating)). These are managed automatically — don't hand-edit them.
+> **`.devexp-manifest.json`**: devexp writes `~/.claude/.devexp-manifest.json`, `~/.config/opencode/.devexp-manifest.json` and `$KIMI/.devexp-manifest.json` to track which agent/skill files (and, for opencode, plugin files; for Kimi, which `mcp.json` entries) it installed, so future updates can detect and remove what the toolkit no longer ships (see [Updating](#updating)). These are managed automatically — don't hand-edit them.
 
 > **opencode users — feature subset:**
 > The following features are unavailable under opencode and are dropped at install time (the installer prints a one-line warning, `cli/cmd/install_opencode.go`):
