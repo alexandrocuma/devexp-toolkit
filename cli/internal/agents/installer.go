@@ -201,7 +201,7 @@ func InstallOpencodeExclusive(srcDir, targetDir, model string, dryRun bool) ([]s
 	return installed, nil
 }
 
-// transformForOpencode ports transform_agent.py to Go.
+// transformForOpencode rewrites claude-style agent frontmatter for opencode.
 // modelOnly=true performs model-line substitution only (for opencode-exclusive agents).
 func transformForOpencode(content, selectedModel string, modelOnly bool) (string, error) {
 	if modelOnly {
@@ -278,7 +278,7 @@ func isDisabled(name string, disabled []string) bool {
 }
 
 // keepSymlinkedEntry reports, with a warning, that dest — an agent file devexp
-// installs — is a symlink, which install leaves as it is (#124). Writing
+// installs — is a symlink, which install leaves as it is. Writing
 // through it would overwrite whatever it points at, such as a customised agent
 // in a dotfiles repo or the toolkit's own source file; replacing it would
 // silently undo the user's setup. The name stays in the install set, so the

@@ -2632,7 +2632,7 @@ func TestDoInstallOpencode_SymlinkedPluginsDir(t *testing.T) {
 	}
 }
 
-// ── HOME refusal (#126) ───────────────────────────────────────────────────────
+// ── HOME refusal ──────────────────────────────────────────────────────────────
 
 // badHomes are the HOME values that would turn every target path into one
 // under the current directory: unset, empty and relative.
@@ -3059,7 +3059,7 @@ func TestDoInstall_RefusesBadHome(t *testing.T) {
 	}
 }
 
-// ── DEVEXP_DIR resolution (#126) ──────────────────────────────────────────────
+// ── DEVEXP_DIR resolution ─────────────────────────────────────────────────────
 
 // TestInstallCmd_RelativeDevexpDir: a relative DEVEXP_DIR is resolved to an
 // absolute path, so every hook command written to settings.json is absolute.
@@ -3156,7 +3156,7 @@ func TestInstallCmd_DevexpDirNotARepo(t *testing.T) {
 	noCalls(t, calls)
 }
 
-// ── Asset root detection (#134) ───────────────────────────────────────────────
+// ── Asset root detection ──────────────────────────────────────────────────────
 
 // TestInstallCmd_AssetRoot: without DEVEXP_DIR, `devexp install` run inside
 // a directory tree never installs from that tree, marked as a devexp-toolkit
@@ -3305,10 +3305,10 @@ func TestAnnounceAssetRoot(t *testing.T) {
 	}
 }
 
-// TestDoInstallOpencode_UnmergeableConfig (#157 review): opencode reads
-// config.json as JSONC, so a commented one is valid. The MCP merge still can't
-// edit it safely: it is left byte for byte, the servers to add by hand are
-// named, and agents, skills and hooks install anyway, in a dry run too. With
+// TestDoInstallOpencode_UnmergeableConfig: opencode reads config.json as
+// JSONC, so a commented one is valid. The MCP merge still can't edit it
+// safely: it is left byte for byte, the servers to add by hand are named, and
+// agents, skills and hooks install anyway, in a dry run too. With
 // --mcps-only there is nothing else to do, so it stays an error.
 func TestDoInstallOpencode_UnmergeableConfig(t *testing.T) {
 	const jsonc = "{\n  // my model\n  \"model\": \"x\",\n}\n"

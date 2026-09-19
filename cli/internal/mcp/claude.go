@@ -40,7 +40,6 @@ func RemoveClaude(m MCP) {
 }
 
 func AddClaude(m MCP, env map[string]string, dryRun bool) error {
-	// Resolve env vars
 	resolved := make(map[string]string)
 	for k, v := range m.Env {
 		if override, ok := env[k]; ok {
@@ -57,13 +56,11 @@ func AddClaude(m MCP, env map[string]string, dryRun bool) error {
 		}
 	}
 
-	// Resolve ${VAR} in args
 	resolvedArgs := make([]string, len(m.Args))
 	for i, a := range m.Args {
 		resolvedArgs[i] = resolveStr(a, env)
 	}
 
-	// Check required env
 	var missing []string
 	for _, key := range m.RequiredEnv {
 		if env[key] == "" {

@@ -65,8 +65,8 @@ func InstallClaude(srcDir, targetDir string, disabled []string, dryRun bool) ([]
 
 // CopyDir recursively copies all files and subdirectories from src to dst.
 // Each file is written atomically. A file or directory in dst that is a
-// symlink is left untouched, with a warning, and nothing is written through it
-// (#124): it may point at a user's own copy or at the toolkit's source.
+// symlink is left untouched, with a warning, and nothing is written through
+// it: it may point at a user's own copy or at the toolkit's source.
 func CopyDir(src, dst string) error {
 	_, err := copyDir(src, dst, false, nil)
 	return err

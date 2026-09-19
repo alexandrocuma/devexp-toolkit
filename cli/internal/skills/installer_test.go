@@ -264,7 +264,7 @@ func captureStdout(t *testing.T, fn func()) string {
 	return <-done
 }
 
-// TestInstall_SymlinkedSkillEntries (#124): a skill directory, a file or a
+// TestInstall_SymlinkedSkillEntries: a skill directory, a file or a
 // subdirectory inside one, or an opencode command that is a symlink is never
 // written through or replaced; everything else is still installed.
 func TestInstall_SymlinkedSkillEntries(t *testing.T) {
@@ -363,7 +363,7 @@ func TestInstall_SymlinkedSkillEntries(t *testing.T) {
 	})
 }
 
-// TestInstallClaude_SymlinkInsideRealSkillDir (#157 review): a symlinked
+// TestInstallClaude_SymlinkInsideRealSkillDir: a symlinked
 // SKILL.md or subdirectory inside a real skill directory is previewed in a dry
 // run, and a real run doesn't report a skipped SKILL.md as added.
 func TestInstallClaude_SymlinkInsideRealSkillDir(t *testing.T) {
@@ -406,7 +406,7 @@ func TestInstallClaude_SymlinkInsideRealSkillDir(t *testing.T) {
 	}
 }
 
-// TestInstall_SkillFilesNeverWrittenInPlace (#157 review): skill and command
+// TestInstall_SkillFilesNeverWrittenInPlace: skill and command
 // files are replaced through a temp file and a rename. In a directory where no
 // temp file can be created, the write fails and the old bytes stay, where an
 // in-place os.WriteFile would have succeeded.

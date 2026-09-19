@@ -144,7 +144,7 @@ func TestSave(t *testing.T) {
 
 // A manifest with no plugins must stay byte-for-byte what it was before the
 // field existed: the Claude Code manifest never has plugins.
-// TestSave_Atomic (#124): Save replaces the manifest through a temp file, so a
+// TestSave_Atomic: Save replaces the manifest through a temp file, so a
 // symlinked manifest keeps its link and the file it points at keeps its mode;
 // a dangling link is refused and nothing is created.
 func TestSave_Atomic(t *testing.T) {

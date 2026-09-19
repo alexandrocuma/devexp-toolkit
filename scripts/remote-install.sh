@@ -19,7 +19,7 @@ die() { echo "[devexp] error: $*" >&2; exit 1; }
 
 # ── Resolve the install directory ─────────────────────────────────────────────
 # Before any download. The default is built from HOME: unset, empty or relative,
-# it would be /.local/bin or a directory under wherever this runs (#126). An
+# it would be /.local/bin or a directory under wherever this runs. An
 # explicit DEVEXP_INSTALL_DIR doesn't need HOME, but must be absolute too.
 if [[ -n "${DEVEXP_INSTALL_DIR:-}" ]]; then
     INSTALL_DIR="$DEVEXP_INSTALL_DIR"

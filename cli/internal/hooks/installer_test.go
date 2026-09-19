@@ -135,8 +135,8 @@ func TestIsStaleDevexpHook(t *testing.T) {
 			cmd:  shellQuote(missingScript),
 			want: true,
 		},
-		// #138: only devexp's own form under repoDir is judged. Everything
-		// below names nothing on disk, and is the user's.
+		// Only devexp's own form under repoDir is judged. Everything below
+		// names nothing on disk, and is the user's.
 		"user command under repoDir with an argument": {
 			cmd: filepath.Join(repoDir, "hooks", "x.sh") + " --flag",
 		},
@@ -191,11 +191,11 @@ func TestIsStaleDevexpHook(t *testing.T) {
 	}
 }
 
-// TestInstallClaude_PrunesOnlyDevexpStaleHooks (#138): a removed script's
+// TestInstallClaude_PrunesOnlyDevexpStaleHooks: a removed script's
 // registration is pruned in every form devexp wrote it — plain, single-quoted,
 // or the bare path an install from a repo dir needing quotes wrote before
-// #135. A user's command under the repo dir that names nothing on disk (with
-// arguments, in another directory, with shell syntax) stays.
+// paths were quoted. A user's command under the repo dir that names nothing on
+// disk (with arguments, in another directory, with shell syntax) stays.
 func TestInstallClaude_PrunesOnlyDevexpStaleHooks(t *testing.T) {
 	for name, dir := range map[string]string{
 		"plain repo dir":          "repo",
@@ -499,7 +499,7 @@ func TestInstallClaude(t *testing.T) {
 // TestInstallClaude_RelativeHookCommands: every registered command is absolute.
 // An earlier install from a relative repo dir left relative devexp commands;
 // they are replaced by the absolute registration, and a relative command that
-// isn't devexp's is left alone (#126).
+// isn't devexp's is left alone.
 func TestInstallClaude_RelativeHookCommands(t *testing.T) {
 	repoDir := t.TempDir()
 	settingsPath := filepath.Join(t.TempDir(), "settings.json")
@@ -987,7 +987,7 @@ func TestLoadRegistry_RepoRegistry(t *testing.T) {
 	}
 }
 
-// ── Paths that need shell quoting (#135) ─────────────────────────────────────
+// ── Paths that need shell quoting ────────────────────────────────────────────
 
 // needsQuoting are repo dir names with each kind of character Claude Code's
 // shell (sh -c) would split on or interpret.
@@ -1447,7 +1447,7 @@ func TestInstallClaude_DoubleQuotedWithShellSpecials(t *testing.T) {
 	}
 }
 
-// oldInstallClaude does what InstallClaude did before #135 for one hook: append
+// oldInstallClaude does what an older InstallClaude did for one hook: append
 // the bare path unless that exact string is already registered. It stands in
 // for an older devexp run against the same settings.json.
 func oldInstallClaude(t *testing.T, settingsPath, event, matcher, scriptAbs string) {
@@ -1711,7 +1711,7 @@ func TestIsDevexpRoot(t *testing.T) {
 
 func ptr(s string) *string { return &s }
 
-// TestIsOrphanedDevexpHook (#150): only devexp's own form, naming a missing
+// TestIsOrphanedDevexpHook: only devexp's own form, naming a missing
 // script directly under <root>/hooks/claude-code/ of another devexp root.
 func TestIsOrphanedDevexpHook(t *testing.T) {
 	base := t.TempDir()
@@ -1764,7 +1764,7 @@ func TestIsOrphanedDevexpHook(t *testing.T) {
 	}
 }
 
-// TestPruneStaleHooks_RootsCachedPerAnswer (#157 review): the per-pass cache of
+// TestPruneStaleHooks_RootsCachedPerAnswer: the per-pass cache of
 // isDevexpRoot holds each root's own answer. Two missing scripts under one
 // user directory without a registry both stay, and two under one devexp root
 // both go, whichever is judged first.
@@ -1801,7 +1801,7 @@ func TestPruneStaleHooks_RootsCachedPerAnswer(t *testing.T) {
 	}
 }
 
-// TestInstallClaude_PrunesOrphanedHooksFromOtherRoots (#150): a registration
+// TestInstallClaude_PrunesOrphanedHooksFromOtherRoots: a registration
 // from another install root whose script left that root's registry is pruned;
 // every user command that merely looks similar stays, fields and all.
 func TestInstallClaude_PrunesOrphanedHooksFromOtherRoots(t *testing.T) {
@@ -1864,7 +1864,7 @@ func strconvQuote(s string) string {
 	return string(b)
 }
 
-// TestInstallClaude_PerTargetEnabled (#150): Claude Code registration follows
+// TestInstallClaude_PerTargetEnabled: Claude Code registration follows
 // EnabledFor(TargetClaudeCode), so a hook's claude_code.enabled overrides its
 // top-level enabled either way.
 func TestInstallClaude_PerTargetEnabled(t *testing.T) {
@@ -1903,7 +1903,7 @@ func TestInstallClaude_PerTargetEnabled(t *testing.T) {
 	}
 }
 
-// TestInstallClaude_SymlinkedSettings (#124): settings.json managed as a
+// TestInstallClaude_SymlinkedSettings: settings.json managed as a
 // symlink keeps its link; the file it points at gets the hooks, atomically and
 // with its own mode. A dangling link is refused and nothing is created.
 func TestInstallClaude_SymlinkedSettings(t *testing.T) {
@@ -1952,7 +1952,7 @@ func TestInstallClaude_SymlinkedSettings(t *testing.T) {
 	})
 }
 
-// ── The scan budget's hook timeout (#162) ────────────────────────────────────
+// ── The scan budget's hook timeout ───────────────────────────────────────────
 
 // ccHookTimeout is ccHook with a claude_code.timeout, as the fail-closed guards
 // carry in the real registry.
@@ -1987,8 +1987,8 @@ func readNumber(t *testing.T, path, name string) int {
 // depends on: a timed-out command hook does not block the tool call, so every
 // guard that enforces a budget must be registered with a Claude Code timeout
 // strictly above the largest budget it can run with — otherwise Claude Code
-// cancels the guard before it can exit 2, and the call goes through unscanned
-// (#162). It also pins the two twins to one default and one ceiling, so a
+// cancels the guard before it can exit 2, and the call goes through unscanned.
+// It also pins the two twins to one default and one ceiling, so a
 // change to either is a change to both.
 func TestRepoRegistry_FailClosedTimeouts(t *testing.T) {
 	root := filepath.Join("..", "..", "..")
@@ -2135,7 +2135,7 @@ func TestInstallClaude_Timeout(t *testing.T) {
 }
 
 // TestInstallClaude_TimeoutKeepsOtherFields checks the timeout goes in through
-// the same machinery that preserves a handler's other members (#137): the
+// the same machinery that preserves a handler's other members: the
 // user's own keys, and their order, survive.
 func TestInstallClaude_TimeoutKeepsOtherFields(t *testing.T) {
 	repoDir := t.TempDir()

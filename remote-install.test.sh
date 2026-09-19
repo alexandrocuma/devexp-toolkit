@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests scripts/remote-install.sh's install-directory check (#126), offline.
+# Tests scripts/remote-install.sh's install-directory check, offline.
 #
 # The binary goes to DEVEXP_INSTALL_DIR, else $HOME/.local/bin. With HOME
 # unset, empty or relative that default is /.local/bin or a path under the

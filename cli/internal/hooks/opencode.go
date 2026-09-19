@@ -46,9 +46,8 @@ const (
 	legacyEntry       = "devexp-plugin.js"
 )
 
-// legacyNames is the closed set of files the pre-46ca772 bash installer copied
-// flat into plugins/ (git ls-tree 46ca772^ hooks/opencode/). Nothing outside
-// this set is ever considered legacy.
+// legacyNames is the closed set of files the legacy bash installer copied
+// flat into plugins/. Nothing outside this set is ever considered legacy.
 var legacyNames = []string{
 	"devexp-plugin.js",
 	"utils.js",
@@ -670,7 +669,7 @@ func contains(list []string, s string) bool {
 
 // ── Legacy flat install cleanup ───────────────────────────────────────────────
 
-// CleanLegacyOpencode removes what the pre-46ca772 bash installer left behind:
+// CleanLegacyOpencode removes what the legacy bash installer left behind:
 // hook files copied flat into plugins/ (each would now load as a second
 // plugin), its package.json, and the config.json `plugin` entry it registered
 // (opencode logs a load failure for it once the file is gone).

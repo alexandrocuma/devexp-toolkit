@@ -677,12 +677,12 @@ process.stdout.write(JSON.stringify({ plugins: plugins.length, chains: chains.le
 	}
 }
 
-// TestWholePluginRemoval_EditedEntryStaysLoadable is the PR #125 review repro:
-// the manifest is lost and an editor put `// @ts-check` above devexp.js's
-// header. Neither install with every hook disabled nor uninstall may remove
-// devexp/ from under that entry: opencode would then block every tool call
-// ("devexp/hooks.json unreadable"). Both keep everything, say why, and the
-// plugin still loads and lets a harmless read through.
+// TestWholePluginRemoval_EditedEntryStaysLoadable: the manifest is lost and an
+// editor put `// @ts-check` above devexp.js's header. Neither install with
+// every hook disabled nor uninstall may remove devexp/ from under that entry:
+// opencode would then block every tool call ("devexp/hooks.json unreadable").
+// Both keep everything, say why, and the plugin still loads and lets a
+// harmless read through.
 func TestWholePluginRemoval_EditedEntryStaysLoadable(t *testing.T) {
 	node, nodeErr := exec.LookPath("node")
 	root, _ := filepath.Abs(filepath.Join("..", "..", ".."))
@@ -1158,7 +1158,7 @@ func TestInstallOpencode_KeptEntryKeepsPlugin(t *testing.T) {
 
 const legacyFixtures = "testdata/legacy-opencode"
 
-// copyLegacyFixtures copies the real pre-46ca772 files into dir.
+// copyLegacyFixtures copies the real legacy files into dir.
 func copyLegacyFixtures(t *testing.T, dir string, only ...string) {
 	t.Helper()
 	entries, err := os.ReadDir(legacyFixtures)
