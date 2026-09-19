@@ -138,6 +138,21 @@ devexp-toolkit is a collection of Claude Code and opencode **assets**: agents, s
 
 Unlike the Claude Code target, there's **no backup step**.
 
+### Install: Kimi Code CLI
+
+`runInstall` → `cli/cmd/install_kimi.go` `doInstallKimi(opts)`, with paths from `kimiTargetPaths($KIMI_CODE_HOME, $HOME, now)`. MCP servers are all it installs so far; agents and skills are #113, hooks #114, and every run names what it did not install (`notYetSupported` in `cli/cmd/install.go`). `--agents-only`/`--skills-only` therefore install nothing, and a Kimi-only run of that shape exits non-zero.
+
+1. `loadOldManifest` reads `$KIMI/.devexp-manifest.json`; the whole struct is carried forward, so nothing a later version adds is dropped.
+2. `installMCPsKimi` → `cli/internal/mcp/kimi.go` `InstallKimi` merges the registry into the `mcpServers` object of `$KIMI/mcp.json`:
+   - `resolveMCP` (`cli/internal/mcp/resolve.go`) expands every `${VAR}` first — Kimi expands nothing at read time — and an MCP whose `required_env` (or a placeholder) is unset is skipped with the usual `[REQUIRED]` notice rather than written half-configured.
+   - Each entry is checked against Kimi's own schema (`validateKimiEntry`, a discriminated union on `transport`) before it goes in, and the whole rendered file is parsed and re-checked before it replaces anything: Kimi rejects the *entire file* if one entry is invalid, and only says so in `$KIMI/logs/kimi-code.log`.
+   - `manifest.MCPs` holds a fingerprint per entry devexp wrote. An entry that is not devexp's, or is devexp's but has been edited, is skipped and reported; `--reinstall-mcps` replaces it anyway. An entry devexp wrote and no longer installs is removed.
+   - Nothing is written when nothing changed. When something did, the document is re-rendered with the user's key order and untouched values intact, two-space indented with a trailing newline — the format Kimi's own writer produces — and saved through `fsutil.WriteFileAtomic` (0600 for a new file).
+   - A file that is not strict JSON, whose top level is not an object, or whose `mcpServers` is not one, is left untouched (`mcp.ConfigRefusedError`): the MCP step is skipped with a warning and the run continues.
+3. `manifest.Save` writes `$KIMI/.devexp-manifest.json`, including on `--mcps-only`, because for Kimi the manifest *is* the MCP ownership record (skipped in dry-run).
+
+Every path this target prints is quoted: the root comes from `$KIMI_CODE_HOME`. There is no backup step and nothing is exec'd — Kimi has no `mcp add` command.
+
 ### A tool call at runtime (after install)
 
 ```
@@ -179,7 +194,7 @@ Hook commands point into the install root, so editing a registered script in the
 |------------|----------|-------------|
 | `claude` CLI | Detecting the install target; registering and removing MCPs (`claude mcp list/add/remove`) | `cli/cmd/targets.go` (`commandExists`), `cli/internal/mcp/claude.go` |
 | `opencode` CLI | Detecting the install target only (on PATH). Its config file is edited directly | `cli/cmd/targets.go`, `cli/internal/mcp/opencode.go` |
-| `kimi` CLI | Detecting the install target, and one bounded `kimi --version` probe to tell Kimi Code CLI from the unsupported legacy kimi-cli. Agents and skills install; MCPs (#112) and hooks (#114) do not yet | `cli/cmd/kimi_detect.go`, `cli/cmd/paths.go` (`kimiTargetPaths`), `cli/cmd/install_kimi.go` |
+| `kimi` CLI | Detecting the install target, and one bounded `kimi --version` probe to tell Kimi Code CLI from the unsupported legacy kimi-cli. Nothing is run to install: MCP servers are merged into `$KIMI_CODE_HOME/mcp.json` directly, because Kimi has no `mcp add` command, and agents and skills are written as files. Hooks are not installed yet (#114) | `cli/cmd/kimi_detect.go`, `cli/cmd/paths.go` (`kimiTargetPaths`), `cli/cmd/install_kimi.go`, `cli/internal/mcp/kimi.go` |
 | `~/.claude/settings.json` | Hook registration (only the `hooks` value is rewritten; other bytes and users' hook fields are kept) | `cli/internal/hooks/installer.go`, `cli/internal/hooks/settings.go` |
 | User cache dir (`os.UserCacheDir()/devexp/assets`, `…/assets-dev` for dev builds) | Assets extracted from the embedded FS when no clone is found | `cli/internal/repo/repo.go` |
 | cobra, viper, promptui | Commands; reading `devexp.config.json`; the interactive wizard (needs a TTY) | `cli/cmd/root.go`, `cli/internal/config/config.go`, `cli/internal/ui/prompts.go` |

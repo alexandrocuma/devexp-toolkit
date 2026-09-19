@@ -81,15 +81,19 @@ var installers = map[target]func(*installOpts) error{
 	targetKimi:     doInstallKimi,
 }
 
-// notYetSupported lists targets devexp does not install completely yet, so a
-// run that selected only these is not congratulated for a partial install.
+// notYetSupported lists, per target, the asset kinds its installer does not
+// write yet, so a partial install is never reported as a complete one. Kimi
+// installs MCP servers (#112) and agents and skills (#113); #114 adds hooks
+// and removes the entry, this map and partialTargets with it.
 //
-// Kimi installs agents and skills (#113) but not MCP servers (#112) or hooks
-// (#114), and ./uninstall.sh cannot remove it (#115). The entry stays until
-// those land — removing it now would print "All done." for an install with no
-// hooks — but nothing here claims the target was left untouched any more:
-// doInstallKimi writes, says what it wrote, and names what is still missing.
-var notYetSupported = map[target]bool{targetKimi: true}
+// Nothing needs installsNothing any more. It existed because Kimi installed
+// MCP servers only, so --agents-only or --skills-only against it wrote
+// nothing; both now install what they name, and no combination of flags
+// leaves a Kimi run empty-handed. The "nothing was installed" branch went
+// with it.
+var notYetSupported = map[target][]string{
+	targetKimi: {"hooks"},
+}
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -216,7 +220,6 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
-	installed := 0
 	for _, t := range targets {
 		install, ok := installers[t]
 		if !ok {
@@ -225,21 +228,16 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		if err := install(opts); err != nil {
 			return fmt.Errorf("%s install: %w", string(t), err)
 		}
-		if !notYetSupported[t] {
-			installed++
-		}
 	}
 
-	// A run whose every target is still incomplete has not succeeded, whatever
-	// each installer printed on its way past. It exits non-zero rather than
-	// letting "All done." stand in for an install that is missing pieces. The
-	// per-target notice says which pieces; this only refuses to call the run
-	// finished.
-	if skipped := skippedTargets(targets); len(skipped) > 0 {
-		if installed == 0 {
-			return fmt.Errorf("this run is not a complete install: %s", labelList(skipped)+" is not a fully supported install target yet (#110)")
-		}
-		ui.Warn("Incomplete: " + labelList(skipped) + " — not a fully supported install target yet (#110).")
+	// The per-target notice scrolls past in a multi-target run, so what a
+	// partly-supported target did not install is repeated in the summary.
+	said := false
+	for _, t := range partialTargets(targets) {
+		ui.Warn(fmt.Sprintf("%s: %s are not installed for it yet (#114).", t.label(), joinAnd(notYetSupported[t])))
+		said = true
+	}
+	if said {
 		fmt.Println()
 	}
 
@@ -247,16 +245,29 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// skippedTargets returns the selected targets devexp does not install
-// completely yet.
-func skippedTargets(targets []target) []target {
+// partialTargets returns the selected targets that still install only part of
+// what devexp ships.
+func partialTargets(targets []target) []target {
 	var out []target
 	for _, t := range targets {
-		if notYetSupported[t] {
+		if len(notYetSupported[t]) > 0 {
 			out = append(out, t)
 		}
 	}
 	return out
+}
+
+// joinAnd renders a list the way a sentence needs it: "agents, skills and
+// hooks". The target announcement deliberately uses commas throughout
+// (announceTargets), but these are read as prose, not as a set.
+func joinAnd(items []string) string {
+	switch len(items) {
+	case 0:
+		return ""
+	case 1:
+		return items[0]
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
 }
 
 // labelList renders targets the way the user sees them named.

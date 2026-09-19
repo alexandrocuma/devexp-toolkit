@@ -20,12 +20,13 @@ func TestClassifyKimi(t *testing.T) {
 		wantStatus kimiStatus
 		wantVer    string
 	}{
-		"the installed CLI's exact output": {out: "0.42.0\n", wantStatus: kimiOK, wantVer: "0.42.0"},
-		"no trailing newline":              {out: "0.43.1", wantStatus: kimiOK, wantVer: "0.43.1"},
-		"surrounding whitespace":           {out: "  0.42.0  \n", wantStatus: kimiOK, wantVer: "0.42.0"},
-		"exactly the minimum":              {out: kimiMinVersion, wantStatus: kimiOK, wantVer: kimiMinVersion},
-		"a major version above":            {out: "1.0.0", wantStatus: kimiOK, wantVer: "1.0.0"},
-		"double-digit minor":               {out: "0.100.0", wantStatus: kimiOK, wantVer: "0.100.0"},
+		"the installed CLI's exact output":       {out: "2.0.1\n", wantStatus: kimiOK, wantVer: "2.0.1"},
+		"the 0.4x series it was written against": {out: "0.42.0\n", wantStatus: kimiOK, wantVer: "0.42.0"},
+		"no trailing newline":                    {out: "0.43.1", wantStatus: kimiOK, wantVer: "0.43.1"},
+		"surrounding whitespace":                 {out: "  0.42.0  \n", wantStatus: kimiOK, wantVer: "0.42.0"},
+		"exactly the minimum":                    {out: kimiMinVersion, wantStatus: kimiOK, wantVer: kimiMinVersion},
+		"a major version above":                  {out: "1.0.0", wantStatus: kimiOK, wantVer: "1.0.0"},
+		"double-digit minor":                     {out: "0.100.0", wantStatus: kimiOK, wantVer: "0.100.0"},
 		// A prerelease counts as the release it is built towards.
 		"a prerelease of a new enough version": {out: "0.44.0-beta.1", wantStatus: kimiOK, wantVer: "0.44.0"},
 		"build metadata":                       {out: "0.42.0+sha.abc", wantStatus: kimiOK, wantVer: "0.42.0"},

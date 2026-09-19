@@ -1,6 +1,8 @@
-// Package manifest tracks which agent and skill files — and opencode plugin
-// files — devexp installed on a prior run, so a later run can detect and
-// remove files no longer shipped by the toolkit.
+// Package manifest tracks what devexp installed on a prior run — agent and
+// skill files, opencode plugin files, and the MCP entries it wrote into a
+// config file it shares with the user — so a later run can detect and remove
+// what the toolkit no longer ships, and can tell its own entries from the
+// user's.
 package manifest
 
 import (
@@ -18,12 +20,23 @@ import (
 // "code-reviewer.md" for an agent, "graphify" for a skill directory).
 //
 // Plugins is opencode-only: paths relative to the plugins directory, entry
-// first (e.g. "devexp.js", "devexp/hooks.json"). It is omitted when empty, so
-// the Claude Code manifest keeps its exact shape.
+// first (e.g. "devexp.js", "devexp/hooks.json").
+//
+// MCPs is Kimi-only: MCP server name to a fingerprint of the entry devexp
+// wrote into mcp.json. Kimi has no `mcp add` command, so devexp edits a file
+// the user also edits; the fingerprint is what tells devexp's own entry from
+// one the user wrote or has since changed, so it never rewrites or removes
+// theirs. A fingerprint rather than a copy of the entry: the entries hold
+// resolved values from mcps/.env, and a second copy of a token is a second
+// place to leak it from.
+//
+// Both are omitted when empty, so the Claude Code manifest keeps its exact
+// shape.
 type Manifest struct {
-	Agents  []string `json:"agents"`
-	Skills  []string `json:"skills"`
-	Plugins []string `json:"plugins,omitempty"`
+	Agents  []string          `json:"agents"`
+	Skills  []string          `json:"skills"`
+	Plugins []string          `json:"plugins,omitempty"`
+	MCPs    map[string]string `json:"mcps,omitempty"`
 }
 
 // Load reads a manifest from path. It always returns a non-nil Manifest.
