@@ -22,6 +22,15 @@ import (
 // Plugins is opencode-only: paths relative to the plugins directory, entry
 // first (e.g. "devexp.js", "devexp/hooks.json").
 //
+// Hooks is Kimi-only: the guard scripts devexp copied into the Kimi root,
+// as slash-separated paths below the installed hooks directory (e.g.
+// "kimi/adapter.sh", "claude-code/secret-guard.sh"). Kimi's config.toml
+// records the *commands*, and devexp's marker block says which of those are
+// devexp's; nothing on disk says which *scripts* devexp put there, so a hook
+// that stops being shipped would otherwise be left behind for ever — and a
+// registered command whose script is missing is a silent allow under Kimi's
+// runner, so the two have to be tracked together.
+//
 // MCPs is Kimi-only: MCP server name to a fingerprint of the entry devexp
 // wrote into mcp.json. Kimi has no `mcp add` command, so devexp edits a file
 // the user also edits; the fingerprint is what tells devexp's own entry from
@@ -30,12 +39,13 @@ import (
 // resolved values from mcps/.env, and a second copy of a token is a second
 // place to leak it from.
 //
-// Both are omitted when empty, so the Claude Code manifest keeps its exact
-// shape.
+// All three are omitted when empty, so the Claude Code manifest keeps its
+// exact shape.
 type Manifest struct {
 	Agents  []string          `json:"agents"`
 	Skills  []string          `json:"skills"`
 	Plugins []string          `json:"plugins,omitempty"`
+	Hooks   []string          `json:"hooks,omitempty"`
 	MCPs    map[string]string `json:"mcps,omitempty"`
 }
 

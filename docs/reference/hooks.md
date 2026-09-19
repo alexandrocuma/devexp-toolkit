@@ -2,7 +2,7 @@
 
 ## How Hooks Work
 
-Hooks intercept tool calls automatically — no user action required. Some are safety guards that block or ask; others (`lint-on-save`, `format-on-save`, `test-on-save`, `graphify-grep-nudge`) are advisory and never block. Each hook has an implementation per CLI, and the installer installs both: the Claude Code scripts (`cli/cmd/install_claude.go`) and the opencode plugin (`cli/cmd/install_opencode.go`).
+Hooks intercept tool calls automatically — no user action required. Some are safety guards that block or ask; others (`lint-on-save`, `format-on-save`, `test-on-save`, `graphify-grep-nudge`) are advisory and never block. Each hook has an implementation per CLI, and the installer installs all three: the Claude Code scripts (`cli/cmd/install_claude.go`), the opencode plugin (`cli/cmd/install_opencode.go`), and — for the guards Kimi can honour — the same Claude Code scripts behind an adapter (`cli/cmd/install_kimi.go`).
 
 **Claude Code** hooks are shell scripts registered in `~/.claude/settings.json` under `PreToolUse` or `PostToolUse` events. devexp edits only its own handlers there; your hooks keep every field ([install guide](../guides/install.md#what-install-and-uninstall-change-in-settingsjson)). Claude Code calls the script with a JSON payload on stdin and reads the response:
 
@@ -14,6 +14,12 @@ Hooks intercept tool calls automatically — no user action required. Some are s
 
 - **Block** — `throw new Error("reason")`. opencode stops the tool call.
 - **Allow** — return without throwing.
+
+**Kimi Code CLI** runs the *same* Claude Code scripts, through `hooks/kimi/adapter.sh`, registered as a marked `[[hooks]]` block in `$KIMI_CODE_HOME/config.toml`. The scripts are **copied** into `$KIMI_CODE_HOME/hooks/` rather than run from the checkout, because Kimi reads a command it cannot run as an *allow* (`cli/internal/hooks/kimi_install.go`). The adapter translates Kimi's camelCase envelope into Claude Code's snake_case one (`toolName` → `tool_name`, a tool's `path` → `file_path`, `ReadMediaFile` → `Read`) and is fail-closed: anything it cannot carry out faithfully ends at `exit 2`. Three of Kimi's traits shape what may be installed at all:
+
+- `permissionDecision: "ask"` falls through to Kimi's allow, so the adapter turns an ask into a block, and a hook whose *only* verdict is an ask (`large-file-guard`) is off for Kimi entirely.
+- A `PostToolUse` hook's result is never waited for or read, so every on-save hook is off for Kimi.
+- A hook that times out, cannot start, or exits anything but 0 or 2 is an **allow**. That is why the registration carries a timeout above the guards' own 44-second scan-budget ceiling, and why `scan-budget.sh` is copied next to the guards that source it.
 
 ---
 
@@ -39,6 +45,10 @@ hooks/
   └── fail-closed.test.sh      # Guards fail closed / advisory hooks fail open but loud
   └── scan-budget.test.sh      # The scan budget: forced hits block, ordinary input is untouched
   └── interpreter-proof.test.sh # A guard allows only against proof its own scan ran
+  kimi/                       # The Kimi Code CLI adapter for the Claude Code guards
+  └── adapter.sh              # Translates Kimi's envelope, runs the guard, fail-closed on anything ambiguous
+  └── adapter.test.sh         # The translation, the verdict mapping and every fail-closed path
+  └── runner.test.sh          # The acceptance criteria, through a simulation of Kimi's own runHook
   opencode/                   # One .js module per hook + shared utils + entry point + tests
   └── utils.js                # Shared helpers: scanBudgetMs/startScanBudget, findRoot, which, runLinter, runCommand (async spawn), countLines
   └── secret-guard.js
@@ -98,9 +108,15 @@ hooks/
 | `opencode.fail_closed` | `true` for security guards: if the module fails to import or initialise, the plugin blocks every tool call instead of running without it. Omit for advisory hooks |
 | `claude_code.enabled` | Optional Claude Code-only override of `enabled`; absent (nil) = follow `enabled` (#150) |
 | `opencode.enabled` | Optional opencode-only override of `enabled`; absent (nil) = follow `enabled`. The `graphify-*` hooks set `true` |
+| `kimi.event` | A Kimi hook event; every devexp hook uses `PreToolUse`. An event outside Kimi's list makes the entry invalid, and one invalid entry makes Kimi drop the whole hooks section |
+| `kimi.matcher` | An **anchored** JS regex over the tool name (`^(Read\|Bash)$`). Kimi's test is unanchored, so a bare `Read` would also fire for `ReadMediaFile` |
+| `kimi.script` | The Claude Code script to run behind the adapter, relative to repo root |
+| `kimi.timeout` | Seconds, 1..600. Kimi's own default is 30, *below* the guards' scan-budget ceiling, and a timed-out hook does not block — so devexp supplies 45 when the block omits one |
+| `kimi.enabled` | Optional Kimi-only override of `enabled`; `false` for every hook Kimi cannot honour |
+| `kimi.reason` | Why a `kimi.enabled: false` block is off, in the installer's own words — printed on the run that would otherwise have installed it |
 | `enabled` | Set to `false` to skip this hook for all users (targets without their own `enabled` override) |
 
-Every key other than `name`, `description` and `enabled` whose value is an object is an **install-target block**, keyed by target id: `claude_code` for Claude Code, `opencode` for opencode. The Go installer parses them all into `Hook.Targets` (`map[string]hooks.TargetSpec` in `cli/internal/hooks/installer.go`), so a new target is a new sibling block, not a new Go type. Target blocks share one field vocabulary: `event`, `matcher` and `timeout` (Claude Code), `script` (command-based targets), `module` + `export` (JS-plugin targets), `fail_closed`, and the optional per-target `enabled`. Each install asks `EnabledFor(<target>)`: the target block's own `enabled` when set, else the top-level `enabled` (Claude Code too, since #150; before it, Claude Code read only the top-level `enabled`).
+Every key other than `name`, `description` and `enabled` whose value is an object is an **install-target block**, keyed by target id: `claude_code` for Claude Code, `opencode` for opencode, `kimi` for Kimi Code CLI. The Go installer parses them all into `Hook.Targets` (`map[string]hooks.TargetSpec` in `cli/internal/hooks/installer.go`), so a new target is a new sibling block, not a new Go type. Target blocks share one field vocabulary: `event`, `matcher` and `timeout` (Claude Code), `script` (command-based targets), `module` + `export` (JS-plugin targets), `fail_closed`, and the optional per-target `enabled`. Each install asks `EnabledFor(<target>)`: the target block's own `enabled` when set, else the top-level `enabled` (Claude Code too, since #150; before it, Claude Code read only the top-level `enabled`).
 
 ---
 
@@ -457,15 +473,17 @@ the shell side alone.
 
 ## CLI Compatibility
 
-| | Claude Code | opencode |
-|---|---|---|
-| Hook scripts | `hooks/claude-code/*.sh` (one per hook) | `hooks/opencode/*.js` (one module per hook) |
-| Entry point | Each script registered separately in `settings.json` | `devexp-plugin.js` composes the modules listed in `devexp/hooks.json`; file events arrive through `event` → `file.edited` |
-| Installed by `./install.sh` | Yes — enabled hooks, into `~/.claude/settings.json` | Yes — selected modules, into `~/.config/opencode/plugins/` (`devexp.js` + `devexp/`) |
-| Selection | `claude_code.enabled` if set, else `enabled`, minus `hooks.disabled` / wizard deselection | `opencode.enabled` if set, else `enabled`, minus `hooks.disabled` / wizard deselection — so the `graphify-*` hooks are on (turn them off with `hooks.disabled`) |
-| Hook disabled after install | Stays registered in `settings.json` | Removed on the next install |
-| Block mechanism | `exit 2` + stderr | `throw new Error(...)` |
-| Confirm/ask | `permissionDecision: "ask"` JSON output | Not supported — hard block instead |
+| | Claude Code | opencode | Kimi Code CLI |
+|---|---|---|---|
+| Hook scripts | `hooks/claude-code/*.sh` (one per hook) | `hooks/opencode/*.js` (one module per hook) | the same `hooks/claude-code/*.sh`, behind `hooks/kimi/adapter.sh` |
+| Entry point | Each script registered separately in `settings.json` | `devexp-plugin.js` composes the modules listed in `devexp/hooks.json`; file events arrive through `event` → `file.edited` | Each command registered separately in the marked `[[hooks]]` block of `config.toml` |
+| Installed by `./install.sh` | Yes — enabled hooks, into `~/.claude/settings.json` | Yes — selected modules, into `~/.config/opencode/plugins/` (`devexp.js` + `devexp/`) | Yes — the adapter, the selected guards and `scan-budget.sh` copied into `$KIMI_CODE_HOME/hooks/`, then registered in `config.toml` |
+| Runs from | the install root (clone or user cache) | the installed plugin directory | a **copy** under the Kimi root — a command Kimi cannot run is an allow |
+| Selection | `claude_code.enabled` if set, else `enabled`, minus `hooks.disabled` / wizard deselection | `opencode.enabled` if set, else `enabled`, minus `hooks.disabled` / wizard deselection — so the `graphify-*` hooks are on (turn them off with `hooks.disabled`) | `kimi.enabled` if set, else `enabled`, minus `hooks.disabled` / wizard deselection; a hook with no `kimi` block is simply absent |
+| Hook disabled after install | Stays registered in `settings.json` | Removed on the next install | Removed on the next install, registration and copied script alike |
+| Block mechanism | `exit 2` + stderr | `throw new Error(...)` | `exit 2` + stderr (trimmed, and shown as the reason) |
+| Confirm/ask | `permissionDecision: "ask"` JSON output | Not supported — hard block instead | Not supported — Kimi runs an ask as an allow, so the adapter hard-blocks instead |
+| Timeout behaviour | A timed-out hook does not block | n/a | A timed-out, unstartable or oddly-exiting hook is an **allow**; the registration's timeout clears the scan-budget ceiling |
 
 ---
 
@@ -495,11 +513,13 @@ the shell side alone.
 
 3. Add the entry to `hooks/registry.json`, including the opencode mapping — `opencode.module`, `opencode.export`, and `opencode.fail_closed: true` for security guards. `devexp-plugin.js` is never edited per hook.
 
+   Decide the **Kimi** block in the same commit. Either a `kimi` block with an `event`, an **anchored** `matcher`, the `script` and a `timeout` above the scan budget — or `kimi.enabled: false` with a `reason` saying what Kimi does that makes the hook meaningless there. An on-save hook and an ask-only hook are always the second kind. No block at all means the hook is simply absent for Kimi, which says nothing to the user; a block with a reason says it on the run that would have installed it.
+
    A **security guard** also takes a [scan budget](#the-scan-budget): source `scan-budget.sh` and call `devexp_scan_budget <hook-name> "$@"` at the top of the `.sh` (copy the block from an existing guard, including its fail-closed load), start a budget in the `.js` handler and check it at every unit of the scan, and give the registry entry a `claude_code.timeout` above the budget. `scan-budget.test.sh` fails if a `fail_closed` guard has no such timeout.
 
    It also owes a [proof of work](#proof-of-work): pass `"$DEVEXP_SCAN_PROOF"` to its scanning program, have that program write the token as the first line of its output once the scan is over, and hand the output to `devexp_scan_result <hook-name>` before reading the verdict out of `devexp_scanned`. `interpreter-proof.test.sh` fails if a `fail_closed` guard skips it.
 
-4. Add mirrored tests (`<hook-name>.test.sh` / `<hook-name>.test.js`), a `check` line in `hooks/claude-code/fail-closed.test.sh`, and update this catalog, the file tree above and the hook counts — see [workflows → Add a hook](../guides/workflows.md#add-a-hook).
+4. Add mirrored tests (`<hook-name>.test.sh` / `<hook-name>.test.js`), a `check` line in `hooks/claude-code/fail-closed.test.sh`, a case in `hooks/kimi/runner.test.sh` if Kimi installs it, and update this catalog, the file tree above and the hook counts — see [workflows → Add a hook](../guides/workflows.md#add-a-hook).
 
 5. `chmod +x hooks/claude-code/<hook-name>.sh` and run `./install.sh`.
 

@@ -14,6 +14,13 @@
       "export": "secretGuard",
       "fail_closed": true
     },
+    "kimi": {
+      "event": "PreToolUse",
+      "matcher": "^(Read|ReadMediaFile|Bash)$",
+      "script": "hooks/claude-code/secret-guard.sh",
+      "fail_closed": true,
+      "timeout": 45
+    },
     "enabled": true
   },
   {
@@ -31,6 +38,13 @@
       "export": "dangerousCmdGuard",
       "fail_closed": true
     },
+    "kimi": {
+      "event": "PreToolUse",
+      "matcher": "^Bash$",
+      "script": "hooks/claude-code/dangerous-cmd-guard.sh",
+      "fail_closed": true,
+      "timeout": 45
+    },
     "enabled": true
   },
   {
@@ -46,6 +60,13 @@
       "module": "hooks/opencode/large-file-guard.js",
       "export": "largeFileGuard"
     },
+    "kimi": {
+      "event": "PreToolUse",
+      "matcher": "^Write$",
+      "script": "hooks/claude-code/large-file-guard.sh",
+      "enabled": false,
+      "reason": "its only verdict is \"ask\", and Kimi runs an ask as an allow — the confirmation would never be shown"
+    },
     "enabled": true
   },
   {
@@ -60,6 +81,13 @@
       "event": "file.edited",
       "module": "hooks/opencode/lint-on-save.js",
       "export": "lintOnSave"
+    },
+    "kimi": {
+      "event": "PostToolUse",
+      "matcher": "^(Write|Edit)$",
+      "script": "hooks/claude-code/lint-on-save.sh",
+      "enabled": false,
+      "reason": "Kimi does not wait for a PostToolUse hook and discards its output, so lint findings would never reach the agent"
     },
     "enabled": true
   },
@@ -78,6 +106,13 @@
       "export": "secretInWriteGuard",
       "fail_closed": true
     },
+    "kimi": {
+      "event": "PreToolUse",
+      "matcher": "^(Write|Edit)$",
+      "script": "hooks/claude-code/secret-in-write-guard.sh",
+      "fail_closed": true,
+      "timeout": 45
+    },
     "enabled": true
   },
   {
@@ -93,6 +128,13 @@
       "module": "hooks/opencode/format-on-save.js",
       "export": "formatOnSave"
     },
+    "kimi": {
+      "event": "PostToolUse",
+      "matcher": "^(Write|Edit)$",
+      "script": "hooks/claude-code/format-on-save.sh",
+      "enabled": false,
+      "reason": "Kimi runs a PostToolUse hook alongside the agent's next step, so reformatting the file it just wrote would make its next Edit fail on a stale old_string"
+    },
     "enabled": true
   },
   {
@@ -107,6 +149,13 @@
       "event": "file.edited",
       "module": "hooks/opencode/test-on-save.js",
       "export": "testOnSave"
+    },
+    "kimi": {
+      "event": "PostToolUse",
+      "matcher": "^(Write|Edit)$",
+      "script": "hooks/claude-code/test-on-save.sh",
+      "enabled": false,
+      "reason": "Kimi does not wait for a PostToolUse hook and discards its output, so test results would never reach the agent"
     },
     "enabled": true
   },
@@ -124,6 +173,13 @@
       "export": "graphifyReadGuard",
       "enabled": true
     },
+    "kimi": {
+      "event": "PreToolUse",
+      "matcher": "^(Read|Glob)$",
+      "script": "hooks/claude-code/graphify-read-guard.sh",
+      "enabled": false,
+      "reason": "it needs additionalContext, which Kimi ignores, and a sentinel written by a PostToolUse hook Kimi does not wait for"
+    },
     "enabled": false
   },
   {
@@ -140,6 +196,13 @@
       "export": "graphifySessionSentinel",
       "enabled": true
     },
+    "kimi": {
+      "event": "PostToolUse",
+      "matcher": "^Bash$",
+      "script": "hooks/claude-code/graphify-session-sentinel.sh",
+      "enabled": false,
+      "reason": "Kimi does not wait for a PostToolUse hook, so the counter it keeps would race the read guard it feeds"
+    },
     "enabled": false
   },
   {
@@ -155,6 +218,13 @@
       "module": "hooks/opencode/graphify-grep-nudge.js",
       "export": "graphifyGrepNudge",
       "enabled": true
+    },
+    "kimi": {
+      "event": "PreToolUse",
+      "matcher": "^(Bash|Grep)$",
+      "script": "hooks/claude-code/graphify-grep-nudge.sh",
+      "enabled": false,
+      "reason": "its nudge is additionalContext, which Kimi ignores — it would run on every search and say nothing"
     },
     "enabled": false
   }

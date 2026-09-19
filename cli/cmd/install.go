@@ -81,29 +81,12 @@ var installers = map[target]func(*installOpts) error{
 	targetKimi:     doInstallKimi,
 }
 
-// notYetSupported lists, per target, the asset kinds its installer does not
-// write yet, so a partial install is never reported as a complete one. Kimi
-// installs MCP servers (#112) and agents and skills (#113); #114 adds hooks
-// and removes the entry, this map and partialTargets with it.
-//
-// Nothing needs installsNothing any more. It existed because Kimi installed
-// MCP servers only, so --agents-only or --skills-only against it wrote
-// nothing; both now install what they name, and no combination of flags
-// leaves a Kimi run empty-handed. The "nothing was installed" branch went
-// with it.
-var notYetSupported = map[target][]string{
-	targetKimi: {"hooks"},
-}
-
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 func runInstall(cmd *cobra.Command, args []string) error {
 	// The flags parsed, so anything that fails from here on is a run that went
-	// wrong, not a command typed wrong, and the usage block helps nobody. It
-	// matters more now that a deliberate outcome — selecting only a target
-	// that installs nothing yet — exits non-zero: the notice explaining it
-	// would otherwise be three screens above the usage dump. A bad flag still
-	// gets usage, because this line has not run yet.
+	// wrong, not a command typed wrong, and the usage block helps nobody. A
+	// bad flag still gets usage, because this line has not run yet.
 	cmd.SilenceUsage = true
 
 	// Before anything else, flags and wizard alike: repo.Resolve may already
@@ -230,44 +213,8 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// The per-target notice scrolls past in a multi-target run, so what a
-	// partly-supported target did not install is repeated in the summary.
-	said := false
-	for _, t := range partialTargets(targets) {
-		ui.Warn(fmt.Sprintf("%s: %s are not installed for it yet (#114).", t.label(), joinAnd(notYetSupported[t])))
-		said = true
-	}
-	if said {
-		fmt.Println()
-	}
-
 	fmt.Printf("\033[0;32m\033[1mAll done.\033[0m\n\n")
 	return nil
-}
-
-// partialTargets returns the selected targets that still install only part of
-// what devexp ships.
-func partialTargets(targets []target) []target {
-	var out []target
-	for _, t := range targets {
-		if len(notYetSupported[t]) > 0 {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-// joinAnd renders a list the way a sentence needs it: "agents, skills and
-// hooks". The target announcement deliberately uses commas throughout
-// (announceTargets), but these are read as prose, not as a set.
-func joinAnd(items []string) string {
-	switch len(items) {
-	case 0:
-		return ""
-	case 1:
-		return items[0]
-	}
-	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
 }
 
 // labelList renders targets the way the user sees them named.

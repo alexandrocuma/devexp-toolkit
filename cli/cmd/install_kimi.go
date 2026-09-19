@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"devexp/internal/agents"
+	"devexp/internal/hooks"
 	"devexp/internal/manifest"
 	"devexp/internal/mcp"
 	"devexp/internal/skills"
@@ -16,14 +17,14 @@ import (
 
 // ── Kimi Code CLI ─────────────────────────────────────────────────────────────
 //
-// MCP servers (#112), agents and skills (#113) install here; hooks (#114) do
-// not yet, and ./uninstall.sh does not remove a Kimi install yet (#115). So
-// every run says what it did not install as well as what it did
-// (notYetSupported in install.go).
+// MCP servers (#112), agents and skills (#113) and hooks (#114) all install
+// here, so a Kimi run now writes everything devexp ships. What it still
+// cannot do is undo itself: ./uninstall.sh does not remove a Kimi install yet
+// (#115), and every run says so.
 //
 // The order matches doInstallClaude: MCP servers first, then agents, then
-// skills. Each step is skipped by the --*-only flags that exclude it, and
-// since #113 no combination of those flags leaves the run with nothing to do.
+// skills, then hooks. Each step is skipped by the --*-only flags that exclude
+// it, and no combination of those flags leaves the run with nothing to do.
 //
 // Resolving the paths first is also where a $KIMI_CODE_HOME devexp must not
 // write to is caught, before anything is read or written.
@@ -63,6 +64,11 @@ func doInstallKimi(opts *installOpts) error {
 			}
 		}()
 	}
+
+	// Set once the hooks step has put something there, so the summary names
+	// the hooks directory only when it holds devexp's scripts — a run whose
+	// every hook is off for Kimi must not point at an empty directory.
+	hooksInstalled := false
 
 	// How the installed agents are named in the bodies that reference them,
 	// which is not the same as where they are written: the tilde form with the
@@ -147,6 +153,29 @@ func doInstallKimi(opts *installOpts) error {
 		newManifest.Skills = append(installedSkills, kept...)
 	}
 
+	if !opts.agentsOnly && !opts.skillsOnly && !opts.mcpsOnly {
+		registry, err := hooks.LoadRegistry(filepath.Join(opts.repoDir, "hooks", "registry.json"))
+		if err != nil {
+			// As for Claude Code and opencode: a registry that will not load
+			// costs the hooks step, not the run.
+			ui.Warn(fmt.Sprintf("hooks registry: %v", err))
+		} else {
+			ui.Info(fmt.Sprintf("Installing hooks (Kimi → %q)...", p.hooks))
+			disabled := resolveHookDisabled(registry, opts.selectedHooks, opts.cfg.DisabledHooks)
+			// Unlike the other two targets, the guards are copied into the
+			// Kimi root rather than run from the checkout, so this step both
+			// writes files and edits config.toml. It hands back what it wrote
+			// even when it fails, for the same reason the agent step does.
+			installedHooks, err := hooks.InstallKimi(registry, opts.repoDir, p.hooks, p.config, disabled, old.Hooks, opts.dryRun)
+			newManifest.Hooks = installedHooks
+			if err != nil {
+				return err
+			}
+			fmt.Println()
+			hooksInstalled = len(installedHooks) > 0
+		}
+	}
+
 	ui.Success("Kimi Code CLI installation complete.")
 	// Only what this run actually did. With three kinds of asset and three
 	// --*-only flags, listing all three every time would claim work that did
@@ -160,11 +189,17 @@ func doInstallKimi(opts *installOpts) error {
 	if !opts.agentsOnly && !opts.mcpsOnly {
 		fmt.Printf("  Skills : %q\n", p.skills)
 	}
+	// Only when the step ran and the registry loaded: a hooks line naming a
+	// directory nothing was written to would be the one claim this summary
+	// must not make.
+	if hooksInstalled {
+		fmt.Printf("  Hooks  : %q\n", p.hooks)
+	}
 	fmt.Println()
-	// Said here rather than in install.go's per-target notice, which lists the
-	// asset kinds still to come: this is not a missing kind but a missing way
-	// out. Telling someone what was written without telling them it cannot be
-	// removed cleanly is half the story, and #115 is what closes it.
+	// Telling someone what was written without telling them it cannot be
+	// removed cleanly is half the story, and #115 is what closes it. This is
+	// not a missing asset kind — since #114 there are none — but a missing
+	// way out, so it stays until uninstall grows a Kimi branch.
 	ui.Warn("./uninstall.sh cannot remove a Kimi Code CLI install yet (#115) — until it can, what is listed above has to be removed by hand.")
 	fmt.Println()
 	ui.Info("Restart Kimi Code CLI to activate.")

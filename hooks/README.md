@@ -14,6 +14,20 @@ Full catalog with triggers and behavior: [`docs/reference/hooks.md`](../docs/ref
 
 ---
 
+## Kimi Code CLI
+
+Kimi runs the same `claude-code/` guard scripts, through `kimi/adapter.sh`. A Kimi `[[hooks]]` entry's whole `command` is:
+
+```
+bash '<hooks-dir>/kimi/adapter.sh' '<hooks-dir>/claude-code/<hook-name>.sh'
+```
+
+(both paths absolute and single-quoted — Kimi spawns the command with `shell: true` and passes it no arguments of its own). The adapter translates Kimi's camelCase envelope into the snake_case one the guards read, and turns everything Kimi would otherwise read as an allow — a translation failure, a missing guard, an unknown guard exit, an `ask` verdict — into exit 2. Which hooks are selected for Kimi, and why the rest are not, is the `kimi` block in `registry.json`.
+
+`<hooks-dir>` is `$KIMI_CODE_HOME/hooks`, **not this directory**: the install copies `kimi/adapter.sh`, the selected guards and `claude-code/scan-budget.sh` there and registers the copies. Kimi reads a command it cannot run as an allow, so a checkout that moves or is deleted must not be able to disarm the guards — and `scan-budget.sh` has to travel with them because each guard sources it from its own directory.
+
+---
+
 ## Adding a New Hook
 
 1. Create `hooks/claude-code/<hook-name>.sh` and `hooks/opencode/<hook-name>.js`

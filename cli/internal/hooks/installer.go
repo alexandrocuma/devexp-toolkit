@@ -19,26 +19,36 @@ type Registry []Hook
 const (
 	TargetClaudeCode = "claude_code"
 	TargetOpencode   = "opencode"
+	TargetKimi       = "kimi"
 )
 
 // TargetSpec is one install target's view of a hook. Each target uses the
 // fields it needs (Claude Code: Event/Matcher/Script/Timeout; opencode: Event/
-// Module/Export/FailClosed). A new target adds a registry block, not a new Go
-// type.
+// Module/Export/FailClosed; Kimi: Event/Matcher/Script/FailClosed/Timeout, or
+// Enabled/Reason for a hook Kimi cannot honour). A new target adds a registry
+// block, not a new Go type.
 type TargetSpec struct {
 	Event   string `json:"event,omitempty"`
 	Matcher string `json:"matcher,omitempty"`
 	Script  string `json:"script,omitempty"`
-	// Timeout is the Claude Code hook timeout, in seconds, written into the
-	// registration. The guards that enforce their own scan budget set it above
-	// that budget so their exit 2 always lands first: a timed-out command hook
-	// does not block the tool call, and Claude Code's default for one is 600
-	// seconds. Zero leaves the registration without a timeout.
+	// Timeout is the hook timeout, in seconds, written into the registration.
+	// The guards that enforce their own scan budget set it above that budget so
+	// their exit 2 always lands first: a timed-out command hook does not block
+	// the tool call, on either CLI that takes one. Claude Code's default is 600
+	// seconds and Kimi's is 30, which is *below* the ceiling — so for Kimi the
+	// value is not optional, and SelectKimi supplies one when the block omits
+	// it. Kimi accepts 1..600. Zero leaves a Claude Code registration without a
+	// timeout.
 	Timeout    int    `json:"timeout,omitempty"`
 	Module     string `json:"module,omitempty"`
 	Export     string `json:"export,omitempty"`
 	FailClosed bool   `json:"fail_closed,omitempty"`
 	Enabled    *bool  `json:"enabled,omitempty"` // nil = follow Hook.Enabled
+	// Reason says why a target block that is switched off is switched off, in
+	// the installer's own words ("Kimi reads an ask as an allow, so ..."). A
+	// hook with no block for a target is simply absent there; one with a block
+	// and enabled:false is a deliberate decision, and the run says which.
+	Reason string `json:"reason,omitempty"`
 }
 
 type Hook struct {
