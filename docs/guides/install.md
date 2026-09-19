@@ -219,21 +219,29 @@ Shows every add, update, and removal devexp would make — including stale-file 
 
 ## CLI Installation Paths
 
-`$KIMI` below is `$KIMI_CODE_HOME`, or `~/.kimi-code` when that is unset (`kimiTargetPaths` in `cli/cmd/paths.go`). Nothing is written to it yet.
+`$KIMI` below is `$KIMI_CODE_HOME`, or `~/.kimi-code` when that is unset (`kimiTargetPaths` in `cli/cmd/paths.go`). Agents and skills are written there; MCPs and hooks are not yet.
 
 | Component | Claude Code | opencode | Kimi Code CLI |
 |-----------|-------------|----------|---------------|
-| Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (transformed) | `$KIMI/agents/` — not installed yet (#113) |
-| Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) | `$KIMI/skills/` — not installed yet (#113) |
+| Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (transformed) | `$KIMI/agents/` (transformed) |
+| Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) | `$KIMI/skills/<name>/` (with supporting files) |
 | Hooks | `~/.claude/settings.json` (shell scripts) | `~/.config/opencode/plugins/devexp.js` + `devexp/` (selected modules, `utils.js`, `package.json`, `hooks.json`) | `$KIMI/config.toml` — not installed yet (#114) |
 | MCPs | via `claude mcp add` | `mcp` key of `~/.config/opencode/config.json` | `$KIMI/mcp.json` — not installed yet (#112) |
 | `CLAUDE.md` / `AGENTS.md` | `~/.claude/CLAUDE.md` | `~/.config/opencode/AGENTS.md` (or project root) | Kimi reads `AGENTS.md`, never `CLAUDE.md` |
 | Agent tools | All Claude tools | `read/write/edit/bash/glob/grep/webfetch/websearch` only | Own tool names (`FetchURL`, `TodoList`, …) |
-| `Agent`, `Skill`, `Task*` tools | Supported | No opencode equivalent — dropped at transform | Sub-agents exist; the mapping lands with #113 |
+| `Agent`, `Skill`, `Task*` tools | Supported | No opencode equivalent — dropped at transform | `Agent` and `Skill` as-is; `WebFetch`→`FetchURL`; all four `Task*` and `TodoWrite`→`TodoList`; anything else dropped and named in the output |
 
 ### Kimi Code CLI
 
-Kimi Code CLI `0.31.0` or newer on `PATH` is detected and can be selected, in the wizard or with `--target kimi`, but **nothing is installed for it yet** — agents, skills, MCPs and hooks arrive in #112-#114. Selecting it prints a notice naming the directory that stays untouched, and a run whose only target is Kimi exits non-zero rather than reporting `All done.`
+Kimi Code CLI `0.31.0` or newer on `PATH` is detected and can be selected, in the wizard or with `--target kimi`. **Agents and skills install; MCP servers (#112) and hooks (#114) do not yet, and `./uninstall.sh` cannot remove a Kimi install yet (#115).** The run names what it wrote and what is still missing, and a run whose only target is Kimi exits non-zero rather than reporting `All done.`
+
+Three things differ from the Claude Code install, all because of how Kimi reads what it is given:
+
+- **A custom agent body replaces Kimi's whole system prompt**, where Claude Code appends to it. Every installed agent therefore ends with Kimi's `${base_prompt}` marker, which brings back the tool guidance, `AGENTS.md`, the working-directory listing and the skills catalog.
+- **A tool name Kimi does not have is dropped silently**, with nothing written to its log — so devexp names every dropped name at install time. `TaskList` is mapped rather than passed through: Kimi has a tool of that exact name which lists background tasks, not todos.
+- **A skill's canonical command is `/skill:<name>`.** Bare `/<name>` also resolves, but only `/skill:<name>` appears in Kimi's command listings.
+
+`color`, `memory` and `model` are dropped from agent front matter, since Kimi ignores them, and `--model` is refused with a warning: Kimi has no per-agent model.
 
 Two `kimi` binaries exist. Kimi Code CLI answers `kimi --version` with a bare version such as `0.42.0`; the legacy Python kimi-cli (config in `~/.kimi/`) answers `kimi, version <x>` and is **not supported** — their version numbers overlap, so devexp goes by the format, not the number. An older Kimi Code is skipped with the minimum named, and a `kimi` that answers with anything else is skipped rather than guessed at.
 

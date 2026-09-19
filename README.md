@@ -105,12 +105,12 @@ Any of these flags except `--model` skips the interactive wizard.
 
 ### What gets installed where
 
-`$KIMI` is `$KIMI_CODE_HOME`, or `~/.kimi-code` when unset. Nothing is written there yet.
+`$KIMI` is `$KIMI_CODE_HOME`, or `~/.kimi-code` when unset. Agents and skills are written there; MCPs and hooks are not yet.
 
 | Component | Claude Code | opencode | Kimi Code CLI |
 |-----------|-------------|----------|---------------|
-| Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (frontmatter transformed) | `$KIMI/agents/` — not yet |
-| Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) | `$KIMI/skills/` — not yet |
+| Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (frontmatter transformed) | `$KIMI/agents/` (frontmatter transformed) |
+| Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) | `$KIMI/skills/<name>/` (with supporting files) |
 | Hooks | `~/.claude/settings.json` (shell scripts, per-tool matchers) | `~/.config/opencode/plugins/devexp.js` + `devexp/` | `$KIMI/config.toml` — not yet |
 | MCPs | via `claude mcp add` | `~/.config/opencode/config.json` | `$KIMI/mcp.json` — not yet |
 

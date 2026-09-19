@@ -92,7 +92,7 @@ Configuration file: `devexp.config.json` at the repo root (model default, disabl
 
 **Problem:** `no supported CLI detected (claude, opencode, kimi)` · **Cause:** none of them is on `PATH`, or the only one found is unusable — an older Kimi Code, or the legacy kimi-cli — in which case the error says which (`cli/cmd/targets.go`, `selectTargets`) · **Fix:** install one of them, or fix `PATH`.
 
-**Problem:** `nothing was installed: Kimi Code CLI is not a supported install target yet (#110)` · **Cause:** Kimi Code was the only selected target, and nothing is installed for it until #112-#114 land · **Fix:** nothing to fix — it is deliberate. Select another target too, or wait for those tickets.
+**Problem:** `this run is not a complete install: Kimi Code CLI is not a fully supported install target yet (#110)` · **Cause:** Kimi Code was the only selected target. Its agents and skills *were* installed — the run names the directories — but MCP servers (#112) and hooks (#114) are not installed for it, and `./uninstall.sh` cannot remove it (#115), so the run refuses to call itself finished · **Fix:** nothing to fix — it is deliberate. Select another target too, or wait for those tickets.
 
 **Problem:** the installer opens an interactive wizard · **Cause:** none of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, `--skills-only`, `--target` was passed — `--model` alone doesn't count (`cli/cmd/install.go`, `flagsProvided`) · **Fix:** pass one of those flags for the non-interactive path. Without a terminal that path no longer prompts at all: it installs for every detected CLI unless `--target` says otherwise.
 

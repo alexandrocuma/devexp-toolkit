@@ -146,6 +146,20 @@ func resolveKimiHome(kimiCodeHome, home string) (string, error) {
 	return root, nil
 }
 
+// kimiAgentsDir is where an installed Kimi agent file lives, as a path the
+// agents themselves can use. Agent and skill bodies say "read
+// ~/.claude/agents/<name>.md and follow it", and the Kimi install repoints
+// those at this directory.
+//
+// It is always absolute. Whether Kimi expands `~` in the path a file tool is
+// given is not something devexp can rely on — only configured directories were
+// confirmed to expand it — and an absolute path needs no such promise. It is
+// its own function, rather than a filepath.Join at the call site, so the rule
+// has one place and one test.
+func kimiAgentsDir(root string) string {
+	return filepath.Join(root, "agents")
+}
+
 // kimiTargetPaths resolves the Kimi Code destinations under kimiCodeHome, or
 // under home when it is unset. now is passed in rather than read from the
 // clock so the backup directory's name is assertable.

@@ -1024,6 +1024,12 @@ func TestDoInstall_TamperedAgentSkillManifest(t *testing.T) {
 	}
 }
 
+// exists reports whether path is there at all, without following a link.
+func exists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
+}
+
 func relPath(t *testing.T, base, target string) string {
 	t.Helper()
 	rel, err := filepath.Rel(base, target)
@@ -2829,26 +2835,34 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		return home, calls
 	}
 
-	t.Run("kimi alone installs nothing and refuses to report success", func(t *testing.T) {
-		home, calls := setup(t, "0.42.0")
-		before := treeState(t, home)
+	// Kimi installs agents and skills from #113 but not MCP servers (#112) or
+	// hooks (#114), and ./uninstall.sh cannot remove it (#115). The run must
+	// therefore neither claim to have installed nothing nor call itself done.
+	t.Run("kimi alone installs agents and skills, and still refuses to report success", func(t *testing.T) {
+		home, calls := setup(t, "2.0.1")
 
 		// Deliberately not a dry run: this is the real install path.
 		out, err := executeRoot(t, "install", "--target", "kimi")
 
-		if err == nil || !strings.Contains(err.Error(), "nothing was installed") {
-			t.Errorf("error = %v, want a run that installed nothing to say so\n%s", err, out)
+		if err == nil || !strings.Contains(err.Error(), "not a complete install") {
+			t.Errorf("error = %v, want an incomplete run to say so\n%s", err, out)
 		}
 		if strings.Contains(out, "All done.") {
-			t.Errorf("reported success for a run that installed nothing:\n%s", out)
+			t.Errorf("reported success for an install that is missing MCPs and hooks:\n%s", out)
 		}
-		if !strings.Contains(out, "not a supported install target yet") {
-			t.Errorf("output never says Kimi is unsupported:\n%s", out)
+		// The claim that nothing was written would now be false.
+		if strings.Contains(out, "nothing was installed") || strings.Contains(out, "Nothing was written") {
+			t.Errorf("output still claims nothing was installed, after writing agents and skills:\n%s", out)
 		}
-		// The root is environment-derived, so it is quoted like everything
-		// else devexp prints from outside itself (backup.go).
-		if !strings.Contains(out, strconv.Quote(filepath.Join(home, ".kimi-code"))) {
-			t.Errorf("output does not quote the Kimi root:\n%s", out)
+		for _, want := range []string{"agents and skills installed", "(#112)", "(#114)", "(#115)"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("output does not name %q, so a user cannot tell what is missing:\n%s", want, out)
+			}
+		}
+		// The destinations are environment-derived, so they are quoted like
+		// everything else devexp prints from outside itself (backup.go).
+		if !strings.Contains(out, strconv.Quote(filepath.Join(home, ".kimi-code", "agents"))) {
+			t.Errorf("output does not quote the Kimi agents directory:\n%s", out)
 		}
 		// This exit is a documented outcome, not a misuse: the notice
 		// explaining it must not be pushed off-screen by a usage dump, and
@@ -2856,17 +2870,19 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		if strings.Contains(out, "Usage:") {
 			t.Errorf("usage dumped on a deliberate exit:\n%s", out)
 		}
-		if n := strings.Count(out+err.Error(), "nothing was installed:"); n != 1 {
+		if n := strings.Count(out+err.Error(), "not a complete install:"); n != 1 {
 			t.Errorf("the error is reported %d times, want once:\n%s", n, out)
 		}
-		if after := treeState(t, home); !reflect.DeepEqual(before, after) {
-			t.Errorf("wrote under the Kimi home:\nbefore %v\nafter  %v", before, after)
+		// The manifest is what a later run (and #115's uninstall) reads back.
+		if !exists(filepath.Join(home, ".kimi-code", ".devexp-manifest.json")) {
+			t.Error("no manifest was written, so a later run cannot tell what devexp installed")
 		}
+		// Nothing for Kimi goes through a CLI: no MCP registration happens.
 		noCalls(t, calls)
 	})
 
-	t.Run("kimi alongside a real target is skipped, and said to be", func(t *testing.T) {
-		home, _ := setup(t, "0.42.0", "claude")
+	t.Run("kimi alongside a real target is still named as incomplete", func(t *testing.T) {
+		home, _ := setup(t, "2.0.1", "claude")
 
 		out, err := executeRoot(t, "install", "--dry-run", "--target", "claude,kimi")
 
@@ -2878,8 +2894,8 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		}
 		// The per-target notice scrolls past in a multi-target run, so the
 		// summary has to repeat it.
-		if !strings.Contains(out, "Skipped: Kimi Code CLI") {
-			t.Errorf("the summary does not name Kimi as skipped:\n%s", out)
+		if !strings.Contains(out, "Incomplete: Kimi Code CLI") {
+			t.Errorf("the summary does not name Kimi as incomplete:\n%s", out)
 		}
 		if _, err := os.Stat(filepath.Join(home, ".kimi-code")); !os.IsNotExist(err) {
 			t.Errorf("the Kimi home exists after a run that installs nothing for Kimi (%v)", err)
@@ -2888,7 +2904,7 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 
 	t.Run("a KIMI_CODE_HOME devexp will not install into is refused", func(t *testing.T) {
 		for _, bad := range []string{"relative/dir", "/"} {
-			setup(t, "0.42.0")
+			setup(t, "2.0.1")
 			t.Setenv("KIMI_CODE_HOME", bad)
 
 			out, err := executeRoot(t, "install", "--target", "kimi")
@@ -2908,7 +2924,7 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 	// newline forges a line of devexp output and an escape sequence reaches
 	// the terminal.
 	t.Run("a hostile KIMI_CODE_HOME cannot forge output", func(t *testing.T) {
-		home, _ := setup(t, "0.42.0")
+		home, _ := setup(t, "2.0.1")
 		t.Setenv("KIMI_CODE_HOME", filepath.Join(home, "k")+"\n[devexp] Installed 34 agent(s).\x1b[2J")
 
 		out, err := executeRoot(t, "install", "--target", "kimi")

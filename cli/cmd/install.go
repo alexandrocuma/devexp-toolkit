@@ -81,9 +81,14 @@ var installers = map[target]func(*installOpts) error{
 	targetKimi:     doInstallKimi,
 }
 
-// notYetSupported lists targets whose installer writes nothing yet, so a run
-// that selected only these can be told it installed nothing instead of being
-// congratulated. #112-#114 remove the Kimi entry as they fill it in.
+// notYetSupported lists targets devexp does not install completely yet, so a
+// run that selected only these is not congratulated for a partial install.
+//
+// Kimi installs agents and skills (#113) but not MCP servers (#112) or hooks
+// (#114), and ./uninstall.sh cannot remove it (#115). The entry stays until
+// those land — removing it now would print "All done." for an install with no
+// hooks — but nothing here claims the target was left untouched any more:
+// doInstallKimi writes, says what it wrote, and names what is still missing.
 var notYetSupported = map[target]bool{targetKimi: true}
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -225,14 +230,16 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// A run whose every target installs nothing yet has not succeeded, whatever
+	// A run whose every target is still incomplete has not succeeded, whatever
 	// each installer printed on its way past. It exits non-zero rather than
-	// letting "All done." stand in for an install that never happened.
+	// letting "All done." stand in for an install that is missing pieces. The
+	// per-target notice says which pieces; this only refuses to call the run
+	// finished.
 	if skipped := skippedTargets(targets); len(skipped) > 0 {
 		if installed == 0 {
-			return fmt.Errorf("nothing was installed: %s", labelList(skipped)+" is not a supported install target yet (#110)")
+			return fmt.Errorf("this run is not a complete install: %s", labelList(skipped)+" is not a fully supported install target yet (#110)")
 		}
-		ui.Warn("Skipped: " + labelList(skipped) + " — not a supported install target yet (#110).")
+		ui.Warn("Incomplete: " + labelList(skipped) + " — not a fully supported install target yet (#110).")
 		fmt.Println()
 	}
 
@@ -240,7 +247,8 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// skippedTargets returns the selected targets that installed nothing.
+// skippedTargets returns the selected targets devexp does not install
+// completely yet.
 func skippedTargets(targets []target) []target {
 	var out []target
 	for _, t := range targets {
