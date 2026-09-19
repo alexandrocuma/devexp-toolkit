@@ -389,6 +389,11 @@ func TestInstallKimi_Ownership(t *testing.T) {
 		if !strings.Contains(out, "user-defined entry") {
 			t.Errorf("output does not explain the skip:\n%s", out)
 		}
+		// And says so once. This MCP is still installed — pruning is for the
+		// ones that are not, so it has nothing to say here.
+		if strings.Contains(out, "no longer installed by devexp") {
+			t.Errorf("a still-selected MCP was reported as no longer installed:\n%s", out)
+		}
 		if got, _ := os.ReadFile(path); string(got) != edited {
 			t.Errorf("the user's edit was overwritten:\n%s", got)
 		}

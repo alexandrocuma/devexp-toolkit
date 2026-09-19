@@ -98,6 +98,14 @@ func InstallKimi(mcps []MCP, env map[string]string, path string, owned map[strin
 
 	warnInvalidEntries(path, servers, owned, nullServers)
 
+	// Every name this run installs, whether or not it could be written. It is
+	// what "no longer installed" means for pruning: a deselection or a
+	// registry change, never a step that merely could not run.
+	selected := make(map[string]bool, len(mcps))
+	for _, m := range mcps {
+		selected[m.Name] = true
+	}
+
 	newOwned := make(map[string]string, len(mcps))
 	// keepOwned carries an MCP devexp could not configure this run forward as
 	// still devexp's. "I cannot write this right now" — an unset required_env
@@ -164,7 +172,7 @@ func InstallKimi(mcps []MCP, env map[string]string, path string, owned map[strin
 		newOwned[m.Name] = hash
 	}
 
-	changes = append(changes, pruneKimiEntries(servers, owned, newOwned)...)
+	changes = append(changes, pruneKimiEntries(servers, owned, selected)...)
 
 	if dryRun {
 		for _, c := range changes {
@@ -234,10 +242,15 @@ func (c kimiChange) report() {
 // registry — the same way a stale agent or skill file is removed. Only an
 // entry still identical to what devexp wrote goes; one the user has edited
 // since stays, and stops being devexp's.
-func pruneKimiEntries(servers *jsonObject, owned, newOwned map[string]string) []kimiChange {
+func pruneKimiEntries(servers *jsonObject, owned map[string]string, selected map[string]bool) []kimiChange {
 	var changes []kimiChange
 	for _, name := range sortedKeys(owned) {
-		if _, stillInstalled := newOwned[name]; stillInstalled {
+		// Whatever happened to a selected MCP above — written, left alone as
+		// the user's, or not configurable this run — it is still installed,
+		// and it has already had its own line. Saying "no longer installed by
+		// devexp" about it as well would be both a second message and a
+		// false one.
+		if selected[name] {
 			continue
 		}
 		existing, exists := servers.get(name)
