@@ -50,10 +50,10 @@ func doInstallKimi(opts *installOpts) error {
 	old := loadOldManifest(p.manifest)
 	newManifest := &manifest.Manifest{Agents: old.Agents, Skills: old.Skills}
 
-	// Absolute, because whether Kimi expands `~` in a file tool's path is not
-	// something devexp can rely on. Bodies saying "read ~/.claude/agents/
-	// <name>.md and follow it" are repointed here.
-	agentsDir := kimiAgentsDir(p.root)
+	// How the installed agents are *named* in the bodies that reference them,
+	// which is not the same as where they are written: the tilde form with the
+	// default root, an absolute path with a custom one (kimiAgentsRef).
+	agentsDir := p.agentsRef
 
 	if !opts.skillsOnly {
 		backupExisting(p.agents, "*.md", p.backup, opts.dryRun)

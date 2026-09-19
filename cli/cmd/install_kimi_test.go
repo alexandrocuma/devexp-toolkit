@@ -26,8 +26,11 @@ func kimiRepo(t *testing.T) string {
 	agent := func(name, tools string) string {
 		return "---\nname: " + name + "\ndescription: \"what " + name + " does\"\ncolor: cyan\nmemory: user\ntools: " + tools + "\n---\n\n# " + name + "\n\nRead `~/.claude/agents/other.md` and follow it.\n"
 	}
+	// The skill body carries an agent reference too: both kinds of installed
+	// file get repointed, and both must use the same form.
 	skill := func(name string) string {
-		return "---\nname: " + name + "\ndescription: \"what " + name + " does\"\n---\n\n# " + name + "\n"
+		return "---\nname: " + name + "\ndescription: \"what " + name + " does\"\n---\n\n# " + name +
+			"\n\nRead `~/.claude/agents/other.md` and follow it.\nAtlas at `~/.claude/agent-memory/x/`.\n"
 	}
 	files := map[string]string{
 		"agents/dev-agent.md":          agent("dev-agent", "Read, Bash, Agent, WebFetch"),
@@ -94,21 +97,37 @@ func kimiManifest(t *testing.T, path string) (agents, skills []string) {
 	return m.Agents, m.Skills
 }
 
-func TestKimiAgentsDir(t *testing.T) {
-	// Always absolute, whatever the root: Kimi's expansion of `~` in a file
-	// tool's path is not something devexp relies on.
-	tests := map[string]string{
-		"/home/u/.kimi-code": "/home/u/.kimi-code/agents",
-		"/opt/kimi":          "/opt/kimi/agents",
+// kimiAgentsRef decides how an installed agent is named inside a prompt, which
+// is not where it is written. Both arms matter and are exercised by different
+// users: the tilde form on the default root, the absolute path on a custom one.
+func TestKimiAgentsRef(t *testing.T) {
+	const home = "/home/u"
+	tests := map[string]struct{ root, want string }{
+		"the default root is named with a tilde, so no environment-derived string reaches a prompt": {
+			"/home/u/.kimi-code", "~/.kimi-code/agents",
+		},
+		"a KIMI_CODE_HOME that happens to be the default location is the same root, so the same form": {
+			filepath.Join(home, ".kimi-code"), "~/.kimi-code/agents",
+		},
+		"a custom root has no tilde form and is named absolutely": {
+			"/opt/kimi", "/opt/kimi/agents",
+		},
+		"a custom root under home is still not the default root": {
+			"/home/u/elsewhere", "/home/u/elsewhere/agents",
+		},
 	}
-	for root, want := range tests {
-		got := kimiAgentsDir(root)
-		if got != want {
-			t.Errorf("kimiAgentsDir(%q) = %q, want %q", root, got, want)
-		}
-		if !filepath.IsAbs(got) {
-			t.Errorf("kimiAgentsDir(%q) = %q, which is not absolute", root, got)
-		}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := kimiAgentsRef(tt.root, home)
+			if got != tt.want {
+				t.Errorf("kimiAgentsRef(%q, %q) = %q, want %q", tt.root, home, got, tt.want)
+			}
+			// A form that is neither absolute nor rooted at ~ would be
+			// resolved against the workspace and refused for a file outside it.
+			if !filepath.IsAbs(got) && !strings.HasPrefix(got, "~/") {
+				t.Errorf("kimiAgentsRef(%q, %q) = %q, which Kimi would treat as relative", tt.root, home, got)
+			}
+		})
 	}
 }
 
@@ -148,12 +167,56 @@ func TestDoInstallKimi_FreshInstall(t *testing.T) {
 	if strings.Contains(installed, "~/.claude/agents/") {
 		t.Errorf("a body reference still points at Claude Code:\n%s", installed)
 	}
-	if !strings.Contains(installed, filepath.Join(p.root, "agents", "other.md")) {
-		t.Errorf("the body reference was not repointed at the Kimi install:\n%s", installed)
+	if !strings.Contains(installed, p.agentsRef+"/other.md") {
+		t.Errorf("the body reference was not repointed at the Kimi install (%s):\n%s", p.agentsRef, installed)
 	}
 	if !strings.Contains(installed, "${base_prompt}") {
 		t.Errorf("the installed agent does not opt into Kimi's base prompt:\n%s", installed)
 	}
+}
+
+// How an installed agent is named inside the bodies that reference it. Both
+// arms ship, to different users, so both are driven end to end: a default root
+// puts no environment-derived string into a prompt at all, and a custom root
+// has no tilde form so it must fall back to the absolute path.
+func TestDoInstallKimi_AgentRefForm(t *testing.T) {
+	t.Run("the default root is referenced with a tilde", func(t *testing.T) {
+		repoDir := kimiRepo(t)
+		p := kimiScratch(t, "")
+		if out, err := kimiRun(t, repoDir, &installOpts{}); err != nil {
+			t.Fatalf("doInstallKimi() error = %v\n%s", err, out)
+		}
+		for _, f := range []string{
+			filepath.Join(p.agents, "dev-agent.md"),
+			filepath.Join(p.skills, "devxp", "SKILL.md"),
+		} {
+			body := readCmdFile(t, f)
+			if !strings.Contains(body, "~/.kimi-code/agents/other.md") {
+				t.Errorf("%s does not use the tilde form:\n%s", f, body)
+			}
+			// The whole point: with the default root nothing derived from the
+			// environment is written into a prompt.
+			if strings.Contains(body, p.root) {
+				t.Errorf("%s still embeds the resolved root %q", f, p.root)
+			}
+		}
+	})
+
+	t.Run("a custom root is referenced absolutely, because it has no tilde form", func(t *testing.T) {
+		repoDir := kimiRepo(t)
+		custom := filepath.Join(t.TempDir(), "kimi")
+		p := kimiScratch(t, custom)
+		if out, err := kimiRun(t, repoDir, &installOpts{}); err != nil {
+			t.Fatalf("doInstallKimi() error = %v\n%s", err, out)
+		}
+		body := readCmdFile(t, filepath.Join(p.agents, "dev-agent.md"))
+		if !strings.Contains(body, filepath.Join(custom, "agents", "other.md")) {
+			t.Errorf("a custom root was not referenced absolutely:\n%s", body)
+		}
+		if strings.Contains(body, "~/.kimi-code/agents/") {
+			t.Errorf("a custom root was referenced as if it were the default:\n%s", body)
+		}
+	})
 }
 
 // A re-install of the same release must be a no-op on disk: nothing rewritten

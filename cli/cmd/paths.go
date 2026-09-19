@@ -104,14 +104,18 @@ type kimiPaths struct {
 	// every removal unguardable. With the default root this is exactly $HOME,
 	// as for Claude Code; with a custom root it keeps the Kimi root itself
 	// inside the chain the guard checks.
-	home     string
-	root     string // $KIMI_CODE_HOME when set, else <home>/.kimi-code
-	agents   string
-	skills   string
-	mcp      string
-	config   string
-	manifest string
-	backup   string
+	home string
+	root string // $KIMI_CODE_HOME when set, else <home>/.kimi-code
+	// agents is where agent files are written; agentsRef is how they are
+	// named inside the installed bodies, which is the tilde form when the root
+	// is the default one (kimiAgentsRef).
+	agents    string
+	agentsRef string
+	skills    string
+	mcp       string
+	config    string
+	manifest  string
+	backup    string
 }
 
 // kimiUnrenderableRe matches what Kimi substitutes in the text devexp writes
@@ -206,21 +210,44 @@ func resolveKimiHome(kimiCodeHome, home string) (string, error) {
 	return root, nil
 }
 
-// kimiAgentsDir is where an installed Kimi agent file lives, as a path the
-// agents themselves can use. Agent and skill bodies say "read
+// kimiAgentsRef is how an installed agent file is *named inside a prompt*, as
+// opposed to where it is written. Agent and skill bodies say "read
 // ~/.claude/agents/<name>.md and follow it", and the Kimi install repoints
-// those at this directory.
+// those at this directory. The destination on disk is always kimiPaths.agents,
+// an absolute path; only the text written into the installed bodies differs.
 //
-// It is always absolute — but not because `~` is unreliable. Measured against
-// 2.0.1, every file tool expands `~/` against the process's HOME. It is
-// absolute because the root is only `~/.kimi-code` when $KIMI_CODE_HOME is
-// unset; a custom root has no tilde form, so a tilde path would be right for
-// some installs and wrong for others. See the longer note on
-// rewriteClaudeAgentRefs in internal/agents.
+// With the default root it is the tilde form, `~/.kimi-code/agents`. With a
+// custom $KIMI_CODE_HOME it is the absolute path, because there is no tilde
+// form of a root that does not sit at ~/.kimi-code.
 //
-// It is its own function, rather than a filepath.Join at the call site, so the
-// rule has one place and one test.
-func kimiAgentsDir(root string) string {
+// The tilde form is preferred where it exists because it puts *no
+// environment-derived string into a prompt at all*. That is the surface
+// removed, not merely one way of exploiting it: resolveKimiHome still refuses
+// a root that could not be written into a prompt, and still has to, because
+// the custom-root branch below writes one. The two are defence in depth.
+//
+// It is safe because `~` genuinely expands. Measured against 2.0.1 by driving
+// real tool calls: Read, Write, Edit, Glob and Grep all expand `~/` against
+// the process's HOME before resolving the path. Two further details from that
+// measurement matter here:
+//
+//   - Expansion happens *before* the absolute-path test, so an expanded `~/`
+//     also clears the guard that refuses a relative path to a file outside the
+//     workspace. `~/.kimi-code/agents/x.md` is readable from a project
+//     directory where `../.kimi-code/agents/x.md` is refused — which is
+//     exactly devexp's case, since an agent file is always outside the
+//     workspace.
+//   - It expands against HOME as Kimi sees it at run time, not as devexp saw
+//     it at install time. If those differ, so does Kimi's own default root, so
+//     the tilde form follows the root it is actually naming.
+//
+// (One measured version of a closed-source bundle, not a documented contract.
+// Nothing depends on it holding: a wrong path makes an agent reference fail
+// loudly when followed, and the gate covers the injection concern separately.)
+func kimiAgentsRef(root, home string) string {
+	if root == filepath.Join(home, ".kimi-code") {
+		return "~/.kimi-code/agents"
+	}
 	return filepath.Join(root, "agents")
 }
 
@@ -232,14 +259,21 @@ func kimiTargetPaths(kimiCodeHome, home string, now time.Time) (kimiPaths, error
 	if err != nil {
 		return kimiPaths{}, err
 	}
+	// home is cleaned by targetHome inside resolveKimiHome; kimiAgentsRef
+	// compares against it, so it must be cleaned here the same way.
+	cleanHome, err := targetHome(home)
+	if err != nil {
+		return kimiPaths{}, err
+	}
 	return kimiPaths{
-		home:     filepath.Dir(root),
-		root:     root,
-		agents:   filepath.Join(root, "agents"),
-		skills:   filepath.Join(root, "skills"),
-		mcp:      filepath.Join(root, "mcp.json"),
-		config:   filepath.Join(root, "config.toml"),
-		manifest: filepath.Join(root, ".devexp-manifest.json"),
-		backup:   filepath.Join(root, ".devexp-backup-"+now.Format("20060102T150405")),
+		home:      filepath.Dir(root),
+		root:      root,
+		agents:    filepath.Join(root, "agents"),
+		agentsRef: kimiAgentsRef(root, cleanHome),
+		skills:    filepath.Join(root, "skills"),
+		mcp:       filepath.Join(root, "mcp.json"),
+		config:    filepath.Join(root, "config.toml"),
+		manifest:  filepath.Join(root, ".devexp-manifest.json"),
+		backup:    filepath.Join(root, ".devexp-backup-"+now.Format("20060102T150405")),
 	}, nil
 }

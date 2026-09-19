@@ -1833,13 +1833,16 @@ func TestKimiTargetPaths(t *testing.T) {
 		want := kimiPaths{
 			// home is the Kimi root's parent, which for the default root is
 			// exactly $HOME, as for Claude Code.
-			home:     "/home/u",
-			root:     "/home/u/.kimi-code",
-			agents:   "/home/u/.kimi-code/agents",
-			skills:   "/home/u/.kimi-code/skills",
-			mcp:      "/home/u/.kimi-code/mcp.json",
-			config:   "/home/u/.kimi-code/config.toml",
-			manifest: "/home/u/.kimi-code/.devexp-manifest.json",
+			home:   "/home/u",
+			root:   "/home/u/.kimi-code",
+			agents: "/home/u/.kimi-code/agents",
+			// The default root is named with a tilde inside the installed
+			// bodies, so nothing derived from the environment reaches a prompt.
+			agentsRef: "~/.kimi-code/agents",
+			skills:    "/home/u/.kimi-code/skills",
+			mcp:       "/home/u/.kimi-code/mcp.json",
+			config:    "/home/u/.kimi-code/config.toml",
+			manifest:  "/home/u/.kimi-code/.devexp-manifest.json",
 			// now is a parameter precisely so this is assertable rather than
 			// whatever the clock said when the test ran.
 			backup: "/home/u/.kimi-code/.devexp-backup-20260918T040506",
@@ -1852,14 +1855,16 @@ func TestKimiTargetPaths(t *testing.T) {
 	t.Run("under a KIMI_CODE_HOME outside the user home", func(t *testing.T) {
 		got, err := kimiTargetPaths("/opt/k", "/home/u", now)
 		want := kimiPaths{
-			home:     "/opt",
-			root:     "/opt/k",
-			agents:   "/opt/k/agents",
-			skills:   "/opt/k/skills",
-			mcp:      "/opt/k/mcp.json",
-			config:   "/opt/k/config.toml",
-			manifest: "/opt/k/.devexp-manifest.json",
-			backup:   "/opt/k/.devexp-backup-20260918T040506",
+			home:   "/opt",
+			root:   "/opt/k",
+			agents: "/opt/k/agents",
+			// A custom root has no tilde form, so it is named absolutely.
+			agentsRef: "/opt/k/agents",
+			skills:    "/opt/k/skills",
+			mcp:       "/opt/k/mcp.json",
+			config:    "/opt/k/config.toml",
+			manifest:  "/opt/k/.devexp-manifest.json",
+			backup:    "/opt/k/.devexp-backup-20260918T040506",
 		}
 		if err != nil || got != want {
 			t.Errorf("kimiTargetPaths() = %+v, %v; want %+v", got, err, want)
