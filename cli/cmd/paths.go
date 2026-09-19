@@ -90,12 +90,11 @@ func opencodeTargetPaths(home string) (opencodePaths, error) {
 // ── Kimi Code CLI paths ───────────────────────────────────────────────────────
 //
 // Kimi Code keeps everything under one configurable root, so unlike the other
-// two targets its paths do not hang off $HOME. Nothing writes to them yet —
-// #112-#114 fill that in — but they are resolved and refused here so a
-// misconfigured $KIMI_CODE_HOME is a refusal now rather than a surprise
-// removal later.
+// two targets its paths do not hang off $HOME. They are resolved and refused
+// here so a misconfigured $KIMI_CODE_HOME is a refusal now rather than a
+// surprise removal later.
 
-// kimiPaths holds every destination the Kimi Code CLI install will write to.
+// kimiPaths holds every destination the Kimi Code CLI install writes to.
 type kimiPaths struct {
 	// home is what the removal guard resolves symlinks from. It is the Kimi
 	// root's parent, not $HOME: removeStale requires the directory it removes
@@ -112,10 +111,16 @@ type kimiPaths struct {
 	agents    string
 	agentsRef string
 	skills    string
-	mcp       string
-	config    string
-	manifest  string
-	backup    string
+	// hooks is the installed hooks root: the adapter and the guard scripts
+	// are copied below it, and the command each [[hooks]] entry in
+	// config.toml runs names them from here. Kimi runs a hook from whatever
+	// directory the session is in, so it must be absolute — which it is,
+	// being built from the resolved root.
+	hooks    string
+	mcp      string
+	config   string
+	manifest string
+	backup   string
 }
 
 // kimiUnrenderableRe matches what Kimi substitutes in the text devexp writes
@@ -271,6 +276,7 @@ func kimiTargetPaths(kimiCodeHome, home string, now time.Time) (kimiPaths, error
 		agents:    filepath.Join(root, "agents"),
 		agentsRef: kimiAgentsRef(root, cleanHome),
 		skills:    filepath.Join(root, "skills"),
+		hooks:     filepath.Join(root, "hooks"),
 		mcp:       filepath.Join(root, "mcp.json"),
 		config:    filepath.Join(root, "config.toml"),
 		manifest:  filepath.Join(root, ".devexp-manifest.json"),

@@ -985,6 +985,63 @@ func TestLoadRegistry_RepoRegistry(t *testing.T) {
 			}
 		}
 	}
+
+	// ── The kimi blocks ──────────────────────────────────────────────────────
+	//
+	// Every hook has one, enabled or not: a hook with no block is simply
+	// absent under Kimi, and absent-by-accident is exactly what this stops.
+	// A disabled block still carries event/matcher/script, so what it would
+	// have registered stays readable next to the reason it does not.
+	wantEnabled := map[string]bool{
+		"secret-guard":          true,
+		"dangerous-cmd-guard":   true,
+		"secret-in-write-guard": true,
+	}
+	for _, h := range registry {
+		k, ok := h.Target(TargetKimi)
+		if !ok {
+			t.Errorf("%s: no kimi block — every hook must say what it does under Kimi, even if that is nothing", h.Name)
+			continue
+		}
+		if !kimiHookEvents[k.Event] {
+			t.Errorf("%s: kimi.event = %q, not one of Kimi's hook events", h.Name, k.Event)
+		}
+		if k.Script == "" {
+			t.Errorf("%s: kimi.script is empty", h.Name)
+		} else if _, err := os.Stat(filepath.Join("..", "..", "..", filepath.FromSlash(k.Script))); err != nil {
+			t.Errorf("%s: kimi.script %q: %v", h.Name, k.Script, err)
+		}
+		// Kimi matches an unanchored JS regex against the tool name, so an
+		// unanchored "Read" also fires for ReadMediaFile and for an MCP tool
+		// called mcp__x__Read. Every matcher here is anchored on purpose.
+		if !strings.HasPrefix(k.Matcher, "^") || !strings.HasSuffix(k.Matcher, "$") {
+			t.Errorf("%s: kimi.matcher = %q, want it anchored ^(...)$", h.Name, k.Matcher)
+		}
+		if _, err := regexp.Compile(k.Matcher); err != nil {
+			t.Errorf("%s: kimi.matcher = %q: %v", h.Name, k.Matcher, err)
+		}
+
+		if got := h.EnabledFor(TargetKimi); got != wantEnabled[h.Name] {
+			t.Errorf("%s: EnabledFor(%q) = %v, want %v", h.Name, TargetKimi, got, wantEnabled[h.Name])
+		}
+		if wantEnabled[h.Name] {
+			if !k.FailClosed {
+				t.Errorf("%s: kimi.fail_closed = false; only fail-closed guards are installed for Kimi", h.Name)
+			}
+			// Kimi's own bound. The lower bound that actually matters is the
+			// scan budget ceiling, pinned by TestRepoRegistry_FailClosedTimeouts.
+			if k.Timeout < 1 || k.Timeout > 600 {
+				t.Errorf("%s: kimi.timeout = %d, want 1..600 (Kimi rejects anything else)", h.Name, k.Timeout)
+			}
+			if k.Reason != "" {
+				t.Errorf("%s: kimi.reason = %q on an enabled block; a reason explains a hook that is off", h.Name, k.Reason)
+			}
+			continue
+		}
+		if k.Reason == "" {
+			t.Errorf("%s: kimi is disabled with no reason — the installer prints one per skipped hook", h.Name)
+		}
+	}
 }
 
 // ── Paths that need shell quoting ────────────────────────────────────────────
@@ -2023,6 +2080,20 @@ func TestRepoRegistry_FailClosedTimeouts(t *testing.T) {
 		cc := h.Targets[TargetClaudeCode]
 		if cc.Timeout*1000 <= maxMs {
 			t.Errorf("%s: claude_code.timeout = %ds, want more than the %d ms scan budget ceiling", h.Name, cc.Timeout, maxMs)
+		}
+		// Kimi has the same failure mode with a tighter default: its own is 30
+		// seconds, below the ceiling, so a kimi block that omits a timeout
+		// would be killed mid-scan — and Kimi reads a killed hook as an allow.
+		// SelectKimi supplies kimiDefaultTimeout for an omitted one, so that is
+		// what is checked when the block leaves it out.
+		if k, ok := h.Target(TargetKimi); ok && k.FailClosed {
+			timeout := k.Timeout
+			if timeout == 0 {
+				timeout = kimiDefaultTimeout
+			}
+			if timeout*1000 <= maxMs {
+				t.Errorf("%s: kimi.timeout = %ds, want more than the %d ms scan budget ceiling", h.Name, timeout, maxMs)
+			}
 		}
 	}
 	if guarded != 3 {

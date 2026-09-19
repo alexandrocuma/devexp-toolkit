@@ -1839,9 +1839,12 @@ func TestKimiTargetPaths(t *testing.T) {
 			// bodies, so nothing derived from the environment reaches a prompt.
 			agentsRef: "~/.kimi-code/agents",
 			skills:    "/home/u/.kimi-code/skills",
-			mcp:       "/home/u/.kimi-code/mcp.json",
-			config:    "/home/u/.kimi-code/config.toml",
-			manifest:  "/home/u/.kimi-code/.devexp-manifest.json",
+			// The guards are copied here rather than run from the checkout,
+			// which may move or be deleted (#114).
+			hooks:    "/home/u/.kimi-code/hooks",
+			mcp:      "/home/u/.kimi-code/mcp.json",
+			config:   "/home/u/.kimi-code/config.toml",
+			manifest: "/home/u/.kimi-code/.devexp-manifest.json",
 			// now is a parameter precisely so this is assertable rather than
 			// whatever the clock said when the test ran.
 			backup: "/home/u/.kimi-code/.devexp-backup-20260918T040506",
@@ -1860,6 +1863,7 @@ func TestKimiTargetPaths(t *testing.T) {
 			// A custom root has no tilde form, so it is named absolutely.
 			agentsRef: "/opt/k/agents",
 			skills:    "/opt/k/skills",
+			hooks:     "/opt/k/hooks",
 			mcp:       "/opt/k/mcp.json",
 			config:    "/opt/k/config.toml",
 			manifest:  "/opt/k/.devexp-manifest.json",
@@ -2694,6 +2698,19 @@ func kimiFullRepo(t *testing.T) string {
 	files := map[string]string{
 		"agents/dev-agent.md":      "---\nname: dev-agent\ndescription: \"a test agent\"\ntools: Read, Bash\n---\n\n# dev-agent\n",
 		"skills/graphify/SKILL.md": "---\nname: graphify\ndescription: \"a test skill\"\n---\n\n# graphify\n",
+		// One hook Kimi takes and one it refuses, so a run exercises both the
+		// copy-and-register path and the "say why not" path (#114).
+		"hooks/registry.json": `[
+  {"name": "secret-guard", "enabled": true,
+   "claude_code": {"event": "PreToolUse", "matcher": "Read", "script": "hooks/claude-code/secret-guard.sh"},
+   "kimi": {"event": "PreToolUse", "matcher": "^(Read|Bash)$", "script": "hooks/claude-code/secret-guard.sh", "fail_closed": true, "timeout": 45}},
+  {"name": "lint-on-save", "enabled": true,
+   "kimi": {"event": "PostToolUse", "script": "hooks/claude-code/lint-on-save.sh", "enabled": false, "reason": "Kimi discards a PostToolUse result"}}
+]`,
+		"hooks/kimi/adapter.sh":             "#!/usr/bin/env bash\n# adapter\n",
+		"hooks/claude-code/scan-budget.sh":  "# scan budget\n",
+		"hooks/claude-code/secret-guard.sh": "#!/usr/bin/env bash\n# secret-guard\n",
+		"hooks/claude-code/lint-on-save.sh": "#!/usr/bin/env bash\n# lint-on-save\n",
 	}
 	for rel, content := range files {
 		p := filepath.Join(repoDir, filepath.FromSlash(rel))
@@ -2863,10 +2880,9 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		return home, calls
 	}
 
-	// After #112 and #113 a Kimi run installs MCP servers, agents and skills.
-	// Only hooks are missing, so the run succeeds — and has to say what it did
-	// not install, or a partial install reads as a complete one.
-	t.Run("kimi alone installs its MCP servers, agents and skills", func(t *testing.T) {
+	// After #112-#114 a Kimi run installs everything devexp ships: MCP
+	// servers, agents, skills and hooks. Nothing may claim it is incomplete.
+	t.Run("kimi alone installs its MCP servers, agents, skills and hooks", func(t *testing.T) {
 		home, calls := setup(t, "2.0.1")
 
 		// Deliberately not a dry run: this is the real install path.
@@ -2876,7 +2892,7 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 			t.Fatalf("install error = %v\n%s", err, out)
 		}
 		if !strings.Contains(out, "All done.") {
-			t.Errorf("a run that installed MCP servers, agents and skills did not report success:\n%s", out)
+			t.Errorf("a run that installed MCP servers, agents, skills and hooks did not report success:\n%s", out)
 		}
 		root := filepath.Join(home, ".kimi-code")
 		mcpData, err := os.ReadFile(filepath.Join(root, "mcp.json"))
@@ -2898,18 +2914,41 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read manifest: %v", err)
 		}
-		for _, want := range []string{`"mcps"`, `"agents"`, `"skills"`, "probe", "dev-agent.md", "graphify"} {
+		for _, want := range []string{`"mcps"`, `"agents"`, `"skills"`, `"hooks"`, "probe", "dev-agent.md", "graphify", "kimi/adapter.sh", "claude-code/secret-guard.sh"} {
 			if !strings.Contains(string(saved), want) {
 				t.Errorf("the manifest does not record %s:\n%s", want, saved)
 			}
 		}
-		// What is still missing has to be said, and only what is missing.
-		if !strings.Contains(out, "hooks are not installed for it yet") {
-			t.Errorf("output never says hooks are still missing:\n%s", out)
+		// The scripts are copied into the Kimi root, executable, and the
+		// config registers them: a command whose script is missing is a
+		// silent allow under Kimi's runner.
+		for _, rel := range []string{"kimi/adapter.sh", "claude-code/scan-budget.sh", "claude-code/secret-guard.sh"} {
+			info, err := os.Stat(filepath.Join(root, "hooks", filepath.FromSlash(rel)))
+			if err != nil {
+				t.Errorf("hook script %s was not copied: %v\n%s", rel, err, out)
+				continue
+			}
+			if info.Mode().Perm()&0o100 == 0 {
+				t.Errorf("hook script %s is not executable (%v)", rel, info.Mode().Perm())
+			}
 		}
-		for _, gone := range []string{"agents, skills and hooks", "agents and skills are not installed"} {
+		conf, err := os.ReadFile(filepath.Join(root, "config.toml"))
+		if err != nil {
+			t.Fatalf("read config.toml: %v\n%s", err, out)
+		}
+		for _, want := range []string{"# devexp:hooks:begin", "[[hooks]]", "kimi/adapter.sh", "claude-code/secret-guard.sh"} {
+			if !strings.Contains(string(conf), want) {
+				t.Errorf("config.toml does not register %s:\n%s", want, conf)
+			}
+		}
+		// A hook Kimi cannot honour says so; nothing claims the install is
+		// partial, because it no longer is.
+		if !strings.Contains(out, "lint-on-save") {
+			t.Errorf("output never says why lint-on-save is off for Kimi:\n%s", out)
+		}
+		for _, gone := range []string{"are not installed for it yet", "agents, skills and hooks"} {
 			if strings.Contains(out, gone) {
-				t.Errorf("output still claims %q, after installing them:\n%s", gone, out)
+				t.Errorf("output still claims %q, after installing everything:\n%s", gone, out)
 			}
 		}
 		if strings.Contains(out, "Usage:") {
@@ -2969,14 +3008,17 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 				"mcp":    exists(filepath.Join(root, "mcp.json")),
 				"agents": exists(filepath.Join(root, "agents")),
 				"skills": exists(filepath.Join(root, "skills")),
+				// Every --*-only flag excludes hooks, as for the other two
+				// targets, so none of them may leave scripts or a config.
+				"hooks": exists(filepath.Join(root, "hooks")) || exists(filepath.Join(root, "config.toml")),
 			}
-			want := map[string]bool{"mcp": sc.mcp, "agents": sc.agents, "skills": sc.skills}
+			want := map[string]bool{"mcp": sc.mcp, "agents": sc.agents, "skills": sc.skills, "hooks": false}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("%s wrote %v, want %v\n%s", name, got, want, out)
 			}
 			// The summary must not name a destination this run never touched.
 			for kind, wrote := range want {
-				line := map[string]string{"mcp": "MCPs   :", "agents": "Agents :", "skills": "Skills :"}[kind]
+				line := map[string]string{"mcp": "MCPs   :", "agents": "Agents :", "skills": "Skills :", "hooks": "Hooks  :"}[kind]
 				if strings.Contains(out, line) != wrote {
 					t.Errorf("%s: summary line %q present = %v, want %v\n%s", name, line, !wrote, wrote, out)
 				}
@@ -2984,7 +3026,7 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		})
 	}
 
-	t.Run("kimi alongside a real target says what it did not install", func(t *testing.T) {
+	t.Run("kimi alongside a real target never claims to be incomplete", func(t *testing.T) {
 		home, _ := setup(t, "2.0.1", "claude")
 
 		out, err := executeRoot(t, "install", "--dry-run", "--target", "claude,kimi")
@@ -2995,10 +3037,14 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		if !strings.Contains(out, "Installing for Claude Code") {
 			t.Errorf("the real target did not run:\n%s", out)
 		}
-		// The per-target notice scrolls past in a multi-target run, so the
-		// summary has to repeat it.
-		if !strings.Contains(out, "Kimi Code CLI: hooks are not installed for it yet") {
-			t.Errorf("the summary does not say what Kimi is still missing:\n%s", out)
+		// #114 finished the Kimi installer, so the "not installed for it yet"
+		// notice — and the machinery behind it — is gone. The one thing Kimi
+		// still cannot do is undo itself, and that notice stays (#115).
+		if strings.Contains(out, "not installed for it yet") {
+			t.Errorf("the summary still claims Kimi is a partial install:\n%s", out)
+		}
+		if !strings.Contains(out, "cannot remove a Kimi Code CLI install yet (#115)") {
+			t.Errorf("the run no longer says uninstall cannot remove it:\n%s", out)
 		}
 		if _, err := os.Stat(filepath.Join(home, ".kimi-code")); !os.IsNotExist(err) {
 			t.Errorf("a dry run created the Kimi home (%v)", err)

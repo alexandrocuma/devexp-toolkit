@@ -27,6 +27,7 @@ New to this repo? Read in order: [architecture overview](docs/architecture/overv
 | Uninstall | `./uninstall.sh` |
 | Test — Go (as CI) | `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover)` |
 | Test — Claude Code hooks (as CI) | `for f in hooks/claude-code/*.test.sh; do bash "$f" \|\| exit 1; done` |
+| Test — Kimi hooks (as CI) | `for f in hooks/kimi/*.test.sh; do bash "$f" \|\| exit 1; done` |
 | Rebuild local CLI after Go changes | `rm bin/devexp && ./install.sh --dry-run` |
 
 Sources: `install.sh`, `cli/cmd/install.go`, `.github/workflows/ci.yml`. Full list, opencode and installer-script suites, env vars: [setup](docs/development/setup.md#commands)
@@ -61,7 +62,7 @@ Sources: `install.sh`, `cli/cmd/install.go`, `.github/workflows/ci.yml`. Full li
 |-----------|---------------|
 | `agents/<name>.md` | One file per agent — frontmatter + system prompt (`agents/opencode/` for opencode-only) |
 | `skills/<name>/SKILL.md` | One subdirectory per skill |
-| `hooks/` | `registry.json` (source of truth) · `claude-code/<name>.sh` · `opencode/<name>.js` |
+| `hooks/` | `registry.json` (source of truth) · `claude-code/<name>.sh` · `opencode/<name>.js` · `kimi/adapter.sh` |
 | `mcps/registry.json` | Source of truth for all MCP servers |
 | `templates/` | Starting points for new agents and skills |
 | `cli/cmd/` · `cli/internal/` | Go CLI: commands + install orchestration · one package per asset kind or concern |

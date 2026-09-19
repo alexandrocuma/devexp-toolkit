@@ -54,6 +54,11 @@ jobs:
           for f in hooks/claude-code/*.test.sh; do
             echo "== $f"; bash "$f" || exit 1
           done
+      - name: kimi hook tests
+        run: |
+          for f in hooks/kimi/*.test.sh; do
+            echo "== $f"; bash "$f" || exit 1
+          done
       - name: opencode hook tests
         run: |
           for f in hooks/opencode/*.test.js; do

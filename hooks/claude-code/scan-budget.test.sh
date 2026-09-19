@@ -209,6 +209,13 @@ registry, budget_ms = json.load(open(sys.argv[1])), int(sys.argv[2])
 bad = [h["name"] for h in registry
        if h.get("opencode", {}).get("fail_closed")
        and h.get("claude_code", {}).get("timeout", 0) * 1000 <= budget_ms]
+# Kimi runs the same guards under the same budget, and its own default hook
+# timeout is 30 s -- below the ceiling -- so a kimi block that left the timeout
+# out would have its guard killed mid-scan. Kimi reads a killed hook as an
+# allow, so the timeout is spelled out in the block, never defaulted.
+bad += ["kimi:" + h["name"] for h in registry
+        if h.get("kimi", {}).get("fail_closed")
+        and h.get("kimi", {}).get("timeout", 0) * 1000 <= budget_ms]
 n = sum(1 for h in registry if h.get("opencode", {}).get("fail_closed"))
 print("%d %s" % (n, ",".join(bad) or "-"))' "$DIR/../registry.json" "$sh_max")
 check "every fail-closed guard has a timeout above the ceiling" \
