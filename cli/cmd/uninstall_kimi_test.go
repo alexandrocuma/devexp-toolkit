@@ -492,3 +492,200 @@ func TestDoUninstallKimi_CustomRootOutsideHome(t *testing.T) {
 		t.Errorf("the removal guard refused a root outside HOME:\n%s", out)
 	}
 }
+
+// TestDoUninstallKimi_UnreadableManifest: a manifest that exists but will not
+// parse. This is the state an interrupted write leaves — a power cut during
+// an install is enough — and it used to be silently destructive: an empty
+// manifest owns nothing, so nothing was removed; "the record is empty" was
+// then trivially true, so the manifest was deleted; and the run printed
+// success. Everything devexp wrote was stranded with no record of it, the
+// guards deregistered while their scripts stayed, and a re-run said there was
+// nothing to remove. Found in PR #176 review.
+func TestDoUninstallKimi_UnreadableManifest(t *testing.T) {
+	for name, body := range map[string]string{
+		// Exactly what `head -c` on a real manifest produces.
+		"truncated mid-write": `{"agents":["dev-agent.md","other.md"],"ski`,
+		"not json at all":     "\x00\x01 not json",
+		"wrong type":          `{"agents":{"a":1},"skills":[]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := kimiScratch(t, "")
+			agent := filepath.Join(p.agents, "dev-agent.md")
+			script := filepath.Join(p.hooks, "kimi", "adapter.sh")
+			writeFile(t, agent, "installed\n")
+			writeFile(t, script, "#!/bin/sh\n")
+			writeFile(t, p.config, "# devexp:hooks:begin\n# devexp:hooks:end\n")
+			writeFile(t, p.manifest, body)
+
+			out, err := uninstallKimi(t, false)
+			if err == nil {
+				t.Fatalf("an unreadable manifest must stop the run, not remove things:\n%s", out)
+			}
+			// Nothing touched: not the files, and above all not the record,
+			// which is the only thing that can still repair this by hand.
+			mustExist(t, p.manifest, "the record must survive so the install stays repairable")
+			mustExist(t, agent, "nothing may be removed without a record of what is devexp's")
+			mustExist(t, script, "a hook script must not be stranded by deregistration")
+			if got, rerr := os.ReadFile(p.manifest); rerr != nil || string(got) != body {
+				t.Errorf("the manifest was rewritten: %q (%v)", got, rerr)
+			}
+			if got, rerr := os.ReadFile(p.config); rerr != nil || !strings.Contains(string(got), "devexp:hooks:begin") {
+				t.Errorf("the hooks block was stripped while the scripts stayed: %q (%v)", got, rerr)
+			}
+			if !strings.Contains(err.Error(), "only record") {
+				t.Errorf("the error does not say why nothing was removed: %v", err)
+			}
+			if strings.Contains(out, "Removed devexp from Kimi") {
+				t.Errorf("the run claimed success:\n%s", out)
+			}
+		})
+	}
+}
+
+// TestDoUninstallKimi_SymlinkedHooksDirKept: the hook scripts go through the
+// same removal rules as agents and skills. They did not: a plain Lstat +
+// Remove deleted the recorded script inside a dotfiles checkout when
+// hooks/kimi, hooks/ or the root was symlinked, and then pruned the emptied
+// linked directories — while agents/ and skills/ in the same run correctly
+// refused. Found in PR #176 review.
+func TestDoUninstallKimi_SymlinkedHooksDirKept(t *testing.T) {
+	// Each case links a different level, because the guard has to refuse at
+	// every one of them: the entry's own directory, its parent, and the root.
+	for name, link := range map[string]string{
+		"hooks/kimi is a symlink": "kimi",
+		"hooks/ is a symlink":     "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := kimiScratch(t, "")
+			dotfiles := filepath.Join(p.home, "dotfiles", "hooks")
+			writeFile(t, filepath.Join(dotfiles, "kimi", "adapter.sh"), "#!/bin/sh\n")
+
+			var linked string
+			if link == "" {
+				linked = p.hooks
+			} else {
+				linked = filepath.Join(p.hooks, link)
+				if err := os.MkdirAll(p.hooks, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			src := dotfiles
+			if link != "" {
+				src = filepath.Join(dotfiles, "kimi")
+			}
+			if err := os.Symlink(src, linked); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+			writeFile(t, p.manifest, `{"agents":[],"skills":[],"hooks":["kimi/adapter.sh"]}`)
+
+			out, err := uninstallKimi(t, false)
+			if err != nil {
+				t.Fatalf("uninstall: %v", err)
+			}
+			mustExist(t, filepath.Join(dotfiles, "kimi", "adapter.sh"),
+				"a hook script is never removed through a symlinked directory")
+			mustExist(t, linked, "and the user's own symlink is never unlinked")
+			// The precise reason, not just the word "symlink": the directory
+			// devexp refuses being a link itself, and its *parent* being one,
+			// are different situations and tell the user to look in different
+			// places. Asserting only the shared word let a mutation that
+			// dropped the first check entirely survive on the second one.
+			want := "is a symlink"
+			if link == "" {
+				want = "is behind a symlink"
+			}
+			if !strings.Contains(out, want) {
+				t.Errorf("the run does not say %q — the reason it gave was:\n%s", want, out)
+			}
+			// Kept in the record: it is still devexp's, and forgetting it
+			// would strand it for ever.
+			m := readKimiManifest(t, p.manifest)
+			if len(m.Hooks) != 1 || m.Hooks[0] != "kimi/adapter.sh" {
+				t.Errorf("the script devexp could not remove was dropped from the record: %+v", m)
+			}
+		})
+	}
+}
+
+// TestDoUninstallKimi_EmptyDirBehindSymlinkNotPruned: the pruning step is
+// subject to the same rule as the removal. A user whose hooks/ is symlinked
+// into a dotfiles checkout, and who has already deleted the script by hand,
+// leaves an empty kimi/ *inside that checkout* — which devexp must not tidy
+// away, because it is reaching through a link to do it. Found by mutation
+// (N9): the removal tests could not reach this, since nothing there empties a
+// directory behind a link.
+func TestDoUninstallKimi_EmptyDirBehindSymlinkNotPruned(t *testing.T) {
+	p := kimiScratch(t, "")
+	dotfiles := filepath.Join(p.home, "dotfiles", "hooks")
+	// Real, empty, and inside the user's checkout.
+	emptyDir := filepath.Join(dotfiles, "kimi")
+	if err := os.MkdirAll(emptyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(p.hooks), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(dotfiles, p.hooks); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	// Recorded, but already gone from disk — the ordinary "user tidied up
+	// first" case.
+	writeFile(t, p.manifest, `{"agents":[],"skills":[],"hooks":["kimi/adapter.sh"]}`)
+
+	if _, err := uninstallKimi(t, false); err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	mustExist(t, emptyDir, "an empty directory behind a symlinked parent is never pruned")
+	mustExist(t, p.hooks, "and the user's own symlink is never unlinked")
+	mustExist(t, dotfiles, "nor the directory it points at")
+}
+
+// TestDoUninstallKimi_HookScriptCaseMismatch: on a case-insensitive
+// filesystem — the macOS default — joining a recorded name and opening it
+// resolves a different file. Only the exact name the directory lists may be
+// removed, which is what removeStale already does for agents and skills.
+func TestDoUninstallKimi_HookScriptCaseMismatch(t *testing.T) {
+	p := kimiScratch(t, "")
+	onDisk := filepath.Join(p.hooks, "kimi", "adapter.sh")
+	writeFile(t, onDisk, "the user's own, or ours under its real name\n")
+	// The manifest records a spelling that is not what is on disk.
+	writeFile(t, p.manifest, `{"agents":[],"skills":[],"hooks":["kimi/ADAPTER.sh"]}`)
+
+	out, err := uninstallKimi(t, false)
+	if err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	if _, statErr := os.Lstat(onDisk); statErr != nil {
+		t.Fatalf("a name differing only in case removed %q:\n%s", onDisk, out)
+	}
+	if !strings.Contains(out, "differs in case") {
+		t.Errorf("the run does not say why it was left:\n%s", out)
+	}
+}
+
+// TestDoUninstallKimi_SymlinkedHookScriptKept: the entry itself being a
+// symlink, with the directory perfectly ordinary. devexp never removes one,
+// here as everywhere else.
+func TestDoUninstallKimi_SymlinkedHookScriptKept(t *testing.T) {
+	p := kimiScratch(t, "")
+	real := filepath.Join(p.home, "dotfiles", "adapter.sh")
+	writeFile(t, real, "#!/bin/sh\n")
+	if err := os.MkdirAll(filepath.Join(p.hooks, "kimi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(p.hooks, "kimi", "adapter.sh")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	writeFile(t, p.manifest, `{"agents":[],"skills":[],"hooks":["kimi/adapter.sh"]}`)
+
+	out, err := uninstallKimi(t, false)
+	if err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	mustExist(t, link, "a symlinked hook script is never removed")
+	mustExist(t, real, "and certainly not what it points at")
+	if !strings.Contains(out, "symlink") {
+		t.Errorf("the run does not say why it was left:\n%s", out)
+	}
+}

@@ -299,7 +299,10 @@ Two `kimi` binaries exist. Kimi Code CLI answers `kimi --version` with a bare ve
 >   its log — so devexp names every dropped name at install time instead.
 > - **No per-agent model and no terminal colour.** `model`, `color` and `memory` are
 >   dropped from front matter; `--model` is ignored with a warning rather than
->   failing the run.
+>   failing the run. (The `memory:` *field* is dropped because Kimi has no
+>   equivalent — the `~/.claude/agent-memory` *directory* is a different thing
+>   and is shared with Claude Code untouched; see **Sharing with Claude Code**
+>   below.)
 >
 > **Skills**
 > - **`allowed-tools` is ignored. There is no per-skill tool restriction at all** —

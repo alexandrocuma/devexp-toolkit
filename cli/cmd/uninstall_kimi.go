@@ -57,10 +57,28 @@ func doUninstallKimi(home string, dryRun bool) error {
 		return nil
 	}
 
-	// An unreadable or malformed manifest yields an empty one, and an empty
-	// manifest owns nothing. That is the whole point: with no other record of
-	// what devexp wrote, guessing would mean deleting the user's files.
-	old := loadOldManifest(p.manifest)
+	// manifest.Load directly, not loadOldManifest: that helper is written for
+	// the install path, where an unreadable manifest degrades to "remove
+	// nothing stale this run" and the install still goes ahead — and its
+	// warning says exactly that. Here the same degradation was silently
+	// destructive (PR #176 review).
+	//
+	// An empty manifest owns nothing, so nothing was removed — and
+	// kimiRecordEmpty was then trivially true, so the manifest was *deleted*
+	// and the run printed success. On a real install that left 34 agents, 8
+	// skills and 5 hook scripts on disk with the config.toml block already
+	// stripped: the guards deregistered, their scripts stranded, no record of
+	// any of it, and a re-run reporting there was nothing to remove.
+	// Truncating the manifest, as an interrupted write or a power cut during
+	// an install does, was enough to reach it.
+	//
+	// So a manifest that exists but will not parse stops the run before
+	// anything is touched. There is nothing useful to do without the record,
+	// and stopping leaves a state that can still be repaired by hand.
+	old, err := manifest.Load(p.manifest)
+	if err != nil {
+		return fmt.Errorf("manifest %q could not be read (%w) — nothing was removed, because it is the only record of what devexp installed here; repair or delete it and re-run", p.manifest, err)
+	}
 	kept := *old
 
 	ui.Info(fmt.Sprintf("Removing devexp from Kimi Code CLI (%q)...", p.root))
@@ -69,7 +87,7 @@ func doUninstallKimi(home string, dryRun bool) error {
 	// Hooks first, and inside UninstallKimi the registration goes before the
 	// scripts: a registered command whose script is missing is a silent allow
 	// under Kimi's runner, so the config entry must never outlive its script.
-	keptHooks, err := hooks.UninstallKimi(p.hooks, p.config, old.Hooks, dryRun)
+	keptHooks, err := hooks.UninstallKimi(p.home, p.hooks, p.config, old.Hooks, dryRun)
 	if err != nil {
 		// config.toml could not be rewritten. The scripts stay on disk with
 		// it, because removing them under a live registration is the one

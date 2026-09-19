@@ -57,7 +57,7 @@ var kimiSupportFiles = []string{kimiAdapterFile, kimiScanBudgetFile}
 // On an error the paths written SO FAR come back with it. A half-finished
 // install has real files on disk, and the caller has to record them: they are
 // the only trace devexp keeps of what it put in the Kimi root.
-func InstallKimi(registry Registry, repoDir, hooksDir, configPath string, disabled, recorded []string, dryRun bool) ([]string, error) {
+func InstallKimi(registry Registry, repoDir, home, hooksDir, configPath string, disabled, recorded []string, dryRun bool) ([]string, error) {
 	if !filepath.IsAbs(hooksDir) {
 		return nil, fmt.Errorf("hooks: the installed hooks directory %q is not absolute, so Kimi — which runs a hook from whatever directory it is in — could not find the scripts; refusing to install them", hooksDir)
 	}
@@ -76,7 +76,7 @@ func InstallKimi(registry Registry, repoDir, hooksDir, configPath string, disabl
 		if _, err := RemoveKimiHooks(configPath, hooksDir, dryRun); err != nil {
 			return recorded, err
 		}
-		kept := removeKimiFiles(hooksDir, recorded, dryRun)
+		kept := removeKimiFiles(home, hooksDir, recorded, dryRun)
 		ui.Skipped("Kimi hooks", "every hook devexp could give Kimi is disabled — nothing to install")
 		return kept, nil
 	}
@@ -109,7 +109,7 @@ func InstallKimi(registry Registry, repoDir, hooksDir, configPath string, disabl
 		return append(written, staleNew(written, recorded)...), err
 	}
 
-	kept := removeKimiFiles(hooksDir, staleNew(written, recorded), dryRun)
+	kept := removeKimiFiles(home, hooksDir, staleNew(written, recorded), dryRun)
 	ui.Success(fmt.Sprintf("Kimi hooks (%d): %s", len(selected), KimiNames(selected)))
 	return append(written, kept...), nil
 }
@@ -117,12 +117,12 @@ func InstallKimi(registry Registry, repoDir, hooksDir, configPath string, disabl
 // UninstallKimi takes the block out of config.toml and removes the scripts
 // devexp recorded, returning what is still on disk. It is the removal half of
 // InstallKimi, kept here so the two cannot drift apart (#115).
-func UninstallKimi(hooksDir, configPath string, recorded []string, dryRun bool) ([]string, error) {
+func UninstallKimi(home, hooksDir, configPath string, recorded []string, dryRun bool) ([]string, error) {
 	changed, err := RemoveKimiHooks(configPath, hooksDir, dryRun)
 	if err != nil {
 		return recorded, err
 	}
-	kept := removeKimiFiles(hooksDir, recorded, dryRun)
+	kept := removeKimiFiles(home, hooksDir, recorded, dryRun)
 	if !changed && len(recorded) == 0 {
 		ui.Skipped("Kimi hooks", "not installed")
 	}
@@ -199,65 +199,4 @@ func copyKimiFile(src, hooksDir, rel string, dryRun bool) (bool, error) {
 		return false, fmt.Errorf("hook script %q: %w", dst, err)
 	}
 	return true, nil
-}
-
-// removeKimiFiles deletes recorded scripts this run no longer installs and
-// returns the ones still on disk, which the manifest must go on recording.
-//
-// The names come out of a file on disk, so each is checked before it is
-// joined onto hooksDir: "../../.ssh/id_rsa" recorded as a hook would
-// otherwise be removed from outside the Kimi root entirely.
-func removeKimiFiles(hooksDir string, stale []string, dryRun bool) (kept []string) {
-	for _, rel := range stale {
-		if !isKimiHookPath(rel) {
-			ui.Warn(fmt.Sprintf("the manifest records a hook file as %q, which is not a name devexp installs; it was left alone", rel))
-			kept = append(kept, rel)
-			continue
-		}
-		dst := filepath.Join(hooksDir, filepath.FromSlash(rel))
-		if _, err := os.Lstat(dst); err != nil {
-			continue // already gone: not a removal, and not worth a line
-		}
-		if dryRun {
-			ui.DryRun("remove " + dst)
-			kept = append(kept, rel)
-			continue
-		}
-		if err := os.Remove(dst); err != nil {
-			ui.Warn(fmt.Sprintf("could not remove %q (%v); it stays recorded so a later run can finish", dst, err))
-			kept = append(kept, rel)
-			continue
-		}
-		ui.Removed(rel)
-	}
-	if !dryRun {
-		pruneEmptyKimiDirs(hooksDir)
-	}
-	return kept
-}
-
-// isKimiHookPath reports whether rel has the shape of something devexp
-// installs below the hooks directory: "<dir>/<file>.sh", slash-separated,
-// with no traversal, no absolute path and no control character — the last
-// because the name is printed and a raw escape reaches the terminal (#111).
-func isKimiHookPath(rel string) bool {
-	if rel == "" || rel != path.Clean(rel) || path.IsAbs(rel) || strings.HasPrefix(rel, "..") {
-		return false
-	}
-	if strings.ContainsAny(rel, "\\") || strings.ContainsFunc(rel, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
-		return false
-	}
-	dir, file := path.Split(rel)
-	return (dir == "kimi/" || dir == "claude-code/") && file != "" && strings.HasSuffix(file, ".sh")
-}
-
-// pruneEmptyKimiDirs removes the two subdirectories, and then the hooks
-// directory itself, once nothing devexp put there is left. Failures are
-// ignored: a directory holding something else is a directory to leave alone,
-// and that is exactly what a non-empty Rmdir refuses.
-func pruneEmptyKimiDirs(hooksDir string) {
-	for _, dir := range []string{"kimi", "claude-code"} {
-		os.Remove(filepath.Join(hooksDir, dir)) //nolint:errcheck
-	}
-	os.Remove(hooksDir) //nolint:errcheck
 }

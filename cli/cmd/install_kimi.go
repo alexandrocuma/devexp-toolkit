@@ -167,7 +167,7 @@ func doInstallKimi(opts *installOpts) error {
 			// Kimi root rather than run from the checkout, so this step both
 			// writes files and edits config.toml. It hands back what it wrote
 			// even when it fails, for the same reason the agent step does.
-			installedHooks, err := hooks.InstallKimi(registry, opts.repoDir, p.hooks, p.config, disabled, old.Hooks, opts.dryRun)
+			installedHooks, err := hooks.InstallKimi(registry, opts.repoDir, p.home, p.hooks, p.config, disabled, old.Hooks, opts.dryRun)
 			newManifest.Hooks = installedHooks
 			if err != nil {
 				return err
@@ -231,7 +231,7 @@ func warnKimiFeatureSubset(opts *installOpts) {
 		// The two that silently do less than the source file says.
 		items = append(items,
 			"a skill's allowed-tools is ignored — Kimi applies no per-skill tool restriction",
-			"skills are invoked as /skill:<name>, never as bare /<name>")
+			"skills appear only as /skill:<name> in Kimi's listings — that is the form to type")
 	}
 	if !opts.agentsOnly && !opts.skillsOnly && !opts.mcpsOnly {
 		// The one that is a security property rather than an inconvenience:
