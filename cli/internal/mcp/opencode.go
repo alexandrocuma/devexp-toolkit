@@ -51,7 +51,6 @@ func InstallOpencode(mcps []MCP, env map[string]string, configPath string, dryRu
 
 	changed := false
 	for _, m := range mcps {
-		// Resolve env vars
 		resolved := make(map[string]string)
 		for k, v := range m.Env {
 			if override, ok := env[k]; ok {
@@ -69,7 +68,6 @@ func InstallOpencode(mcps []MCP, env map[string]string, configPath string, dryRu
 			resolvedHeaders[k] = resolveStr(v, env)
 		}
 
-		// Check required env
 		var missing []string
 		for _, key := range m.RequiredEnv {
 			if env[key] == "" {
@@ -126,7 +124,7 @@ func InstallOpencode(mcps []MCP, env map[string]string, configPath string, dryRu
 			return err
 		}
 		// Atomic, and through a symlinked config.json to the file it points
-		// at, keeping the link (#124).
+		// at, keeping the link.
 		if err := fsutil.WriteFileAtomic(configPath, data, 0644); err != nil {
 			return fmt.Errorf("mcp: %w", err)
 		}
@@ -153,7 +151,7 @@ func (e *ConfigRefusedError) Error() string {
 // loadOpencodeConfig reads config.json for merging MCP servers into it. A
 // missing or blank file is an empty config. Anything devexp can't merge into
 // without losing what is there is an error, never an empty config that would
-// then be written over the file (#124): unreadable, not strict JSON (opencode
+// then be written over the file: unreadable, not strict JSON (opencode
 // also accepts comments, which encoding/json can't keep), a top level that
 // isn't an object, or an "mcp" that isn't an object. Numbers are kept as
 // written, not rounded through float64.

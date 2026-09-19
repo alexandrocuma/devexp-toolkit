@@ -1,6 +1,6 @@
 // Package manifest tracks which agent and skill files — and opencode plugin
-// files — devexp installed on a prior run, so a later run can detect and remove files that are no longer
-// shipped by the toolkit (stale files left over from an older version).
+// files — devexp installed on a prior run, so a later run can detect and
+// remove files no longer shipped by the toolkit.
 package manifest
 
 import (

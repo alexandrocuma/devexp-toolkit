@@ -271,7 +271,7 @@ func fill(s, repoDir, foreign string) string {
 	return strings.NewReplacer("REPO", repoDir, "FOREIGN", foreign).Replace(s)
 }
 
-// TestInstallClaude_KeepsUserHookFields (#137): install rewrites only what it
+// TestInstallClaude_KeepsUserHookFields: install rewrites only what it
 // owns. Every field of a user's hook — timeout, async, shell, if,
 // statusMessage, args, an http, prompt or mcp_tool handler's own fields, an
 // unknown field — survives install and re-install byte for byte, as do an

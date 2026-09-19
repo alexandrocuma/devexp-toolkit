@@ -16,7 +16,7 @@ import (
 //
 // They refuse a home that is empty or relative rather than return a relative
 // path: HOME unset, empty or relative would otherwise point every destination
-// at whatever directory the command happens to run in (#126).
+// at whatever directory the command happens to run in.
 
 // targetHome refuses a HOME that is unset, empty or relative, and returns it
 // cleaned. Every install and uninstall target is built from it, so both

@@ -33,7 +33,7 @@ type TargetSpec struct {
 	// registration. The guards that enforce their own scan budget set it above
 	// that budget so their exit 2 always lands first: a timed-out command hook
 	// does not block the tool call, and Claude Code's default for one is 600
-	// seconds (#162). Zero leaves the registration without a timeout.
+	// seconds. Zero leaves the registration without a timeout.
 	Timeout    int    `json:"timeout,omitempty"`
 	Module     string `json:"module,omitempty"`
 	Export     string `json:"export,omitempty"`
@@ -132,13 +132,13 @@ func ParseRegistry(data []byte) (Registry, error) {
 
 func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []string, dryRun bool) error {
 	// Every command is registered as repoDir/<script> and run later from
-	// whatever directory Claude Code is in, so it must be absolute (#126).
+	// whatever directory Claude Code is in, so it must be absolute.
 	if !filepath.IsAbs(repoDir) {
 		return fmt.Errorf("hooks: repo dir %q is not an absolute path, so hook commands would be relative — refusing to register them", repoDir)
 	}
 
 	// Only the hooks value is rewritten; every other byte of settings.json, and
-	// every field of a hook devexp doesn't own, is written back as read (#137).
+	// every field of a hook devexp doesn't own, is written back as read.
 	data, err := os.ReadFile(settingsPath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("hooks: read %s: %w", settingsPath, err)
@@ -211,7 +211,7 @@ func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []s
 		return err
 	}
 	// Atomic, and through a symlinked settings.json (dotfiles) to the file it
-	// points at, keeping the link (#124).
+	// points at, keeping the link.
 	if err := fsutil.WriteFileAtomic(settingsPath, out, 0644); err != nil {
 		return fmt.Errorf("hooks: %w", err)
 	}
@@ -347,7 +347,7 @@ func removeHookCmds(hooksMap map[string][]hookEntry, drop func(event string, h *
 // whose backing script no longer exists on disk — i.e. the hook was removed
 // from the registry since it was registered: under repoDir
 // (isStaleDevexpHook), or under another devexp install root
-// (isOrphanedDevexpHook, #150). User-authored hooks are left untouched.
+// (isOrphanedDevexpHook). User-authored hooks are left untouched.
 // Returns whether anything was pruned.
 func pruneStaleHooks(hooksMap map[string][]hookEntry, repoDir string, dryRun bool) bool {
 	pruned := false
@@ -379,8 +379,8 @@ func pruneStaleHooks(hooksMap map[string][]hookEntry, repoDir string, dryRun boo
 
 // isStaleDevexpHook reports whether cmd is devexp's registration of a script
 // under repoDir that no longer exists on disk. Only the forms devexp writes
-// count (#138): a plain or single-quoted command (commandPath, so a quoted one
-// is judged by the path it runs, #135), or this repo's legacy bare spelling
+// count: a plain or single-quoted command (commandPath, so a quoted one
+// is judged by the path it runs), or this repo's legacy bare spelling
 // (legacyScriptPath), naming the clean absolute path
 // repoDir/hooks/claude-code/<script>. The registry no longer lists a removed
 // script, so its name can't be checked; its directory can. Any other command
@@ -407,7 +407,7 @@ func isStaleDevexpHook(cmd, repoDir string) bool {
 }
 
 // isOrphanedDevexpHook reports whether cmd is devexp's registration of a script
-// that no longer exists, from an install root other than repoDir (#150): a
+// that no longer exists, from an install root other than repoDir: a
 // checkout or asset cache that devexp was installed from before, whose registry
 // has since dropped the hook. The script's name can't be checked against any
 // registry (that is how it went stale), so the root is: cmd must be in a form
@@ -474,7 +474,7 @@ func isDevexpRoot(root string) bool {
 }
 
 // legacyScriptPath returns cmd when it may be the bare path an install from
-// repoDir wrote before paths needing quotes were quoted (#135): repoDir, then a
+// repoDir wrote before paths needing quotes were quoted: repoDir, then a
 // rest with no shell syntax, which isStaleDevexpHook requires to be
 // hooks/claude-code/<script>. Only repoDir may hold shell syntax; a rest
 // holding some, such as "hooks/claude-code/x.sh --flag", is a command with
@@ -502,7 +502,7 @@ const shellSyntax = " \t\n\r$~'\"`\\;&|<>()*?[]{}!#"
 // runs a command hook through a shell (sh -c), so a path with shell syntax — a
 // space in "My Projects", a quote, a $ — would be split or expanded: the hook
 // fails to run, which Claude Code treats as a non-blocking error, or something
-// else runs (#135). Such a path is registered as one single-quoted word; any
+// else runs. Such a path is registered as one single-quoted word; any
 // other path stays plain, byte-identical to what earlier releases wrote.
 func hookCommand(p string) string {
 	if !strings.ContainsAny(p, shellSyntax) {
@@ -609,7 +609,7 @@ func isForeignDevexpHook(cmd string, managed map[string]bool, repoDir string) bo
 
 // isRelativeDevexpHook reports whether cmd is a devexp-managed hook registered
 // with a relative path — what an install from a relative DEVEXP_DIR wrote
-// before repo dirs were made absolute (#126). It is matched like
+// before repo dirs were made absolute. It is matched like
 // isForeignDevexpHook, by isManagedScriptPath, and replaced by the absolute
 // registration on the same run.
 func isRelativeDevexpHook(cmd string, managed map[string]bool) bool {
@@ -655,7 +655,7 @@ func pruneForeignDevexpHooks(hooksMap map[string][]hookEntry, registry Registry,
 // repoDir to the form hookCommand gives it. It recognises exactly these other
 // spellings of that one path:
 //   - the bare path an earlier install wrote before paths needing quotes were
-//     quoted (#135), which the shell splits;
+//     quoted, which the shell splits;
 //   - the path in double quotes, the natural hand fix for that, when the path
 //     has no $, backquote, \ or " (so the double quotes are literal);
 //   - the single-quoted form of a path that needs no quoting.

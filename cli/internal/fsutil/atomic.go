@@ -188,7 +188,7 @@ func syncDir(dir string) {
 // IsSymlink reports whether path itself, not what it resolves to, is a
 // symlink (dangling or not). A path that can't be checked is not reported as
 // one. It is the one check both policies use: installers never write through a
-// symlinked entry (#124), and removeguard's callers never remove one (#128).
+// symlinked entry, and removeguard's callers never remove one.
 func IsSymlink(path string) bool {
 	fi, err := os.Lstat(path)
 	return err == nil && fi.Mode()&os.ModeSymlink != 0

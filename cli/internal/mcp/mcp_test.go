@@ -454,7 +454,7 @@ func TestInstallOpencode(t *testing.T) {
 	}
 }
 
-// TestInstallOpencode_RefusesUnmergeableConfig (#124): a config.json the merge
+// TestInstallOpencode_RefusesUnmergeableConfig: a config.json the merge
 // can't read as an object used to be decoded with its error ignored and then
 // replaced by a file holding only the MCP servers (or, for null, crash the
 // install). It is now left byte for byte, with an error naming it.

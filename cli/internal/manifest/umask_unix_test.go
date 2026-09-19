@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// TestSave_NewManifestHonoursUmask (#157 review): a new manifest is created with
-// the umask applied, as os.WriteFile did.
+// TestSave_NewManifestHonoursUmask: a new manifest is created with the umask
+// applied, as os.WriteFile did.
 func TestSave_NewManifestHonoursUmask(t *testing.T) {
 	old := syscall.Umask(0o077)
 	t.Cleanup(func() { syscall.Umask(old) })
