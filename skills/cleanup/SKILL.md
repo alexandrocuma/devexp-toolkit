@@ -108,7 +108,7 @@ Work one candidate at a time, in this order, validating ids before they reach an
 
 ```bash
 # Validate an identifier before using it in any delete pattern (see safety rules).
-safe_id() { case "$1" in ""|*[!A-Za-z0-9_-]*) return 1 ;; *) return 0 ;; esac; }
+safe_id() { case "${1}" in ""|*[!A-Za-z0-9_-]*) return 1 ;; *) return 0 ;; esac; }
 
 # Finished worktrees — git refuses a dirty tree on its own; never add --force to a live tree
 git worktree remove "<verified-abs-path>"

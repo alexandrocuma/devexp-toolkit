@@ -1,6 +1,6 @@
 ---
 name: release
-description: Release phase — takes approved work from merge to shipped: worktree merge, changelog, version bump, tag, then ships each affected release target (deploy, app-store/beta channels, package publish) from the repo's release guide with a gate per target, and retires the delivery's artifacts. Runs inside /deliver or standalone to finish a deferred or externally-gated release.
+description: "Release phase — takes approved work from merge to shipped: worktree merge, changelog, version bump, tag, then ships each affected release target (deploy, app-store/beta channels, package publish) from the repo's release guide with a gate per target, and retires the delivery's artifacts. Runs inside /deliver or standalone to finish a deferred or externally-gated release."
 argument-hint: "[ticket]"
 ---
 
@@ -201,7 +201,7 @@ Build the release notes next, still before anything is pushed. They are always t
 
 ```bash
 notes="/tmp/.release-${ticket}-notes.md"   # retired with the scratch in Phase 8, when the release completes with a ticket id
-awk -v v="<version>" '$0 ~ "^## \\[" v "\\]" {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md > "$notes"
+awk -v v="<version>" '$(0) ~ "^## \\[" v "\\]" {f=1; next} f && /^## \[/ {exit} f' CHANGELOG.md > "$notes"
 [ -s "$notes" ] || { echo "no [<version>] section in CHANGELOG.md — stop"; exit 1; }
 ```
 

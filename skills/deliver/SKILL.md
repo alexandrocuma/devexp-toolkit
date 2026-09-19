@@ -1,6 +1,6 @@
 ---
 name: deliver
-description: Development lifecycle orchestrator — takes a groomed ticket through implementation, observability, testing, code review, and release. Self-contained: no other skills required.
+description: "Development lifecycle orchestrator — takes a groomed ticket through implementation, observability, testing, code review, and release. Self-contained: no other skills required."
 ---
 
 # Deliver: Ticket → Production
