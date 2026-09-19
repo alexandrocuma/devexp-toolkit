@@ -28,7 +28,7 @@ You can also grab a binary manually from the [Releases page](https://github.com/
 
 If you're contributing to the toolkit — editing agents, skills, or hooks — clone the repo and use `install.sh`. `install.sh` is now a thin wrapper: if `bin/devexp` doesn't exist yet it stages the embedded assets and builds the `devexp` Go CLI from `cli/` (requires a local Go toolchain), then execs `devexp install` with whatever flags you pass through (`install.sh:7-22`). Because `devexp` prefers live files on disk over its embedded copies, asset edits never need a rebuild — only changes to the Go code under `cli/` do (see [Updating](#updating)).
 
-The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed and, only when both are present, asks which to target (`cli/cmd/targets.go`). Supported CLIs: **Claude Code** and **opencode**.
+The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed and, when more than one is present, asks which to target (`cli/cmd/targets.go`). Supported CLIs: **Claude Code**, **opencode** and **Kimi Code CLI**. Kimi Code is detected and selectable but installs nothing yet — see [Kimi Code CLI](#kimi-code-cli) below.
 
 ```bash
 ./install.sh                         # interactive wizard
@@ -38,15 +38,21 @@ The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed a
 ./install.sh --agents-only           # only install agents
 ./install.sh --skills-only           # only install skills
 ./install.sh --agents-only --model sonnet   # rewrite agents' model: lines (see below)
+./install.sh --target claude             # install only for Claude Code, no prompt
+./install.sh --target claude,opencode    # repeatable, or comma-separated
 ```
 
-Passing any of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only` or `--skills-only` skips the interactive wizard; with none of them, the wizard runs (`cli/cmd/install.go:115-119`).
+Passing any of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, `--skills-only` or `--target` skips the interactive wizard; with none of them, the wizard runs (`cli/cmd/install.go`, `flagsProvided`).
 
 `--model` overrides the `model` value from `devexp.config.json` (`cli/cmd/install.go:100-102`). It does **not** skip the wizard — the wizard has no model prompt (`cli/cmd/wizard.go`) — so combine it with one of the flags above for a non-interactive run. It accepts a short alias (`sonnet`, `opus`, `haiku`, `gpt4o`, `deepseek`, `kimi`, …), resolved to a provider-prefixed ID such as `anthropic/claude-sonnet-4-6`, or any other string used verbatim (`modelMap` / `resolveModel` in `cli/internal/agents/installer.go`). The value only **replaces an existing `model:` frontmatter line**; agents without one — most of them (only `dep-audit`, `docs-sync` and `runbook` declare `model:` today) — get no model line, for both CLIs.
 
 **Behavior:**
 - Refuses to run when `HOME` is unset, empty or not an absolute path, because every destination below is built from it and would otherwise land under the current directory. `install.sh` checks before it builds `bin/devexp` (a build would put Go's caches under the clone), and `devexp install` checks again as its first step, before it resolves assets, opens the wizard, registers MCPs or writes/backs up anything (`targetHome` in `cli/cmd/paths.go`, checked first in `runInstall`)
-- Detects `claude` and/or `opencode` in PATH; prompts which to install for only when both are found, and stops with an error when neither is (`cli/cmd/targets.go`)
+- Detects `claude`, `opencode` and `kimi` in PATH, and stops with an error when none is found (`cli/cmd/targets.go`). Which targets it then installs for:
+  - `--target <ids>` — exactly those, no prompt. Ids are `claude`, `opencode` and `kimi`; the flag is repeatable and comma-separated, and an unknown id is an error listing the valid ones
+  - no `--target`, more than one CLI detected, **and a terminal** — a checklist, all preselected, so any combination can be picked. Deselecting everything is an error, never "install for all"
+  - anything else — every detected CLI. This is what makes a non-interactive run work: without a terminal there is no one to answer a prompt
+  - asking for a CLI that was not detected is an error naming it, never a silent fall back to another
 - **Claude Code**: copies agents to `~/.claude/agents/`, skill directories to `~/.claude/skills/`, registers MCPs via `claude mcp add`, and registers enabled hooks in `~/.claude/settings.json` (`cli/cmd/install_claude.go`)
 - **opencode**: transforms agent frontmatter (model aliases, tool mapping, adds `mode: subagent`) and installs to `~/.config/opencode/agents/`; each skill's `SKILL.md` goes to `~/.config/opencode/commands/<name>.md`; MCPs are written to the `mcp` key of `~/.config/opencode/config.json` (a `config.json` that isn't strict JSON — including one with comments or trailing commas, which opencode itself accepts — or whose top level or `mcp` isn't an object is left untouched: the MCP step is skipped with a warning naming the file and the servers to add by hand, and agents, skills and hooks still install. With `--mcps-only` it is an error); the hook plugin goes to `~/.config/opencode/plugins/` — the entry `devexp.js` plus `devexp/` holding the selected modules, `utils.js`, `package.json` and the `hooks.json` selection (`cli/cmd/install_opencode.go`, `cli/internal/hooks/opencode.go`). With every hook disabled no plugin is installed
 - Backs up existing agents and skills before overwriting — **Claude Code target only**; the opencode install has no backup step (`backupExisting` / `backupExistingDirs` are called only from `cli/cmd/install_claude.go`)
@@ -213,15 +219,25 @@ Shows every add, update, and removal devexp would make — including stale-file 
 
 ## CLI Installation Paths
 
-| Component | Claude Code | opencode |
-|-----------|-------------|----------|
-| Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (transformed) |
-| Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) |
-| Hooks | `~/.claude/settings.json` (shell scripts) | `~/.config/opencode/plugins/devexp.js` + `devexp/` (selected modules, `utils.js`, `package.json`, `hooks.json`) |
-| MCPs | via `claude mcp add` | `mcp` key of `~/.config/opencode/config.json` |
-| `CLAUDE.md` / `AGENTS.md` | `~/.claude/CLAUDE.md` | `~/.config/opencode/AGENTS.md` (or project root) |
-| Agent tools | All Claude tools | `read/write/edit/bash/glob/grep/webfetch/websearch` only |
-| `Agent`, `Skill`, `Task*` tools | Supported | No opencode equivalent — dropped at transform |
+`$KIMI` below is `$KIMI_CODE_HOME`, or `~/.kimi-code` when that is unset (`kimiTargetPaths` in `cli/cmd/paths.go`). Nothing is written to it yet.
+
+| Component | Claude Code | opencode | Kimi Code CLI |
+|-----------|-------------|----------|---------------|
+| Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (transformed) | `$KIMI/agents/` — not installed yet (#113) |
+| Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) | `$KIMI/skills/` — not installed yet (#113) |
+| Hooks | `~/.claude/settings.json` (shell scripts) | `~/.config/opencode/plugins/devexp.js` + `devexp/` (selected modules, `utils.js`, `package.json`, `hooks.json`) | `$KIMI/config.toml` — not installed yet (#114) |
+| MCPs | via `claude mcp add` | `mcp` key of `~/.config/opencode/config.json` | `$KIMI/mcp.json` — not installed yet (#112) |
+| `CLAUDE.md` / `AGENTS.md` | `~/.claude/CLAUDE.md` | `~/.config/opencode/AGENTS.md` (or project root) | Kimi reads `AGENTS.md`, never `CLAUDE.md` |
+| Agent tools | All Claude tools | `read/write/edit/bash/glob/grep/webfetch/websearch` only | Own tool names (`FetchURL`, `TodoList`, …) |
+| `Agent`, `Skill`, `Task*` tools | Supported | No opencode equivalent — dropped at transform | Sub-agents exist; the mapping lands with #113 |
+
+### Kimi Code CLI
+
+Kimi Code CLI `0.31.0` or newer on `PATH` is detected and can be selected, in the wizard or with `--target kimi`, but **nothing is installed for it yet** — agents, skills, MCPs and hooks arrive in #112-#114. Selecting it prints a notice naming the directory that stays untouched, and a run whose only target is Kimi exits non-zero rather than reporting `All done.`
+
+Two `kimi` binaries exist. Kimi Code CLI answers `kimi --version` with a bare version such as `0.42.0`; the legacy Python kimi-cli (config in `~/.kimi/`) answers `kimi, version <x>` and is **not supported** — their version numbers overlap, so devexp goes by the format, not the number. An older Kimi Code is skipped with the minimum named, and a `kimi` that answers with anything else is skipped rather than guessed at.
+
+`$KIMI_CODE_HOME` must be an absolute path, and may be neither `/` nor your home directory itself; a value devexp will not install into is an error (`resolveKimiHome` in `cli/cmd/paths.go`).
 
 > **`.devexp-manifest.json`**: devexp writes `~/.claude/.devexp-manifest.json` and `~/.config/opencode/.devexp-manifest.json` to track which agent/skill files (and, for opencode, plugin files) it installed, so future updates can detect and remove files no longer shipped by the toolkit (see [Updating](#updating)). These are managed automatically — don't hand-edit them.
 

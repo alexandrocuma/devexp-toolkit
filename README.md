@@ -87,7 +87,7 @@ cd devexp-toolkit
 
 `install.sh` builds the `devexp` Go CLI from `cli/` (only when `bin/devexp` doesn't exist yet) and execs `devexp install`. Because `devexp` reads agents, skills, hooks, and MCPs live from disk when run inside a clone, editing them needs no rebuild — just re-run `./install.sh`. After pulling Go changes under `cli/`, rebuild with `rm bin/devexp && ./install.sh` ([Updating](docs/guides/install.md#updating)).
 
-The installer detects which AI coding CLI(s) you have installed — when both are present it asks which to target: **Claude Code**, **opencode**, or both.
+The installer detects which AI coding CLI(s) you have installed — **Claude Code**, **opencode** and **Kimi Code CLI** — and when more than one is present it asks which to target, in any combination. Without a terminal it installs for all of them. Kimi Code is detected and selectable but nothing is installed for it yet ([details](docs/guides/install.md#kimi-code-cli)).
 
 ### Common flags
 
@@ -100,16 +100,19 @@ Any of these flags except `--model` skips the interactive wizard.
 ./install.sh --skills-only           # only install skills
 ./install.sh --mcps-only             # only register MCP servers
 ./install.sh --agents-only --model sonnet   # also rewrite the model: line of agents that declare one
+./install.sh --target claude,opencode       # install only for these CLIs (claude, opencode, kimi)
 ```
 
 ### What gets installed where
 
-| Component | Claude Code | opencode |
-|-----------|-------------|----------|
-| Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (frontmatter transformed) |
-| Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) |
-| Hooks | `~/.claude/settings.json` (shell scripts, per-tool matchers) | `~/.config/opencode/plugins/devexp.js` + `devexp/` |
-| MCPs | via `claude mcp add` | `~/.config/opencode/config.json` |
+`$KIMI` is `$KIMI_CODE_HOME`, or `~/.kimi-code` when unset. Nothing is written there yet.
+
+| Component | Claude Code | opencode | Kimi Code CLI |
+|-----------|-------------|----------|---------------|
+| Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (frontmatter transformed) | `$KIMI/agents/` — not yet |
+| Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) | `$KIMI/skills/` — not yet |
+| Hooks | `~/.claude/settings.json` (shell scripts, per-tool matchers) | `~/.config/opencode/plugins/devexp.js` + `devexp/` | `$KIMI/config.toml` — not yet |
+| MCPs | via `claude mcp add` | `~/.config/opencode/config.json` | `$KIMI/mcp.json` — not yet |
 
 For Claude Code, existing agents and skills are backed up before any overwrite (the opencode install has no backup step). `install.sh` is idempotent.
 
