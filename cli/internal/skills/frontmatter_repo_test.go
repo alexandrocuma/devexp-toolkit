@@ -23,11 +23,6 @@ import (
 // what Kimi does, so it must not pass merely because the installer and the
 // test agree with each other.
 
-// kimiSkillTypes are the only values Kimi accepts for a skill's `type`. Any
-// other value drops the skill from the catalog with no warning anywhere, so a
-// shipped skill must not carry one devexp hasn't checked.
-var kimiSkillTypes = map[string]bool{"prompt": true, "inline": true, "flow": true}
-
 // splitRepoFrontmatter applies Kimi's rule: line 0 must trim to "---", and the
 // first later line that trims to "---" closes the block.
 func splitRepoFrontmatter(content string) (fm, body string, ok bool) {
