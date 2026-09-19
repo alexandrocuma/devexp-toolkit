@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1469,6 +1470,65 @@ func TestResolveTargets(t *testing.T) {
 	})
 }
 
+// stdinIsTerminal is the one line 0e5bb98 exists for, and every other test
+// swaps it, so without this it has no coverage at all: a return to the
+// os.ModeCharDevice check would pass the whole suite and break every install
+// with stdin redirected from /dev/null.
+//
+// The false direction is the one that matters and the one testable without a
+// pty. A pty would be needed to prove it ever returns true.
+func TestStdinIsTerminal(t *testing.T) {
+	swapStdin := func(t *testing.T, f *os.File) {
+		t.Helper()
+		orig := os.Stdin
+		t.Cleanup(func() { os.Stdin = orig })
+		os.Stdin = f
+	}
+
+	t.Run("/dev/null is not a terminal", func(t *testing.T) {
+		// It is a character device, which is exactly why the mode-bit check
+		// was wrong: `devexp install --dry-run </dev/null` prompted, then
+		// failed reading the answer.
+		devnull, err := os.Open(os.DevNull)
+		if err != nil {
+			t.Fatalf("open %s error = %v", os.DevNull, err)
+		}
+		t.Cleanup(func() { devnull.Close() })
+		swapStdin(t, devnull)
+
+		if stdinIsTerminal() {
+			t.Error("stdinIsTerminal() = true for /dev/null; an install redirected from it would prompt")
+		}
+	})
+
+	t.Run("a pipe is not a terminal", func(t *testing.T) {
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("os.Pipe() error = %v", err)
+		}
+		t.Cleanup(func() { r.Close(); w.Close() })
+		swapStdin(t, r)
+
+		if stdinIsTerminal() {
+			t.Error("stdinIsTerminal() = true for a pipe")
+		}
+	})
+
+	t.Run("a closed descriptor is not a terminal", func(t *testing.T) {
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatalf("os.Pipe() error = %v", err)
+		}
+		w.Close()
+		r.Close()
+		swapStdin(t, r)
+
+		if stdinIsTerminal() {
+			t.Error("stdinIsTerminal() = true for a closed descriptor")
+		}
+	})
+}
+
 // targetsFromLabels is the half of the prompt that does not need a terminal:
 // what the checklist answered, mapped back onto targets.
 func TestTargetsFromLabels(t *testing.T) {
@@ -1721,6 +1781,18 @@ func TestResolveKimiHome(t *testing.T) {
 		"the filesystem root is refused":            {kimiCodeHome: "/", home: "/home/u", wantErr: "will not install into"},
 		"the home directory is refused":             {kimiCodeHome: "/home/u", home: "/home/u", wantErr: "will not install into"},
 		"the home directory, uncleaned, is refused": {kimiCodeHome: "/home/u/", home: "/home/u", wantErr: "will not install into"},
+		// An ancestor of home is the same argument one level up: the manifest,
+		// the backup directory and later a removal root would sit above the
+		// user's home. resolveKimiHome is the only gate on this, because for
+		// Kimi the removal guard cannot double as an "under $HOME?" check.
+		"the parent of home is refused":     {kimiCodeHome: "/home", home: "/home/u", wantErr: "will not install into"},
+		"home/.. is refused after cleaning": {kimiCodeHome: "/home/u/..", home: "/home/u", wantErr: "will not install into"},
+		"a distant ancestor is refused":     {kimiCodeHome: "/home/u/../..", home: "/home/u/nested/deep", wantErr: "will not install into"},
+		// A path that merely shares a prefix is not an ancestor.
+		"a sibling with a shared prefix is fine": {kimiCodeHome: "/home/under", home: "/home/u", want: "/home/under"},
+		// Unrelated absolute paths stay allowed: pointing KIMI_CODE_HOME
+		// outside the home directory is the whole point of the variable.
+		"an unrelated system path is allowed": {kimiCodeHome: "/opt/kimi", home: "/home/u", want: "/opt/kimi"},
 		// A relative HOME is refused whether or not KIMI_CODE_HOME is set.
 		"a bad home is refused":                       {home: "home/u", wantErr: "not an absolute path"},
 		"a bad home is refused even with an override": {kimiCodeHome: "/opt/k", home: "", wantErr: "not an absolute path"},
@@ -2656,6 +2728,87 @@ func treeState(t *testing.T, root string) map[string]string {
 	return snap
 }
 
+// TestInstallCmd_NonInteractive: with more than one CLI detected and no
+// terminal, the flag path installs for all of them rather than reaching a
+// prompt it cannot answer.
+//
+// Both stdin shapes below behaved differently on main, and differently from
+// each other: at EOF the prompt died (`Error: ^D`, nothing installed), while a
+// pipe carrying bytes was consumed as the answer and installed for one target.
+// Both are now the same, and both directions need pinning — the /dev/null case
+// is the one a mode-bit terminal check gets wrong.
+func TestInstallCmd_NonInteractive(t *testing.T) {
+	stdins := map[string]func(t *testing.T) *os.File{
+		"stdin at EOF": func(t *testing.T) *os.File {
+			f, err := os.Open(os.DevNull)
+			if err != nil {
+				t.Fatalf("open %s error = %v", os.DevNull, err)
+			}
+			t.Cleanup(func() { f.Close() })
+			return f
+		},
+		"a pipe carrying an answer": func(t *testing.T) *os.File {
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatalf("os.Pipe() error = %v", err)
+			}
+			// What a CI script that pipes `printf '\n'` into install.sh sends.
+			if _, err := w.WriteString("\n\n\n"); err != nil {
+				t.Fatalf("write error = %v", err)
+			}
+			w.Close()
+			t.Cleanup(func() { r.Close() })
+			return r
+		},
+	}
+
+	for name, open := range stdins {
+		t.Run(name+" installs for every detected CLI", func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("KIMI_CODE_HOME", "")
+			loggingCLI(t, "claude", "opencode")
+			t.Setenv("DEVEXP_DIR", refusalRepo(t))
+			orig := os.Stdin
+			t.Cleanup(func() { os.Stdin = orig })
+			os.Stdin = open(t)
+
+			out, err := executeRoot(t, "install", "--dry-run")
+
+			if err != nil {
+				t.Fatalf("install error = %v\n%s", err, out)
+			}
+			for _, want := range []string{"Installing for Claude Code", "Installing for opencode"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("output does not contain %q:\n%s", want, out)
+				}
+			}
+			// Nothing may have been read from stdin: whatever is there belongs
+			// to whatever runs next, not to a prompt that should not appear.
+			if strings.Contains(out, "Install for") {
+				t.Errorf("prompted without a terminal:\n%s", out)
+			}
+		})
+	}
+
+	// --target still pins the old single-target outcome, which is what a
+	// script relying on the piped answer should move to.
+	t.Run("--target pins a single CLI without a terminal", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		t.Setenv("KIMI_CODE_HOME", "")
+		loggingCLI(t, "claude", "opencode")
+		t.Setenv("DEVEXP_DIR", refusalRepo(t))
+
+		out, err := executeRoot(t, "install", "--dry-run", "--target", "claude")
+
+		if err != nil {
+			t.Fatalf("install error = %v\n%s", err, out)
+		}
+		if !strings.Contains(out, "Installing for Claude Code") || strings.Contains(out, "Installing for opencode") {
+			t.Errorf("--target claude did not pin the target:\n%s", out)
+		}
+	})
+}
+
 // TestInstallCmd_KimiSelection: Kimi is a target the user can pick, and
 // picking it installs nothing until #112-#114 land. The point of these cases
 // is that "nothing" stays nothing — no file under the Kimi home, and no output
@@ -2691,6 +2844,20 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		}
 		if !strings.Contains(out, "not a supported install target yet") {
 			t.Errorf("output never says Kimi is unsupported:\n%s", out)
+		}
+		// The root is environment-derived, so it is quoted like everything
+		// else devexp prints from outside itself (backup.go).
+		if !strings.Contains(out, strconv.Quote(filepath.Join(home, ".kimi-code"))) {
+			t.Errorf("output does not quote the Kimi root:\n%s", out)
+		}
+		// This exit is a documented outcome, not a misuse: the notice
+		// explaining it must not be pushed off-screen by a usage dump, and
+		// the message must appear once.
+		if strings.Contains(out, "Usage:") {
+			t.Errorf("usage dumped on a deliberate exit:\n%s", out)
+		}
+		if n := strings.Count(out+err.Error(), "nothing was installed:"); n != 1 {
+			t.Errorf("the error is reported %d times, want once:\n%s", n, out)
 		}
 		if after := treeState(t, home); !reflect.DeepEqual(before, after) {
 			t.Errorf("wrote under the Kimi home:\nbefore %v\nafter  %v", before, after)
@@ -2734,6 +2901,26 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 			if err != nil && !strings.Contains(err.Error(), "kimi install:") {
 				t.Errorf("KIMI_CODE_HOME=%q: error = %v, want it prefixed with the target", bad, err)
 			}
+		}
+	})
+
+	// A KIMI_CODE_HOME is whatever the environment says. Unquoted, an embedded
+	// newline forges a line of devexp output and an escape sequence reaches
+	// the terminal.
+	t.Run("a hostile KIMI_CODE_HOME cannot forge output", func(t *testing.T) {
+		home, _ := setup(t, "0.42.0")
+		t.Setenv("KIMI_CODE_HOME", filepath.Join(home, "k")+"\n[devexp] Installed 34 agent(s).\x1b[2J")
+
+		out, err := executeRoot(t, "install", "--target", "kimi")
+
+		if err == nil {
+			t.Fatalf("install succeeded; want the run to report it installed nothing\n%s", out)
+		}
+		if strings.Contains(out, "\n[devexp] Installed 34 agent(s).") {
+			t.Errorf("an environment value forged a line of devexp output:\n%q", out)
+		}
+		if strings.Contains(out, "\x1b[2J") {
+			t.Errorf("an escape sequence from the environment reached the terminal:\n%q", out)
 		}
 	})
 

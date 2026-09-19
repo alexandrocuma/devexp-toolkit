@@ -26,7 +26,10 @@ var (
 var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install devexp agents, skills, hooks, and MCP servers",
-	RunE:  runInstall,
+	// Execute prints the error itself; without this cobra prints it too, so a
+	// failed install said everything twice. uninstallCmd already does this.
+	SilenceErrors: true,
+	RunE:          runInstall,
 }
 
 func init() {
@@ -86,6 +89,14 @@ var notYetSupported = map[target]bool{targetKimi: true}
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 func runInstall(cmd *cobra.Command, args []string) error {
+	// The flags parsed, so anything that fails from here on is a run that went
+	// wrong, not a command typed wrong, and the usage block helps nobody. It
+	// matters more now that a deliberate outcome — selecting only a target
+	// that installs nothing yet — exits non-zero: the notice explaining it
+	// would otherwise be three screens above the usage dump. A bad flag still
+	// gets usage, because this line has not run yet.
+	cmd.SilenceUsage = true
+
 	// Before anything else, flags and wizard alike: repo.Resolve may already
 	// write (a standalone binary extracts its assets under the user cache dir,
 	// which a relative HOME puts under the current directory), and MCP

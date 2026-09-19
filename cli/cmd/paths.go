@@ -129,9 +129,18 @@ func resolveKimiHome(kimiCodeHome, home string) (string, error) {
 		return "", fmt.Errorf("KIMI_CODE_HOME is %q, not an absolute path", kimiCodeHome)
 	}
 	root := filepath.Clean(kimiCodeHome)
-	// The root gets a manifest, a backup directory and, from #113, removals.
-	// Neither the filesystem root nor the home directory itself may be it.
-	if root == string(filepath.Separator) || root == home {
+	// The root gets a manifest, a backup directory and, from #113, removals,
+	// so it may not be the filesystem root, the home directory, or anything
+	// containing the home directory (/Users, $HOME/.., …). An unrelated
+	// absolute path such as /opt/kimi is deliberately allowed: pointing
+	// $KIMI_CODE_HOME somewhere outside $HOME is the whole reason it exists,
+	// and removals stay guarded there because kimiPaths.home is the root's
+	// parent, not $HOME.
+	//
+	// This is the only gate on where a Kimi install may land. For the other
+	// two targets the removal guard doubles as an "is it under $HOME?" check;
+	// for Kimi it cannot, by design.
+	if root == string(filepath.Separator) || root == home || strings.HasPrefix(home, root+string(filepath.Separator)) {
 		return "", fmt.Errorf("KIMI_CODE_HOME is %q, which devexp will not install into", root)
 	}
 	return root, nil

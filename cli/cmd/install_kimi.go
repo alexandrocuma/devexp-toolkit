@@ -25,7 +25,9 @@ func doInstallKimi(opts *installOpts) error {
 	ui.Info("Installing for Kimi Code CLI...")
 	fmt.Println()
 	ui.Warn("Kimi Code CLI is not a supported install target yet (#110) — nothing was installed.")
-	fmt.Printf("  Nothing was written to %s\n", p.root)
+	// Quoted: the root comes from $KIMI_CODE_HOME, and nothing from outside
+	// devexp reaches the terminal raw (backup.go).
+	fmt.Printf("  Nothing was written to %q\n", p.root)
 	fmt.Println("  Agents, skills, MCPs and hooks arrive in #112-#114.")
 	fmt.Println()
 	return nil
