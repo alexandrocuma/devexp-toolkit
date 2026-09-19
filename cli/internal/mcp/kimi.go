@@ -101,8 +101,17 @@ func InstallKimi(mcps []MCP, env map[string]string, path string, owned map[strin
 	// Every name this run installs, whether or not it could be written. It is
 	// what "no longer installed" means for pruning: a deselection or a
 	// registry change, never a step that merely could not run.
+	//
+	// A project-scoped MCP is left out deliberately. Unlike the skips below,
+	// which mean "not this run", it means devexp will never write this one to
+	// Kimi's user file on any run — so an entry left from before the registry
+	// changed its scope is stale, and is pruned like any other MCP devexp no
+	// longer installs there.
 	selected := make(map[string]bool, len(mcps))
 	for _, m := range mcps {
+		if m.scope() == "project" {
+			continue
+		}
 		selected[m.Name] = true
 	}
 
@@ -122,8 +131,9 @@ func InstallKimi(mcps []MCP, env map[string]string, path string, owned map[strin
 
 	for _, m := range mcps {
 		if m.scope() == "project" {
+			// No keepOwned: see `selected` above — this one is not installed
+			// here at all, so an entry from an earlier scope is pruned.
 			ui.Skipped(m.Name, "project-scoped MCPs are not installed for Kimi")
-			keepOwned(m.Name)
 			continue
 		}
 		r := resolveMCP(m, env)
@@ -158,7 +168,14 @@ func InstallKimi(mcps []MCP, env map[string]string, path string, owned map[strin
 			// delete something they wrote. The cost is that a lost manifest
 			// leaves devexp's own entry unmanaged until --reinstall-mcps.
 			ui.Skipped(m.Name, "already configured")
-			keepOwned(m.Name)
+			if reinstall {
+				// The one way to say "this one is devexp's" about an entry
+				// devexp cannot prove it wrote — and the escape hatch the
+				// comment above promises, for a manifest that was lost.
+				newOwned[m.Name] = hash
+			} else {
+				keepOwned(m.Name)
+			}
 			continue
 		case exists && !ownsEntry(existing, owned[m.Name]) && !reinstall:
 			ui.Skipped(m.Name, "a user-defined entry with this name exists — left untouched (--reinstall-mcps replaces it)")
@@ -547,14 +564,16 @@ func requiredIfPresent(obj map[string]json.RawMessage, key string) error {
 
 // urlField mirrors what Kimi's url() actually checks, which is `new URL` on
 // the trimmed value: a scheme, and — for the schemes the URL standard calls
-// special — a host. It deliberately insists on nothing else. Requiring
-// http/https would warn about a file:// entry that loads, and Go's url.Parse
-// alone would accept "not a url" as a relative path and a port of any length
-// that the URL constructor refuses.
+// special — a host. It deliberately insists on nothing else, because this
+// feeds a warning that tells the user an entry is costing them every MCP
+// server in the file. Requiring http/https would fire it on a file:// entry
+// that loads.
 //
-// Where url.Parse fails but the URL constructor does not — a stray %zz, a tab
-// — this accepts, because the warning it feeds says the user's entry is
-// costing them every MCP server in the file, and that has to be true.
+// Go's parser is stricter than `new URL` in exactly three places — percent
+// escapes, userinfo, and stray control bytes other than NUL — and those are
+// tolerated. It is *not* stricter about ports or hosts, so every other parse
+// failure is a URL Kimi rejects too, and is reported rather than waved
+// through.
 func urlField(obj map[string]json.RawMessage, key string) error {
 	if err := requiredStringField(obj, key); err != nil {
 		return err
@@ -567,18 +586,53 @@ func urlField(obj map[string]json.RawMessage, key string) error {
 	}
 	u, err := url.Parse(v)
 	if err != nil {
-		return nil
+		if toleratedURLError(err, v) {
+			return nil
+		}
+		return fmt.Errorf("%q is not a URL (%v)", key, err)
 	}
-	if specialURLScheme[strings.ToLower(u.Scheme)] && u.Host == "" {
+	// Hostname(), not Host: for "http://user@:80" the host is ":80" — not
+	// empty, and not a host either.
+	host := u.Hostname()
+	if specialURLScheme[strings.ToLower(u.Scheme)] && host == "" {
 		return fmt.Errorf("%q is not a URL (%s: needs a host)", key, u.Scheme)
 	}
+	// A bracketed IPv6 literal is colon-separated once the brackets come off,
+	// so its colons are not the ones this is looking for. Anywhere else a
+	// colon in the hostname means a second port, as in "e.com:8080:9090".
+	forbidden := " :[]"
+	if strings.HasPrefix(u.Host, "[") {
+		forbidden = " []"
+	}
+	if strings.ContainsAny(host, forbidden) {
+		return fmt.Errorf("%q has a host Kimi's URL parser rejects", key)
+	}
 	if port := u.Port(); port != "" {
+		// Port 0 is a valid port to the URL standard and loads in Kimi; only
+		// the upper bound is real. Atoi of a digits-only string is never
+		// negative, and fails only on something far past 65535 anyway.
 		n, convErr := strconv.Atoi(port)
-		if convErr != nil || n < 1 || n > 65535 {
+		if convErr != nil || n > 65535 {
 			return fmt.Errorf("%q has a port Kimi's URL parser rejects", key)
 		}
 	}
 	return nil
+}
+
+// toleratedURLError reports whether err is one of the three failures where Go
+// is stricter than the URL constructor, so the value is a URL Kimi loads.
+// A NUL byte is the exception inside the third: Go and Kimi both reject it.
+func toleratedURLError(err error, v string) bool {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "invalid URL escape"):
+		return true
+	case strings.Contains(msg, "invalid userinfo"):
+		return true
+	case strings.Contains(msg, "invalid control character"):
+		return !strings.ContainsRune(v, 0)
+	}
+	return false
 }
 
 var (
@@ -597,9 +651,20 @@ func stringsField(obj map[string]json.RawMessage, key string) error {
 	if err := notNull(raw, key); err != nil {
 		return err
 	}
-	var items []string
+	// Decoded into []string, a null member arrives as "" with no error — the
+	// same hole notNull closes one level up. array(string()) rejects it, and
+	// with it the whole file.
+	var items []json.RawMessage
 	if err := json.Unmarshal(raw, &items); err != nil {
 		return fmt.Errorf("%q is not a list of strings", key)
+	}
+	for i, item := range items {
+		if isJSONNull(item) {
+			return fmt.Errorf("%q has a null at position %d, which Kimi does not accept", key, i)
+		}
+		if !isJSONString(item) {
+			return fmt.Errorf("%q is not a list of strings", key)
+		}
 	}
 	return nil
 }
@@ -612,11 +677,32 @@ func stringMapField(obj map[string]json.RawMessage, key string) error {
 	if err := notNull(raw, key); err != nil {
 		return err
 	}
-	var m map[string]string
+	// Same hole as stringsField: record(string(), string()) rejects a null
+	// value, and decoding into map[string]string would turn it into "".
+	var m map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return fmt.Errorf("%q is not an object of strings", key)
 	}
+	for _, name := range sortedRawKeys(m) {
+		if isJSONNull(m[name]) {
+			return fmt.Errorf("%q has a null for %q, which Kimi does not accept", key, name)
+		}
+		if !isJSONString(m[name]) {
+			return fmt.Errorf("%q is not an object of strings", key)
+		}
+	}
 	return nil
+}
+
+// sortedRawKeys keeps the message about a bad member the same on every run:
+// map iteration order is not.
+func sortedRawKeys(m map[string]json.RawMessage) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func boolField(obj map[string]json.RawMessage, key string) error {

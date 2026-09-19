@@ -17,29 +17,40 @@ import (
 // and load no MCP server at all, and each valid one loaded.
 // TestValidateKimiEntry_URL: Kimi validates with zod's url(), which is
 // `new URL(value.trim())` — no protocol constraint, and no host constraint
-// beyond what the URL standard imposes itself. Every row here was measured
-// against the real 2.0.1. It matters in both directions: this feeds a warning
-// that tells the user an entry is costing them every MCP server in the file.
+// beyond what the URL standard imposes itself. Rows marked "measured" were run
+// against the real 2.0.1 with a loading entry and a known-bad entry as
+// controls in the same batch; the rest are `new URL` in node, the same parser.
+// It matters in both directions: this feeds a warning that tells the user an
+// entry is costing them every MCP server in the file.
 func TestValidateKimiEntry_URL(t *testing.T) {
 	cases := map[string]struct {
 		url  string
 		want bool // whether Kimi loads it
 	}{
-		"a plain https url":         {url: "https://e.com/mcp", want: true},
-		"a port":                    {url: "http://e.com:8080/mcp", want: true},
-		"an ipv6 host":              {url: "http://[::1]:8080/mcp", want: true},
-		"an uppercase scheme":       {url: "HTTPS://E.com", want: true},
-		"a non-http scheme":         {url: "ftp://e.com/x", want: true},
-		"a file url with no host":   {url: "file:///etc/passwd", want: true},
-		"surrounding whitespace":    {url: "  https://e.com/mcp  ", want: true},
-		"a stray percent escape":    {url: "https://e.com/%zz", want: true},
-		"an embedded tab":           {url: "https://e.com\t/mcp", want: true},
-		"a space in the userinfo":   {url: "https://user:pa ss@e.com/mcp", want: true},
+		"a plain https url":       {url: "https://e.com/mcp", want: true},
+		"a port":                  {url: "http://e.com:8080/mcp", want: true},
+		"an ipv6 host":            {url: "http://[::1]:8080/mcp", want: true},
+		"an uppercase scheme":     {url: "HTTPS://E.com", want: true},
+		"a non-http scheme":       {url: "ftp://e.com/x", want: true},
+		"a file url with no host": {url: "file:///etc/passwd", want: true},
+		"surrounding whitespace":  {url: "  https://e.com/mcp  ", want: true},
+		// measured: port 0 is a valid port to the URL standard.
+		"a port of zero": {url: "https://e.com:0/mcp", want: true},
+
 		"no scheme at all":          {url: "not a url", want: false},
 		"a scheme and nothing else": {url: "https://", want: false},
-		"a port out of range":       {url: "https://e.com:99999999999999/mcp", want: false},
-		"a port of zero":            {url: "https://e.com:0/mcp", want: false},
 		"an empty string":           {url: "", want: false},
+		"a port out of range":       {url: "https://e.com:99999999999999/mcp", want: false},
+		// measured: Go fails on these too, and tolerating every parse error
+		// was letting them through.
+		"a port that is not a number":   {url: "https://e.com:abc/", want: false},
+		"an unterminated ipv6 bracket":  {url: "https://[abc", want: false},
+		"a space in the host":           {url: "http://e xample.com/", want: false},
+		"two ports":                     {url: "https://e.com:8080:9090/", want: false},
+		"userinfo but no host":          {url: "http://user@:80", want: false},
+		"a bad port on a custom scheme": {url: "custom://e.com:abc/x", want: false},
+		"an unterminated ipv6 literal":  {url: "https://[::1", want: false},
+		"a NUL byte":                    {url: "https://e\x00.com/", want: false},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -53,6 +64,28 @@ func TestValidateKimiEntry_URL(t *testing.T) {
 			}
 			if !tc.want && got == nil {
 				t.Errorf("accepted %q, but Kimi rejects the whole file for it", tc.url)
+			}
+		})
+	}
+}
+
+// TestValidateKimiEntry_URLGoIsStricter: the three classes where Go's parser
+// refuses a URL the URL constructor accepts. They are the only parse failures
+// devexp tolerates — everything else Go refuses, Kimi refuses too — so they
+// are pinned apart from the matrix above, as their own rule.
+func TestValidateKimiEntry_URLGoIsStricter(t *testing.T) {
+	for name, u := range map[string]string{
+		"a stray percent escape":  "https://e.com/%zz",
+		"an embedded tab":         "https://e.com\t/mcp",
+		"a space in the userinfo": "https://user:pa ss@e.com/mcp",
+	} {
+		t.Run(name, func(t *testing.T) {
+			entry, err := json.Marshal(map[string]string{"transport": "http", "url": u})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := validateKimiEntry(entry); err != nil {
+				t.Errorf("rejected %q (%v), but Kimi loads it", u, err)
 			}
 		})
 	}
@@ -107,6 +140,16 @@ func TestValidateKimiEntry(t *testing.T) {
 		"null bearer env var": {entry: `{"transport":"http","url":"https://e.com","bearerTokenEnvVar":null}`, wantErr: `"bearerTokenEnvVar" is null`},
 		"null url":            {entry: `{"transport":"http","url":null}`, wantErr: `"url" is null`},
 		"null command":        {entry: `{"transport":"stdio","command":null}`, wantErr: `"command" is null`},
+		// A null *member* is the same hole one level down: decoded into
+		// []string or map[string]string it arrives as "", and Kimi rejects
+		// array(string()) / record(string(), string()) for it. Measured
+		// against 2.0.1 with controls.
+		"a null inside args":        {entry: `{"command":"echo","args":["a",null]}`, wantErr: `"args" has a null at position 1`},
+		"a null inside env":         {entry: `{"command":"echo","env":{"A":null}}`, wantErr: `"env" has a null for "A"`},
+		"a null inside headers":     {entry: `{"transport":"http","url":"https://e.com","headers":{"X":null}}`, wantErr: `"headers" has a null for "X"`},
+		"a null inside a tool list": {entry: `{"command":"echo","enabledTools":["a",null]}`, wantErr: `"enabledTools" has a null at position 1`},
+		"a number inside args":      {entry: `{"command":"echo","args":["a",1]}`, wantErr: `"args" is not a list of strings`},
+		"a number inside env":       {entry: `{"command":"echo","env":{"A":1}}`, wantErr: `"env" is not an object of strings`},
 		// Kimi strips unknown keys before validating, null or not.
 		"an unknown key that is null": {entry: `{"command":"echo","whatever":null}`},
 		// Kimi infers from `typeof obj.command === "string"`, so a null
@@ -747,10 +790,6 @@ func TestInstallKimi_KeepsAnEntryItCannotConfigureThisRun(t *testing.T) {
 		want string // what the output has to say
 	}{
 		"a required env var is unset this run": {mcp: needsEnv, want: "[REQUIRED]"},
-		"the registry made it project-scoped": {
-			mcp:  MCP{Name: "ui-inspector", Command: "node", Scope: "project"},
-			want: "project-scoped",
-		},
 		"the registry entry became one Kimi rejects": {
 			mcp:  MCP{Name: "ui-inspector", Transport: "http", URL: "not a url"},
 			want: "Kimi rejects",
@@ -917,5 +956,80 @@ func TestEntryFingerprint_NumbersAsWritten(t *testing.T) {
 	spaced := entryFingerprint(json.RawMessage("{\n  \"command\" : \"npx\"\n}"))
 	if spaced != entryFingerprint(json.RawMessage(`{"command":"npx"}`)) {
 		t.Errorf("whitespace changed the fingerprint")
+	}
+}
+
+// A registry that changes an MCP to project scope is saying devexp never
+// writes it to Kimi's user file — not "not this run". The entry devexp put
+// there under the old scope is stale, so it goes the way any other
+// no-longer-installed entry goes.
+func TestInstallKimi_PrunesAnMCPThatBecameProjectScoped(t *testing.T) {
+	path := kimiFile(t, "")
+	owned, out, err := install(t, path, []MCP{context7}, nil, nil, false, false)
+	if err != nil {
+		t.Fatalf("first install: %v\n%s", err, out)
+	}
+
+	scoped := context7
+	scoped.Scope = "project"
+	again, out, err := install(t, path, []MCP{scoped}, nil, owned, false, false)
+
+	if err != nil {
+		t.Fatalf("second install: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "project-scoped") {
+		t.Errorf("output does not explain the skip:\n%s", out)
+	}
+	if _, still := serversOf(t, path)["context7"]; still {
+		t.Errorf("the entry devexp no longer installs here is still in the file")
+	}
+	if _, tracked := again["context7"]; tracked {
+		t.Errorf("a removed entry is still tracked: %v", again)
+	}
+}
+
+// --reinstall-mcps is the documented way to hand an entry back to devexp, so
+// it has to work for the case that needs it most: a manifest that was lost,
+// where the entry on disk is exactly what devexp installs and devexp cannot
+// prove it wrote it.
+func TestInstallKimi_ReinstallReclaimsAfterALostManifest(t *testing.T) {
+	path := kimiFile(t, "")
+	if _, out, err := install(t, path, []MCP{context7}, nil, nil, false, false); err != nil {
+		t.Fatalf("first install: %v\n%s", err, out)
+	}
+	before, _ := os.ReadFile(path)
+
+	// The manifest is gone: nothing is owned any more.
+	plain, out, err := install(t, path, []MCP{context7}, nil, nil, false, false)
+	if err != nil {
+		t.Fatalf("second install: %v\n%s", err, out)
+	}
+	if _, claimed := plain["context7"]; claimed {
+		t.Errorf("a normal run adopted the entry: %v", plain)
+	}
+
+	reclaimed, out, err := install(t, path, []MCP{context7}, nil, nil, false, true)
+
+	if err != nil {
+		t.Fatalf("reinstall: %v\n%s", err, out)
+	}
+	if reclaimed["context7"] == "" {
+		t.Errorf("--reinstall-mcps did not hand the entry back: %v", reclaimed)
+	}
+	// Reclaiming is a manifest change, not a file change.
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Errorf("the file was rewritten:\n%s", after)
+	}
+	if strings.Contains(out, "Saved:") {
+		t.Errorf("an unchanged entry was rewritten:\n%s", out)
+	}
+	// And from here on it is devexp's again: a registry change updates it.
+	changed := MCP{Name: "context7", Command: "npx", Args: []string{"-y", "@upstash/context7-mcp@2"}}
+	_, out, err = install(t, path, []MCP{changed}, nil, reclaimed, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "context7 — updated") {
+		t.Errorf("the reclaimed entry is still treated as the user's:\n%s", out)
 	}
 }
