@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests install.sh's HOME check (#126) and its build-failure message (#104),
+# Tests install.sh's HOME check and its build-failure message,
 # without building anything.
 #
 # In a clone without bin/devexp, install.sh stages the assets and runs

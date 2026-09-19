@@ -28,7 +28,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Every path below is built from HOME. Unset, empty or relative, it would point
 # at / or at the current directory (a dotfiles checkout, say), so refuse before
 # looking at anything — the same rule `devexp install` / `devexp uninstall`
-# apply (#126).
+# apply.
 [[ "${HOME:-}" == /* ]] || die "HOME is \"${HOME:-}\", not an absolute path — refusing to remove anything; set HOME and re-run"
 
 [[ -d "$REPO_DIR/agents" ]] || die "agents/ directory not found. Is this the devexp repo?"
@@ -101,7 +101,7 @@ LEFT_THROUGH_LINK=()  # entries of a target directory that is a symlink or behin
 LEFT_LINKS=()         # entries that are symlinks themselves
 
 # The helpers below are one line each, like every function here: a top-level
-# `local` once aborted the script (#109).
+# `local` once aborted the script.
 #
 # behind_link <dir>: whether <dir>, a target directory under HOME, is a symlink
 # or behind one: resolved, it isn't where its path says. Both sides are
@@ -110,9 +110,9 @@ LEFT_LINKS=()         # entries that are symlinks themselves
 behind_link() { [[ -L "$1" ]] || [[ "$(cd -P "$1" 2>/dev/null && pwd -P)" != "$(cd -P "$HOME" 2>/dev/null && pwd -P)/${1#"$HOME"/}" ]]; }
 # removable <dir> <name> <-f|-d>: whether <dir>/<name> is a file (-f) or
 # directory (-d) this script may remove. `devexp install` never removes an
-# entry that is itself a symlink (#117), the user's own setup, and writes
+# entry that is itself a symlink, the user's own setup, and writes
 # through a target directory that is a symlink or behind one (a dotfiles
-# setup) but never removes through it (#128). Such an entry is recorded to list
+# setup) but never removes through it. Such an entry is recorded to list
 # instead; a symlinked entry is reported as one wherever it is, as install does.
 removable() { test "$3" "$1/$2" || return 1; if [[ -L "$1/$2" ]]; then LEFT_LINKS+=("$1/$2"); return 1; fi; if behind_link "$1"; then LEFT_THROUGH_LINK+=("$1/$2"); return 1; fi; }
 # remove_entry <path> <rm flags>: removes what the preview listed, unless it or
@@ -658,12 +658,12 @@ settings_path = sys.argv[2]
 # Identify devexp hooks by what the registry says they are, not by where they
 # happen to live. Matching only on repo_dir left behind any registration made
 # by an earlier release-binary install, which then ran forever from a stale
-# cache -- see issue #93. Disabled hooks are included: their foreign-root
+# cache. Disabled hooks are included: their foreign-root
 # copies must go too.
 SCRIPT_DIR = 'hooks/claude-code/'
 # A path with any of these is more than a plain path (arguments, env
-# assignments, expansions, quoting), so devexp registers it single-quoted
-# (#135). Same rules as commandPath/isManagedScriptPath in cli/internal/hooks.
+# assignments, expansions, quoting), so devexp registers it single-quoted.
+# Same rules as commandPath/isManagedScriptPath in cli/internal/hooks.
 SHELL_SYNTAX = set(' \t\n\r$~\'"`\\;&|<>()*?[]{}!#')
 try:
     with open(os.path.join(repo_dir, 'hooks', 'registry.json')) as f:
@@ -725,7 +725,7 @@ def is_orphaned(p):
     # Whether p, the path a devexp-form command runs, is a script gone from
     # <root>/hooks/claude-code/ of a devexp install root: this repo, or another
     # checkout or asset cache devexp was installed from, whose registry has
-    # since dropped the hook (#150). The name can't be checked against a
+    # since dropped the hook. The name can't be checked against a
     # registry, so the root is. A user's hook directory has no registry; a root
     # deleted outright can't be told from a user's and is left alone. Same rules
     # as isStaleDevexpHook / isOrphanedDevexpHook in cli/internal/hooks.
@@ -754,7 +754,7 @@ def is_orphaned(p):
 def is_devexp_handler(h):
     # devexp registers only {"type": "command", "command": <path>}. A handler
     # with args is spawned without a shell (exec form), and one of another type
-    # runs no command: both are the user's, whatever path they name (#137).
+    # runs no command: both are the user's, whatever path they name.
     return (isinstance(h, dict) and h.get('type') == 'command'
             and 'args' not in h and is_devexp_hook(h.get('command')))
 
@@ -916,7 +916,7 @@ if not same:
     print("  [skip] settings.json: rewriting it would change more than its hooks, so it was left untouched")
     sys.exit(0)
 # Encoded here, so no text-mode newline translation applies. Atomic, and
-# through a symlinked settings.json to the file it points at (#124).
+# through a symlinked settings.json to the file it points at.
 try:
     write_atomic(settings_path, new_text.encode('utf-8'))
 except WriteRefused as e:

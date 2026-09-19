@@ -42,7 +42,7 @@ const (
 // (`go build`, `go run`, `go test`); every other value is a tagged build.
 const devBuild = "dev"
 
-// Resolve decides which assets to install from (#134):
+// Resolve decides which assets to install from:
 //   - DEVEXP_DIR, when set, in every build. It must be a devexp-toolkit
 //     checkout; otherwise Resolve fails rather than look elsewhere, since the
 //     user named a directory and silently installing from another would hide
@@ -65,7 +65,7 @@ const devBuild = "dev"
 //
 // RepoDir is always absolute. Installers build paths that outlive this process
 // from it — Claude Code hook commands are repoDir/<script> — and a relative one
-// would resolve against whatever directory those are later run from (#126).
+// would resolve against whatever directory those are later run from.
 func Resolve(version string, announce func(Source)) (Source, error) {
 	src, err := locate(version)
 	if err != nil {
@@ -424,7 +424,7 @@ var userCacheDir = os.UserCacheDir
 // swap in a complete tree, so the directory always points at a complete one.
 // The sibling it pointed at before is then removed.
 //
-// With no usable cache directory it refuses rather than fall back (#126). The
+// With no usable cache directory it refuses rather than fall back. The
 // old fallback, os.TempDir(), was either a relative $TMPDIR — a directory under
 // wherever devexp runs, wiped and re-extracted — or the shared /tmp, which is
 // not private to the user yet was reused whenever its version marker matched.

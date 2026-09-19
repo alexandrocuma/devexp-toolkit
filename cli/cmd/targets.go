@@ -53,7 +53,7 @@ func announceTargets(hasClaude, hasOpencode bool) (choice string, err error) {
 }
 
 // detectTargets is the flag path's shell: look up what's installed, announce
-// it, then decide. Note it prints no trailing blank line — runInstall does.
+// it, then decide. It prints no trailing blank line — runInstall does.
 func detectTargets() (claude, opencode bool, err error) {
 	hasClaude := commandExists("claude")
 	hasOpencode := commandExists("opencode")

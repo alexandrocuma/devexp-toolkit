@@ -72,10 +72,8 @@ func SelectCLI() (string, error) { return SelectPlatform() }
 
 // ── Multi-select ──────────────────────────────────────────────────────────────
 
-// MultiSelect shows a toggleable checklist. All items start selected.
-// The user navigates with arrows and presses Enter to toggle items.
-// Selecting "Done" or "Toggle all" are special actions.
-// Returns the names of all selected items.
+// MultiSelect shows a toggleable checklist; all items start selected.
+// "Done" confirms, "Toggle all" flips every item. Returns the selected names.
 func MultiSelect(label string, items []string) ([]string, error) {
 	selected := make([]bool, len(items))
 	for i := range selected {
@@ -129,9 +127,9 @@ func buildMultiSelectDisplay(items []string, selected []bool) []string {
 // idx >= 2 toggles the item at idx-2.
 func applyMultiSelectChoice(selected []bool, idx int) (done bool) {
 	switch idx {
-	case 0: // Done
+	case 0:
 		return true
-	case 1: // Toggle all
+	case 1:
 		count := 0
 		for _, s := range selected {
 			if s {
@@ -142,7 +140,7 @@ func applyMultiSelectChoice(selected []bool, idx int) (done bool) {
 		for i := range selected {
 			selected[i] = !allSelected
 		}
-	default: // Toggle individual item
+	default:
 		selected[idx-2] = !selected[idx-2]
 	}
 	return false

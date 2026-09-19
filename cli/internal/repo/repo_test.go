@@ -44,8 +44,8 @@ func makeRepoDir(t *testing.T, dir string) {
 }
 
 // TestLocate_DevexpDir: DEVEXP_DIR is resolved to a clean absolute
-// path, relative forms included (#126), and must be a devexp-toolkit checkout,
-// not merely a directory of the same shape (#134) — in dev and tagged builds.
+// path, relative forms included, and must be a devexp-toolkit checkout,
+// not merely a directory of the same shape — in dev and tagged builds.
 func TestLocate_DevexpDir(t *testing.T) {
 	tests := map[string]struct {
 		devexpDir string // relative values are relative to the test's cwd
@@ -1182,7 +1182,7 @@ func assertNoPartialTrees(t *testing.T, dest string) {
 
 // TestExtractEmbedded_NoUsableCacheDir: with no cache dir, or a relative one,
 // extraction is refused — never redirected to os.TempDir() (a relative $TMPDIR,
-// or the shared /tmp) and never under the cwd (#126).
+// or the shared /tmp) and never under the cwd.
 func TestExtractEmbedded_NoUsableCacheDir(t *testing.T) {
 	tests := map[string]struct {
 		cacheDir func() (string, error)

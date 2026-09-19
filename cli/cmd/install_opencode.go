@@ -41,8 +41,8 @@ func doInstallOpencode(opts *installOpts) error {
 		if err := installMCPsOpencode(opts, configPath); err != nil {
 			// A config.json the merge can't edit safely — opencode reads it as
 			// JSONC, so comments are valid there — costs only the MCP step:
-			// agents, skills and hooks still install (#157 review). With
-			// --mcps-only (above) it stays an error.
+			// agents, skills and hooks still install. With --mcps-only (above)
+			// it stays an error.
 			var refused *mcp.ConfigRefusedError
 			if !errors.As(err, &refused) {
 				return err

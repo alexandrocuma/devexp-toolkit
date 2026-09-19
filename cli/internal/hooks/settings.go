@@ -21,8 +21,7 @@ type member struct {
 // as the bytes it was read as. A hook in settings.json carries fields devexp
 // never interprets — timeout, args, shell, async, if, statusMessage, an http
 // hook's url and headers, a prompt hook's prompt — and Claude Code adds more
-// over time. Holding hooks this way writes every one of them back as it was
-// (#137).
+// over time. Holding hooks this way writes every one of them back as it was.
 type rawObject []member
 
 func parseRawObject(b []byte) (rawObject, error) {
@@ -197,7 +196,7 @@ type hookCmd struct {
 	Type    string
 	Command string
 	// Timeout is the handler's timeout in seconds, 0 when it has none. devexp
-	// owns it on the hooks it registers whose registry entry declares one (#162).
+	// owns it on the hooks it registers whose registry entry declares one.
 	Timeout int
 	// fields is the handler as read from settings.json; nil for one devexp
 	// builds.

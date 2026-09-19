@@ -5,14 +5,14 @@
 #    so it removed only hooks registered from the current clone. A registration
 #    left by an earlier release-binary install lives elsewhere, so uninstalling
 #    stripped the working entries and left the stale ones running — strictly
-#    worse than doing nothing (issue #93). The block is embedded in uninstall.sh
+#    worse than doing nothing. The block is embedded in uninstall.sh
 #    as a heredoc, so it is extracted and run directly against fixtures. Also:
-#    registrations orphaned in another install root (#150), how the block saves
-#    (atomic, through a symlink, refusals; #124) and deeply nested JSON (#150).
+#    registrations orphaned in another install root, how the block saves
+#    (atomic, through a symlink, refusals) and deeply nested JSON.
 #
-# 2. The opencode wiring (issue #109): no top-level `local` (it aborted every
+# 2. The opencode wiring: no top-level `local` (it aborted every
 #    opencode uninstall), the MCP block tolerating a bad config.json, detection
-#    of a plugin-only install, the MCP block's byte-preserving edit (#124),
+#    of a plugin-only install, the MCP block's byte-preserving edit,
 #    a python step that fails not ending the run, and delegation of plugin removal to
 #    `devexp uninstall --target opencode`. These run uninstall.sh itself with
 #    --yes, stdin closed, HOME in a temp dir, a minimal environment and stub
@@ -90,7 +90,7 @@ expect "removes the clone's own hook" \
   "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"$MINE\"}]}]}}" \
   ""
 
-# #93: also removes one registered from a different install root
+# Also removes one registered from a different install root
 expect "removes a hook from a foreign install root" \
   "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"$FOREIGN\"}]}]}}" \
   ""
@@ -120,13 +120,13 @@ expect "a user command listed first no longer shields a devexp one" \
   "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"$USER_HOOK\"},{\"type\":\"command\",\"command\":\"$FOREIGN\"}]}]}}" \
   "$USER_HOOK"
 
-# Both roots registered at once — the real-world state issue #93 describes
+# Both roots registered at once — the real-world state.
 expect "removes both roots' copies of the same hook" \
   "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"$MINE\"}]},{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"$FOREIGN\"}]}]}}" \
   ""
 
 # A relative registration (left by an install from a relative DEVEXP_DIR) is
-# devexp's too; a relative user hook sharing a basename is not (#126).
+# devexp's too; a relative user hook sharing a basename is not.
 expect "removes a relative devexp hook" \
   "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"hooks/claude-code/secret-guard.sh\"}]}]}}" \
   ""
@@ -137,7 +137,7 @@ expect "removes a ./-relative devexp hook, keeps a relative user hook" \
 
 # Only a plain path is devexp's: a command that expands a variable, takes an
 # argument or is wrapped is the user's, and so is one under a directory that
-# merely ends in hooks/claude-code/ (#126).
+# merely ends in hooks/claude-code/.
 expect "keeps a \$CLAUDE_PROJECT_DIR hook" \
   "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Read|Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"\$CLAUDE_PROJECT_DIR/hooks/claude-code/secret-guard.sh\"}]}]}}" \
   "\$CLAUDE_PROJECT_DIR/hooks/claude-code/secret-guard.sh"
@@ -155,7 +155,7 @@ expect "keeps a my-hooks/claude-code/ hook, relative and absolute" \
   "my-hooks/claude-code/secret-guard.sh
 $OTHER/my-hooks/claude-code/secret-guard.sh"
 
-# ── Paths that need shell quoting (#135) ─────────────────────────────────────
+# ── Paths that need shell quoting ────────────────────────────────────────────
 # devexp registers a path with a space or shell syntax as one single-quoted
 # word. Those are devexp's; so is the unquoted path an earlier install from
 # this repo wrote. Other quoting, arguments or concatenation stay the user's.
@@ -290,7 +290,7 @@ syntax_result="$(python3 "$TMP/syntax_check.py" "$TMP/prune.py" "$REPO" "$TMP/se
 if [ "$syntax_result" = "ok" ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL every SHELL_SYNTAX character\n%s\n' "$syntax_result"; fi
 
 
-# ── Fields devexp doesn't own (#137) ─────────────────────────────────────────
+# ── Fields devexp doesn't own ────────────────────────────────────────────────
 # Only devexp's handlers are removed. Every other handler and entry keeps all
 # its fields, an empty entry or event stays, and every byte outside the hooks
 # value is as it was. A handler with args (exec form, no shell) or of another
@@ -487,7 +487,7 @@ for n in 1e400 -1e400 NaN Infinity -Infinity; do
     fi
 done
 
-# ── Registrations orphaned in another install root (#150) ───────────────────
+# ── Registrations orphaned in another install root ──────────────────────────
 # A devexp-form command naming a script that is gone from <root>/hooks/
 # claude-code/, where <root> holds a devexp hooks registry, is devexp's even
 # though no registry names the script any more. Look-alikes stay: a root with no
@@ -550,7 +550,7 @@ printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s","args":[]},
 printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"%s","args":[]}]}]}}' "$PLAIN_GONE" > "$TMP/orphan-args-want.json"
 expect_file "keeps an exec-form handler naming an orphaned script" "$TMP/orphan-args-in.json" "$TMP/orphan-args-want.json"
 
-# ── Saving settings.json (#124) ──────────────────────────────────────────────
+# ── Saving settings.json ─────────────────────────────────────────────────────
 # prune_run <path>: the hook-removal block on <path>; output in $TMP/prune.out,
 # exit code in $TMP/prune.rc.
 prune_run() {
@@ -667,7 +667,7 @@ else
 fi
 
 # A new file gets 0644 minus the umask (0600 under umask 077), like open();
-# a replaced file keeps its own bits whatever the umask (#157 review).
+# a replaced file keeps its own bits whatever the umask.
 python3 - "$TMP/prune.py" "$TMP/wa-umask" <<'PY' > "$TMP/wa.out" 2>&1
 import os, re, stat, sys, tempfile
 src = open(sys.argv[1]).read()
@@ -694,7 +694,7 @@ else
     fail=$((fail+1)); printf 'FAIL write_atomic: a new file honours the umask, a replaced one keeps its bits\n'; cat "$TMP/wa.out"
 fi
 
-# Temp names (#157 re-review), as the Go tests pin them: a file, a symlink or a
+# Temp names, as the Go tests pin them: a file, a symlink or a
 # dangling symlink already at a temp name is never opened or followed and the
 # next name is tried; after 101 taken names the save is refused and nothing is
 # created. A replacement's temp is 0600 from creation, whatever the umask.
@@ -829,7 +829,7 @@ else
 fi
 REPO="$REPO_PLAIN"
 
-# ── opencode (#109) ──────────────────────────────────────────────────────────
+# ── opencode ─────────────────────────────────────────────────────────────────
 
 ok() { pass=$((pass+1)); }
 ko() { fail=$((fail+1)); printf 'FAIL %s\n' "$1"; [ -n "${2:-}" ] && printf '%s\n' "$2" | sed 's/^/  | /'; return 0; }
@@ -929,7 +929,7 @@ else
     done
 fi
 
-# ── The opencode MCP block edits config.json in place (#124) ─────────────────
+# ── The opencode MCP block edits config.json in place ────────────────────────
 # Only the removed servers' members, and the comma and whitespace joining each
 # to a neighbour, are cut; every other byte (key order, indentation, CRLF,
 # escapes, numbers, the other servers) stays.
@@ -1192,7 +1192,7 @@ check "malformed config.json: no python traceback" out_lacks "Traceback"
 check "malformed config.json: left as it was" test "$(cat "$E/h/.config/opencode/config.json")" = "{not json"
 check "malformed config.json: the run reaches the end" out_has "Uninstall complete."
 
-# Deeply nested settings.json and config.json (#150): each python step skips
+# Deeply nested settings.json and config.json: each python step skips
 # with a message and leaves its file as it was, and the uninstall carries on to
 # the end instead of dying on a RecursionError under set -e.
 new_env
@@ -1217,7 +1217,7 @@ check "deeply nested JSON: config.json untouched" cmp -s "$E/h/.config/opencode/
 check "deeply nested JSON: agents still removed" test ! -e "$E/h/.claude/agents/some-agent.md" -a ! -e "$E/h/.config/opencode/agents/some-agent.md"
 check "deeply nested JSON: the run reaches the end" out_has "Uninstall complete."
 
-# A symlinked ~/.claude/settings.json (#124): uninstall.sh removes devexp's hooks
+# A symlinked ~/.claude/settings.json: uninstall.sh removes devexp's hooks
 # from the file it points at and keeps the link.
 new_env
 mkdir -p "$E/r/hooks/claude-code" "$E/h/.claude/agents" "$E/dotfiles"
@@ -1253,7 +1253,7 @@ check "python step failing: warns about the MCP step" out_has "the config.json s
 check "python step failing: warns about the settings step" out_has "the settings.json step failed"
 check "python step failing: the run reaches the end" out_has "Uninstall complete."
 
-# ── HOME refusal (#126) ──────────────────────────────────────────────────────
+# ── HOME refusal ─────────────────────────────────────────────────────────────
 # With HOME unset, empty or relative, every path would point at / or under the
 # current directory. uninstall.sh refuses before it looks at anything: a
 # dotfiles-style tree in the cwd — with a Claude Code devexp install at the top
@@ -1288,10 +1288,10 @@ for home_case in unset empty relative; do
     check "HOME $home_case: the binary is not called" calls_are ""
 done
 
-# ── Symlinked target directories and entries (#128) ──────────────────────────
+# ── Symlinked target directories and entries ─────────────────────────────────
 # `devexp install` writes through a symlinked agents/ or skills/ (a dotfiles
-# setup) but never removes through one, and never removes a symlinked entry
-# (#117). uninstall.sh follows the same rule: what it leaves is listed, and a
+# setup) but never removes through one, and never removes a symlinked entry.
+# uninstall.sh follows the same rule: what it leaves is listed, and a
 # real entry next to it is still removed.
 for linked in claude-agents claude-skills opencode-agents; do
     new_env
@@ -1369,7 +1369,7 @@ check "symlinked entries: real entries next to them are removed" \
 check "symlinked entries: only the real ones are counted" out_has "Removed 2 item(s)."
 check "a file where a skill directory would be stays" test "$(cat "$E/h/.claude/skills/loose")" = "user file"
 
-# ── Target directories behind a symlinked parent (#128) ──────────────────────
+# ── Target directories behind a symlinked parent ─────────────────────────────
 # A linked ~/.claude or ~/.config/opencode puts real agents/ and skills/ in the
 # dotfiles tree: nothing is removed there, and each is listed. A HOME that is
 # itself behind a symlink (as $TMP already is on macOS, under /var) is not.
@@ -1425,7 +1425,7 @@ else
     check "failed removal: not listed as removed" test "$(grep -c 'm dev-agent.md$' "$E/out")" = 1
 fi
 
-# ── Re-checked after the prompt (#128) ───────────────────────────────────────
+# ── Re-checked after the prompt ──────────────────────────────────────────────
 # The confirmation can wait indefinitely. What changed meanwhile — the agents
 # directory swapped for a symlink, or an entry replaced with one — is left
 # untouched with a warning. The swap happens once the preview is printed, and
@@ -1498,7 +1498,7 @@ else
     echo "SKIP round trip with the real binary (needs go and ./scripts/stage-assets.sh)"
 fi
 
-# ── Claude Code round trip with the real binary (#137) ───────────────────────
+# ── Claude Code round trip with the real binary ──────────────────────────────
 # User hooks carrying timeout, args, shell, async and an unknown field, plus an
 # exec-form handler naming a devexp script: `devexp install` adds devexp's
 # hooks and keeps them, a re-install changes nothing, and uninstall.sh takes

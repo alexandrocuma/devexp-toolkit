@@ -413,7 +413,7 @@ func captureStdout(t *testing.T, fn func()) string {
 	return <-done
 }
 
-// TestInstall_SymlinkedAgentEntry (#124): an installed agent file that is a
+// TestInstall_SymlinkedAgentEntry: an installed agent file that is a
 // symlink — to a customised copy in dotfiles, or to the toolkit's own source —
 // is never written through or replaced, for every installer and in dry runs.
 // It stays in the install set, so the manifest keeps tracking it. A regular
@@ -482,7 +482,7 @@ func TestInstall_SymlinkedAgentEntry(t *testing.T) {
 	}
 }
 
-// TestInstall_AgentFilesNeverWrittenInPlace (#157 review): agent files are
+// TestInstall_AgentFilesNeverWrittenInPlace: agent files are
 // replaced through a temp file and a rename, for every installer. In a
 // directory where no temp file can be created, the write fails and the old
 // bytes stay, where an in-place os.WriteFile would have succeeded.

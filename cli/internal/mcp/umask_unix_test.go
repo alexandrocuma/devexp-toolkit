@@ -9,9 +9,9 @@ import (
 	"testing"
 )
 
-// TestInstallOpencode_NewConfigHonoursUmask (#157 review): config.json holds
-// resolved MCP env values and headers (tokens). A new one is created with the
-// umask applied, as before #124, so under umask 077 it is 0600.
+// TestInstallOpencode_NewConfigHonoursUmask: config.json holds resolved MCP
+// env values and headers (tokens). A new one is created with the umask
+// applied, so under umask 077 it is 0600.
 func TestInstallOpencode_NewConfigHonoursUmask(t *testing.T) {
 	old := syscall.Umask(0o077)
 	t.Cleanup(func() { syscall.Umask(old) })

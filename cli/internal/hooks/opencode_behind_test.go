@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// ── plugins/ behind a symlinked parent (#128) ────────────────────────────────
+// ── plugins/ behind a symlinked parent ───────────────────────────────────────
 
 func TestPluginsHome(t *testing.T) {
 	for dir, want := range map[string]string{

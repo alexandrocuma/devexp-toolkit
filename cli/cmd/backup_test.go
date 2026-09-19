@@ -14,7 +14,7 @@ import (
 	"devexp/internal/manifest"
 )
 
-// ── Stale removal and symlinked target directories (#128) ────────────────────
+// ── Stale removal and symlinked target directories ───────────────────────────
 
 // staleLayout is where one install target keeps its agents, skills and
 // manifest, and how a skill looks on disk there.

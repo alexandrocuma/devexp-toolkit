@@ -127,9 +127,9 @@ var (
 // removeStale removes from dir, via removeFn ((*os.Root).Remove or
 // (*os.Root).RemoveAll), the entries of old (the previous manifest) that this
 // run didn't install, reporting via ui. In dry-run mode it only reports what
-// would be removed. home is the HOME dir is built from. It returns the stale
-// entries the manifest should go on recording, each once, so a later run can
-// finish the job.
+// would be removed. home is the HOME dir that dir is built from. It returns the
+// stale entries the manifest should go on recording, each once, so a later run
+// can finish the job.
 //
 // An entry is removed only when all of these hold; otherwise it is kept on
 // disk, with a warning unless it is already gone:
@@ -149,9 +149,9 @@ var (
 //   - it is not the same file on disk as one this run installed;
 //   - removal isn't blocked (openRemovalDir): dir is not a symlink, not behind
 //     one below home, and didn't change while it was checked. The installers
-//     write through a symlinked directory, but nothing is removed through it
-//     (#128), as for opencode plugins/: the entries that pass every other check
-//     are listed in one warning to remove by hand.
+//     write through a symlinked directory, but nothing is removed through it,
+//     as for opencode plugins/: the entries that pass every other check are
+//     listed in one warning to remove by hand.
 //
 // Of the entries kept, those left behind a blocked dir and those that couldn't
 // be checked or removed are returned; the others aren't devexp's on disk.

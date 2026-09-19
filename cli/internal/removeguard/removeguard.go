@@ -1,8 +1,8 @@
 // Package removeguard decides whether devexp may remove anything from one of
 // its target directories. It is removal-only: installs still write through a
 // symlinked directory (a dotfiles setup), but nothing is ever removed through
-// one (#108, #128). Whether a single path is a symlink is fsutil.IsSymlink,
-// shared with the installers that never write through a symlinked entry (#124).
+// one. Whether a single path is a symlink is fsutil.IsSymlink, shared with the
+// installers that never write through a symlinked entry.
 package removeguard
 
 import (
