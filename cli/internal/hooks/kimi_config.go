@@ -255,18 +255,23 @@ func WriteKimiHooks(configPath, hooksDir string, selected []KimiHook, dryRun boo
 	if !filepath.IsAbs(hooksDir) {
 		return false, fmt.Errorf("hooks: the installed hooks directory %q is not absolute, so Kimi — which runs a hook from whatever directory it is in — could not find the scripts; refusing to register them", hooksDir)
 	}
-	return editKimiHooks(configPath, renderKimiBlock(kimiEntries(hooksDir, selected)), dryRun)
+	return editKimiHooks(configPath, hooksDir, renderKimiBlock(kimiEntries(hooksDir, selected)), dryRun)
 }
 
 // RemoveKimiHooks takes devexp's block back out of Kimi's config.toml and
 // leaves every other byte as it was, including the user's own hooks. A file
 // with no block, and a file that is not there at all, are not changes.
-func RemoveKimiHooks(configPath string, dryRun bool) (bool, error) {
-	return editKimiHooks(configPath, "", dryRun)
+//
+// hooksDir is where devexp's own adapter lives, and is what an entry left
+// without markers is recognised by. It may be "" only when the caller
+// genuinely does not know it: adoption is then off and an unmarked entry is
+// left alone.
+func RemoveKimiHooks(configPath, hooksDir string, dryRun bool) (bool, error) {
+	return editKimiHooks(configPath, hooksDir, "", dryRun)
 }
 
 // editKimiHooks replaces devexp's block with block ("" removes it).
-func editKimiHooks(configPath, block string, dryRun bool) (bool, error) {
+func editKimiHooks(configPath, hooksDir, block string, dryRun bool) (bool, error) {
 	old, err := os.ReadFile(configPath)
 	if err != nil && !os.IsNotExist(err) {
 		return false, fmt.Errorf("hooks: %q could not be read (%w), so it was left untouched and no hook was registered for Kimi", configPath, err)
@@ -293,8 +298,10 @@ func editKimiHooks(configPath, block string, dryRun bool) (bool, error) {
 	// adopted copy.
 	orig := old
 	adopted := 0
+	var takenOver []string
 	if begins, ends := findKimiMarkers(old); len(begins) == 0 && len(ends) == 0 {
-		old, adopted = adoptUnmarkedKimiHooks(old)
+		old, takenOver = adoptUnmarkedKimiHooks(old, hooksDir)
+		adopted = len(takenOver)
 	}
 
 	data, err := spliceKimiBlock(old, withKimiEOL(block, eol), eol)
@@ -302,6 +309,19 @@ func editKimiHooks(configPath, block string, dryRun bool) (bool, error) {
 		return false, fmt.Errorf("hooks: %q was left untouched: %w", configPath, err)
 	}
 	if bytes.Equal(data, orig) {
+		// Nothing to write. That is NOT nothing to say: the two checks below
+		// are the only ones that ever look at this file, and the states they
+		// report — a hook of the user's that Kimi rejects, a bare key that
+		// has bound itself to devexp's last table — cost the user every hook
+		// in the file, devexp's guards included, behind a diagnostic nobody
+		// reads. Either can arrive at any time after an install (Kimi
+		// rewrites this file on login), and re-running the installer is
+		// exactly what someone does when the guards have gone quiet. So the
+		// byte-equality shortcut must not be a shortcut past them.
+		warnForeignKimiHooks(configPath, orig)
+		if err := verifyKimiHooks(orig, block); err != nil {
+			ui.Warn(fmt.Sprintf("%q is already as devexp would write it, but as it stands the file %v — devexp has changed nothing, and while that is so Kimi runs no hook at all from it, devexp's guards included", configPath, err))
+		}
 		return false, nil
 	}
 	if err := verifyKimiHooks(data, block); err != nil {
@@ -309,8 +329,13 @@ func editKimiHooks(configPath, block string, dryRun bool) (bool, error) {
 	}
 	warnForeignKimiHooks(configPath, old)
 	if adopted > 0 {
-		ui.Warn(fmt.Sprintf("%q holds %d devexp hook entr%s with no devexp markers around them — Kimi rewrites config.toml on login and drops every comment, markers included. devexp has recognised them by their command and is rewriting them as one marked block, rather than appending a second copy of every hook.",
-			configPath, adopted, map[bool]string{true: "y", false: "ies"}[adopted == 1]))
+		verb := "were taken over and rewritten as one marked block"
+		if block == "" {
+			verb = "were taken over and removed"
+		}
+		ui.Warn(fmt.Sprintf("%q held %d unmarked [[hooks]] entr%s running devexp's own adapter out of %q, and no devexp markers at all — Kimi rewrites config.toml on login and drops every comment, markers included. devexp has TAKEN THEM OVER as its own: they %s. If any of them was yours rather than a previous install's, put it back — it is not in the file any more. The entries taken over ran: %s",
+			configPath, adopted, map[bool]string{true: "y", false: "ies"}[adopted == 1],
+			hooksDir, verb, strings.Join(takenOver, "; ")))
 	}
 
 	verb := "update"
@@ -423,16 +448,50 @@ func findKimiMarkers(content []byte) (begins, ends []int) {
 // deliberately wrote outside the block to run the adapter their own way is
 // theirs to keep.
 
-// kimiAdapterRe recognises devexp's adapter in a rendered command. It matches
-// the path tail rather than the whole command, because the install root moves:
-// a user who repoints $KIMI_CODE_HOME, or a devexp that changes how it quotes,
-// must still recognise the entries the previous install wrote.
-var kimiAdapterRe = regexp.MustCompile(`(^|[^\w.-])kimi[/\\]adapter\.sh($|[^\w.-])`)
-
 // kimiCommandRe matches the `command = "..."` line of a [[hooks]] table. Only
 // a basic string: that is what renderKimiBlock writes, and an entry devexp did
 // not write is not devexp's to adopt.
 var kimiCommandRe = regexp.MustCompile(`^\s*command\s*=\s*(".*")\s*$`)
+
+// isKimiOwnCommand reports whether command is one KimiCommand rendered for
+// this install: `bash '<hooksDir>/kimi/adapter.sh' '<hooksDir>/claude-code/
+// <something>.sh'`, and nothing else at all.
+//
+// It matches the WHOLE rendered command against devexp's own hooks root, not
+// the adapter's path tail. Adoption DELETES what it matches, and after one
+// Kimi login adoption is the normal path rather than a rare one, so the
+// question "is this line devexp's?" has to be answered by the line devexp
+// would itself have written — not by a substring a user's own entry could
+// share. An entry with a different root, a guard from somewhere else, an
+// extra argument, a wrapper or any other shell syntax is therefore NOT
+// devexp's, and is left exactly where it is, with its own matcher and
+// timeout.
+//
+// The trade this leaves: an entry the user wrote by hand that is byte for
+// byte what devexp renders — devexp's adapter, devexp's root, a guard in
+// devexp's own claude-code directory — cannot be told from a previous
+// install's, and is taken over. That is why the warning names every command
+// it took over rather than merely counting them.
+func isKimiOwnCommand(hooksDir, command string) bool {
+	if hooksDir == "" {
+		return false
+	}
+	prefix := "bash " + shellSingleQuote(filepath.Join(hooksDir, "kimi", "adapter.sh")) + " "
+	if !strings.HasPrefix(command, prefix) {
+		return false
+	}
+	rest := command[len(prefix):]
+	if len(rest) < 2 || rest[0] != '\'' || rest[len(rest)-1] != '\'' {
+		return false
+	}
+	guard := rest[1 : len(rest)-1]
+	// A quote inside means the rendered form was something else: an escaped
+	// quote, a second argument, a trailing `; rm -rf …`.
+	if strings.Contains(guard, "'") {
+		return false
+	}
+	return filepath.Dir(guard) == filepath.Join(hooksDir, "claude-code") && strings.HasSuffix(guard, ".sh")
+}
 
 // adoptUnmarkedKimiHooks removes the [[hooks]] tables whose command runs
 // devexp's adapter, and reports how many it took out. The caller then appends
@@ -443,16 +502,18 @@ var kimiCommandRe = regexp.MustCompile(`^\s*command\s*=\s*(".*")\s*$`)
 // outside devexp's own entries has to survive byte for byte, and a TOML
 // round-trip would not keep the user's formatting, key order or comments.
 // verifyKimiHooks re-reads the result either way.
-func adoptUnmarkedKimiHooks(content []byte) ([]byte, int) {
+func adoptUnmarkedKimiHooks(content []byte, hooksDir string) ([]byte, []string) {
 	lines, offsets := kimiLines(content)
 	var out []byte
-	kept, adopted := 0, 0
+	var adopted []string
+	kept := 0
 	for i := 0; i < len(lines); i++ {
 		if strings.TrimSpace(lines[i]) != "[[hooks]]" {
 			continue
 		}
 		end := kimiTableEnd(lines, i)
-		if !kimiTableIsDevexp(lines[i+1 : end]) {
+		command, ok := kimiTableCommand(lines[i+1 : end])
+		if !ok || !isKimiOwnCommand(hooksDir, command) {
 			i = end - 1
 			continue
 		}
@@ -465,11 +526,11 @@ func adoptUnmarkedKimiHooks(content []byte) ([]byte, int) {
 		}
 		out = append(out, content[kept:offsets[start]]...)
 		kept = offsets[end]
-		adopted++
+		adopted = append(adopted, command)
 		i = end - 1
 	}
-	if adopted == 0 {
-		return content, 0
+	if len(adopted) == 0 {
+		return content, nil
 	}
 	return append(out, content[kept:]...), adopted
 }
@@ -496,9 +557,9 @@ func kimiTableEnd(lines []string, start int) int {
 	return end
 }
 
-// kimiTableIsDevexp reports whether a [[hooks]] table's body holds a command
-// that runs devexp's adapter.
-func kimiTableIsDevexp(body []string) bool {
+// kimiTableCommand decodes a [[hooks]] table's `command`, and says whether it
+// had one it could read.
+func kimiTableCommand(body []string) (string, bool) {
 	for _, line := range body {
 		m := kimiCommandRe.FindStringSubmatch(line)
 		if m == nil {
@@ -508,11 +569,11 @@ func kimiTableIsDevexp(body []string) bool {
 			C string `toml:"c"`
 		}
 		if err := toml.Unmarshal([]byte("c = "+m[1]), &doc); err != nil {
-			return false
+			return "", false
 		}
-		return kimiAdapterRe.MatchString(doc.C)
+		return doc.C, true
 	}
-	return false
+	return "", false
 }
 
 // kimiLines splits content into lines (each keeping its own line ending) and

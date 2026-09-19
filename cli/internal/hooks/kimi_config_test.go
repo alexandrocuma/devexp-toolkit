@@ -273,7 +273,7 @@ func TestRemoveKimiHooks(t *testing.T) {
 
 	var changed bool
 	var err error
-	captureOutput(t, func() { changed, err = RemoveKimiHooks(configPath, false) })
+	captureOutput(t, func() { changed, err = RemoveKimiHooks(configPath, hooksDir, false) })
 	if err != nil || !changed {
 		t.Fatalf("RemoveKimiHooks() = %v, %v; want true, nil", changed, err)
 	}
@@ -282,12 +282,12 @@ func TestRemoveKimiHooks(t *testing.T) {
 	}
 
 	// A second removal is not a change, and a file with no block never was.
-	captureOutput(t, func() { changed, err = RemoveKimiHooks(configPath, false) })
+	captureOutput(t, func() { changed, err = RemoveKimiHooks(configPath, hooksDir, false) })
 	if err != nil || changed {
 		t.Errorf("second RemoveKimiHooks() = %v, %v; want false, nil", changed, err)
 	}
 	missing := filepath.Join(t.TempDir(), "nope", "config.toml")
-	captureOutput(t, func() { changed, err = RemoveKimiHooks(missing, false) })
+	captureOutput(t, func() { changed, err = RemoveKimiHooks(missing, hooksDir, false) })
 	if err != nil || changed {
 		t.Errorf("RemoveKimiHooks(missing) = %v, %v; want false, nil", changed, err)
 	}
@@ -344,7 +344,7 @@ func TestWriteKimiHooksCRLF(t *testing.T) {
 		t.Errorf("the CRLF file does not hold devexp's three hooks:\n%q", got)
 	}
 	// And it round-trips.
-	captureOutput(t, func() { RemoveKimiHooks(configPath, false) }) //nolint:errcheck
+	captureOutput(t, func() { RemoveKimiHooks(configPath, hooksDir, false) }) //nolint:errcheck
 	if back := readFile(t, configPath); back != content {
 		t.Errorf("removal did not restore the CRLF file:\n%q", back)
 	}

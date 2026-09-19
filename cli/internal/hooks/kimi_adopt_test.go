@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -121,6 +122,105 @@ func TestWriteKimiHooksAdoptsOnlyWhenNoMarkers(t *testing.T) {
 	}
 }
 
+// After one Kimi login there are no markers, so adoption is the NORMAL path,
+// not a rare one — and what it matches, it deletes. A user hook that merely
+// resembles devexp's is not devexp's: a different install root, a guard from
+// somewhere else, an extra argument, a wrapper of their own. Each of these
+// once matched, because the recogniser looked only at the adapter's path
+// tail.
+func TestWriteKimiHooksAdoptionLeavesLookalikesAlone(t *testing.T) {
+	_, hooksDir := kimiHome(t, "")
+	adapter := filepath.Join(hooksDir, "kimi", "adapter.sh")
+	guard := filepath.Join(hooksDir, "claude-code", "secret-guard.sh")
+
+	lookalikes := map[string]string{
+		"a second devexp install under another root":  "bash '/opt/other/hooks/kimi/adapter.sh' '/opt/other/hooks/claude-code/secret-guard.sh'",
+		"devexp's adapter running their own script":   "bash " + shellSingleQuote(adapter) + " '/home/u/my-guards/audit.sh'",
+		"devexp's command with an argument of theirs": "bash " + shellSingleQuote(adapter) + " " + shellSingleQuote(guard) + " --verbose",
+		"devexp's command inside a wrapper":           "myrunner bash " + shellSingleQuote(adapter) + " " + shellSingleQuote(guard),
+		"devexp's command with something after it":    "bash " + shellSingleQuote(adapter) + " " + shellSingleQuote(guard) + " ; echo done",
+		"a guard of theirs beside devexp's":           "bash '/home/u/kimi/adapter.sh' " + shellSingleQuote(guard),
+	}
+
+	for name, command := range lookalikes {
+		t.Run(name, func(t *testing.T) {
+			theirs := "[[hooks]]\nevent = \"PreToolUse\"\nmatcher = \"^Bash$\"\ncommand = " +
+				tomlString(command) + "\ntimeout = 12\n"
+			configPath, _ := kimiHome(t, theirs)
+
+			_, out, err := writeKimi(t, configPath, hooksDir, kimiTestHooks()[:1])
+			if err != nil {
+				t.Fatalf("WriteKimiHooks: %v\n%s", err, out)
+			}
+			after := readFile(t, configPath)
+			if !strings.Contains(after, tomlString(command)) {
+				t.Errorf("a hook that is not devexp's was taken over:\n%s", after)
+			}
+			if !strings.Contains(after, "timeout = 12") {
+				t.Errorf("their own timeout went with it:\n%s", after)
+			}
+			if got := len(tomlHooks(t, after)); got != 2 {
+				t.Errorf("config.toml holds %d hooks, want 2 (theirs and devexp's):\n%s", got, after)
+			}
+			if strings.Contains(stripANSI(out), "TAKEN THEM OVER") {
+				t.Errorf("the run claims it took over a hook it left alone:\n%s", out)
+			}
+		})
+	}
+}
+
+// What adoption does take over, it says plainly — and names, because a user
+// who wrote one of those lines by hand has no other way to get it back.
+func TestWriteKimiHooksAdoptionWarnsPlainly(t *testing.T) {
+	_, hooksDir := kimiHome(t, "")
+	configPath, _ := kimiHome(t, kimiRewritten(hooksDir))
+
+	_, out, err := writeKimi(t, configPath, hooksDir, kimiTestHooks()[:2])
+	if err != nil {
+		t.Fatalf("WriteKimiHooks: %v\n%s", err, out)
+	}
+	for _, want := range []string{"TAKEN THEM OVER", "put it back", KimiCommand(hooksDir, kimiTestHooks()[0])} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the warning does not say %q:\n%s", want, out)
+		}
+	}
+}
+
+// The recogniser itself, close up.
+func TestIsKimiOwnCommand(t *testing.T) {
+	hooksDir := filepath.Join("/home", "u", ".kimi-code", "hooks")
+	adapter := filepath.Join(hooksDir, "kimi", "adapter.sh")
+	guard := filepath.Join(hooksDir, "claude-code", "secret-guard.sh")
+	own := "bash " + shellSingleQuote(adapter) + " " + shellSingleQuote(guard)
+
+	if !isKimiOwnCommand(hooksDir, own) {
+		t.Errorf("devexp's own rendered command was not recognised: %q", own)
+	}
+	// Exactly what KimiCommand renders, so the two cannot drift apart.
+	if got := KimiCommand(hooksDir, kimiTestHooks()[0]); !isKimiOwnCommand(hooksDir, got) {
+		t.Errorf("KimiCommand renders something the recogniser rejects: %q", got)
+	}
+	notOwn := []string{
+		"",
+		own + " ",
+		"sh " + shellSingleQuote(adapter) + " " + shellSingleQuote(guard),
+		"bash " + shellSingleQuote(adapter),
+		"bash " + shellSingleQuote(filepath.Join("/other/hooks", "kimi", "adapter.sh")) + " " + shellSingleQuote(guard),
+		"bash " + shellSingleQuote(adapter) + " " + shellSingleQuote(filepath.Join(hooksDir, "kimi", "secret-guard.sh")),
+		"bash " + shellSingleQuote(adapter) + " " + shellSingleQuote(filepath.Join(hooksDir, "claude-code", "secret-guard")),
+	}
+	for _, c := range notOwn {
+		if isKimiOwnCommand(hooksDir, c) {
+			t.Errorf("a command that is not devexp's was claimed: %q", c)
+		}
+	}
+	// Without a hooks root there is nothing to compare against, so nothing is
+	// ever devexp's — adoption is off rather than guessing.
+	if isKimiOwnCommand("", own) {
+		t.Errorf("an unknown hooks root claimed a command anyway")
+	}
+}
+
 // Removal has to reach the unmarked entries too, or #115's uninstall would
 // leave a live guard behind on any machine where the user has logged in.
 func TestRemoveKimiHooksTakesUnmarkedEntries(t *testing.T) {
@@ -129,7 +229,7 @@ func TestRemoveKimiHooksTakesUnmarkedEntries(t *testing.T) {
 
 	var changed bool
 	var err error
-	out := captureOutput(t, func() { changed, err = RemoveKimiHooks(configPath, false) })
+	out := captureOutput(t, func() { changed, err = RemoveKimiHooks(configPath, hooksDir, false) })
 	if err != nil {
 		t.Fatalf("RemoveKimiHooks: %v\n%s", err, stripANSI(out))
 	}
@@ -149,29 +249,61 @@ func TestRemoveKimiHooksTakesUnmarkedEntries(t *testing.T) {
 	}
 }
 
-// The recogniser matches the adapter's path tail, so a root that has moved is
-// still recognised — and a command that merely mentions something similar is
-// not.
-func TestKimiAdapterRecogniser(t *testing.T) {
-	yes := []string{
-		"bash '/home/u/.kimi-code/hooks/kimi/adapter.sh' '/home/u/.kimi-code/hooks/claude-code/secret-guard.sh'",
-		"bash '/opt/k/hooks/kimi/adapter.sh' '/opt/k/hooks/claude-code/secret-guard.sh'",
-		`bash "C:\devexp\hooks\kimi\adapter.sh" "C:\devexp\hooks\claude-code\secret-guard.sh"`,
+// ── the state a re-install is run to diagnose ────────────────────────────────
+//
+// A bare key written after devexp's end marker binds to devexp's LAST
+// [[hooks]] table, because a marker is a comment and a comment ends nothing.
+// Kimi's hook schema is strict, so that one extra key makes Kimi drop the
+// entire hooks section — the user's own hooks and every devexp guard — behind
+// a diagnostic nobody reads. In the session it just looks like no hook exists,
+// and the first thing anyone does then is re-run the installer.
+//
+// The marked region is unchanged, so the write is a no-op. The run must still
+// say what it found: this is the only code that ever looks at the file.
+func TestWriteKimiHooksWarnsOnANoOpRun(t *testing.T) {
+	_, hooksDir := kimiHome(t, "")
+	configPath, _ := kimiHome(t, "model = \"k2\"\n")
+	if _, out, err := writeKimi(t, configPath, hooksDir, kimiTestHooks()[:2]); err != nil {
+		t.Fatalf("first write: %v\n%s", err, out)
 	}
-	no := []string{
-		"bash '/home/u/hooks/kimi/adapter.shell.sh'",
-		"bash '/home/u/hooks/my-kimi/adapter.sh.bak'",
-		"echo 'kimi adapter.sh'",
-		"bash '/home/u/hooks/claude-code/secret-guard.sh'",
+	// After the end marker, so the marked region is untouched.
+	broken := readFile(t, configPath) + "stray = \"key\"\n"
+	if err := os.WriteFile(configPath, []byte(broken), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
-	for _, c := range yes {
-		if !kimiAdapterRe.MatchString(c) {
-			t.Errorf("devexp's own command was not recognised: %q", c)
-		}
+
+	changed, out, err := writeKimi(t, configPath, hooksDir, kimiTestHooks()[:2])
+	if err != nil {
+		t.Fatalf("WriteKimiHooks: %v\n%s", err, out)
 	}
-	for _, c := range no {
-		if kimiAdapterRe.MatchString(c) {
-			t.Errorf("a command that is not devexp's was claimed: %q", c)
-		}
+	if changed {
+		t.Errorf("a run with nothing to write reported a change")
+	}
+	if readFile(t, configPath) != broken {
+		t.Errorf("a run with nothing to write rewrote the file")
+	}
+	if !strings.Contains(out, "Kimi runs no hook at all") {
+		t.Errorf("the one run that could diagnose a dropped hooks section said nothing:\n%s", out)
+	}
+}
+
+// The same shortcut hid the other half of that warning: a hook of the USER's
+// that Kimi rejects. It is reported on a run that changes nothing, too.
+func TestWriteKimiHooksWarnsAboutAForeignInvalidHookOnANoOpRun(t *testing.T) {
+	_, hooksDir := kimiHome(t, "")
+	configPath, _ := kimiHome(t, "[[hooks]]\nevent = \"NotAnEvent\"\ncommand = \"theirs.sh\"\n")
+	if _, out, err := writeKimi(t, configPath, hooksDir, kimiTestHooks()[:1]); err != nil {
+		t.Fatalf("first write: %v\n%s", err, out)
+	}
+
+	changed, out, err := writeKimi(t, configPath, hooksDir, kimiTestHooks()[:1])
+	if err != nil {
+		t.Fatalf("WriteKimiHooks: %v\n%s", err, out)
+	}
+	if changed {
+		t.Errorf("a second identical write reported a change")
+	}
+	if !strings.Contains(out, "NotAnEvent") {
+		t.Errorf("the second run does not repeat that a hook in the file is one Kimi rejects:\n%s", out)
 	}
 }

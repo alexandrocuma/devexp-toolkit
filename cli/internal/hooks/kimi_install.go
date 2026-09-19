@@ -73,7 +73,7 @@ func InstallKimi(registry Registry, repoDir, hooksDir, configPath string, disabl
 	if len(selected) == 0 {
 		// Nothing to register. The block goes, and so do the scripts: a
 		// command in a config.toml devexp no longer writes would still be run.
-		if _, err := RemoveKimiHooks(configPath, dryRun); err != nil {
+		if _, err := RemoveKimiHooks(configPath, hooksDir, dryRun); err != nil {
 			return recorded, err
 		}
 		kept := removeKimiFiles(hooksDir, recorded, dryRun)
@@ -118,7 +118,7 @@ func InstallKimi(registry Registry, repoDir, hooksDir, configPath string, disabl
 // devexp recorded, returning what is still on disk. It is the removal half of
 // InstallKimi, kept here so the two cannot drift apart (#115).
 func UninstallKimi(hooksDir, configPath string, recorded []string, dryRun bool) ([]string, error) {
-	changed, err := RemoveKimiHooks(configPath, dryRun)
+	changed, err := RemoveKimiHooks(configPath, hooksDir, dryRun)
 	if err != nil {
 		return recorded, err
 	}
