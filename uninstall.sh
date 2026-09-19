@@ -24,6 +24,14 @@ find_devexp_bin() { for c in "${DEVEXP_BIN:-}" "$REPO_DIR/bin/devexp" "$(command
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ── Arguments ─────────────────────────────────────────────────────────────────
+# --yes/-y in any position, not just as $1. It was read as "$1" alone, so
+# `./uninstall.sh --target x --yes` prompted; and now that it also skips the
+# target menu, reading it from one position only would be the difference
+# between a clean non-interactive run and a hang.
+ASSUME_YES=false
+for arg in "$@"; do case "$arg" in --yes | -y) ASSUME_YES=true ;; esac; done
+
 # ── HOME ──────────────────────────────────────────────────────────────────────
 # Every path below is built from HOME. Unset, empty or relative, it would point
 # at / or at the current directory (a dotfiles checkout, say), so refuse before
@@ -38,11 +46,28 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_AGENTS="$HOME/.claude/agents"
 OPENCODE_AGENTS="$HOME/.config/opencode/agents"
 OPENCODE_PLUGINS="$HOME/.config/opencode/plugins"
-SKILLS_DIR="$HOME/.claude/skills"   # shared between both CLIs
+# Shared by Claude Code and opencode. Not by Kimi: its skills live under its
+# own root, are recorded in its manifest, and are removed by the devexp binary
+# — so nothing below has to weigh Kimi when deciding whether to keep these.
+SKILLS_DIR="$HOME/.claude/skills"
+# Kimi keeps everything under one configurable root, and its manifest is the
+# only record of what devexp put there. `devexp uninstall --target kimi` reads
+# it; this script only needs to know whether it exists. Same rule as the Go
+# side: $KIMI_CODE_HOME when set and not blank, else ~/.kimi-code.
+KIMI_ROOT="${KIMI_CODE_HOME:-}"
+[[ -n "${KIMI_ROOT//[[:space:]]/}" ]] || KIMI_ROOT="$HOME/.kimi-code"
+KIMI_MANIFEST="$KIMI_ROOT/.devexp-manifest.json"
 
 # ── Detect what's installed ───────────────────────────────────────────────────
 HAS_CLAUDE_INSTALL=false
 HAS_OPENCODE_INSTALL=false
+# By the manifest alone: every Kimi install writes one, and without it nothing
+# says which files in that root are devexp's — so a root with no manifest is
+# one this script must not offer to remove from. A symlinked manifest is not a
+# detection: `-f` follows the link, and the Go side refuses to write through it
+# and says so.
+HAS_KIMI_INSTALL=false
+[[ -f "$KIMI_MANIFEST" ]] && HAS_KIMI_INSTALL=true
 
 for f in "$REPO_DIR/agents/"*.md; do
     [[ -f "$f" ]] || continue
@@ -60,35 +85,60 @@ echo -e "${BOLD}devexp Framework Uninstaller${RESET}"
 echo "────────────────────────────────────────"
 echo ""
 
-if ! $HAS_CLAUDE_INSTALL && ! $HAS_OPENCODE_INSTALL; then
-    info "Nothing to remove — no devexp agents or hook plugin found in Claude Code or opencode directories."
+if ! $HAS_CLAUDE_INSTALL && ! $HAS_OPENCODE_INSTALL && ! $HAS_KIMI_INSTALL; then
+    info "Nothing to remove — no devexp agents, hook plugin or Kimi manifest found in Claude Code, opencode or Kimi Code CLI directories."
     exit 0
 fi
 
 # ── Determine what to remove ──────────────────────────────────────────────────
+# A numbered list of the CLIs actually detected, answered with comma-separated
+# numbers or `a`, rather than the fixed [1/2/3] this had while there were only
+# two: with three targets a fixed menu needs seven entries, and it would still
+# offer CLIs that have nothing installed.
 REMOVE_CLAUDE=false
 REMOVE_OPENCODE=false
+REMOVE_KIMI=false
 
-if $HAS_CLAUDE_INSTALL && $HAS_OPENCODE_INSTALL; then
-    warn "devexp is installed for both Claude Code and opencode."
+TARGET_IDS=()
+TARGET_LABELS=()
+$HAS_CLAUDE_INSTALL   && { TARGET_IDS+=(claude);   TARGET_LABELS+=("Claude Code"); }
+$HAS_OPENCODE_INSTALL && { TARGET_IDS+=(opencode); TARGET_LABELS+=("opencode"); }
+$HAS_KIMI_INSTALL     && { TARGET_IDS+=(kimi);     TARGET_LABELS+=("Kimi Code CLI ($KIMI_ROOT)"); }
+
+# select_target <id>: flips the REMOVE_* flag for one target id.
+select_target() { case "$1" in claude) REMOVE_CLAUDE=true ;; opencode) REMOVE_OPENCODE=true ;; kimi) REMOVE_KIMI=true ;; esac; }
+
+if [[ ${#TARGET_IDS[@]} -eq 1 ]]; then
+    warn "devexp is installed for ${TARGET_LABELS[0]}."
+    select_target "${TARGET_IDS[0]}"
+elif $ASSUME_YES; then
+    # --yes has to mean "don't ask", and the menu below is a prompt like any
+    # other. Before this it ran even under --yes, so a non-interactive run on a
+    # machine with two installs blocked on stdin for ever.
+    info "--yes: removing from every detected CLI (${TARGET_LABELS[*]})."
+    for id in "${TARGET_IDS[@]}"; do select_target "$id"; done
+else
+    warn "devexp is installed for ${#TARGET_IDS[@]} CLIs."
     echo ""
-    echo "  [1] Claude Code only"
-    echo "  [2] opencode only"
-    echo "  [3] Both"
+    for i in "${!TARGET_LABELS[@]}"; do echo "  [$((i + 1))] ${TARGET_LABELS[$i]}"; done
     echo ""
-    read -r -p "Remove from which CLI? [1/2/3]: " choice
-    case "$choice" in
-        1) REMOVE_CLAUDE=true ;;
-        2) REMOVE_OPENCODE=true ;;
-        3) REMOVE_CLAUDE=true; REMOVE_OPENCODE=true ;;
-        *) die "Invalid choice." ;;
-    esac
-elif $HAS_CLAUDE_INSTALL; then
-    warn "devexp is installed for Claude Code."
-    REMOVE_CLAUDE=true
-elif $HAS_OPENCODE_INSTALL; then
-    warn "devexp is installed for opencode."
-    REMOVE_OPENCODE=true
+    read -r -p "Remove from which CLIs? (e.g. 1,3 — or 'a' for all): " choice
+    if [[ "$choice" == [aA] ]]; then
+        for id in "${TARGET_IDS[@]}"; do select_target "$id"; done
+    else
+        [[ -n "$choice" ]] || die "Invalid choice."
+        # Split on commas, and validate every number before acting on any of
+        # them: a typo in the second must not remove the first.
+        IFS=',' read -r -a picks <<< "$choice"
+        for n in "${picks[@]}"; do
+            n="${n//[[:space:]]/}"
+            [[ "$n" =~ ^[0-9]+$ ]] && (( n >= 1 && n <= ${#TARGET_IDS[@]} )) || die "Invalid choice: \"$n\"."
+        done
+        for n in "${picks[@]}"; do
+            n="${n//[[:space:]]/}"
+            select_target "${TARGET_IDS[$((n - 1))]}"
+        done
+    fi
 fi
 
 echo ""
@@ -226,8 +276,25 @@ if $REMOVE_OPENCODE; then
     fi
 fi
 
+# The Kimi install is removed entirely by the devexp binary: agents, skills,
+# the MCP entries it still owns, the hooks block and scripts, and the manifest.
+# Nothing in that root says what is devexp's except the manifest, so this
+# script never deletes a file there itself.
+KIMI_BIN=""
+if $REMOVE_KIMI; then
+    if KIMI_BIN="$(find_devexp_bin kimi)"; then
+        info "Kimi Code CLI ($KIMI_ROOT) (preview):"
+        DEVEXP_DIR="$REPO_DIR" "$KIMI_BIN" uninstall --target kimi --dry-run </dev/null \
+            || warn "could not preview the Kimi Code CLI removal"
+        echo ""
+    else
+        warn "Kimi Code CLI: no devexp binary with 'uninstall --target kimi' found (set DEVEXP_BIN, or rebuild: rm bin/devexp && ./install.sh). The Kimi install will be left in place."
+        echo ""
+    fi
+fi
+
 # ── Confirm ───────────────────────────────────────────────────────────────────
-if [[ "${1:-}" != "--yes" && "${1:-}" != "-y" ]]; then
+if ! $ASSUME_YES; then
     read -r -p "Proceed with removal? [y/N] " confirm
     case "$confirm" in
         [yY][eE][sS]|[yY]) ;;
@@ -269,6 +336,16 @@ fi
 if $REMOVE_OPENCODE && [[ -n "$OPENCODE_BIN" ]]; then
     DEVEXP_DIR="$REPO_DIR" "$OPENCODE_BIN" uninstall --target opencode --yes </dev/null \
         || warn "opencode plugin left in place (see above) — re-run: $OPENCODE_BIN uninstall --target opencode"
+    echo ""
+fi
+
+# ── Remove the Kimi Code CLI install ──────────────────────────────────────────
+# Its own step, not folded into the blocks above: the Kimi root holds agents,
+# skills, MCP entries and hooks, and all four come out through the binary in
+# one call, in the order the installer's own rules require.
+if $REMOVE_KIMI && [[ -n "$KIMI_BIN" ]]; then
+    DEVEXP_DIR="$REPO_DIR" "$KIMI_BIN" uninstall --target kimi --yes </dev/null \
+        || warn "Kimi Code CLI install left in place (see above) — re-run: $KIMI_BIN uninstall --target kimi"
     echo ""
 fi
 

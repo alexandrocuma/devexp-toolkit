@@ -174,10 +174,14 @@ func TestDoInstallKimi_FreshInstall(t *testing.T) {
 	if !strings.Contains(installed, p.agentsRef+"/other.md") {
 		t.Errorf("the body reference was not repointed at the Kimi install (%s):\n%s", p.agentsRef, installed)
 	}
-	// Telling a user what was written without telling them it cannot be
-	// removed cleanly is half the story.
-	if !strings.Contains(out, "uninstall.sh cannot remove a Kimi Code CLI install yet") {
-		t.Errorf("the run does not say the install cannot be removed yet:\n%s", out)
+	// Telling a user what was written without telling them how much less of it
+	// Kimi honours is half the story: they would go on believing an agent's
+	// body is added to Kimi's prompt rather than replacing it.
+	if !strings.Contains(out, "supports less of what devexp's assets ask for") {
+		t.Errorf("the run does not say what Kimi supports less of:\n%s", out)
+	}
+	if !strings.Contains(out, "${base_prompt}") {
+		t.Errorf("the feature-subset warning does not name the base-prompt replacement:\n%s", out)
 	}
 	if !strings.Contains(installed, "${base_prompt}") {
 		t.Errorf("the installed agent does not opt into Kimi's base prompt:\n%s", installed)

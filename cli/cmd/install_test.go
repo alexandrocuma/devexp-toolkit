@@ -3037,14 +3037,19 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		if !strings.Contains(out, "Installing for Claude Code") {
 			t.Errorf("the real target did not run:\n%s", out)
 		}
-		// #114 finished the Kimi installer, so the "not installed for it yet"
-		// notice — and the machinery behind it — is gone. The one thing Kimi
-		// still cannot do is undo itself, and that notice stays (#115).
+		// #114 finished the Kimi installer and #115 the way out, so neither
+		// the "not installed for it yet" notice nor the "cannot remove it
+		// yet" one may survive anywhere in the output.
 		if strings.Contains(out, "not installed for it yet") {
 			t.Errorf("the summary still claims Kimi is a partial install:\n%s", out)
 		}
-		if !strings.Contains(out, "cannot remove a Kimi Code CLI install yet (#115)") {
-			t.Errorf("the run no longer says uninstall cannot remove it:\n%s", out)
+		if strings.Contains(out, "cannot remove a Kimi Code CLI install yet") {
+			t.Errorf("the run still says uninstall cannot remove a Kimi install:\n%s", out)
+		}
+		// What replaced it: what Kimi honours less of, which a dry run must
+		// say too — it is the same install, previewed.
+		if !strings.Contains(out, "supports less of what devexp's assets ask for") {
+			t.Errorf("the run does not say what Kimi supports less of:\n%s", out)
 		}
 		if _, err := os.Stat(filepath.Join(home, ".kimi-code")); !os.IsNotExist(err) {
 			t.Errorf("a dry run created the Kimi home (%v)", err)
