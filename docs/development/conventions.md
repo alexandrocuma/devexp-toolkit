@@ -44,7 +44,7 @@ For where things live, see the [architecture overview](../architecture/overview.
 // flag path (detectTargets) and the interactive path (runWizard) resolved
 // targets with their own copy of this switch, so the rule lived in two places
 // and could drift.
-func selectTargets(hasClaude, hasOpencode bool, choice string) (claude, opencode bool, err error) {
+func selectTargets(d detection, chosen []target) ([]target, error) {
 ```
 — `cli/cmd/targets.go`
 

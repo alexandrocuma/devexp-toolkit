@@ -16,7 +16,7 @@ var version = "dev"
 
 var rootCmd = &cobra.Command{
 	Use:     "devexp",
-	Short:   "DevExp Framework — agents, skills, hooks, and MCPs for Claude Code & opencode",
+	Short:   "DevExp Framework — agents, skills, hooks, and MCPs for Claude Code, opencode & Kimi Code CLI",
 	Version: version,
 }
 

@@ -836,7 +836,8 @@ func TestMergeInstalled(t *testing.T) {
 // A failure PART-WAY THROUGH a step, as opposed to between two steps. The step
 // hands its partial result back with the error, and dropping it leaves files on
 // disk that the manifest never learned about: a later run would not prune a
-// since-deselected one, and until #115 ./uninstall.sh could not remove it.
+// since-deselected one, and ./uninstall.sh could not remove it either: it
+// reads that same manifest.
 func TestDoInstallKimi_ManifestRecordsAPartialStep(t *testing.T) {
 	for _, kind := range []string{"agents", "skills"} {
 		t.Run(kind, func(t *testing.T) {

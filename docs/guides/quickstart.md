@@ -18,7 +18,7 @@ Or from a clone:
 ./install.sh
 ```
 
-The installer detects Claude Code, opencode and Kimi Code CLI automatically, and installs for every one it finds unless you pass `--target`. Restart your CLI after installation. (For Kimi Code, MCP servers, agents, skills and hooks all install, but `./uninstall.sh` cannot remove them yet — see [install.md](install.md#kimi-code-cli).)
+The installer detects Claude Code, opencode and Kimi Code CLI automatically, and installs for every one it finds unless you pass `--target`. Restart your CLI after installation. (For Kimi Code, MCP servers, agents, skills and hooks all install, and `./uninstall.sh` removes them again — see [install.md](install.md#kimi-code-cli) for what Kimi honours less of.)
 
 ---
 

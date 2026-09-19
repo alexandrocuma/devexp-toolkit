@@ -105,7 +105,7 @@ func InstallKimi(registry Registry, repoDir, hooksDir, configPath string, disabl
 
 	if _, err := WriteKimiHooks(configPath, hooksDir, selected, dryRun); err != nil {
 		// The scripts are on disk and unregistered, which is inert; record
-		// them so the next run — or #115 — can clean up.
+		// them so the next run — or UninstallKimi — can clean up.
 		return append(written, staleNew(written, recorded)...), err
 	}
 

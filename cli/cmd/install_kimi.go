@@ -18,9 +18,9 @@ import (
 // ── Kimi Code CLI ─────────────────────────────────────────────────────────────
 //
 // MCP servers (#112), agents and skills (#113) and hooks (#114) all install
-// here, so a Kimi run now writes everything devexp ships. What it still
-// cannot do is undo itself: ./uninstall.sh does not remove a Kimi install yet
-// (#115), and every run says so.
+// here, so a Kimi run writes everything devexp ships, and #115 takes it all
+// out again. What every run says instead is how much less of it Kimi honours
+// than Claude Code does (warnKimiFeatureSubset).
 //
 // The order matches doInstallClaude: MCP servers first, then agents, then
 // skills, then hooks. Each step is skipped by the --*-only flags that exclude
@@ -107,7 +107,8 @@ func doInstallKimi(opts *installOpts) error {
 			// them back with the error. Record them — merged with what was
 			// already recorded — or the next run compares against a list that
 			// never learned about them: a since-deselected agent is never
-			// pruned, and until #115 ./uninstall.sh cannot remove it either.
+			// pruned, and ./uninstall.sh, which reads that same manifest, has
+			// nothing to go on either.
 			//
 			// Stale removal is skipped on this path on purpose. The install
 			// set is half-finished, so everything the step never reached would

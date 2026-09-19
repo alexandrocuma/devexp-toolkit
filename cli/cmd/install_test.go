@@ -2909,7 +2909,7 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 			t.Errorf("no skill was installed:\n%s", out)
 		}
 		// One manifest records all three kinds, which is what a later run and
-		// #115's uninstall read back.
+		// the uninstall added in #115 read back.
 		saved, err := os.ReadFile(filepath.Join(root, ".devexp-manifest.json"))
 		if err != nil {
 			t.Fatalf("read manifest: %v", err)
