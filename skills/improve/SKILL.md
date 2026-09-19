@@ -1,6 +1,6 @@
 ---
 name: improve
-description: Continuous improvement cycle — health scorecard, stale work cleanup, dead code removal, tech debt triage, and retrospective. Self-contained: no other skills required.
+description: "Continuous improvement cycle — health scorecard, stale work cleanup, dead code removal, tech debt triage, and retrospective. Self-contained: no other skills required."
 ---
 
 # Improve: Post-Sprint Continuous Improvement
@@ -333,7 +333,7 @@ Remove these N artifacts? (yes / choose / skip)
 
 ```bash
 # Validate an identifier before using it in any delete pattern.
-safe_id() { case "$1" in ""|*[!A-Za-z0-9_-]*) return 1 ;; *) return 0 ;; esac; }
+safe_id() { case "${1}" in ""|*[!A-Za-z0-9_-]*) return 1 ;; *) return 0 ;; esac; }
 
 git worktree remove "<verified-abs-path>"   # confirmed-orphan trees only (refuses a dirty tree without --force)
 git worktree prune                          # drop stale admin entries for dirs already gone

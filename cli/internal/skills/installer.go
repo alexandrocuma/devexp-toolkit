@@ -43,13 +43,13 @@ func InstallClaude(srcDir, targetDir string, disabled []string, dryRun bool) ([]
 		if dryRun {
 			ui.DryRun(fmt.Sprintf("write %s/", destDir))
 			// Preview the symlinks inside the skill a real run leaves alone.
-			if _, err := copyDir(skillDir, destDir, true); err != nil {
+			if _, err := copyDir(skillDir, destDir, true, nil); err != nil {
 				return installed, err
 			}
 			installed = append(installed, name)
 			continue
 		}
-		kept, err := copyDir(skillDir, destDir, false)
+		kept, err := copyDir(skillDir, destDir, false, nil)
 		if err != nil {
 			return installed, err
 		}
@@ -68,7 +68,7 @@ func InstallClaude(srcDir, targetDir string, disabled []string, dryRun bool) ([]
 // symlink is left untouched, with a warning, and nothing is written through
 // it: it may point at a user's own copy or at the toolkit's source.
 func CopyDir(src, dst string) error {
-	_, err := copyDir(src, dst, false)
+	_, err := copyDir(src, dst, false, nil)
 	return err
 }
 
@@ -76,10 +76,16 @@ func CopyDir(src, dst string) error {
 // symlinks. With dryRun it writes nothing and only warns about those paths, so
 // a preview names what a real run keeps.
 //
+// transform, when non-nil, gets each file's slash-separated path relative to
+// src and its contents, and returns what to write instead. It is how the Kimi
+// install substitutes a rewritten SKILL.md: copying the directory and then
+// overwriting that one file would write through it when it is a symlink, which
+// is the whole thing #124 forbids.
+//
 // The symlink check and the write are separate steps: a link created in
 // between is followed (fsutil.WriteFileAtomic replaces its target). Only a
 // writer running as the same user can do that.
-func copyDir(src, dst string, dryRun bool) (kept []string, err error) {
+func copyDir(src, dst string, dryRun bool, transform func(rel string, content []byte) ([]byte, error)) (kept []string, err error) {
 	err = filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -106,6 +112,12 @@ func copyDir(src, dst string, dryRun bool) (kept []string, err error) {
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return err
+		}
+		if transform != nil {
+			content, err = transform(filepath.ToSlash(rel), content)
+			if err != nil {
+				return err
+			}
 		}
 		return fsutil.WriteFileAtomic(dest, content, 0644)
 	})

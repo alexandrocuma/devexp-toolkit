@@ -140,7 +140,7 @@ Unlike the Claude Code target, there's **no backup step**.
 
 ### Install: Kimi Code CLI
 
-`runInstall` → `cli/cmd/install_kimi.go` `doInstallKimi(opts)`, with paths from `kimiTargetPaths($KIMI_CODE_HOME, $HOME, now)`. MCP servers are all it installs so far; agents and skills are #113, hooks #114, and every run names what it did not install (`notYetSupported` in `cli/cmd/install.go`). `--agents-only`/`--skills-only` therefore install nothing, and a Kimi-only run of that shape exits non-zero.
+`runInstall` → `cli/cmd/install_kimi.go` `doInstallKimi(opts)`, with paths from `kimiTargetPaths($KIMI_CODE_HOME, $HOME, now)`. It installs MCP servers, then agents, then skills, in `doInstallClaude`'s order; hooks are #114, and every run names what it did not install (`notYetSupported` in `cli/cmd/install.go`). Each of `--mcps-only`/`--agents-only`/`--skills-only` installs exactly its own kind, so no flag combination leaves a Kimi run with nothing to do.
 
 1. `loadOldManifest` reads `$KIMI/.devexp-manifest.json`; the whole struct is carried forward, so nothing a later version adds is dropped.
 2. `installMCPsKimi` → `cli/internal/mcp/kimi.go` `InstallKimi` merges the registry into the `mcpServers` object of `$KIMI/mcp.json`:
@@ -151,7 +151,7 @@ Unlike the Claude Code target, there's **no backup step**.
    - A file that is not strict JSON, whose top level is not an object, or whose `mcpServers` is not one, is left untouched (`mcp.ConfigRefusedError`): the MCP step is skipped with a warning and the run continues.
 3. `manifest.Save` writes `$KIMI/.devexp-manifest.json`, including on `--mcps-only`, because for Kimi the manifest *is* the MCP ownership record (skipped in dry-run).
 
-Every path this target prints is quoted: the root comes from `$KIMI_CODE_HOME`. There is no backup step and nothing is exec'd — Kimi has no `mcp add` command.
+Every path this target prints is quoted: the root comes from `$KIMI_CODE_HOME`. Nothing is exec'd — Kimi has no `mcp add` command — and the MCP step has no backup, because it merges into `mcp.json` rather than replacing it; the agent and skill steps back up what is already there, as the Claude Code install does.
 
 ### A tool call at runtime (after install)
 
@@ -194,7 +194,7 @@ Hook commands point into the install root, so editing a registered script in the
 |------------|----------|-------------|
 | `claude` CLI | Detecting the install target; registering and removing MCPs (`claude mcp list/add/remove`) | `cli/cmd/targets.go` (`commandExists`), `cli/internal/mcp/claude.go` |
 | `opencode` CLI | Detecting the install target only (on PATH). Its config file is edited directly | `cli/cmd/targets.go`, `cli/internal/mcp/opencode.go` |
-| `kimi` CLI | Detecting the install target, and one bounded `kimi --version` probe to tell Kimi Code CLI from the unsupported legacy kimi-cli. Nothing is run to install: MCP servers are merged into `$KIMI_CODE_HOME/mcp.json` directly, because Kimi has no `mcp add` command. Agents, skills and hooks are not installed yet (#113, #114) | `cli/cmd/kimi_detect.go`, `cli/cmd/paths.go` (`kimiTargetPaths`), `cli/internal/mcp/kimi.go` |
+| `kimi` CLI | Detecting the install target, and one bounded `kimi --version` probe to tell Kimi Code CLI from the unsupported legacy kimi-cli. Nothing is run to install: MCP servers are merged into `$KIMI_CODE_HOME/mcp.json` directly, because Kimi has no `mcp add` command, and agents and skills are written as files. Hooks are not installed yet (#114) | `cli/cmd/kimi_detect.go`, `cli/cmd/paths.go` (`kimiTargetPaths`), `cli/cmd/install_kimi.go`, `cli/internal/mcp/kimi.go` |
 | `~/.claude/settings.json` | Hook registration (only the `hooks` value is rewritten; other bytes and users' hook fields are kept) | `cli/internal/hooks/installer.go`, `cli/internal/hooks/settings.go` |
 | User cache dir (`os.UserCacheDir()/devexp/assets`, `…/assets-dev` for dev builds) | Assets extracted from the embedded FS when no clone is found | `cli/internal/repo/repo.go` |
 | cobra, viper, promptui | Commands; reading `devexp.config.json`; the interactive wizard (needs a TTY) | `cli/cmd/root.go`, `cli/internal/config/config.go`, `cli/internal/ui/prompts.go` |

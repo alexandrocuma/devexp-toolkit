@@ -28,7 +28,7 @@ You can also grab a binary manually from the [Releases page](https://github.com/
 
 If you're contributing to the toolkit — editing agents, skills, or hooks — clone the repo and use `install.sh`. `install.sh` is now a thin wrapper: if `bin/devexp` doesn't exist yet it stages the embedded assets and builds the `devexp` Go CLI from `cli/` (requires a local Go toolchain), then execs `devexp install` with whatever flags you pass through (`install.sh:7-22`). Because `devexp` prefers live files on disk over its embedded copies, asset edits never need a rebuild — only changes to the Go code under `cli/` do (see [Updating](#updating)).
 
-The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed and, when more than one is present, asks which to target (`cli/cmd/targets.go`). Supported CLIs: **Claude Code**, **opencode** and **Kimi Code CLI**. Kimi Code installs MCP servers so far; agents, skills and hooks are still to come — see [Kimi Code CLI](#kimi-code-cli) below.
+The installer is CLI-agnostic. It detects which AI coding CLI(s) are installed and, when more than one is present, asks which to target (`cli/cmd/targets.go`). Supported CLIs: **Claude Code**, **opencode** and **Kimi Code CLI**. Kimi Code installs MCP servers, agents and skills; hooks are still to come — see [Kimi Code CLI](#kimi-code-cli) below.
 
 ```bash
 ./install.sh                         # interactive wizard
@@ -55,7 +55,7 @@ Passing any of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, 
   - asking for a CLI that was not detected is an error naming it, never a silent fall back to another
 - **Claude Code**: copies agents to `~/.claude/agents/`, skill directories to `~/.claude/skills/`, registers MCPs via `claude mcp add`, and registers enabled hooks in `~/.claude/settings.json` (`cli/cmd/install_claude.go`)
 - **opencode**: transforms agent frontmatter (model aliases, tool mapping, adds `mode: subagent`) and installs to `~/.config/opencode/agents/`; each skill's `SKILL.md` goes to `~/.config/opencode/commands/<name>.md`; MCPs are written to the `mcp` key of `~/.config/opencode/config.json` (a `config.json` that isn't strict JSON — including one with comments or trailing commas, which opencode itself accepts — or whose top level or `mcp` isn't an object is left untouched: the MCP step is skipped with a warning naming the file and the servers to add by hand, and agents, skills and hooks still install. With `--mcps-only` it is an error); the hook plugin goes to `~/.config/opencode/plugins/` — the entry `devexp.js` plus `devexp/` holding the selected modules, `utils.js`, `package.json` and the `hooks.json` selection (`cli/cmd/install_opencode.go`, `cli/internal/hooks/opencode.go`). With every hook disabled no plugin is installed
-- **Kimi Code CLI**: merges MCPs into the `mcpServers` key of `$KIMI_CODE_HOME/mcp.json`, resolving `${VAR}` first because Kimi expands nothing; entries devexp did not write are never touched, an unchanged file is not rewritten, and an `mcp.json` devexp cannot parse is left alone with a warning. Agents, skills and hooks are not installed yet (#113, #114), and every run says so (`cli/cmd/install_kimi.go`, `cli/internal/mcp/kimi.go`)
+- **Kimi Code CLI**: merges MCPs into the `mcpServers` key of `$KIMI_CODE_HOME/mcp.json`, resolving `${VAR}` first because Kimi expands nothing; entries devexp did not write are never touched, an unchanged file is not rewritten, and an `mcp.json` devexp cannot parse is left alone with a warning. Agents and skills are installed too; hooks are not yet (#114), and every run says so (`cli/cmd/install_kimi.go`, `cli/internal/mcp/kimi.go`)
 - Backs up existing agents and skills before overwriting — **Claude Code target only**; the opencode install has no backup step (`backupExisting` / `backupExistingDirs` are called only from `cli/cmd/install_claude.go`)
 - The install script is **idempotent** — safe to run multiple times
 
@@ -220,25 +220,38 @@ Shows every add, update, and removal devexp would make — including stale-file 
 
 ## CLI Installation Paths
 
-`$KIMI` below is `$KIMI_CODE_HOME`, or `~/.kimi-code` when that is unset (`kimiTargetPaths` in `cli/cmd/paths.go`). MCP servers are installed there; agents, skills and hooks are not, yet.
+`$KIMI` below is `$KIMI_CODE_HOME`, or `~/.kimi-code` when that is unset (`kimiTargetPaths` in `cli/cmd/paths.go`). MCP servers, agents and skills are installed there; hooks are not, yet.
 
 | Component | Claude Code | opencode | Kimi Code CLI |
 |-----------|-------------|----------|---------------|
-| Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (transformed) | `$KIMI/agents/` — not installed yet (#113) |
-| Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) | `$KIMI/skills/` — not installed yet (#113) |
+| Agents | `~/.claude/agents/` | `~/.config/opencode/agents/` (transformed) | `$KIMI/agents/` (transformed) |
+| Skills | `~/.claude/skills/` | `~/.config/opencode/commands/` (flat `.md`, `name:` stripped) | `$KIMI/skills/<name>/` (with supporting files) |
 | Hooks | `~/.claude/settings.json` (shell scripts) | `~/.config/opencode/plugins/devexp.js` + `devexp/` (selected modules, `utils.js`, `package.json`, `hooks.json`) | `$KIMI/config.toml` — not installed yet (#114) |
 | MCPs | via `claude mcp add` | `mcp` key of `~/.config/opencode/config.json` | `mcpServers` key of `$KIMI/mcp.json` |
 | `CLAUDE.md` / `AGENTS.md` | `~/.claude/CLAUDE.md` | `~/.config/opencode/AGENTS.md` (or project root) | Kimi reads `AGENTS.md`, never `CLAUDE.md` |
 | Agent tools | All Claude tools | `read/write/edit/bash/glob/grep/webfetch/websearch` only | Own tool names (`FetchURL`, `TodoList`, …) |
-| `Agent`, `Skill`, `Task*` tools | Supported | No opencode equivalent — dropped at transform | Sub-agents exist; the mapping lands with #113 |
+| `Agent`, `Skill`, `Task*` tools | Supported | No opencode equivalent — dropped at transform | `Agent` and `Skill` as-is; `WebFetch`→`FetchURL`; all four `Task*` and `TodoWrite`→`TodoList`; anything else dropped and named in the output |
 
 ### Kimi Code CLI
 
-Kimi Code CLI `0.31.0` or newer on `PATH` is detected and can be selected, in the wizard or with `--target kimi`. It installs **MCP servers only so far** — agents and skills arrive in #113, hooks in #114 — and every Kimi run says which of them it did not install, so a partial install cannot be misread as a complete one. Asking a Kimi-only run for `--agents-only` or `--skills-only` installs nothing and exits non-zero rather than reporting `All done.`
+Kimi Code CLI `0.31.0` or newer on `PATH` is detected and can be selected, in the wizard or with `--target kimi`. It installs **MCP servers, agents and skills**; hooks arrive in #114, and `./uninstall.sh` cannot remove a Kimi install yet (#115). Every Kimi run says which of them it did not install, so a partial install cannot be misread as a complete one. Each of `--mcps-only`, `--agents-only` and `--skills-only` installs exactly its own kind.
+
+Three things differ from the Claude Code install, all because of how Kimi reads what it is given:
+
+- **A custom agent body replaces Kimi's whole system prompt**, where Claude Code appends to it. Every installed agent therefore ends with Kimi's `${base_prompt}` marker, which brings back the tool guidance, `AGENTS.md`, the working-directory listing and the skills catalog.
+- **A tool name Kimi does not have is dropped silently**, with nothing written to its log — so devexp names every dropped name at install time. `TaskList` is mapped rather than passed through: Kimi has a tool of that exact name which lists background tasks, not todos.
+- **A skill's canonical command is `/skill:<name>`.** Bare `/<name>` also resolves, but only `/skill:<name>` appears in Kimi's command listings.
+
+`color`, `memory` and `model` are dropped from agent front matter, since Kimi ignores them. `--model` is **ignored** with a warning — the install continues, and only the flag has no effect, because Kimi has no per-agent model.
+
+An installed agent holds two shapes of path, and both are deliberate. References to other **agents** are repointed at the Kimi install: `~/.kimi-code/agents/<name>.md` when `$KIMI_CODE_HOME` is unset, and the absolute path when it is set, since a custom root has no tilde form. The tilde form is preferred where it exists because it puts nothing derived from your environment into a file a model reads. References to **`~/.claude/agent-memory`** are left exactly as they are, so a Kimi session and a Claude Code session share one atlas and one set of per-project notes rather than keeping two that drift apart. Seeing both forms in the same file is not a mistake.
+
+> **Measured about Kimi 2.0.1, and useful to know when writing your own agents:** `~/` is expanded in the path argument of `Read`, `Write`, `Edit`, `Glob` and `Grep`, against `HOME` as Kimi sees it. Expansion happens *before* Kimi's absolute-path test, so `~/…` also clears the guard that refuses a **relative** path to a file outside the workspace — `~/.kimi-code/agents/x.md` is readable from a project directory where `../.kimi-code/agents/x.md` is refused with "not an absolute path". Separately, paths that look like secrets (`.env`, `id_rsa`, `credentials`, …) are blocked outright whatever form they take.
+
 
 **MCP servers** go into the `mcpServers` object of `$KIMI/mcp.json`, which Kimi has no command to edit — devexp merges into the file directly (`cli/internal/mcp/kimi.go`):
 
-- **`${VAR}` is resolved at install time.** Kimi expands nothing when it reads the file — not `${VAR}`, not `$VAR`, not `~` — so a placeholder left in it would be spawned literally.
+- **`${VAR}` is resolved at install time.** Kimi expands nothing when it reads *this file* — not `${VAR}`, not `$VAR`, not `~` — so a placeholder left in it would be spawned literally. (That is about `mcp.json` only. Paths a *tool* is given are a different code path, and `~/` is expanded there — see the callout above.)
 - **Your own entries and keys are left exactly as they are.** devexp records a fingerprint of each entry it writes in the manifest, and rewrites or removes only entries that still match it. An entry you wrote — including one that happens to be identical to devexp's, which is never adopted — or one of devexp's you have since edited, is skipped and said to be; `--reinstall-mcps` is how you hand it back.
 - **An entry devexp wrote is removed only when it is no longer installed** — when you deselect that MCP, when it leaves the registry, or when the registry makes it project-scoped, which devexp never writes to Kimi's user file — the way a stale agent file is removed. An MCP that is still selected but cannot be configured on this run, because a `required_env` variable is unset in this shell or this clone, keeps its entry and keeps its notice: "I cannot configure this now" is not "this is no longer installed".
 - **Nothing is written when nothing changed**, so a second install reports `already configured` and leaves the file byte-identical.
