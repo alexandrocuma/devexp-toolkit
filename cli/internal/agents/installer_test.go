@@ -419,8 +419,14 @@ func captureStdout(t *testing.T, fn func()) string {
 // It stays in the install set, so the manifest keeps tracking it. A regular
 // file next to it is replaced atomically.
 func TestInstall_SymlinkedAgentEntry(t *testing.T) {
-	agent := "---\nname: a\nmodel: sonnet\n---\n# A\n"
+	// A description and a body: the other three installers do not need them,
+	// but Kimi refuses an agent without either, and the point of this test is
+	// the symlink rule rather than the transform.
+	agent := "---\nname: a\ndescription: \"a test agent\"\nmodel: sonnet\n---\n\n# A\n"
 	installers := map[string]func(src, target string, dryRun bool) ([]string, error){
+		"InstallKimi": func(src, target string, dryRun bool) ([]string, error) {
+			return InstallKimi(src, target, "/home/u/.kimi-code/agents", nil, dryRun)
+		},
 		"InstallClaude": func(src, target string, dryRun bool) ([]string, error) {
 			return InstallClaude(src, target, "opus", nil, dryRun)
 		},

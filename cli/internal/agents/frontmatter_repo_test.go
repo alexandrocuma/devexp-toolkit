@@ -3,7 +3,6 @@ package agents
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -20,12 +19,6 @@ import (
 // splitRepoFrontmatter here is a second implementation of Kimi's fence rule on
 // purpose (see the same note in internal/skills): a guard that called the
 // installer's own splitter would pass whenever the two agreed with each other.
-
-var kimiAgentNameRe = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
-
-// kimiBuiltinProfiles are Kimi's own agent profiles. A shipped agent may not
-// take one of these names without `override: true`, which devexp never emits.
-var kimiBuiltinProfiles = map[string]bool{"agent": true, "coder": true, "explore": true, "plan": true}
 
 // kimiPromptVars are every variable Kimi substitutes when it renders an agent
 // body. A shipped body must not contain one by accident: they are plausible
@@ -94,7 +87,7 @@ func TestRepoAgentsFrontmatterStrictYAML(t *testing.T) {
 			if got != name {
 				t.Errorf("%s name = %q, want %q (the filename)", path, parsed["name"], name)
 			}
-			if !kimiAgentNameRe.MatchString(got) {
+			if !kimiNameRe.MatchString(got) {
 				t.Errorf("%s name = %q, want kebab-case — Kimi refuses anything else", path, got)
 			}
 			if kimiBuiltinProfiles[got] {
