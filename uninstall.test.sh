@@ -1573,5 +1573,237 @@ else
     echo "SKIP Claude Code round trip with the real binary (needs go and ./scripts/stage-assets.sh)"
 fi
 
+# ── Kimi Code CLI ────────────────────────────────────────────────────────────
+# uninstall.sh never touches the Kimi root itself: the manifest is the only
+# record of what devexp put there, so the whole removal is delegated to
+# `devexp uninstall --target kimi`. What is tested here is the wiring —
+# detection, the preview/remove pair, the target menu and the missing-binary
+# path. The removal rules themselves are tested in Go (cli/cmd).
+
+# make_kimi_stub <path> <tag>: a devexp whose help lists both targets, so the
+# same binary answers the opencode probe and the kimi one.
+make_kimi_stub() {
+    mkdir -p "$(dirname "$1")"
+    cat > "$1" <<STUB
+#!/bin/bash
+if [ "\$*" = "uninstall --help" ]; then
+    echo "      --target string   CLI to remove devexp from (supported: kimi, opencode)"
+    for i in \$(seq 4000); do printf '%s\\n' "help text help text help text help text help text help text help text help text"; done
+    exit 0
+fi
+echo "STUB[$2] \$*"
+echo "$2 \$* DEVEXP_DIR=\$DEVEXP_DIR" >> "\$CALLS"
+case "\$*" in *--dry-run*) exit 0 ;; esac
+exit "\${STUB_RC:-0}"
+STUB
+    chmod +x "$1"
+}
+
+# kimi_install <root>: the one thing that makes a Kimi install detectable.
+kimi_install() {
+    mkdir -p "$1"
+    printf '{"agents":["dev-agent.md"],"skills":[],"hooks":[],"mcps":{}}' > "$1/.devexp-manifest.json"
+}
+
+# A Kimi-only install: detected, previewed, removed, exit 0.
+new_env
+kimi_install "$E/h/.kimi-code"
+make_kimi_stub "$E/stubs/k" K
+run_uninstall DEVEXP_BIN="$E/stubs/k"
+check "kimi: exits 0" rc_is 0
+check "kimi: is detected without agents or a plugin" out_has "Kimi Code CLI"
+check "kimi: previews then removes, both with DEVEXP_DIR" calls_are \
+    "$(printf 'K uninstall --target kimi --dry-run DEVEXP_DIR=%s\nK uninstall --target kimi --yes DEVEXP_DIR=%s' "$E/r" "$E/r")"
+
+# $KIMI_CODE_HOME is honoured, and the default root is then not looked at.
+new_env
+kimi_install "$E/elsewhere/kimi"
+make_kimi_stub "$E/stubs/k" K
+run_uninstall DEVEXP_BIN="$E/stubs/k" KIMI_CODE_HOME="$E/elsewhere/kimi"
+check "kimi: \$KIMI_CODE_HOME is detected" out_has "$E/elsewhere/kimi"
+check "kimi: the custom root is removed from" calls_are \
+    "$(printf 'K uninstall --target kimi --dry-run DEVEXP_DIR=%s\nK uninstall --target kimi --yes DEVEXP_DIR=%s' "$E/r" "$E/r")"
+
+# A Kimi root with no manifest is not an install: nothing says which files
+# there are devexp's, so it must not be offered or acted on.
+new_env
+mkdir -p "$E/h/.kimi-code/agents"
+printf '# agent\n' > "$E/h/.kimi-code/agents/dev-agent.md"
+make_kimi_stub "$E/stubs/k" K
+run_uninstall DEVEXP_BIN="$E/stubs/k"
+check "kimi: a root without a manifest is not an install" out_has "Nothing to remove"
+check "kimi: and the binary is never called" calls_are ""
+check "kimi: the files there are left alone" test -f "$E/h/.kimi-code/agents/dev-agent.md"
+
+# No binary with the target: the Kimi install is left in place with an
+# actionable warning, and the rest of the uninstall still completes.
+new_env
+kimi_install "$E/h/.kimi-code"
+make_old_stub "$E/bin/devexp"
+run_uninstall
+check "kimi: no usable binary still exits 0" rc_is 0
+check "kimi: says the install was left in place" out_has "will be left in place"
+check "kimi: says how to fix it" out_has "DEVEXP_BIN"
+
+# --yes with more than one install must not stop at the target menu. Stdin is
+# /dev/null here, so a prompt would end the run instead of removing anything.
+new_env
+kimi_install "$E/h/.kimi-code"
+printf '# agent\n' > "$E/r/agents/dev-agent.md"
+mkdir -p "$E/h/.claude/agents"
+printf '# agent\n' > "$E/h/.claude/agents/dev-agent.md"
+make_kimi_stub "$E/stubs/k" K
+run_uninstall DEVEXP_BIN="$E/stubs/k"
+check "kimi+claude: --yes does not reach the menu" rc_is 0
+check "kimi+claude: --yes says it takes every detected CLI" out_has "--yes: removing from every detected CLI"
+check "kimi+claude: the Claude Code agent is removed" test ! -f "$E/h/.claude/agents/dev-agent.md"
+check "kimi+claude: and Kimi is delegated" calls_are \
+    "$(printf 'K uninstall --target kimi --dry-run DEVEXP_DIR=%s\nK uninstall --target kimi --yes DEVEXP_DIR=%s' "$E/r" "$E/r")"
+
+# Interactively, the menu lists only what was detected and takes a subset.
+# Answering "1" here must leave the Kimi install entirely alone.
+new_env
+kimi_install "$E/h/.kimi-code"
+printf '# agent\n' > "$E/r/agents/dev-agent.md"
+mkdir -p "$E/h/.claude/agents"
+printf '# agent\n' > "$E/h/.claude/agents/dev-agent.md"
+make_kimi_stub "$E/stubs/k" K
+printf '1\ny\n' > "$E/answers"
+STDIN_FILE="$E/answers" env -i HOME="$E/h" PATH="$E/bin:/usr/bin:/bin" CALLS="$E/calls" DEVEXP_BIN="$E/stubs/k" \
+    /bin/bash "$E/r/uninstall.sh" <"$E/answers" > "$E/out" 2>&1
+echo $? > "$E/rc"
+check "kimi menu: exits 0" rc_is 0
+check "kimi menu: lists Claude Code as [1]" out_has "[1] Claude Code"
+check "kimi menu: lists Kimi as [2]" out_has "[2] Kimi Code CLI"
+check "kimi menu: choosing 1 leaves Kimi alone" calls_are ""
+check "kimi menu: and removes the Claude Code agent" test ! -f "$E/h/.claude/agents/dev-agent.md"
+
+# --yes is honoured wherever it appears, not only as $1. It was read as "$1"
+# alone, so `./uninstall.sh --quiet --yes` prompted — and now that --yes also
+# skips the target menu, a missed one is a run that hangs rather than one that
+# merely asks twice. Stdin is /dev/null, so a prompt ends the run. Found by
+# mutation (M10).
+for pos in first later; do
+    new_env
+    kimi_install "$E/h/.kimi-code"
+    printf '# agent\n' > "$E/r/agents/dev-agent.md"
+    mkdir -p "$E/h/.claude/agents"
+    printf '# agent\n' > "$E/h/.claude/agents/dev-agent.md"
+    make_kimi_stub "$E/stubs/k" K
+    case "$pos" in
+        first) args=(--yes --some-other-flag) ;;
+        later) args=(--some-other-flag --yes) ;;
+    esac
+    env -i HOME="$E/h" PATH="$E/bin:/usr/bin:/bin" CALLS="$E/calls" DEVEXP_BIN="$E/stubs/k" \
+        /bin/bash "$E/r/uninstall.sh" "${args[@]}" </dev/null > "$E/out" 2>&1
+    echo $? > "$E/rc"
+    check "--yes $pos: exits 0" rc_is 0
+    check "--yes $pos: skips the target menu" out_has "--yes: removing from every detected CLI"
+    check "--yes $pos: does not ask to confirm" out_lacks "Proceed with removal?"
+    check "--yes $pos: actually removes" test ! -f "$E/h/.claude/agents/dev-agent.md"
+done
+
+# An invalid number is refused before anything is removed.
+new_env
+kimi_install "$E/h/.kimi-code"
+printf '# agent\n' > "$E/r/agents/dev-agent.md"
+mkdir -p "$E/h/.claude/agents"
+printf '# agent\n' > "$E/h/.claude/agents/dev-agent.md"
+make_kimi_stub "$E/stubs/k" K
+printf '1,9\n' > "$E/answers"
+env -i HOME="$E/h" PATH="$E/bin:/usr/bin:/bin" CALLS="$E/calls" DEVEXP_BIN="$E/stubs/k" \
+    /bin/bash "$E/r/uninstall.sh" <"$E/answers" > "$E/out" 2>&1
+echo $? > "$E/rc"
+check "kimi menu: an out-of-range number is refused" test "$(cat "$E/rc")" != 0
+check "kimi menu: says the choice was invalid" out_has "Invalid choice"
+check "kimi menu: a valid number beside it removes nothing" test -f "$E/h/.claude/agents/dev-agent.md"
+
+# ── Kimi round trip with the real binary ─────────────────────────────────────
+# PR #175's review left two things unaudited: UninstallKimi beyond its adoption
+# path, and --dry-run / the --*-only flags exercised through the *built*
+# binary rather than by calling doInstallKimi directly. Both are here: an
+# in-process test cannot catch a flag that never reaches the handler, or a
+# cobra wiring mistake, because it bypasses the flag parsing entirely.
+if command -v go >/dev/null 2>&1 && [ -f "$ROOT/cli/internal/assets/hooks/registry.json" ]; then
+    new_env
+    K="$E/h/.kimi-code"
+    cp -R "$ROOT/agents" "$ROOT/skills" "$ROOT/hooks" "$ROOT/mcps" "$E/r/" 2>/dev/null
+    # The marker DEVEXP_DIR is validated against: without it the installer
+    # refuses the copy as "not a devexp-toolkit checkout".
+    cp "$ROOT/.devexp-toolkit" "$E/r/.devexp-toolkit" 2>/dev/null || : > "$E/r/.devexp-toolkit"
+    # A stub `kimi` on the scratch PATH, answering the bare-semver probe the
+    # detector uses. The real binary is never run: `env -i` below puts only
+    # $E/bin, /usr/bin and /bin on PATH, and running the real one would
+    # refresh the user's OAuth token against their live account.
+    printf '#!/bin/sh\necho 2.0.1\n' > "$E/bin/kimi"
+    chmod +x "$E/bin/kimi"
+    if (cd "$ROOT/cli" && go build -o "$E/devexp" .) > "$E/out" 2>&1; then
+        kimi_run() { # $1.. = install flags
+            env -i HOME="$E/h" PATH="$E/bin:/usr/bin:/bin" DEVEXP_DIR="$E/r" \
+                "$E/devexp" install --target kimi "$@" > "$E/out" 2>&1
+        }
+        kimi_un() { # $1.. = uninstall flags
+            env -i HOME="$E/h" PATH="$E/bin:/usr/bin:/bin" DEVEXP_DIR="$E/r" \
+                "$E/devexp" uninstall --target kimi "$@" > "$E/out" 2>&1
+        }
+
+        # --dry-run writes nothing at all, through the built binary.
+        kimi_run --dry-run
+        check "kimi binary: --dry-run creates no Kimi root" test ! -d "$K"
+
+        # Each --*-only installs its own kind and no hooks, and the uninstall
+        # afterwards leaves the root empty of devexp either way.
+        for only in mcps agents skills; do
+            rm -rf "$K"
+            kimi_run "--${only}-only"
+            check "kimi binary: --${only}-only exits 0" test $? = 0
+            check "kimi binary: --${only}-only writes a manifest" test -f "$K/.devexp-manifest.json"
+            check "kimi binary: --${only}-only installs no hooks" test ! -d "$K/hooks"
+            kimi_un --dry-run
+            check "kimi binary: --${only}-only dry-run uninstall keeps the manifest" test -f "$K/.devexp-manifest.json"
+            kimi_un --yes
+            check "kimi binary: --${only}-only uninstall removes the manifest" test ! -f "$K/.devexp-manifest.json"
+            check "kimi binary: --${only}-only uninstall leaves no agents" test ! -d "$K/agents" -o -z "$(ls -A "$K/agents" 2>/dev/null)"
+            check "kimi binary: --${only}-only uninstall leaves no skills" test ! -d "$K/skills" -o -z "$(ls -A "$K/skills" 2>/dev/null)"
+        done
+
+        # A full install, then the hooks path end to end through the binary:
+        # the block is registered, then taken out, and config.toml comes back
+        # to what the user had.
+        rm -rf "$K"
+        mkdir -p "$K"
+        printf '[general]\ntheme = "dark"\n' > "$K/config.toml"
+        cp "$K/config.toml" "$E/config.before"
+        kimi_run
+        check "kimi binary: a full install exits 0" test $? = 0
+        check "kimi binary: hooks are registered in config.toml" grep -q "devexp:hooks:begin" "$K/config.toml"
+        check "kimi binary: hook scripts are copied in" test -d "$K/hooks"
+        check "kimi binary: the install warns what Kimi honours less of" \
+            grep -q "supports less of what devexp's assets ask for" "$E/out"
+        check "kimi binary: and no longer says it cannot be removed" \
+            test -z "$(grep -F 'cannot remove a Kimi Code CLI install yet' "$E/out" || true)"
+
+        kimi_un --dry-run
+        check "kimi binary: uninstall --dry-run keeps the hooks block" grep -q "devexp:hooks:begin" "$K/config.toml"
+        check "kimi binary: uninstall --dry-run keeps the scripts" test -d "$K/hooks"
+
+        kimi_un --yes
+        check "kimi binary: uninstall exits 0" test $? = 0
+        check "kimi binary: the hooks block is gone" test -z "$(grep -F 'devexp:hooks:begin' "$K/config.toml" || true)"
+        check "kimi binary: the hooks tree is pruned" test ! -d "$K/hooks"
+        check "kimi binary: config.toml is back to the user's" cmp -s "$K/config.toml" "$E/config.before"
+        check "kimi binary: the manifest is gone" test ! -f "$K/.devexp-manifest.json"
+
+        # A second uninstall is a clean no-op, not an error.
+        kimi_un --yes
+        check "kimi binary: a second uninstall exits 0" test $? = 0
+        check "kimi binary: and says there is nothing recorded" grep -q "No devexp install recorded" "$E/out"
+    else
+        ko "kimi round trip: build failed" "$(cat "$E/out")"
+    fi
+else
+    echo "SKIP Kimi round trip with the real binary (needs go and ./scripts/stage-assets.sh)"
+fi
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

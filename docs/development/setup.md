@@ -29,7 +29,7 @@ cp mcps/.env.example mcps/.env        # optional — only MCPs with required_env
 ./install.sh --dry-run                # preview; installs nothing   # source: install.sh:22, cli/cmd/install.go:115
 ```
 
-Expected result: the dry run prints `DRY RUN MODE — no files will be written`, `Detected: Claude Code` (and/or `opencode`, `Kimi Code CLI`), the MCPs/agents/skills/hooks it would install, and ends with `All done.` A run that includes Kimi Code also warns that `./uninstall.sh` cannot remove a Kimi install yet; see [Troubleshooting](#troubleshooting). Until `UI_INSPECTOR_DIR` is set it also prints `[REQUIRED] ui-inspector — missing required env vars` — a warning, not a failure (`cli/internal/ui/output.go:28`).
+Expected result: the dry run prints `DRY RUN MODE — no files will be written`, `Detected: Claude Code` (and/or `opencode`, `Kimi Code CLI`), the MCPs/agents/skills/hooks it would install, and ends with `All done.` A run that includes Kimi Code also warns what Kimi honours less of than Claude Code — hooks fail open, `allowed-tools` is ignored, an agent body replaces the system prompt — see [Troubleshooting](#troubleshooting). Until `UI_INSPECTOR_DIR` is set it also prints `[REQUIRED] ui-inspector — missing required env vars` — a warning, not a failure (`cli/internal/ui/output.go:28`).
 
 `./install.sh` on its own would have built `bin/devexp` for you (it runs staging + `go build` when the binary is missing — `install.sh:7-20`); the explicit steps above make each stage visible. To install for real, run `./install.sh` — see [`../guides/install.md`](../guides/install.md).
 

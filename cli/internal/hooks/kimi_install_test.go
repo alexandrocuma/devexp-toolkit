@@ -58,10 +58,18 @@ func kimiTestRegistry(t *testing.T) Registry {
 
 func installKimi(t *testing.T, repo, hooksDir, configPath string, disabled, recorded []string, dryRun bool) ([]string, string, error) {
 	t.Helper()
+	// home is what the removal guard resolves symlinks from: the Kimi root's
+	// parent. These fixtures put hooksDir at <root>/hooks, so it is two levels
+	// up — the same relationship kimiPaths.home has to kimiPaths.hooks.
+	return installKimiUnder(t, filepath.Dir(filepath.Dir(hooksDir)), repo, hooksDir, configPath, disabled, recorded, dryRun)
+}
+
+func installKimiUnder(t *testing.T, home, repo, hooksDir, configPath string, disabled, recorded []string, dryRun bool) ([]string, string, error) {
+	t.Helper()
 	var got []string
 	var err error
 	out := captureOutput(t, func() {
-		got, err = InstallKimi(kimiTestRegistry(t), repo, hooksDir, configPath, disabled, recorded, dryRun)
+		got, err = InstallKimi(kimiTestRegistry(t), repo, home, hooksDir, configPath, disabled, recorded, dryRun)
 	})
 	return got, stripANSI(out), err
 }
@@ -256,7 +264,7 @@ func TestInstallKimiMissingSourceRegistersNothing(t *testing.T) {
 		t.Errorf("a half-finished copy still registered commands (%v)", statErr)
 	}
 	// What it did write has to come back, or the next run has no record of it
-	// and #115 cannot remove it either (#113's lesson).
+	// and UninstallKimi cannot remove it either (#113's lesson).
 	for _, rel := range []string{"kimi/adapter.sh", "claude-code/scan-budget.sh", "claude-code/secret-guard.sh"} {
 		if !slices.Contains(got, rel) {
 			t.Errorf("the failed step did not report writing %s: %v", rel, got)

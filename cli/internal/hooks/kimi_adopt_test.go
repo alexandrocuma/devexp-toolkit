@@ -240,7 +240,7 @@ func TestIsKimiOwnCommand(t *testing.T) {
 	}
 }
 
-// Removal has to reach the unmarked entries too, or #115's uninstall would
+// Removal has to reach the unmarked entries too, or UninstallKimi would
 // leave a live guard behind on any machine where the user has logged in.
 func TestRemoveKimiHooksTakesUnmarkedEntries(t *testing.T) {
 	_, hooksDir := kimiHome(t, "")

@@ -430,8 +430,16 @@ func TestUninstallCmd(t *testing.T) {
 	t.Run("a missing or unknown target is an error naming the supported ones", func(t *testing.T) {
 		for _, args := range [][]string{{"uninstall"}, {"uninstall", "--target", "claude"}} {
 			out, err := executeRoot(t, args...)
-			if err == nil || !strings.Contains(err.Error(), "unsupported target") || !strings.Contains(err.Error(), "supported: opencode") {
-				t.Errorf("%v: error = %v, want an unsupported-target error naming opencode", args, err)
+			// Every target, not just one: uninstall.sh probes this very text
+			// to decide whether a binary supports a target, so a target
+			// missing from it is a target the script silently skips.
+			if err == nil || !strings.Contains(err.Error(), "unsupported target") {
+				t.Errorf("%v: error = %v, want an unsupported-target error", args, err)
+			}
+			for name := range uninstallTargets {
+				if err == nil || !strings.Contains(err.Error(), name) {
+					t.Errorf("%v: error = %v, want it to name the supported target %q", args, err, name)
+				}
 			}
 			if strings.Contains(out, "Usage:") {
 				t.Errorf("%v: usage dumped on error:\n%s", args, out)

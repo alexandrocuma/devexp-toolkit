@@ -140,7 +140,7 @@ Unlike the Claude Code target, there's **no backup step**.
 
 ### Install: Kimi Code CLI
 
-`runInstall` → `cli/cmd/install_kimi.go` `doInstallKimi(opts)`, with paths from `kimiTargetPaths($KIMI_CODE_HOME, $HOME, now)`. It installs MCP servers, then agents, then skills, then hooks, in `doInstallClaude`'s order — everything devexp ships. Each of `--mcps-only`/`--agents-only`/`--skills-only` installs exactly its own kind and skips hooks, so no flag combination leaves a Kimi run with nothing to do. The one thing still missing is the way out: `./uninstall.sh` cannot remove a Kimi install yet (#115), and every run says so.
+`runInstall` → `cli/cmd/install_kimi.go` `doInstallKimi(opts)`, with paths from `kimiTargetPaths($KIMI_CODE_HOME, $HOME, now)`. It installs MCP servers, then agents, then skills, then hooks, in `doInstallClaude`'s order — everything devexp ships. Each of `--mcps-only`/`--agents-only`/`--skills-only` installs exactly its own kind and skips hooks, so no flag combination leaves a Kimi run with nothing to do. The way out is `devexp uninstall --target kimi`, which `./uninstall.sh` delegates to: the manifest is the only record of what devexp put in that root, so the whole removal reads it and reuses the installer's own functions rather than a second set of rules.
 
 1. `loadOldManifest` reads `$KIMI/.devexp-manifest.json`; the whole struct is carried forward, so nothing a later version adds is dropped.
 2. `installMCPsKimi` → `cli/internal/mcp/kimi.go` `InstallKimi` merges the registry into the `mcpServers` object of `$KIMI/mcp.json`:

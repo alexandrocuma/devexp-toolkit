@@ -36,13 +36,32 @@ func kimiAssetRepo(t *testing.T) string {
 	files := map[string]string{
 		// One stdio MCP, so the MCP step actually writes and the three kinds
 		// of asset are exercised together rather than two of them in isolation.
-		"mcps/registry.json":           `[{"name": "probe", "command": "echo", "args": ["hi"], "scope": "user"}]`,
-		"agents/dev-agent.md":          agent("dev-agent", "Read, Bash, Agent, WebFetch"),
-		"agents/other.md":              agent("other", "Read, Grep"),
-		"agents/README.md":             "# never installed\n",
-		"skills/graphify/SKILL.md":     skill("graphify"),
-		"skills/graphify/refs/note.md": "# a supporting file\n",
-		"skills/devxp/SKILL.md":        skill("devxp"),
+		"mcps/registry.json": `[{"name": "probe", "command": "echo", "args": ["hi"], "scope": "user"}]`,
+		// A registry with a kimi block, and the scripts it names. Without one
+		// no hook is installed for Kimi, so the manifest records no hook files
+		// — and anything asserting about the hooks path silently asserts about
+		// an empty list. That is exactly how the removal guard on the hook
+		// scripts went untested (PR #176 re-review): a fixture that installs
+		// no hooks cannot exercise them.
+		"hooks/registry.json": `[
+  {"name": "secret-guard", "enabled": true,
+   "claude_code": {"event": "PreToolUse", "matcher": "Read", "script": "hooks/claude-code/secret-guard.sh"},
+   "opencode": {"event": "tool.execute.before", "module": "hooks/opencode/secret-guard.js", "export": "secretGuard", "fail_closed": true},
+   "kimi": {"event": "PreToolUse", "matcher": "^(Read|Bash)$", "script": "hooks/claude-code/secret-guard.sh", "fail_closed": true, "timeout": 45}},
+  {"name": "dangerous-cmd-guard", "enabled": true,
+   "claude_code": {"event": "PreToolUse", "matcher": "Bash", "script": "hooks/claude-code/dangerous-cmd-guard.sh"},
+   "kimi": {"event": "PreToolUse", "matcher": "^Bash$", "script": "hooks/claude-code/dangerous-cmd-guard.sh", "fail_closed": true, "timeout": 45}}
+]`,
+		"hooks/kimi/adapter.sh":                    "#!/usr/bin/env bash\n# adapter\n",
+		"hooks/claude-code/scan-budget.sh":         "#!/usr/bin/env bash\n# budget\n",
+		"hooks/claude-code/secret-guard.sh":        "#!/usr/bin/env bash\n# guard\n",
+		"hooks/claude-code/dangerous-cmd-guard.sh": "#!/usr/bin/env bash\n# guard\n",
+		"agents/dev-agent.md":                      agent("dev-agent", "Read, Bash, Agent, WebFetch"),
+		"agents/other.md":                          agent("other", "Read, Grep"),
+		"agents/README.md":                         "# never installed\n",
+		"skills/graphify/SKILL.md":                 skill("graphify"),
+		"skills/graphify/refs/note.md":             "# a supporting file\n",
+		"skills/devxp/SKILL.md":                    skill("devxp"),
 	}
 	for rel, content := range files {
 		p := filepath.Join(repoDir, filepath.FromSlash(rel))
@@ -174,10 +193,14 @@ func TestDoInstallKimi_FreshInstall(t *testing.T) {
 	if !strings.Contains(installed, p.agentsRef+"/other.md") {
 		t.Errorf("the body reference was not repointed at the Kimi install (%s):\n%s", p.agentsRef, installed)
 	}
-	// Telling a user what was written without telling them it cannot be
-	// removed cleanly is half the story.
-	if !strings.Contains(out, "uninstall.sh cannot remove a Kimi Code CLI install yet") {
-		t.Errorf("the run does not say the install cannot be removed yet:\n%s", out)
+	// Telling a user what was written without telling them how much less of it
+	// Kimi honours is half the story: they would go on believing an agent's
+	// body is added to Kimi's prompt rather than replacing it.
+	if !strings.Contains(out, "supports less of what devexp's assets ask for") {
+		t.Errorf("the run does not say what Kimi supports less of:\n%s", out)
+	}
+	if !strings.Contains(out, "${base_prompt}") {
+		t.Errorf("the feature-subset warning does not name the base-prompt replacement:\n%s", out)
 	}
 	if !strings.Contains(installed, "${base_prompt}") {
 		t.Errorf("the installed agent does not opt into Kimi's base prompt:\n%s", installed)
@@ -832,7 +855,8 @@ func TestMergeInstalled(t *testing.T) {
 // A failure PART-WAY THROUGH a step, as opposed to between two steps. The step
 // hands its partial result back with the error, and dropping it leaves files on
 // disk that the manifest never learned about: a later run would not prune a
-// since-deselected one, and until #115 ./uninstall.sh could not remove it.
+// since-deselected one, and ./uninstall.sh could not remove it either: it
+// reads that same manifest.
 func TestDoInstallKimi_ManifestRecordsAPartialStep(t *testing.T) {
 	for _, kind := range []string{"agents", "skills"} {
 		t.Run(kind, func(t *testing.T) {

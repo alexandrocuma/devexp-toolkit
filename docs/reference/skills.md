@@ -142,7 +142,7 @@ If a new command is genuinely needed:
 4. Run `./install.sh` to deploy
 
 Three install facts shape how a skill is written:
-- **Supporting files reach Claude Code only.** `references/` and `scripts/` deploy with the whole skill directory to `~/.claude/skills/<name>/`. opencode installs SKILL.md alone, flattened to `~/.config/opencode/commands/<name>.md`, so anything load-bearing belongs in SKILL.md itself.
+- **Supporting files reach Claude Code and Kimi Code CLI, not opencode.** `references/` and `scripts/` deploy with the whole skill directory, to `~/.claude/skills/<name>/` and to `$KIMI/skills/<name>/`. opencode installs SKILL.md alone, flattened to `~/.config/opencode/commands/<name>.md`, so anything load-bearing belongs in SKILL.md itself.
 - **Installed files are written 0644**, so a bundled script is invoked as `bash <path>`, never `./script`.
 - **`disable-model-invocation: true`** keeps a user-only skill's description out of every session's context while leaving `/<name>` invocable.
 

@@ -32,6 +32,7 @@ import (
 // probes that text to know a binary supports a target.
 var uninstallTargets = map[string]func(home string, dryRun bool) error{
 	"opencode": doUninstallOpencode, // hook plugin + legacy flat install only
+	"kimi":     doUninstallKimi,     // the whole install: nothing else knows what is devexp's
 }
 
 var (
@@ -47,7 +48,11 @@ var uninstallCmd = &cobra.Command{
 removes agents, skills and MCP servers itself.
 
   opencode  removes the hook plugin (plugins/devexp.js and plugins/devexp/)
-            and the legacy flat plugin install, by the installer's own rules.`,
+            and the legacy flat plugin install, by the installer's own rules.
+  kimi      removes the whole install from the Kimi root ($KIMI_CODE_HOME, else
+            ~/.kimi-code): agents, skills, the MCP entries devexp still owns,
+            the hooks block and scripts, and the manifest. Nothing on disk
+            there says what is devexp's, so the manifest is the only record.`,
 	Hidden:        true,
 	SilenceUsage:  true,
 	SilenceErrors: true,

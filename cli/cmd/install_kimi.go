@@ -18,9 +18,9 @@ import (
 // ── Kimi Code CLI ─────────────────────────────────────────────────────────────
 //
 // MCP servers (#112), agents and skills (#113) and hooks (#114) all install
-// here, so a Kimi run now writes everything devexp ships. What it still
-// cannot do is undo itself: ./uninstall.sh does not remove a Kimi install yet
-// (#115), and every run says so.
+// here, so a Kimi run writes everything devexp ships, and #115 takes it all
+// out again. What every run says instead is how much less of it Kimi honours
+// than Claude Code does (warnKimiFeatureSubset).
 //
 // The order matches doInstallClaude: MCP servers first, then agents, then
 // skills, then hooks. Each step is skipped by the --*-only flags that exclude
@@ -107,7 +107,8 @@ func doInstallKimi(opts *installOpts) error {
 			// them back with the error. Record them — merged with what was
 			// already recorded — or the next run compares against a list that
 			// never learned about them: a since-deselected agent is never
-			// pruned, and until #115 ./uninstall.sh cannot remove it either.
+			// pruned, and ./uninstall.sh, which reads that same manifest, has
+			// nothing to go on either.
 			//
 			// Stale removal is skipped on this path on purpose. The install
 			// set is half-finished, so everything the step never reached would
@@ -166,7 +167,7 @@ func doInstallKimi(opts *installOpts) error {
 			// Kimi root rather than run from the checkout, so this step both
 			// writes files and edits config.toml. It hands back what it wrote
 			// even when it fails, for the same reason the agent step does.
-			installedHooks, err := hooks.InstallKimi(registry, opts.repoDir, p.hooks, p.config, disabled, old.Hooks, opts.dryRun)
+			installedHooks, err := hooks.InstallKimi(registry, opts.repoDir, p.home, p.hooks, p.config, disabled, old.Hooks, opts.dryRun)
 			newManifest.Hooks = installedHooks
 			if err != nil {
 				return err
@@ -196,15 +197,56 @@ func doInstallKimi(opts *installOpts) error {
 		fmt.Printf("  Hooks  : %q\n", p.hooks)
 	}
 	fmt.Println()
-	// Telling someone what was written without telling them it cannot be
-	// removed cleanly is half the story, and #115 is what closes it. This is
-	// not a missing asset kind — since #114 there are none — but a missing
-	// way out, so it stays until uninstall grows a Kimi branch.
-	ui.Warn("./uninstall.sh cannot remove a Kimi Code CLI install yet (#115) — until it can, what is listed above has to be removed by hand.")
-	fmt.Println()
+	warnKimiFeatureSubset(opts)
 	ui.Info("Restart Kimi Code CLI to activate.")
 	fmt.Println()
 	return nil
+}
+
+// warnKimiFeatureSubset says what a devexp install is not, on Kimi. Everything
+// devexp ships installs there — but four of those things behave differently
+// enough that a user who assumes Claude Code's behaviour will be wrong about
+// what is protecting them, and the last of those is a security property.
+//
+// Why here and not only in the docs: each item changes what the user does in
+// the very next minute — which name they type to run a skill, whether they can
+// trust a per-skill tool restriction they wrote, whether a hook they believe is
+// guarding them actually is. A line in install.md is read once, by someone
+// choosing a CLI; this is read by everyone who installs. It is also in
+// docs/guides/install.md, in full and with the rest of the list, because eight
+// items in terminal output is a wall nobody reads — so the terminal gets the
+// four that change behaviour and a pointer to the rest.
+//
+// Only what this run installed: a --mcps-only run has no agents, skills or
+// hooks to be wrong about, and warning about them would be noise.
+func warnKimiFeatureSubset(opts *installOpts) {
+	var items []string
+	if !opts.skillsOnly && !opts.mcpsOnly {
+		// Kimi has no per-agent system prompt slot: a custom agent body
+		// replaces its own entirely, which is why every installed agent ends
+		// with ${base_prompt}.
+		items = append(items, "an agent's body replaces Kimi's whole system prompt — devexp's agents append ${base_prompt} to put it back")
+	}
+	if !opts.agentsOnly && !opts.mcpsOnly {
+		// The two that silently do less than the source file says.
+		items = append(items,
+			"a skill's allowed-tools is ignored — Kimi applies no per-skill tool restriction",
+			"skills appear only as /skill:<name> in Kimi's listings — that is the form to type")
+	}
+	if !opts.agentsOnly && !opts.skillsOnly && !opts.mcpsOnly {
+		// The one that is a security property rather than an inconvenience:
+		// a hook the user believes is guarding them may not be.
+		items = append(items, "hooks fail open — a hook that times out, cannot spawn or exits non-zero/2 is read as an allow, and the hooks Kimi cannot honour (ask-verdict, on-save) are off, with reasons")
+	}
+	if len(items) == 0 {
+		return
+	}
+	ui.Warn("Kimi Code CLI supports less of what devexp's assets ask for than Claude Code does:")
+	for _, item := range items {
+		fmt.Printf("  - %s\n", item)
+	}
+	ui.Info("The full list — including `kimi doctor`'s blind spots and how a project .mcp.json can shadow these MCP entries — is in docs/guides/install.md (\"Kimi Code CLI\").")
+	fmt.Println()
 }
 
 // installMCPsKimi merges the selected registry MCPs into Kimi's mcp.json and

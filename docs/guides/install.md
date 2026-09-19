@@ -194,7 +194,7 @@ Shows every add, update, and removal devexp would make — including stale-file 
 
 **Behavior:**
 - Refuses to run (nothing is read or removed, exit 1) when `HOME` is unset, empty or not an absolute path — every path it removes from is built from `HOME`
-- Detects which CLIs have devexp agents installed; asks which to remove from only when both are found
+- Detects which CLIs have devexp agents installed — plus a Kimi install, by its manifest — and asks which to remove from only when more than one is found. The prompt lists the CLIs actually detected and takes comma-separated numbers, or `a` for all; `--yes`/`-y`, in any argument position, skips it and removes from every one of them
 - Removes agents from the appropriate directory for each CLI
 - Never removes an agent or skill through an `agents/` or `skills/` directory that is a symlink or behind one (resolved from `HOME`, as in [Stale-file cleanup](#stale-file-cleanup)), and never removes one that is itself a symlink. Before the confirmation it lists them instead: `<dir> is a symlink — devexp never removes files through it; remove these by hand:` (or `<dir> is behind a symlink (it resolves to <real dir>) — …`) followed by the paths, and `<path> is a symlink — left untouched (devexp never removes one)`. A symlinked entry is reported as a symlink even inside a symlinked directory (#128)
   - Each entry is checked again right before it is removed, because the confirmation can wait indefinitely: one that has become a symlink, or whose directory has, is left untouched with `<path> changed since the preview … — left untouched`
@@ -214,7 +214,13 @@ Shows every add, update, and removal devexp would make — including stale-file 
   - otherwise only the removed servers' members are cut out of the `mcp` object, with the comma and whitespace that joined each one to a neighbour. Every other byte stays, including key order, indentation, CRLF line endings, escapes, number spellings and the other servers (#124). The edit is saved atomically, keeping the file's mode, and only when the result reads as the original minus those servers.
 - If either python step fails in some other way, `uninstall.sh` prints a warning and carries on instead of stopping.
 
-> `uninstall.sh` predates the Go CLI and doesn't fully match it — e.g. it never removes opencode skills from `~/.config/opencode/commands/` or the `.devexp-manifest.json` files. See [Known gaps](../architecture/overview.md#known-gaps).
+- **Kimi Code CLI**: the whole install — agents, skills, `mcp.json` entries, the `config.toml` hooks block, the copied hook scripts and the manifest — is removed by the hidden `devexp uninstall --target kimi`, because nothing in that root identifies devexp's files except the manifest. It is found the same way as the opencode command (`DEVEXP_BIN`, then `bin/devexp`, then `PATH`), previewed with its `--dry-run`, and its absence leaves the Kimi install in place with a warning while the rest of the uninstall completes.
+  - Each step reuses the installer's own function, so removal cannot drift from installation: the hooks block goes **before** the scripts it points at (a registered command whose script is missing is a silent allow), skills go before agents, and an `mcp.json` entry is removed only while its fingerprint still matches what devexp recorded — one you have edited since stays, and stops being tracked.
+  - The same symlink rules as everywhere else: nothing is removed through a `$KIMI/agents` or `$KIMI/skills` that is a symlink or behind one, and an entry that is itself a symlink is left alone. Note that the guard resolves from the Kimi root's *parent*, not from `HOME`, so it still works with a `$KIMI_CODE_HOME` outside your home directory.
+  - What could not be removed stays in the manifest so a later run can finish; the manifest itself is deleted only once nothing of devexp's is left, and never when it is a symlink.
+  - **Kept on purpose**, and said so at the end of the run: `$KIMI/.devexp-backup-*` (your pre-install copies) and `~/.claude/agent-memory` (shared with Claude Code).
+
+> `uninstall.sh` predates the Go CLI and doesn't fully match it — e.g. it never removes opencode skills from `~/.config/opencode/commands/` or the Claude Code and opencode `.devexp-manifest.json` files (the Kimi one is removed). See [Known gaps](../architecture/overview.md#known-gaps).
 
 ---
 
@@ -234,7 +240,7 @@ Shows every add, update, and removal devexp would make — including stale-file 
 
 ### Kimi Code CLI
 
-Kimi Code CLI `0.31.0` or newer on `PATH` is detected and can be selected, in the wizard or with `--target kimi`. It installs **MCP servers, agents, skills and hooks** — everything devexp ships. `./uninstall.sh` cannot remove a Kimi install yet (#115), and every run says so. Each of `--mcps-only`, `--agents-only` and `--skills-only` installs exactly its own kind, and each of them skips hooks, as for the other two targets.
+Kimi Code CLI `0.31.0` or newer on `PATH` is detected and can be selected, in the wizard or with `--target kimi`. It installs **MCP servers, agents, skills and hooks** — everything devexp ships, and `./uninstall.sh` removes all of it again ([uninstall.sh](#uninstallsh)). Each of `--mcps-only`, `--agents-only` and `--skills-only` installs exactly its own kind, and each of them skips hooks, as for the other two targets.
 
 Three things differ from the Claude Code install for agents and skills, all because of how Kimi reads what it is given:
 
@@ -274,7 +280,73 @@ Two `kimi` binaries exist. Kimi Code CLI answers `kimi --version` with a bare ve
 
 `$KIMI_CODE_HOME` must be an absolute path, and may be neither `/` nor your home directory itself; a value devexp will not install into is an error (`resolveKimiHome` in `cli/cmd/paths.go`).
 
+> `--target kimi` and `--model kimi` are unrelated: the first picks the Kimi Code CLI to install *for*, the second picks a Moonshot model for the agents' front matter (and is itself ignored when the target is Kimi, which has no per-agent model).
+
 > **`.devexp-manifest.json`**: devexp writes `~/.claude/.devexp-manifest.json`, `~/.config/opencode/.devexp-manifest.json` and `$KIMI/.devexp-manifest.json` to track which agent/skill files (and, for opencode, plugin files; for Kimi, which `mcp.json` entries and which hook scripts) it installed, so future updates can detect and remove what the toolkit no longer ships (see [Updating](#updating)). These are managed automatically — don't hand-edit them.
+
+> **Kimi Code CLI users — feature subset:**
+> Everything devexp ships installs for Kimi, but Kimi honours less of what those
+> assets ask for than Claude Code does. The installer prints the four that change
+> what you do next (`warnKimiFeatureSubset`, `cli/cmd/install_kimi.go`); this is the
+> whole list.
+>
+> **Agents**
+> - **An agent's body replaces Kimi's entire system prompt**, where Claude Code
+>   appends to it. Every installed agent therefore ends with `${base_prompt}`, which
+>   puts back the tool guidance, `AGENTS.md`, the working-directory listing and the
+>   skills catalog. An agent you write yourself and do not end that way loses them.
+> - **A tool name Kimi does not have is dropped silently** — nothing is written to
+>   its log — so devexp names every dropped name at install time instead.
+> - **No per-agent model and no terminal colour.** `model`, `color` and `memory` are
+>   dropped from front matter; `--model` is ignored with a warning rather than
+>   failing the run. (The `memory:` *field* is dropped because Kimi has no
+>   equivalent — the `~/.claude/agent-memory` *directory* is a different thing
+>   and is shared with Claude Code untouched; see **Sharing with Claude Code**
+>   below.)
+>
+> **Skills**
+> - **`allowed-tools` is ignored. There is no per-skill tool restriction at all** —
+>   a skill that declares a narrow tool list still runs with everything the session
+>   has. Do not rely on it as a boundary under Kimi.
+> - **The canonical command is `/skill:<name>`.** Bare `/<name>` also resolves, but
+>   only `/skill:<name>` appears in Kimi's command listings, so that is the form to
+>   document and to type.
+>
+> **Hooks**
+> - **Hooks fail open.** A hook that times out, cannot spawn, whose script is
+>   missing, or that exits with anything other than 0 or 2 is read as an *allow*.
+>   A guard you believe is protecting you may not be. (This is why the scripts are
+>   copied into `$KIMI/hooks/` rather than run from the clone: a moved checkout
+>   would disarm every one of them silently.)
+> - **One invalid `[[hooks]]` entry disables every hook in the file**, yours
+>   included, behind a log line nobody reads.
+> - **The hooks Kimi cannot honour are off, each with its reason printed**: a
+>   `PostToolUse` result is never read and `permissionDecision: "ask"` runs as an
+>   allow, so the on-save hooks, the `graphify-*` hooks and `large-file-guard` are
+>   not installed for Kimi.
+>
+> **MCP servers**
+> - **A project file can shadow a devexp entry.** Kimi merges `$KIMI/mcp.json`,
+>   then `<git-root>/.mcp.json`, then `<cwd>/.kimi-code/mcp.json`, later winning.
+>   devexp writes only the first, so a project `.mcp.json` silently takes over a
+>   server devexp configured.
+>
+> **Checking your work**
+> - **`kimi doctor` validates `config.toml` and `tui.toml` only.** It cannot check
+>   `mcp.json` and it cannot check skills, so a green `doctor` says nothing about
+>   either. Start `kimi` and run `/mcp` to verify MCP servers.
+> - **`~` is expanded before the outside-workspace check**, so `~/…` reaches files a
+>   relative path to the same place is refused for. Paths that look like secrets are
+>   blocked whatever form they take.
+>
+> **Sharing with Claude Code**
+> - **Agent memory is shared, not missing.** `~/.claude/agent-memory` is left
+>   untouched in installed agents, so a Kimi session and a Claude Code session use
+>   one atlas and one set of per-project notes. It survives an uninstall, by design.
+>
+> **Claude Code is still the fullest experience**, but the gap is narrower than for
+> opencode: every asset kind installs, and the losses above are Kimi's own limits
+> rather than anything devexp declines to ship.
 
 > **opencode users — feature subset:**
 > The following features are unavailable under opencode and are dropped at install time (the installer prints a one-line warning, `cli/cmd/install_opencode.go`):
