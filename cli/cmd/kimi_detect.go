@@ -25,8 +25,14 @@ const kimiMinVersion = "0.31.0"
 
 // kimiProbeTimeout bounds the version probe. `kimi` on PATH is whatever binary
 // carries that name; one that blocks reading stdin would otherwise hang every
-// install, and no other exec in the installer is bounded.
-const kimiProbeTimeout = 5 * time.Second
+// install, and no other exec in the installer is bounded. A var so a test can
+// shorten it and assert that the bound is real.
+var kimiProbeTimeout = 5 * time.Second
+
+// kimiRawLimit caps how much of the probe's output a notice repeats. cmd.Output
+// caps nothing, so without this a stub printing megabytes prints them to the
+// user's terminal.
+const kimiRawLimit = 120
 
 type kimiStatus int
 
@@ -43,7 +49,8 @@ const (
 type kimiDetection struct {
 	status  kimiStatus
 	version string // the major.minor.patch that was parsed, when there was one
-	raw     string // what the probe printed, or the error it failed with
+	raw     string // what the probe printed, trimmed
+	err     error  // why the probe failed, when it did
 }
 
 var (
@@ -58,11 +65,13 @@ var (
 // binary on PATH.
 func classifyKimi(out string, runErr error, min string) kimiDetection {
 	raw := strings.TrimSpace(out)
+	// A probe that failed is never trusted, however good its output looked.
+	// The error is kept beside that output rather than replacing it: a binary
+	// that prints a fine version and exits 3 has identifiable output and a
+	// failed command, and saying so is the difference between a usable message
+	// and a baffling one.
 	if runErr != nil {
-		if raw == "" {
-			raw = runErr.Error()
-		}
-		return kimiDetection{status: kimiUnknown, raw: raw}
+		return kimiDetection{status: kimiUnknown, raw: raw, err: runErr}
 	}
 	// Format before number, always: the legacy CLI's versions overlap Kimi
 	// Code's, so comparing the number first would accept it as new enough.
@@ -113,20 +122,39 @@ func (k kimiDetection) notice() string {
 	case kimiTooOld:
 		return fmt.Sprintf("Kimi Code CLI %s found — devexp needs %s or newer; skipping Kimi", k.version, kimiMinVersion)
 	case kimiLegacy:
-		return fmt.Sprintf("`kimi` on PATH is the legacy kimi-cli (%s), not Kimi Code CLI — skipping Kimi", k.raw)
+		return fmt.Sprintf("`kimi` on PATH is the legacy kimi-cli (%s), not Kimi Code CLI — skipping Kimi", k.describeRaw())
 	case kimiUnknown:
+		if k.err != nil {
+			return fmt.Sprintf("`kimi --version` failed (%v)%s — skipping Kimi", k.err, k.describeOutput())
+		}
 		return fmt.Sprintf("could not identify `kimi --version` output (%s) — skipping Kimi", k.describeRaw())
 	}
 	return ""
 }
 
-// describeRaw keeps the unknown-output notice readable when the probe printed
-// nothing at all.
+// describeRaw renders what the probe printed for a notice: quoted and capped,
+// because it is whatever some binary on PATH chose to write. Unquoted, an
+// embedded newline forges a line of devexp output and an escape sequence
+// reaches the terminal — the same reason nothing from the manifest is printed
+// raw (backup.go).
 func (k kimiDetection) describeRaw() string {
 	if k.raw == "" {
 		return "no output"
 	}
-	return k.raw
+	raw := k.raw
+	if len(raw) > kimiRawLimit {
+		raw = raw[:kimiRawLimit] + "…"
+	}
+	return strconv.Quote(raw)
+}
+
+// describeOutput adds what the probe managed to print to a failure notice, and
+// nothing at all when it printed nothing.
+func (k kimiDetection) describeOutput() string {
+	if k.raw == "" {
+		return ""
+	}
+	return ", output " + k.describeRaw()
 }
 
 // runKimiVersion is a package var so tests can swap the probe for a fixed

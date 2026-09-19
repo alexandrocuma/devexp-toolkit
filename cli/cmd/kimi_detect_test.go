@@ -3,8 +3,11 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 // classifyKimi is the whole of the legacy-vs-Kimi-Code decision, and it is
@@ -47,8 +50,10 @@ func TestClassifyKimi(t *testing.T) {
 		// A binary that fails or times out is never guessed at.
 		"the probe failed":    {out: "", runErr: errors.New("exit status 1"), wantStatus: kimiUnknown},
 		"the probe timed out": {out: "", runErr: context.DeadlineExceeded, wantStatus: kimiUnknown},
-		// Output that looks fine but came with an error is still an error.
-		"output alongside an error": {out: "0.42.0", runErr: errors.New("signal: killed"), wantStatus: kimiUnknown},
+		// Output that looks fine but came with an error is still an error —
+		// and the notice must say the command failed rather than blame the
+		// output, which was perfectly identifiable.
+		"output alongside an error": {out: "0.42.0", runErr: errors.New("exit status 3"), wantStatus: kimiUnknown},
 	}
 
 	for name, tt := range tests {
@@ -79,22 +84,58 @@ func TestClassifyKimi(t *testing.T) {
 				if tt.wantStatus == kimiLegacy && !strings.Contains(notice, "legacy kimi-cli") {
 					t.Errorf("notice = %q, want it to name the legacy CLI", notice)
 				}
+				// A failed probe is reported as a failure, with its reason —
+				// never as output devexp could not parse.
+				if tt.runErr != nil {
+					if !strings.Contains(notice, tt.runErr.Error()) {
+						t.Errorf("notice = %q, want it to carry the probe's error %q", notice, tt.runErr)
+					}
+					if strings.Contains(notice, "could not identify") {
+						t.Errorf("notice = %q blames the output for a command that failed", notice)
+					}
+				}
 			}
 		})
 	}
 }
 
-// An unparsable version must still produce a readable notice — the raw output
-// is what tells the user which binary devexp actually found.
+// A notice repeats what some binary on PATH printed, so it quotes and caps it:
+// unquoted, an embedded newline forges a line of devexp output and an escape
+// sequence reaches the terminal. Same rule as backup.go's.
 func TestKimiNoticeQuotesWhatItSaw(t *testing.T) {
-	if n := classifyKimi("Usage: kimi", nil, kimiMinVersion).notice(); !strings.Contains(n, "Usage: kimi") {
+	if n := classifyKimi("Usage: kimi", nil, kimiMinVersion).notice(); !strings.Contains(n, `"Usage: kimi"`) {
 		t.Errorf("notice = %q, want it to quote the output it could not parse", n)
 	}
 	// Nothing at all must not render as an empty pair of brackets.
-	n := classifyKimi("", nil, kimiMinVersion).notice()
-	if !strings.Contains(n, "no output") {
+	if n := classifyKimi("", nil, kimiMinVersion).notice(); !strings.Contains(n, "no output") {
 		t.Errorf("notice = %q, want it to say there was no output", n)
 	}
+
+	t.Run("control characters cannot forge output or reach the terminal", func(t *testing.T) {
+		for _, out := range []string{
+			"0.1\n[devexp] Installed 34 agent(s).",
+			"\x1b[2J\x1b[31mFAKE 0.42.0",
+			"kimi, version 1.0\n[devexp] all good",
+		} {
+			n := classifyKimi(out, nil, kimiMinVersion).notice()
+			if n == "" {
+				t.Fatalf("classifyKimi(%q) produced no notice", out)
+			}
+			if strings.ContainsAny(n, "\n\r\x1b") {
+				t.Errorf("notice %q carries a raw control character from %q", n, out)
+			}
+		}
+	})
+
+	t.Run("a flood of output is capped", func(t *testing.T) {
+		n := classifyKimi(strings.Repeat("x", 20000), nil, kimiMinVersion).notice()
+		if len(n) > kimiRawLimit+200 {
+			t.Errorf("notice is %d bytes for 20000 bytes of output; it is not capped", len(n))
+		}
+		if !strings.Contains(n, "…") {
+			t.Errorf("notice = %q, want it to show the output was truncated", n)
+		}
+	})
 }
 
 func TestCompareVersion(t *testing.T) {
@@ -121,6 +162,15 @@ func TestCompareVersion(t *testing.T) {
 	}
 }
 
+// shortenKimiProbeTimeout makes the probe's deadline small enough to assert
+// against, and restores it afterwards.
+func shortenKimiProbeTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+	orig := kimiProbeTimeout
+	t.Cleanup(func() { kimiProbeTimeout = orig })
+	kimiProbeTimeout = d
+}
+
 // swapKimiProbe replaces the version probe for one test.
 func swapKimiProbe(t *testing.T, out string, err error) *int {
 	t.Helper()
@@ -132,6 +182,19 @@ func swapKimiProbe(t *testing.T, out string, err error) *int {
 		return out, err
 	}
 	return &calls
+}
+
+// absPath resolves a helper binary before any test clears PATH. fakeCLI
+// replaces PATH wholesale, so a stub script that says `sleep` finds nothing
+// and exits 127 instantly — which would make every timing assertion below
+// pass without the probe ever being bounded.
+func absPath(t *testing.T, name string) string {
+	t.Helper()
+	p, err := exec.LookPath(name)
+	if err != nil {
+		t.Skipf("%s not on PATH: %v", name, err)
+	}
+	return p
 }
 
 func TestDetectKimi(t *testing.T) {
@@ -181,12 +244,53 @@ func TestDetectKimi(t *testing.T) {
 	// The real probe, not the seam: a binary that reads stdin must not be able
 	// to hang the installer waiting for input that will never come.
 	t.Run("the real probe never waits on stdin", func(t *testing.T) {
+		cat := absPath(t, "cat")
 		fakeCLI(t)
-		fakeCLIScript(t, "kimi", "cat")
+		fakeCLIScript(t, "kimi", cat)
 		if got := detectKimi(); got.status != kimiUnknown {
 			t.Errorf("= %+v, want kimiUnknown from a binary that prints nothing", got)
 		}
 	})
+
+	// The two defences that keep a hostile or broken `kimi` from hanging every
+	// install. Each stub outlives the shortened deadline by far, so a probe
+	// that is not bounded does not fail the assertion — it hangs the test,
+	// which is the same signal.
+	bounded := map[string]string{
+		// The deadline: a binary that simply never returns.
+		"a binary that never exits": "%s 30",
+		// WaitDelay: the child exits at once, but a grandchild keeps the
+		// stdout pipe open, so cmd.Output reads from it until the grandchild
+		// dies. The context does not cover this — it kills a process that has
+		// already exited. Measured without WaitDelay: 30s.
+		"a binary whose grandchild holds the pipe open": "%s 30 & exit 0",
+	}
+	for name, body := range bounded {
+		t.Run("the real probe is bounded: "+name, func(t *testing.T) {
+			sleepBin := absPath(t, "sleep")
+			fakeCLI(t)
+			fakeCLIScript(t, "kimi", fmt.Sprintf(body, sleepBin))
+			shortenKimiProbeTimeout(t, 200*time.Millisecond)
+
+			start := time.Now()
+			got := detectKimi()
+			elapsed := time.Since(start)
+
+			if got.status != kimiUnknown {
+				t.Errorf("= %+v, want kimiUnknown", got)
+			}
+			// Generous: the point is "bounded", not "fast". The stubs sleep
+			// 30s, so anything in this range can only mean the bound held.
+			if elapsed > 10*time.Second {
+				t.Errorf("the probe took %v; it is not bounded", elapsed)
+			}
+			// The reason has to survive into the notice, or a hung `kimi`
+			// looks the same as one that printed something odd.
+			if n := got.notice(); !strings.Contains(n, "failed") {
+				t.Errorf("notice = %q, want it to report the probe failure", n)
+			}
+		})
+	}
 
 	// The real probe against the shape the installed CLI actually prints.
 	t.Run("the real probe reads a bare semver", func(t *testing.T) {
