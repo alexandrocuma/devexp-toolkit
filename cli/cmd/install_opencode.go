@@ -47,7 +47,7 @@ func doInstallOpencode(opts *installOpts) error {
 			if !errors.As(err, &refused) {
 				return err
 			}
-			warnMCPsSkipped(refused)
+			warnMCPsSkipped(refused, "mcp")
 			fmt.Println()
 		}
 	}
@@ -146,12 +146,13 @@ func doInstallOpencode(opts *installOpts) error {
 	return nil
 }
 
-// warnMCPsSkipped reports an opencode MCP step skipped because config.json
-// couldn't be merged into, naming the servers to add by hand.
-func warnMCPsSkipped(refused *mcp.ConfigRefusedError) {
+// warnMCPsSkipped reports an MCP step skipped because the config file couldn't
+// be merged into, naming the servers to add by hand. key is the member they go
+// under, which differs per target ("mcp" for opencode, "mcpServers" for Kimi).
+func warnMCPsSkipped(refused *mcp.ConfigRefusedError, key string) {
 	msg := fmt.Sprintf("MCP servers skipped: %v, so it was left untouched and the rest of the install continues.", refused.Reason)
 	if len(refused.Servers) > 0 {
-		msg += fmt.Sprintf(" Add these to its \"mcp\" object by hand, or make it strict JSON (no comments or trailing commas) and re-run with --mcps-only: %s", strings.Join(refused.Servers, ", "))
+		msg += fmt.Sprintf(" Add these to its %q object by hand, or make it strict JSON (no comments or trailing commas) and re-run with --mcps-only: %s", key, strings.Join(refused.Servers, ", "))
 	}
 	ui.Warn(msg)
 }
