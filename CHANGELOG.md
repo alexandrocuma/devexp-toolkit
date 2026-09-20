@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-09-19
+
 ### Fixed
 
 - **The worktree access grant now uses a key Claude Code actually reads, and stops destroying a settings file it cannot parse (#180).** `/deliver` Phase 1.5 and `/improve`'s parallel cleanup streams grant the runtime access to each new worktree by editing the project's `.claude/settings.json`. Three things were wrong with that one step, all of them invisible while it ran.
