@@ -59,7 +59,10 @@ func SelectScope() (Scope, error) {
 // ── Multi-select ──────────────────────────────────────────────────────────────
 
 // MultiSelect shows a toggleable checklist; all items start selected.
-// "Done" confirms, "Toggle all" flips every item. Returns the selected names.
+// "Done" confirms, "Toggle all" flips every item. Returns the selected names,
+// always as a non-nil slice: callers distinguish "was not asked" (nil) from
+// "was asked and picked nothing" (empty), and reading the second as the first
+// would install everything to someone who deliberately unticked it all.
 func MultiSelect(label string, items []string) ([]string, error) {
 	selected := make([]bool, len(items))
 	for i := range selected {
@@ -132,9 +135,11 @@ func applyMultiSelectChoice(selected []bool, idx int) (done bool) {
 	return false
 }
 
-// collectSelected returns the items whose selected flag is set, preserving order.
+// collectSelected returns the items whose selected flag is set, preserving
+// order. The result is never nil — see MultiSelect on why an empty pick has to
+// stay tellable apart from no pick at all.
 func collectSelected(items []string, selected []bool) []string {
-	var result []string
+	result := []string{}
 	for i, s := range selected {
 		if s {
 			result = append(result, items[i])

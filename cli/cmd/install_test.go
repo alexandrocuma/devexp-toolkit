@@ -278,6 +278,14 @@ func TestResolveHookDisabled(t *testing.T) {
 			cfgDisabled: nil,
 			want:        nil,
 		},
+		"an emptied checklist disables every enabled hook": {
+			// #171: ui.MultiSelect used to return nil here, which is the
+			// arm above — unticking everything installed everything.
+			// cfgDisabled is set to prove the empty slice wins over it.
+			selected:    []string{},
+			cfgDisabled: []string{"beta"},
+			want:        []string{"alpha", "beta"},
+		},
 	}
 
 	for name, tt := range tests {
@@ -314,6 +322,15 @@ func TestResolveAgentDisabled(t *testing.T) {
 			selected:    []string{"alpha", "beta"},
 			cfgDisabled: nil,
 			want:        nil,
+		},
+		"an emptied checklist disables every agent": {
+			// #171: ui.MultiSelect used to return nil here, which is the
+			// first arm — unticking everything installed everything.
+			// cfgDisabled is set to prove the empty slice wins over it.
+			agentFiles:  []string{"alpha.md", "beta.md", "gamma.md"},
+			selected:    []string{},
+			cfgDisabled: []string{"beta"},
+			want:        []string{"alpha", "beta", "gamma"},
 		},
 	}
 
@@ -1480,8 +1497,8 @@ func TestResolveTargets(t *testing.T) {
 // os.ModeCharDevice check would pass the whole suite and break every install
 // with stdin redirected from /dev/null.
 //
-// The false direction is the one that matters and the one testable without a
-// pty. A pty would be needed to prove it ever returns true.
+// The false direction is the one that matters, and it is all this covers; the
+// true direction is TestInstallModeFromRealStdin's pty case.
 func TestStdinIsTerminal(t *testing.T) {
 	swapStdin := func(t *testing.T, f *os.File) {
 		t.Helper()

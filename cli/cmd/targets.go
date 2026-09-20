@@ -129,9 +129,13 @@ func (d detection) why(t target) string {
 //
 // chosen distinguishes three cases on purpose. nil means the user did not
 // choose, which is every detected target. A non-nil empty slice means the user
-// chose nothing, which is an error: an empty selection means "everything"
-// everywhere else in the installer (registry.go), and installing for every CLI
-// because someone deselected them all is the opposite of what they asked for.
+// chose nothing, which here is an error — installing for every CLI because
+// someone deselected them all is the opposite of what they asked for.
+//
+// The other checklists (registry.go) take that same empty slice as "install
+// none of this kind" and honour it. Targets differ because they are not one
+// kind among several: install for no CLI and the whole run writes nothing, so
+// there is no useful reading of the answer, only a wrong one.
 func selectTargets(d detection, chosen []target) ([]target, error) {
 	available := d.available()
 	if len(available) == 0 {
@@ -205,8 +209,8 @@ var stdinIsTerminal = func() bool {
 }
 
 // promptTargets asks which of the available targets to install for. It returns
-// a non-nil empty slice when everything was deselected — ui.MultiSelect
-// returns nil there, and nil is what selectTargets reads as "all".
+// a non-nil empty slice when everything was deselected, which selectTargets
+// refuses; nil is reserved for "not asked", which it reads as "all".
 var promptTargets = func(available []target) ([]target, error) {
 	picked, err := ui.MultiSelect("Install for", targetLabels(available))
 	if err != nil {
@@ -226,8 +230,9 @@ func targetLabels(targets []target) []string {
 
 // targetsFromLabels maps a checklist's answer back onto targets. It always
 // returns a non-nil slice, so "nothing picked" stays distinguishable from "not
-// asked": ui.MultiSelect returns nil for both, and selectTargets reads nil as
-// every available target.
+// asked" — selectTargets reads nil as every available target. ui.MultiSelect
+// keeps the same distinction now, but this does not lean on it: the slice is
+// built here either way.
 func targetsFromLabels(available []target, picked []string) []target {
 	chosen := []target{}
 	for _, t := range available {

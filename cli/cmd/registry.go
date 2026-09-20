@@ -30,7 +30,9 @@ func loadFullRegistry(repoDir string, cfg *config.Config) ([]mcp.MCP, error) {
 	return registry, nil
 }
 
-// filterMCPs returns only MCPs whose names are in selected (nil = no filter).
+// filterMCPs returns only MCPs whose names are in selected. nil is "the wizard
+// did not ask", which is every MCP; a non-nil empty slice is "it asked and the
+// answer was none", which is none of them.
 func filterMCPs(registry []mcp.MCP, selected []string) []mcp.MCP {
 	if selected == nil {
 		return registry
@@ -98,7 +100,8 @@ func listHookNames(repoDir string) []string {
 }
 
 // resolveHookDisabled builds the disabled list for the hooks installer.
-// When selected is non-nil (wizard path), enabled hooks not in selected are disabled.
+// When selected is non-nil (wizard path), enabled hooks not in selected are
+// disabled — including when it is empty, which disables all of them.
 // When selected is nil (flag path), falls back to cfgDisabled from config.
 func resolveHookDisabled(registry hooks.Registry, selected, cfgDisabled []string) []string {
 	if selected == nil {
@@ -118,7 +121,8 @@ func resolveHookDisabled(registry hooks.Registry, selected, cfgDisabled []string
 }
 
 // resolveAgentDisabled builds the disabled list for the agent installer.
-// When selected is non-nil (wizard path), agents not in selected are disabled.
+// When selected is non-nil (wizard path), agents not in selected are disabled —
+// including when it is empty, which disables all of them.
 // When selected is nil (flag path), falls back to cfgDisabled from config.
 func resolveAgentDisabled(repoDir string, selected, cfgDisabled []string) []string {
 	if selected == nil {

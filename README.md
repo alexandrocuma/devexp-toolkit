@@ -91,7 +91,7 @@ The installer detects which AI coding CLI(s) you have installed — **Claude Cod
 
 ### Common flags
 
-Any of these flags except `--model` skips the interactive wizard.
+Any of these flags except `--model` skips the interactive wizard. So does having no terminal: a bare `devexp install` with stdin redirected or piped installs everything for every detected CLI instead of prompting.
 
 ```bash
 ./install.sh --dry-run               # preview what would be installed, no changes made
