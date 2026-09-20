@@ -107,6 +107,60 @@ When it exits 3:
 
 To bump govulncheck itself, change `GOVULNCHECK_VERSION` in `scripts/govulncheck.sh`. CI runs with `GOTOOLCHAIN=local`, so the new version's `go` directive must not be newer than the `toolchain` in `cli/go.mod` (v1.8.0 needs Go 1.26.0).
 
+## Mutation Smoke Test
+
+`./scripts/smoke.sh` — **manual, not CI.**
+
+Every other suite here answers *"is the tree healthy?"*. This one answers a
+different question: **"would we be told if it were not?"**
+
+That distinction is the whole reason it exists. A green suite is exactly the
+evidence a broken guard also produces, and this repo has rediscovered "the
+guard doesn't actually guard" four separate times, each by accident rather than
+by any check. So every case in `smoke.sh` breaks the thing a guard protects,
+asserts the guard fails, and puts it back.
+
+| Section | What it breaks |
+|---|---|
+| fresh clone | deletes the staged assets — `go build` must fail with the documented error |
+| repo consistency | missing registry file · `kimi` block with no reason · unregistered hook on disk · a new agent (must trip catalog **and** counts) · removed catalog row · a wrong count in a new sentence |
+| duplicated procedures | `safe_id()` drift · a dropped grant claim · a deleted copy (the guard must **refuse to pass**, not pass with one copy) |
+| lint | a `//nolint` stripped of its reason · a newly discarded error · a comment carrying an external reference |
+| test cache | an asset edit after a warm cache must be caught — **and** a run without `-count=1` must still say `(cached)`, so the flag is shown to be what does the work |
+| latency | both scan-budget suites run and report budget consumption |
+| install · protection | `./install.sh --dry-run` · the four required checks and the protection settings on `main` |
+
+### Running it
+
+```bash
+./scripts/smoke.sh                 # everything
+./scripts/smoke.sh --quick         # skip the full baseline suite; mutations still run
+./scripts/smoke.sh --no-remote     # skip branch protection (works offline)
+```
+
+Run it **before a release** and **after touching a guard** — those are the two
+moments when a guard that has quietly stopped guarding costs the most.
+
+### Why it is not a CI job
+
+It takes minutes and it **mutates tracked files**, which is the wrong shape for
+a per-PR gate. Two safety properties make it safe to run by hand, and both are
+load-bearing:
+
+- **It refuses to start on a dirty tree.** Restore is `git checkout --`, which
+  from a dirty tree would also discard your uncommitted work and could not tell
+  your edits from its own.
+- **It restores on any exit**, including `Ctrl-C`, via a `trap` — verified by
+  interrupting a run mid-flight and confirming the tree came back clean.
+
+One more thing that looks like a style choice and is not: the script disables
+`pipefail`. Every command it runs is *expected* to exit non-zero — that is what
+a caught mutation looks like — so `pipefail` would report the command's failure
+even when the grep matched, scoring every successful detection as a miss. That
+exact mistake once produced a run reporting 11 failures against guards that
+were all working correctly.
+
+
 ## Before Every Commit
 
 Mirror CI — it runs all of these on the PR:

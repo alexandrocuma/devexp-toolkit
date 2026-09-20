@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`scripts/smoke.sh` — a mutation smoke test that proves the guards go red** (#210). Every other suite here answers *"is the tree healthy?"*. This one answers *"would we be told if it were not?"* — a distinction that matters because a green suite is exactly the evidence a broken guard also produces, and this repo has rediscovered "the guard doesn't actually guard" four separate times, each by accident rather than by any check.
+
+  29 cases, each breaking the thing a guard protects and asserting the guard fails: a registry entry naming a missing file, a `kimi` block switched off with no reason, a hook on disk nothing registers, a new agent (which must trip the catalog *and* the counts), a removed catalog row, a wrong count in a new sentence, `safe_id()` drift between two skills, a dropped grant claim, a deleted copy (where the guard must **refuse to pass**, not pass with one copy left), a `//nolint` stripped of its reason, a newly discarded error, a comment carrying an external reference, and an asset edit after a warm cache.
+
+  The cache case checks both directions on purpose: the documented command must catch the edit, **and** a run without `-count=1` must still report `(cached)`. Without the second half the first proves only that the test works, not that the flag is what makes it work.
+
+  **Not a CI job**, and the reasons are recorded: it takes minutes and it mutates tracked files. Two safety properties make it safe by hand — it refuses to start on a dirty tree, because restore is `git checkout --` and from a dirty tree that would also discard uncommitted work it cannot distinguish from its own; and it restores on any exit including `Ctrl-C`, verified by interrupting a run mid-flight and confirming the tree came back clean.
+
+  It also carries a comment explaining why it disables `pipefail`, which looks like a style choice and is not. Every command it runs is *expected* to exit non-zero — that is what a caught mutation looks like — so `pipefail` reports the command's failure even when the grep matched, scoring every successful detection as a miss. That exact mistake produced a run reporting 11 failures against guards that were all working.
+
+### Fixed
+
+- **`CLAUDE.md`'s `scripts/` row omitted `check-comment-refs.sh`** (#210). Added alongside `smoke.sh` while that row was being edited, rather than left describing a directory it no longer matched.
+
 ### Fixed
 
 - **The documented `go test` command could answer an asset edit with a cached pass** (#208). `go test` decides "nothing changed" from files a test opens **inside the module root**, which here is `cli/`, where `go.mod` lives. Every repo-consistency test reads *upward* out of the module — `hooks/`, `skills/`, `docs/`, `CLAUDE.md`, `README.md` — and those reads never enter the cache key. So after an asset edit, a plain run replayed the previous verdict and printed `ok (cached)`.

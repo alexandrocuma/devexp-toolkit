@@ -71,7 +71,7 @@ Sources: `install.sh`, `cli/cmd/install.go`, `.github/workflows/ci.yml`. Full li
 | `mcps/registry.json` | Source of truth for all MCP servers |
 | `templates/` | Starting points for new agents and skills |
 | `cli/cmd/` · `cli/internal/` | Go CLI: commands + install orchestration · one package per asset kind or concern |
-| `scripts/` | `stage-assets.sh` (stage embedded assets) · `remote-install.sh` · `govulncheck.sh` (vulnerability scan, CI + release) |
+| `scripts/` | `stage-assets.sh` (stage embedded assets) · `remote-install.sh` · `govulncheck.sh` (vulnerability scan, CI + release) · `check-comment-refs.sh` (comment standard, CI) · `smoke.sh` (mutation smoke test, manual) |
 | `docs/` | All documentation — start at `docs/README.md` |
 
 ---
