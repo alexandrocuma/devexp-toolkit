@@ -66,13 +66,28 @@
 #
 # Tests: bash hooks/claude-code/scan-budget.test.sh
 
-# The default budget, in milliseconds. Sized from the worst cases measured on
-# the crafted inputs the #146/#158 timing tests use: ~1.0 s for a 2 MB write
-# through secret-in-write-guard, ~1.7 s for a 1 MB command through
-# dangerous-cmd-guard, ~0.07 s for ordinary input. That is ~9x headroom, and it
-# is above the ceilings those suites already accept as "not slow" (8 s for a
-# 2 MB write, 15 s for a 400 KB pipeline), so a much slower machine still never
-# trips it.
+# The default budget, in milliseconds.
+#
+# Sized from the worst realistic inputs the guards are handed, and re-measured
+# on every run by scan-latency.test.sh, so this figure keeps evidence behind it
+# instead of resting on one measurement taken when it was chosen. That test
+# fails at HALF the budget, which is the point: a guard that grows has to trip
+# a test naming it while there is still 2x of real budget left, because
+# crossing the budget itself is a block, not a slow allow.
+#
+# Worst cases as measured (best of three, one developer machine — read them as
+# orders of magnitude, not as a baseline to diff against):
+#
+#   400 KB pipeline through dangerous-cmd-guard     ~1.1 s     7% of budget
+#   1 MB command through dangerous-cmd-guard        ~0.9 s     5% of budget
+#   1 MB command through secret-guard               ~0.6 s     4% of budget
+#   2 MB write through secret-in-write-guard        ~0.24 s    2% of budget
+#   ordinary Read                                   ~0.13 s    1% of budget
+#
+# Those shell figures include bash and python3 startup, which a Claude Code
+# hook really does pay on every tool call. The opencode twins run in-process
+# after the plugin loads and come out one to two orders of magnitude lower;
+# scan-latency.test.js measures them on the same inputs.
 DEVEXP_SCAN_BUDGET_DEFAULT_MS=15000
 
 # The ceiling, in milliseconds (DEVEXP_SCAN_BUDGET_CEILING_MS may lower it, and
