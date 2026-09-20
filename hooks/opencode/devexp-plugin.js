@@ -44,7 +44,6 @@
  * one function.
  *
  * Tests: node hooks/opencode/devexp-plugin.test.js
- * @see https://opencode.ai/docs/plugins
  */
 
 import { readFileSync } from 'fs';

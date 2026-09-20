@@ -60,7 +60,7 @@ import (
 //
 // Every path this file prints or puts in an error is quoted: it comes from
 // $KIMI_CODE_HOME, and unquoted, an embedded newline forges a line of devexp
-// output and an escape sequence reaches the terminal (#111).
+// output and an escape sequence reaches the terminal.
 
 // The lines that delimit devexp's block. They are deliberately terse and
 // contentless: they are matched literally on every later install, so the

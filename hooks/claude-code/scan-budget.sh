@@ -2,7 +2,7 @@
 # devexp: the scan budget shared by the fail-closed security guards, and the
 # proof of work each of them allows on.
 #
-# PROOF OF WORK (#168). A guard must not exit 0 unless its OWN scanning code
+# PROOF OF WORK. A guard must not exit 0 unless its OWN scanning code
 # ran and decided to allow. The shell can only read an external program's exit
 # status, so before this every program that reported success — a wrapper, a
 # shim, a broken virtualenv, a stand-in that does nothing — was read as "the
@@ -34,7 +34,7 @@
 # continues through the normal permission flow. So a guard that is slow on some
 # input fails OPEN: the tool call goes ahead unscanned after a long wait. No
 # hook field expresses "block on timeout", so the only lever a guard has is to
-# exit 2 on its own, before the timeout fires (#162).
+# exit 2 on its own, before the timeout fires.
 #
 # This wrapper gives each guard a wall-clock budget covering the WHOLE scan —
 # reading the envelope, json.load, the regex work and every grep. It re-runs
@@ -67,7 +67,8 @@
 # Tests: bash hooks/claude-code/scan-budget.test.sh
 
 # The default budget, in milliseconds. Sized from the worst cases measured on
-# the crafted inputs the #146/#158 timing tests use: ~1.0 s for a 2 MB write
+# the crafted inputs the timing cases in secret-in-write-guard.test.sh and
+# dangerous-cmd-guard.test.sh use: ~1.0 s for a 2 MB write
 # through secret-in-write-guard, ~1.7 s for a 1 MB command through
 # dangerous-cmd-guard, ~0.07 s for ordinary input. That is ~9x headroom, and it
 # is above the ceilings those suites already accept as "not slow" (8 s for a
@@ -214,11 +215,11 @@ try:
     # sentinel tells that run it is the budgeted one; the depth says how many
     # watchdogs are already above it.
     #
-    # close_fds is spelled out because it is load-bearing, not incidental
-    # (#168). The proof descriptor is a pipe the caller reads to the end, so
+    # close_fds is spelled out because it is load-bearing, not
+    # incidental. The proof descriptor is a pipe the caller reads to the end, so
     # anything that inherits it and outlives the guarded run keeps the guard
     # waiting — past the budget, past the hook timeout, which is the very
-    # fail-open #162 exists to prevent. With it on, the guarded run and every
+    # fail-open the budget exists to prevent. With it on, the guarded run and every
     # descendant get stdin, stdout and stderr and nothing else. Turning it off
     # took one guarded call from 0.2 s to over nine minutes in testing;
     # interpreter-proof.test.sh pins both halves.
@@ -240,7 +241,7 @@ except subprocess.TimeoutExpired:
 
 if rc in (0, 2):
     # Proof that this watchdog ran the guard and has its decision in hand
-    # (#168). Written here and nowhere else: not on the way in, not on any
+    # Written here and nowhere else: not on the way in, not on any
     # path that never started the guard. Every exit above is a block, which
     # needs no proof -- only an allow does.
     try:
@@ -322,7 +323,7 @@ devexp_scan_budget() {
         rc=2
     elif [ "$rc" = 0 ] && [ "$proof" != "$nonce" ]; then
         # Exit 0 with no proof: something answered for the watchdog without
-        # running it, so no guard ran and nothing was scanned (#168). An allow
+        # running it, so no guard ran and nothing was scanned. An allow
         # here is the fail-open this whole file exists to prevent.
         echo "[devexp $guard] internal error -- the scan budget ended without proof that the guard ran, so its allow cannot be trusted. Blocking to be safe." >&2
         rc=2

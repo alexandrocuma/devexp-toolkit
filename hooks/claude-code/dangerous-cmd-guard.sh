@@ -3,7 +3,7 @@
 # Event: PreToolUse | Matcher: Bash
 # Hard-blocks destructive shell commands. No prompts — all guarded patterns are blocked.
 #
-# A mention is not an invocation (#100). Before the patterns run, text that
+# A mention is not an invocation. Before the patterns run, text that
 # provably never executes is blanked out: arguments of `echo`/`printf`,
 # commit/tag messages, `gh` issue/PR/release bodies, heredoc bodies fed to a
 # plain text sink, and comments — and only when that text cannot reach a shell
@@ -13,15 +13,15 @@
 #
 # The parser fails closed: anything it cannot classify (unbalanced quotes,
 # case statements, functions, aliases, `$((…))`, pipes or redirects on compound
-# commands, …) leaves the whole command unmasked, which is the pre-#100
-# behaviour. Mirrored in hooks/opencode/dangerous-cmd-guard.js.
+# commands, …) leaves the whole command unmasked, which is how the guard
+# behaved before any masking existed. Mirrored in hooks/opencode/dangerous-cmd-guard.js.
 #
 # Tests: bash hooks/claude-code/dangerous-cmd-guard.test.sh
 
 set -euo pipefail
 
 # The whole scan runs under a wall-clock budget and blocks when it is exceeded:
-# a slow scan must never let a tool call through unchecked (#162).
+# a slow scan must never let a tool call through unchecked.
 #
 # Everything up to devexp_scan_budget runs with no floor under it, so this
 # prologue installs one. It cannot be an `if ! . …`: under `set -e` bash leaves
@@ -533,7 +533,7 @@ def scan_text(cmd):
 d = json.load(sys.stdin)
 command = d.get('tool_input', {}).get('command', '')
 scanned = scan_text(command if isinstance(command, str) else str(command))
-# The first line is proof that this scan ran (#168). Written only here, once
+# The first line is proof that this scan ran. Written only here, once
 # scan_text has returned, so a run that skipped the masking pass -- or stopped
 # part-way through it -- cannot produce it; the shell blocks when it is
 # missing, whatever this process's exit status.
@@ -550,7 +550,7 @@ scan="$devexp_scanned"
 scan=${scan%x}
 
 # The one place a pattern is handed to grep. Every check below goes through it,
-# and so do the probes that certify it (#168) — a question asked in some other
+# and so do the probes that certify it — a question asked in some other
 # mode certifies a code path the guard never takes.
 #
 # grep reads a here-string, not a pipe: with pipefail, a pipe writer killed by
@@ -575,7 +575,7 @@ matches() { # $1=grep flags  $2=pattern
 }
 
 # `matches` reads grep's exit status and nothing else, so every check below is
-# only as good as that status (#168). These probes ask questions whose answers
+# only as good as that status. These probes ask questions whose answers
 # are known, through devexp_grep — the same call shape, `-q` and `-e` and a
 # here-string included — because a grep honest in some other mode and blind
 # under `-q` would otherwise pass and then report every command clean.

@@ -1,6 +1,6 @@
 # Conventions
 
-> Kit doc · Last verified: 2026-09-20 against commit `9a771725a179631b07dad0047c4713a4b83c2f43`
+> Kit doc · Last verified: 2026-09-20 against commit `e8e52c9f8af96506b93c819a5674a7880169b0ad`
 
 How code is written in this repo. Every rule cites the files that prove it.
 
@@ -127,6 +127,14 @@ Two things that look like comments keep their references, because the reader gen
 - **Quoted third-party behaviour.** Code that reproduces an external contract cites it: `hooks/kimi/adapter.sh` and `hooks/kimi/runner.test.sh` mirror Kimi's own `internal/matchHooks.ts` and `internal/runHook.ts`, and a reader has to know that is what they are reading.
 - **Test fixture data.** A string a test feeds to the code under test is an input, not commentary. A fake URL or a `#`-bearing path stays exactly as the case needs it (`hooks/claude-code/secret-in-write-guard.test.sh`, `hooks/claude-code/dangerous-cmd-guard.test.sh`).
 
+**Every exported symbol carries a doc comment**, and every package has one on
+exactly one file. It has to clear the same bar as any other comment: `// Load
+loads the config` is a restatement and fails review, while "never returns a
+nil `*Config`: on a missing or unreadable file it returns the zero Config
+alongside the error" tells a caller something the signature cannot. Go's own
+form applies — the comment opens with the symbol's name — because `go doc` and
+the linter both read it that way.
+
 **Section banners** (`// ── Kimi Code CLI paths ──`, ~80 of them across `cli/`) are navigation, not commentary. One earns its place when it names a topic the reader would otherwise have to infer from the declarations under it (`cli/cmd/paths.go:90`, `cli/cmd/install.go:268`). One that only labels what the next declaration already says does not.
 
 This section governs **code comments**, in whatever language a file is written in. Prose under `docs/`, `agents/`, `skills/` and `templates/` is documentation, and cites issues and links out freely.
@@ -156,9 +164,7 @@ Rules that no tool enforces:
 
 ## Inconsistencies
 
-- `[INCONSISTENT — the comment standard (## Comments) forbids external references in comments vs ~100 sites that still carry them: 8 non-test Go files (cli/cmd/paths.go, cli/cmd/install_kimi.go, cli/cmd/uninstall_kimi.go, cli/internal/mcp/kimi.go, cli/internal/hooks/kimi_remove.go, cli/internal/hooks/kimi_config.go, cli/internal/hooks/kimi_install.go, cli/internal/skills/installer.go), 9 Go test files, and 27 files under hooks/]`. Being cleared by #191.
 - `[INCONSISTENT — output through ui helpers (cli/cmd/backup.go, cli/cmd/targets.go, cli/internal/agents/installer.go) vs inline fmt.Printf with raw ANSI codes (cli/cmd/install.go, cli/internal/hooks/installer.go, cli/internal/mcp/opencode.go)]`. New code should use `cli/internal/ui`, as the files written after #97 do.
-- `[INCONSISTENT — documented exported API (cli/internal/manifest/manifest.go, cli/internal/repo/repo.go — both with a package doc comment) vs bare exported symbols: cli/internal/mcp/types.go (LoadRegistry, LoadFromRaw), cli/internal/mcp/claude.go (RemoveClaude, AddClaude, InstallClaude), cli/internal/config/config.go (Load, IsAgentDisabled, IsSkillDisabled, IsHookDisabled), cli/internal/ui/output.go (Info, Success, Warn, Error, Added, Removed, Updated, Skipped, DryRun, Required), cli/internal/ui/prompts.go (SelectAction, SelectScope, MultiSelect, Confirm), cli/internal/hooks/installer.go (LoadRegistry, ParseRegistry, InstallClaude); and no package doc comment anywhere in cli/cmd, cli/internal/agents, cli/internal/config, cli/internal/hooks, cli/internal/mcp, cli/internal/skills, cli/internal/ui]`. New code should follow the documented style. Being cleared by #190.
 - `[INCONSISTENT — one test file per source file (cli/internal/manifest/manifest_test.go, cli/internal/config/dotenv_test.go, cli/internal/hooks/installer_test.go) vs one test file per package (cli/cmd/install_test.go covers targets.go, paths.go, registry.go, backup.go and wizard.go; cli/internal/mcp/mcp_test.go; cli/internal/ui/ui_test.go)]`. The repo doesn't show which one to prefer; see [testing](testing.md).
 - `[INCONSISTENT — branch naming <type>/<ticket-id> in docs/guides/worktree-per-ticket.md ("Naming scheme") vs <type>/<topic-slug> on the remote (fix/hooks-fail-closed, refactor/split-install-go), with a few older <type>/<issue>-<slug> branches (docs/36-worktree-convention, test/23-cli-test-coverage)]`
 - `[INCONSISTENT — docs/development/agent-architecture-reference.md "Agent File Checklist" requires color: and a ## Chaining section vs agents without color: (gen-docs, gen-indexer, update-docs, update-indexer) and agents without ## Chaining (dev-agent, gen-docs, gen-indexer, grooming-agent, update-docs, update-indexer)]`. Either update the checklist or the agents.

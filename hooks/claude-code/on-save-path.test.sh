@@ -6,7 +6,7 @@
 # differ only by trailing characters are two different files, and a tool must
 # never be pointed at the one that was not edited.
 #
-# The path must also reach the tool as the right file, and as a path (#121).
+# The path must also reach the tool as the right file, and as a path.
 # For every tool the hooks call, the second part pins the exact argv and
 # working directory for an absolute path (unchanged since v0.8.0) and for a
 # leading-dash relative path, which must never be read as an option. It also
@@ -66,7 +66,7 @@ for hook in format-on-save lint-on-save test-on-save; do
   done
 done
 
-# ── Tool argv (#121) ─────────────────────────────────────────────────────────
+# ── Tool argv ────────────────────────────────────────────────────────────────
 # Each case is a fresh project laid out so the hook takes one tool branch, with
 # that tool as a stub and a PATH that holds nothing else. Every tool gets the
 # edited file as an absolute path, whatever form the input used:
