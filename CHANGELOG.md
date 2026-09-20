@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A written comment standard** — `docs/development/conventions.md` gains a `## Comments` section stating the bar a comment has to clear: brief, concise, self-contained, and explaining what the code cannot. One that does not clear it is deleted rather than reworded, because a restatement of the signature still has to be read and still rots.
+
+  The load-bearing half is **no external references**. An issue number in a comment sends the reader out of the file, and usually out of the repo, to learn something the comment could simply have said; `#124` carries no meaning at the point of use, while the constraint it stands for does. The reason goes inline as prose and the history goes in the commit body, where `git log` and `git blame` already reach it. Two categories keep their references because a reader genuinely cannot resolve them here: quoted third-party behaviour (`hooks/kimi/adapter.sh` mirrors Kimi's own `internal/matchHooks.ts`) and test fixture data, which is input rather than commentary.
+
+  The standard is language-neutral by construction — it constrains comments in whatever language a file is written in, not Go specifically — and `CLAUDE.md` gets a one-line pointer to it rather than a copy.
+
 - **The knowledge graph is committed** — `graphify-out/graph.json` (2157 nodes, 5239 edges, 129 labelled communities, directed) and `graphify-out/manifest.json`, 2.6 MB together. A clone, and more importantly a new ticket worktree, now starts with the map instead of paying a full semantic extraction to rebuild it. That cost is the whole point: building this one took roughly a million tokens of parallel extraction, and a worktree checks out tracked files only, so under the previous `graphify-out/` ignore every worktree began with no graph and every agent's Phase 0 lookup came up empty.
 
   Portability is what makes this safe to share: `manifest.json` holds 242 **relative** keys (`root=`, upstream #1361/#1417), so the cache still matches after a clone or a move rather than missing every file. Keeping it current is cheap — a code-only `--update` skips semantic extraction entirely and needs no LLM call.
@@ -26,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The frontmatter key `trigger: /graphify` is dropped, following upstream. It was never a devexp convention — 1 of 8 skills carried it, and `cli/internal/skills/kimi.go` documents it as an unknown key that is passed through and ignored. `skills/graphify/.graphify_version` is now tracked so the vendored version is recorded and upstream's staleness check stays accurate after a devexp install overwrites the deployed copy.
 
 ### Fixed
+
+- **Two false claims in `docs/development/conventions.md`.** The Style section asserted that issue numbers live in hook *headers* and commit bodies, and that "Go source doesn't cite issue numbers". Neither half held: references run through hook *bodies*, and 8 non-test Go files plus 9 test files cite issue numbers on disk. A convention page that describes code the repo does not have is worse than no page, because it is read as permission. The sentence is replaced by a pointer to the new standard, and the distance between the standard and the tree is recorded where such gaps belong — under `## Inconsistencies`, with the scope of the remaining cleanup named.
+
+  The `[INCONSISTENT]` marker for undocumented exported API was accurate but understated: it named four files and missed `cli/internal/ui`, the `cli/cmd` package doc and several symbols. It now names the full set found on disk.
+
+- **Two content-free section banners removed** (`cli/internal/mcp/kimi_test.go`, `cli/internal/hooks/opencode_test.go`). A bare `// ── Helpers ──` sitting above a function whose own doc comment already says it is a helper labels nothing the reader could not see.
 
 - **`docs/` indexes described a two-CLI toolkit.** Every content doc already covered the Kimi Code CLI target, but `docs/README.md` and all four `docs/*/README.md` folder indexes predated it and mentioned Kimi nowhere. The concrete error was a miscount: `testing.md` said CI's `hooks` job runs "the three script suites" and that "all four suites" were green, when the job has four steps (claude-code, kimi, opencode, installer script) and there are five suites counting Go. Corrected in `testing.md`, in the `CLAUDE.md` rule that gates "work done" on them, and in the index rows that repeat the count. `docs/coverage.md` was orphaned — no index linked it — and is now listed.
 
