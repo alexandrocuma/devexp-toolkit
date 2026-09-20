@@ -63,6 +63,40 @@ Full guide: [mcp-guide](../development/mcp-guide.md#adding-a-new-mcp-to-the-fram
 5. Write table tests next to the code, never touching the real `$HOME` or user cache (see [testing](../development/testing.md)). Then run the Go suite as CI does (`.github/workflows/ci.yml`; commands in [setup](../development/setup.md)).
 6. **Rebuild the local binary on purpose.** `install.sh` builds only when `bin/devexp` is missing (`install.sh`, `[[ ! -x "$BIN" ]]`), so run `rm bin/devexp` and then `./install.sh --dry-run` to rebuild and preview. For a refactor, check that the dry-run output is byte-identical to a baseline taken before the change, as #97 did (`06c45a1`).
 
+## Before You Change a Coupled Area
+
+Some areas of this repo break things that are nowhere near the file you edited,
+and the break is quiet. `/deliver` runs this as **Phase 1.7 — Blast Radius**,
+invoking the `impact-analysis` agent on the paths the plan will touch *before
+any code is written*. Working by hand, do the same walk yourself.
+
+It is mandatory — not a judgement call — for a change to:
+
+| Area here | What goes wrong quietly |
+|---|---|
+| `hooks/registry.json`, or a file it names | the hook exists and nothing loads it; the installer still reports success |
+| `cli/internal/hooks/`, `cli/internal/mcp/`, `cli/cmd/install*.go` | the feature is built and its install path is never called |
+| anything with an `opencode` or `kimi` counterpart | the twin drifts, and only one of the two is exercised |
+| `hooks/claude-code/scan-budget.sh`, `hooks/opencode/utils.js` | every guard sources them; the consequence scales with callers |
+| a guard, gate or check other code trusts | it keeps returning "fine" after it stops checking |
+
+The reason those five rows are the list: every regression that prompted this
+step came from one of them. A feature merged with a registry, new modules and
+hundreds of lines of green tests, and its deploy was never called — *"opencode
+users got no guards while the installer reported success."* A step that wrote a
+config file, exited 0, and granted nothing. A guard that did not guard,
+rediscovered four separate times, each by accident.
+
+Two rules about the output, both learned the hard way:
+
+- **An empty result is stated, not implied.** "Nothing depends on these paths,
+  established by *X*" is a result. Silence is indistinguishable from never
+  having looked.
+- **The findings become tests.** A dependent that is identified and then not
+  covered is a gap that was found, written down, and shipped anyway — which is
+  worse than not looking, because the record shows someone knew.
+
+
 ## Fix a Bug
 
 1. **Locate the layer.**

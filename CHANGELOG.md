@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`/deliver` gains a blast-radius phase, and `impact-analysis` is finally wired into something** (#192). The agent's own description has always read *"Use this agent before making any change to understand the blast radius — what depends on the target, what could break, and what to test"*, and nothing invoked it. Delivery went from a groomed plan straight to implementation; its first verification was Phase 4 (test gaps) and Phase 5 (correctness pass), both of which run *after* the code exists and both of which look at what was written rather than at what else depends on it.
+
+  New **Phase 1.7 — Blast Radius** runs `impact-analysis` against the paths the plan intends to touch, before a line is written. It is **mandatory** — not a judgement call — for the five areas every cited regression came from: a registry or a file a registry names, install and deploy orchestration, anything with a mirrored `opencode`/`kimi` counterpart, a widely-sourced shared library, and any guard or gate other code trusts.
+
+  Three properties make it more than a report. Its *Required Test Checklist* is **required input to Phase 4** — each dependent it names is either covered by a test that runs in the delivery or recorded as uncovered with a reason, so "who else calls this" becomes a test rather than a paragraph. An **empty blast radius is stated explicitly**, because a phase that produces no output when it finds nothing is indistinguishable from a phase that did not run — which is the defect class the phase exists to catch. And a 🔴 **High verdict is surfaced for confirmation** before implementing: the phase informs rather than vetoes, but the user approved a sequence in Phase 1, not a risk level discovered after it.
+
+  `docs/guides/workflows.md` carries the same list as *Before You Change a Coupled Area*, for work done by hand rather than through `/deliver`.
+
 - **A written comment standard** — `docs/development/conventions.md` gains a `## Comments` section stating the bar a comment has to clear: brief, concise, self-contained, and explaining what the code cannot. One that does not clear it is deleted rather than reworded, because a restatement of the signature still has to be read and still rots.
 
   The load-bearing half is **no external references**. An issue number in a comment sends the reader out of the file, and usually out of the repo, to learn something the comment could simply have said; `#124` carries no meaning at the point of use, while the constraint it stands for does. The reason goes inline as prose and the history goes in the commit body, where `git log` and `git blame` already reach it. Two categories keep their references because a reader genuinely cannot resolve them here: quoted third-party behaviour (`hooks/kimi/adapter.sh` mirrors Kimi's own `internal/matchHooks.ts`) and test fixture data, which is input rather than commentary.
