@@ -142,10 +142,10 @@ BLOCK.push(
   ['write', 'GitHub', `${GH}u_eyJ${'FAKE'.repeat(5)}`],
   ['write', 'GitHub', `${GH}r_9_eyJ${'FAKE'.repeat(5)}`],
   ['write', 'GitHub', `${GH}s_12_34_eyJ${'FAKE'.repeat(5)}`],
-  // A large write, secret first — the shell twin once allowed these (#101).
+  // A large write, secret first — the shell twin once allowed these.
   ['write', 'OpenAI', `${OPENAI}\n${FILLER}`],
   ['edit', 'private key', `${PK_RSA}${FILLER}`],
-  // A real key is never hidden by a placeholder next to it (#143).
+  // A real key is never hidden by a placeholder next to it.
   ['write', 'Slack', `${XOX}b-your-1234567890-${'FAKE'.repeat(6)}`],
   ['edit', 'Slack', `${XOX}b-${'x'.repeat(10)}-1234567890123-${'FAKE'.repeat(6)}`],
   ['write', 'Slack', `${XOX}b-your-token-${SLACK_B}`],
@@ -165,7 +165,7 @@ BLOCK.push(
   ['write', 'Anthropic', `${SK}-ant-your-key-here-${ANTHROPIC}`],
   ['write', 'OpenAI', `${SK}-proj-your-project-key-${'FAKE0_'.repeat(16)}FAKE0`],
   ['write', 'AWS', `id = ${AS}EXAMPLE${body('FAKE', 9)}`],
-  // A service-key name may hold an empty segment (a doubled separator) (#158).
+  // A service-key name may hold an empty segment (a doubled separator).
   ['edit', 'OpenAI', `${SK}-service-svc--${body('0FAKE', 48)}`],
   // Only the whole body counts: "your" glued to more letters, or an unknown
   // key-type segment before a repeated run, is not a placeholder.
@@ -173,15 +173,15 @@ BLOCK.push(
   ['write', 'OpenAI', `${SK}-proj-YOUR${'FAKEfake'.repeat(12)}`],
   ['write', 'Slack', `${XOX}b-your${'FAKEfake'.repeat(2)}`],
   ['write', 'Anthropic', `${SK}-ant-fake0-${'x'.repeat(60)}`],
-  // A repeated run followed by a separator isn't the whole body (#158).
+  // A repeated run followed by a separator isn't the whole body.
   ['edit', 'OpenAI', `${SK}-service-${'x'.repeat(4)}-${body('0FAKE', 48)}`],
-  // A stateless GitHub token's id segment may hold letters (#158).
+  // A stateless GitHub token's id segment may hold letters.
   ['write', 'GitHub', `${GH}s_Iv23liFAKE_eyJ${'FAKE'.repeat(5)}`],
   // Known and kept: a gh?_ fragment followed by a segment starting eyJ reads as a
-  // stateless token, since GitHub's JWT starts that way (#158).
+  // stateless token, since GitHub's JWT starts that way.
   ['write', 'GitHub', `hi${GH}s_eyJson_parser_for_every_region = 1`],
   ['edit', 'OpenAI', `${SK}-proj-${'x'.repeat(80)}FAKE`],
-  // A private-key header with key material, however it is written (#143).
+  // A private-key header with key material, however it is written.
   ['write', 'private key', `"${D5}BEGIN PRIVATE KEY${D5}\\n${body('MIIEFAKE0+/', 64)}\\n${D5}END PRIVATE KEY${D5}"`],
   ['edit', 'private key', `${D5}BEGIN RSA PRIVATE KEY${D5}\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,FAKE\n\n${body('MIIEFAKE0+/', 64)}`],
   ['write', 'private key', `${D5}BEGIN PGP PRIVATE KEY BLOCK${D5}\nVersion: FAKE\nComment: exported by a fake key tool for the devexp guard tests, not a real key\n\n${body('lQOYBFAKE0+/', 64)}`],
@@ -192,7 +192,7 @@ BLOCK.push(
   ['edit', 'private key', `${D5}BEGIN EC PRIVATE KEY${D5}\n${D5}END EC PRIVATE KEY${D5}\n${pem('EC PRIVATE KEY')}`],
   ['write', 'private key', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${body('FAKE0+/', 32)}\n${D5}END RSA PRIVATE KEY${D5}`],
   // A dash rule between header and body doesn't end the search; only an END or
-  // BEGIN line does (#158).
+  // BEGIN line does.
   ...['RSA PRIVATE KEY', 'PRIVATE KEY', 'EC PRIVATE KEY', 'DSA PRIVATE KEY', 'ENCRYPTED PRIVATE KEY', 'OPENSSH PRIVATE KEY', 'PGP PRIVATE KEY BLOCK', 'PGP SECRET KEY BLOCK']
     .map((kind) => ['write', 'private key', `${D5}BEGIN ${kind}${D5}\n${D5}\n${body('MIIEFAKE0+/', 64)}\n${D5}END ${kind}${D5}`]),
   // JSON that escapes every slash still carries the key material.
@@ -206,7 +206,7 @@ BLOCK.push(
   ['write', 'private key', `"${D5}BEGIN RSA PRIVATE KEY${D5}\\n${body('FAKE0abcdefghijk', 16)}\\n${body('FAKE0abcdefghijk', 16)}\\n${D5}END RSA PRIVATE KEY${D5}"`],
   // Key-like text on the header's line, or just after it, still blocks.
   ['edit', 'private key', `if (pem.startsWith("${D5}BEGIN PRIVATE KEY${D5}")) return parsePkcs8PrivateKeyFromPemEncodedString(pem);`],
-  // Bounded repetitions (#158), pinned at the edge (the one-past twins are in ALLOW).
+  // Bounded repetitions, pinned at the edge (the one-past twins are in ALLOW).
   ['write', 'private key', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${' '.repeat(494)}${body('FAKE0+/', 32)}`],
   ['write', 'private key', `${D5}BEGIN ${body('ABC ', 40)}PRIVATE KEY${D5}\n${body('MIIEFAKE0+/', 64)}`],
   ['write', 'Anthropic', `${SK}-ant-your${'-a'.repeat(25)}`],
@@ -272,13 +272,13 @@ const ALLOW = [
   ['write', 'const REGION = "ASIAPACIFICDATACENTER01";'],
   ['edit', 'EURASIAPACIFICREGION024 = load_regions()'],
   // Long snake_case names holding a GitHub prefix: right_ holds ght_, highs_ holds
-  // ghs_. Joined at runtime, since the guard blocked them before (#143).
+  // ghs_. Joined at runtime, since the guard blocked them before.
   ['write', `def test_blocks_ri${GH}t_token_when_a_write_holds_a_long_snake_case_name(): pass`],
   ['edit', `hi${GH}s_and_lows_for_every_region_in_the_dataset_since_2000 = {}`],
   ['write', `const wei${GH}t_surveyJson_for_every_respondent_in_the_panel = load();`],
   ['edit', `ri${GH}t_eye_contact_duration_for_the_whole_recorded_session = 3`],
   ['write', 'Installation tokens now look like ghs_APPID_JWT.'],
-  // Placeholders shaped like a key (#143): documented example values,
+  // Placeholders shaped like a key: documented example values,
   // your-... phrases, one repeated character, <...>.
   ['write', `SLACK_BOT_TOKEN=${XOX}b-your-token`],
   ['edit', `slack_token: ${XOX}p-your-slack-user-token-here`],
@@ -303,14 +303,14 @@ const ALLOW = [
   ['write', `SLACK_BOT_TOKEN=${XOX}b-<your-bot-token>`],
   ['edit', `ANTHROPIC_API_KEY=${SK}-ant-<your-key> OPENAI_API_KEY=${SK}-proj-<project-key>`],
   ['write', `AWS_ACCESS_KEY_ID=${AK}<ACCESS_KEY_ID>`],
-  // A private-key header with no key material (#143).
+  // A private-key header with no key material.
   ['write', `Keys in PKCS#1 form start with "${D5}BEGIN RSA PRIVATE KEY${D5}"; see https://docs.example.com/security/private-keys.html`],
   ['edit', `if line.startswith('${D5}BEGIN OPENSSH PRIVATE KEY${D5}'):\n    return True`],
   ['write', `${D5}BEGIN PRIVATE KEY${D5}\n<your private key>\n${D5}END PRIVATE KEY${D5}`],
   ['write', `${D5}BEGIN RSA PRIVATE KEY${D5}\nMIIEpAIBAAKCAQEA...\n${D5}END RSA PRIVATE KEY${D5}`],
   ['edit', `${D5}BEGIN EC PRIVATE KEY${D5}\n${D5}END EC PRIVATE KEY${D5}`],
   ['write', `PEM_HEADER = '${D5}BEGIN PRIVATE KEY${D5}'\n${pem('CERTIFICATE')}`],
-  // A quoted header, whatever the rest of the write holds (#158). Only text near
+  // A quoted header, whatever the rest of the write holds. Only text near
   // the header counts as its key material, and the search ends at an END or
   // BEGIN line, so a later identifier, fingerprint, path or hash doesn't block.
   ['write', `if (pem.startsWith("${D5}BEGIN PRIVATE KEY${D5}")) {\n${CODE}\n  return parsePkcs8PrivateKeyFromPemEncodedString(pem);\n}`],
@@ -318,7 +318,7 @@ const ALLOW = [
   ['write', `Store the ${D5}BEGIN EC PRIVATE KEY${D5} file on the host.\n${PROSE}\nPath: /home/deploy/configuration/secrets/keys/`],
   ['write', `${D5}BEGIN PRIVATE KEY${D5}\n<paste your private key here>\n${D5}END PRIVATE KEY${D5}\nchecksum: ${body('0123456789abcdef', 64)}`],
   ['edit', `Header: ${D5}BEGIN RSA PRIVATE KEY${D5}\n\n${PROSE}${PROSE}\nFixed in commit ${body('0123456789abcdef', 40)}.`],
-  // Backslashes near a quoted header that aren't an escaped key body (#158):
+  // Backslashes near a quoted header that aren't an escaped key body:
   // Windows paths, escapes in code strings, \u escapes, escaped prose, LaTeX.
   ['write', String.raw`Save the ${D5}BEGIN RSA PRIVATE KEY${D5} file as C:\ProgramData\ContosoDeploy\Certificates\Private\server.pem`],
   ['edit', String.raw`Header ${D5}BEGIN OPENSSH PRIVATE KEY${D5}. Key path: C:\Users\Administrator\AppData\Roaming\SshAgent\keys\id_ed25519`],
@@ -331,7 +331,7 @@ const ALLOW = [
   // Two escaped lines join only when both hold at least 16 characters.
   ['write', `"${D5}BEGIN RSA PRIVATE KEY${D5}\\n${body('FAKE0abcdefghijk', 15)}\\n${body('FAKE0abcdefghijk', 16)}\\n${D5}END RSA PRIVATE KEY${D5}"`],
   ['write', `"${D5}BEGIN RSA PRIVATE KEY${D5}\\n${body('FAKE0abcdefghijk', 16)}\\n${body('FAKE0abcdefghijk', 15)}\\n${D5}END RSA PRIVATE KEY${D5}"`],
-  // Bounded repetitions (#158), one past the edge.
+  // Bounded repetitions, one past the edge.
   ['write', `${D5}BEGIN RSA PRIVATE KEY${D5}\n${' '.repeat(495)}${body('FAKE0+/', 32)}`],
   ['write', `${D5}BEGIN ${body('ABC ', 41)}PRIVATE KEY${D5}\n${body('MIIEFAKE0+/', 64)}`],
   ['write', `${SK}-ant-your${'-a'.repeat(24)}`],
@@ -396,7 +396,7 @@ for (const [tool, args] of OTHER_TOOLS) {
   }
 }
 
-// ── Timing: every pattern decides in linear time (#158) ─────────────────────
+// ── Timing: every pattern decides in linear time ────────────────────────────
 // opencode runs this handler synchronously, so a slow pattern stalls the
 // session. These writes repeat a prefix or a header so that an unbounded
 // repetition would rescan from every start. Each runs in a child process that

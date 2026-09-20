@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests the scan budget every fail-closed security guard runs under (#162).
+# Tests the scan budget every fail-closed security guard runs under.
 #
 # Claude Code does not block a tool call when a command hook times out, and its
 # default timeout for one is 600 seconds, so a guard that is slow on some input
@@ -133,8 +133,8 @@ done
 # Falling back to the default is the only safe reading: a typo must not widen
 # the budget, and must not block every call either.
 # U+0663 and U+00B2 are the ones that matter: Python's str.isdigit() accepts
-# both, so before #167 one of them set a 3 ms budget that blocked every call and
-# the other raised inside the watchdog. The JS twin's \d never did.
+# both, so one of them once set a 3 ms budget that blocked every call and the
+# other raised inside the watchdog. The JS twin's \d never did.
 for bad in "abc" "-1" "1e3" "10s" "" " " "1.5" "0x10" "٣" "²" "12 34"; do
     got=$(run dangerous-cmd-guard "$bad" "$(allow_envelope dangerous-cmd-guard)")
     check "budget \"$bad\" falls back to the default (allows)" \

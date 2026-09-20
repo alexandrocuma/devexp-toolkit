@@ -482,7 +482,7 @@ func TestDoUninstallKimi_CustomRootOutsideHome(t *testing.T) {
 	mustExist(t, filepath.Join(p.agents, "dev-agent.md"), "the install should have written into the custom root")
 	// The hook scripts specifically: this assertion existed before the fixture
 	// installed any, so it reached an empty list and the guard on the hook
-	// path stayed untested while looking covered (PR #176 re-review). Each
+	// path stayed untested while looking covered. Each
 	// kind gets its own removal guard call, so each needs its own evidence.
 	before := readKimiManifest(t, p.manifest)
 	if len(before.Hooks) == 0 {
@@ -520,7 +520,7 @@ func TestDoUninstallKimi_CustomRootOutsideHome(t *testing.T) {
 // then trivially true, so the manifest was deleted; and the run printed
 // success. Everything devexp wrote was stranded with no record of it, the
 // guards deregistered while their scripts stayed, and a re-run said there was
-// nothing to remove. Found in PR #176 review.
+// nothing to remove.
 func TestDoUninstallKimi_UnreadableManifest(t *testing.T) {
 	for name, body := range map[string]string{
 		// Exactly what `head -c` on a real manifest produces.
@@ -567,7 +567,7 @@ func TestDoUninstallKimi_UnreadableManifest(t *testing.T) {
 // Remove deleted the recorded script inside a dotfiles checkout when
 // hooks/kimi, hooks/ or the root was symlinked, and then pruned the emptied
 // linked directories — while agents/ and skills/ in the same run correctly
-// refused. Found in PR #176 review.
+// refused.
 func TestDoUninstallKimi_SymlinkedHooksDirKept(t *testing.T) {
 	// Each case links a different level, because the guard has to refuse at
 	// every one of them: the entry's own directory, its parent, and the root.
@@ -713,8 +713,8 @@ func TestDoUninstallKimi_SymlinkedHookScriptKept(t *testing.T) {
 // TestDoUninstallKimi_HookScriptNotARegularFile: a recorded ".sh" name that is
 // on disk as something else. The earlier repro used a *non-empty* directory,
 // where removal fails anyway and the check never had to do anything — an
-// empty directory, or a fifo, would go through the pinned handle unchecked
-// (PR #176 re-review). Both are left alone, and both stay recorded.
+// empty directory, or a fifo, would go through the pinned handle
+// unchecked. Both are left alone, and both stay recorded.
 func TestDoUninstallKimi_HookScriptNotARegularFile(t *testing.T) {
 	t.Run("an empty directory", func(t *testing.T) {
 		p := kimiScratch(t, "")
@@ -764,7 +764,7 @@ func TestDoUninstallKimi_HookScriptNotARegularFile(t *testing.T) {
 // live bug — but the code deleted it whenever the kept record came out empty,
 // regardless of whether the old one held anything, which is a narrower form of
 // the symptom the unreadable-manifest fix closed: manifest gone, files on
-// disk, exit 0, "Removed devexp" (PR #176 re-review).
+// disk, exit 0, "Removed devexp".
 func TestDoUninstallKimi_EmptyManifestNotDeleted(t *testing.T) {
 	for name, body := range map[string]string{
 		"all fields empty": `{"agents":[],"skills":[],"hooks":[],"mcps":{}}`,

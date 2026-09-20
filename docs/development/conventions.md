@@ -1,6 +1,6 @@
 # Conventions
 
-> Kit doc · Last verified: 2026-09-20 against commit `9a771725a179631b07dad0047c4713a4b83c2f43`
+> Kit doc · Last verified: 2026-09-20 against commit `b21a8795a179631b07dad0047c4713a4b83c2f43`
 
 How code is written in this repo. Every rule cites the files that prove it.
 
@@ -156,7 +156,6 @@ Rules that no tool enforces:
 
 ## Inconsistencies
 
-- `[INCONSISTENT — the comment standard (## Comments) forbids external references in comments vs ~100 sites that still carry them: 8 non-test Go files (cli/cmd/paths.go, cli/cmd/install_kimi.go, cli/cmd/uninstall_kimi.go, cli/internal/mcp/kimi.go, cli/internal/hooks/kimi_remove.go, cli/internal/hooks/kimi_config.go, cli/internal/hooks/kimi_install.go, cli/internal/skills/installer.go), 9 Go test files, and 27 files under hooks/]`. Being cleared by #191.
 - `[INCONSISTENT — output through ui helpers (cli/cmd/backup.go, cli/cmd/targets.go, cli/internal/agents/installer.go) vs inline fmt.Printf with raw ANSI codes (cli/cmd/install.go, cli/internal/hooks/installer.go, cli/internal/mcp/opencode.go)]`. New code should use `cli/internal/ui`, as the files written after #97 do.
 - `[INCONSISTENT — documented exported API (cli/internal/manifest/manifest.go, cli/internal/repo/repo.go — both with a package doc comment) vs bare exported symbols: cli/internal/mcp/types.go (LoadRegistry, LoadFromRaw), cli/internal/mcp/claude.go (RemoveClaude, AddClaude, InstallClaude), cli/internal/config/config.go (Load, IsAgentDisabled, IsSkillDisabled, IsHookDisabled), cli/internal/ui/output.go (Info, Success, Warn, Error, Added, Removed, Updated, Skipped, DryRun, Required), cli/internal/ui/prompts.go (SelectAction, SelectScope, MultiSelect, Confirm), cli/internal/hooks/installer.go (LoadRegistry, ParseRegistry, InstallClaude); and no package doc comment anywhere in cli/cmd, cli/internal/agents, cli/internal/config, cli/internal/hooks, cli/internal/mcp, cli/internal/skills, cli/internal/ui]`. New code should follow the documented style. Being cleared by #190.
 - `[INCONSISTENT — one test file per source file (cli/internal/manifest/manifest_test.go, cli/internal/config/dotenv_test.go, cli/internal/hooks/installer_test.go) vs one test file per package (cli/cmd/install_test.go covers targets.go, paths.go, registry.go, backup.go and wizard.go; cli/internal/mcp/mcp_test.go; cli/internal/ui/ui_test.go)]`. The repo doesn't show which one to prefer; see [testing](testing.md).

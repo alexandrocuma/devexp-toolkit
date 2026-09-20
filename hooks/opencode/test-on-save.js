@@ -65,7 +65,7 @@ export async function testOnSave(ctx) {
           // can match other tests or none. It works on jest 29 and 30 (30 renamed
           // --testPathPattern). After '--' a path starting with '-' is never read as
           // options, and it stays relative to root: an absolute path through a
-          // symlinked root finds no tests (#121). vitest gets no '--': it would drop
+          // symlinked root finds no tests. vitest gets no '--': it would drop
           // the file filter.
           const jestArgs    = ['--passWithNoTests', '--no-coverage', '--runTestsByPath', '--', relative(root, testFile)];
 
