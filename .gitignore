@@ -13,3 +13,7 @@ cli/internal/assets/.devexp-toolkit
 graphify-out/
 .devexp/health-baseline.json
 .devexp/system-health-review.md
+
+# macOS Finder metadata — never useful in a commit, and rsync already
+# excludes it from the staged assets (scripts/stage-assets.sh).
+.DS_Store
