@@ -10,6 +10,11 @@ cli/internal/assets/mcps/
 cli/internal/assets/devexp.config.json
 cli/internal/assets/uninstall.sh
 cli/internal/assets/.devexp-toolkit
+# graphify knowledge graph — stays local, deliberately. Upstream suggests
+# committing it, but this repo ships graphify-read-guard (opencode-enabled),
+# which gates source reads on `graphify-out/graph.json` existing and nothing
+# else — committing a graph would silently make every contributor run graphify
+# queries before they could read a file. See docs/reference/hooks.md.
 graphify-out/
 .devexp/health-baseline.json
 .devexp/system-health-review.md

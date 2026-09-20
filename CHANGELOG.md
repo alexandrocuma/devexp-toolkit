@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   The frontmatter key `trigger: /graphify` is dropped, following upstream. It was never a devexp convention — 1 of 8 skills carried it, and `cli/internal/skills/kimi.go` documents it as an unknown key that is passed through and ignored. `skills/graphify/.graphify_version` is now tracked so the vendored version is recorded and upstream's staleness check stays accurate after a devexp install overwrites the deployed copy.
 
+### Fixed
+
+- **`docs/` indexes described a two-CLI toolkit.** Every content doc already covered the Kimi Code CLI target, but `docs/README.md` and all four `docs/*/README.md` folder indexes predated it and mentioned Kimi nowhere. The concrete error was a miscount: `testing.md` said CI's `hooks` job runs "the three script suites" and that "all four suites" were green, when the job has four steps (claude-code, kimi, opencode, installer script) and there are five suites counting Go. Corrected in `testing.md`, in the `CLAUDE.md` rule that gates "work done" on them, and in the index rows that repeat the count. `docs/coverage.md` was orphaned — no index linked it — and is now listed.
+
+- **`docs/guides/release.md` re-verified against HEAD.** Its job names were still correct (the Kimi suite is a step inside `ci / hooks`, not a new job) and its cited `.goreleaser.yaml` and `cli/cmd/root.go` line numbers still resolve, so the guide is re-stamped rather than rewritten; the CI line now names the four hook steps so a reader can tell which one failed.
+
+### Documentation
+
+- **`docs/reference/hooks.md`: don't commit `graphify-out/`.** `graphify-read-guard` is `opencode.enabled: true` and its only precondition is `existsSync('graphify-out/graph.json')` — it never checks that the graphify CLI is installed. Committing a graph would arm the gate for every contributor working in opencode: their first source-file read blocks until they run 5 `graphify query` calls, with no way to clear it without graphify installed. Upstream recommends committing `graphify-out/` so a team shares one map; that advice is sound for a repo that doesn't also ship this hook. The `.gitignore` entry now carries the reason.
+
 ## [0.10.3] - 2026-09-19
 
 ### Fixed
