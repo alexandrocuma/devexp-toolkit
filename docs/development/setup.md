@@ -47,7 +47,7 @@ The full list — `CLAUDE.md` shows only the most-used few and links here.
 | Rebuild via the installer | `rm bin/devexp && ./install.sh` | `install.sh:7` (builds only when `bin/devexp` is missing) |
 | Run locally (from source) | `cd cli && go run . install --dry-run` | `cli/main.go`; a dev build uses the checkout it was compiled from, wherever it runs — `sourceRoot` in `cli/internal/repo/repo.go` |
 | Show version | `bin/devexp --version` → `devexp version dev` for local builds | `cli/cmd/root.go:15` |
-| Preview an install | `./install.sh --dry-run` (or `-n`) | `cli/cmd/install.go:32` |
+| Preview an install | `./install.sh --dry-run` (or `-n`) | `cli/cmd/install.go:37` |
 | Install — interactive wizard | `./install.sh` (no flags, **and** a TTY) | `cli/cmd/install.go:133-140`, `chooseInstallMode` |
 | Install — non-interactive | `./install.sh` with any of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, `--skills-only`, `--target` (`--model` alone does **not** skip the wizard). With no TTY, no flags are needed: a bare run installs everything for every detected CLI | `cli/cmd/install.go:133-148`, `chooseInstallMode` |
 | Uninstall | `./uninstall.sh` / `./uninstall.sh --yes` | [`../guides/install.md`](../guides/install.md#uninstallsh) |

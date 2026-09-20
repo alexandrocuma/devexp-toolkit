@@ -265,7 +265,9 @@ func chooseInstallMode(flagsProvided, isTerminal bool) installMode {
 // installs more than the user would have picked never does it silently.
 func announceDefaultMode() {
 	ui.Info("No terminal to prompt on — installing everything with defaults.")
-	ui.Info("To choose: --dry-run, --mcps-only, --agents-only, --skills-only, --target.")
+	// Every flag flagsProvided counts, so the hint cannot send anyone back to
+	// a full install for want of the one that would have served them.
+	ui.Info("To choose: --dry-run, --reinstall-mcps, --mcps-only, --agents-only, --skills-only, --target.")
 	fmt.Println()
 }
 
