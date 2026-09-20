@@ -22,7 +22,7 @@ tag and `release.yml`'s `needs: ci` finally noticed.
 | Setting | Value | Why |
 |---|---|---|
 | Pull request before merge | required | a direct push to `main` bypasses every check below |
-| Required checks | `test`, `hooks`, `govulncheck` | the three jobs in `.github/workflows/ci.yml`; add `lint` when it lands |
+| Required checks | `test`, `hooks`, `lint`, `govulncheck` | the four jobs in `.github/workflows/ci.yml` |
 | Strict (up to date with `main`) | on | a check that passed against a stale base proves nothing about the merge result |
 | Required approving reviews | **0** | a PR is required, an approval is not — with one maintainer, requiring a review would deadlock the repo. Self-merge after green is the intended flow |
 | Include administrators | **on** | a bypass for the only maintainer is not a gate. To unwedge a genuinely stuck check, toggle protection off deliberately rather than merging around it |
