@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Procedures duplicated across skills are guarded against drift** (#196). `/deliver` and `/improve` both advertise that they need no other skill installed, so a step they share cannot be replaced with a pointer — the copy has to stay. What must not happen is the copies drifting unnoticed, which is how the worktree access grant came to be wrong in two independent ways at once: one copy wrote a key Claude Code does not read, and the other had lost the words "the main checkout's", so a grant written from inside a worktree was discarded along with that tree.
+
+  An audit of every paragraph appearing in two or more `skills/*/SKILL.md` found **no byte-identical duplication at all** — which is why this ships two differently-shaped tests rather than the single byte-comparison the ticket imagined.
+
+  `TestSharedSafeIDGuardIsIdentical` asserts the `safe_id()` shell guard is spelled identically in `/cleanup` and `/improve`. Byte-exact is the right bar there and the stakes are why: the function decides whether a caller-supplied ticket id may be interpolated into an `rm -f` glob, and a copy that drifted would keep passing every other test while accepting an identifier its twin rejects, in a code path whose entire job is deleting things.
+
+  `TestGrantProcedureStatesEveryLoadBearingClaim` asserts the grant's four claims — nested `permissions` key, `settings.local.json`, the **main checkout's** file, paths derived from `git worktree list` — across `/deliver`, `/improve` and the guide. Byte-identity is deliberately not asserted, because there are no byte-identical copies: the three renderings differ on purpose, at three lengths, for three readers. Demanding identity would be unsatisfiable; demanding nothing is what let it drift. The wording is free, the claims are not.
+
+  Both tests **refuse to pass vacuously**: each fails if it finds fewer than two copies to compare, since a guard that silently stops guarding is the defect it was written against. Verified by mutation — a drifted `safe_id()`, a dropped claim, and a deleted copy each fail the suite.
 - **A failure may no longer collapse into a value that looks like success — enforced in Go, asked everywhere else** (#194). The repo named this defect class itself: *"the third instance of one pattern after #92 and #93: a failure collapsed into a value that looks like success."* It has two halves, and they need different tools.
 
   **In this repo's own Go**, a minimal `.golangci.yml` runs `errcheck` plus `nolintlint` over `cli/`, wired into CI as a blocking `lint` job. `errcheck` alone would have been worse than useless, because its escape hatch absorbs the rule: discarding an error is *sometimes correct here and documented as policy* — loading state never blocks an install. `nolintlint` with `require-explanation` makes the escape hatch honest, so a bare `//nolint:errcheck` now fails and every suppression has to name what the user still sees. 22 findings, all resolved: 14 suppressions given reasons, 6 read-only `Close()` calls annotated, and 2 unchecked type assertions fixed properly.
