@@ -12,10 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The install wizard no longer swallows a broken `mcps/registry.json` (#102).** The wizard loaded the registry with `registry, _ := loadFullRegistry(...)`, discarding the error. `registry` was then `nil`, and because the wizard guards its MCP step on `len(registry) > 0`, **the step simply vanished** — a registry.json that failed to parse looked exactly like a build that ships no MCP servers. No warning, no diagnostic, and a symptom pointing nowhere near the cause. You now get the reason and what it costs you:
 
   ```
-  [devexp] load MCP registry: invalid character ']' looking for beginning of object key string — the MCP step will be skipped
+  [devexp] load MCP registry: invalid character ']' looking for beginning of object key string
+           — no MCPs can be offered, and "Everything" or "MCPs only" will fail on this same
+           error without installing anything. Choose "Agents only" or "Skills only" to
+           continue without MCPs.
   ```
 
-  **It warns rather than aborts, on purpose.** The registry is read only to build the MCP checklist, and that happens *before* the wizard asks for scope — so failing here would break an agents-only or skills-only install over a file it never reads. The abort is not lost, only narrowed to the runs that need it: `installMCPs{Claude,Opencode,Kimi}` load the registry again and propagate the same error, so anything actually installing MCPs still stops. Flag-path behaviour is unchanged, and `--dry-run` output on the happy path is byte-identical.
+  **It warns rather than aborts, on purpose** — and the wording is careful because the warning is printed *before* the scope prompt. The registry is read only to build the MCP checklist, so failing here would break an agents-only or skills-only install over a file it never reads. But the abort is not lost, only narrowed to the runs that need it: `installMCPs{Claude,Opencode,Kimi}` load the registry again and propagate the same error, and because MCPs install **first**, an "Everything" or "MCPs only" run ends having written nothing. So the message names both outcomes and the way out, rather than promising a skipped step and then failing the whole install. Flag-path behaviour is unchanged, and `--dry-run` output on the happy path is byte-identical.
 
   This was **TD-002** in the v0.7.0 debt register and the third instance of one pattern — after #92 (hook interpreter errors collapsing to "nothing to block") and #93 (`install.sh` registering nothing and reporting "All done") — where a failure was folded into a value indistinguishable from success.
 

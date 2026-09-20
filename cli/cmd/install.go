@@ -244,10 +244,23 @@ func runInstall(cmd *cobra.Command, args []string) error {
 // registry nil — which wizard.go reads as "no MCPs to offer" (its len > 0
 // guard), so the step vanished with no hint that a file had failed to parse.
 // An empty list and an unreadable file looked identical.
+//
+// The message has to hold for every scope the user is about to be offered,
+// because it is printed before they choose one. "The MCP step will be skipped"
+// would be true only for Agents only and Skills only: on Everything and MCPs
+// only the MCP install runs first (install_claude.go:32-41 and its opencode
+// and kimi twins), returns this same error, and the run ends having written
+// nothing at all. Telling someone a step will be skipped and then failing the
+// whole install is worse than the silence this replaces, so the warning names
+// both outcomes and the way out.
 func wizardRegistry(repoDir string, cfg *config.Config) (registry []mcp.MCP, warning string) {
 	registry, err := loadFullRegistry(repoDir, cfg)
 	if err != nil {
-		return nil, fmt.Sprintf("%v — the MCP step will be skipped", err)
+		return nil, fmt.Sprintf(
+			"%v — no MCPs can be offered, and \"Everything\" or \"MCPs only\" "+
+				"will fail on this same error without installing anything. "+
+				"Choose \"Agents only\" or \"Skills only\" to continue without MCPs.",
+			err)
 	}
 	return registry, ""
 }

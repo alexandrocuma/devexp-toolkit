@@ -2014,11 +2014,10 @@ func TestWizardRegistry(t *testing.T) {
 		}
 		// The message has to point at the registry and say what the user loses,
 		// or it is no better than the empty list it replaces.
-		for _, want := range []string{"MCP registry", "MCP step will be skipped"} {
-			if !strings.Contains(warning, want) {
-				t.Errorf("warning = %q, want it to contain %q", warning, want)
-			}
+		if !strings.Contains(warning, "MCP registry") {
+			t.Errorf("warning = %q, want it to name the MCP registry", warning)
 		}
+		assertWarningHoldsForEveryScope(t, warning)
 	})
 
 	t.Run("a malformed registry warns and names the cause", func(t *testing.T) {
@@ -2036,6 +2035,7 @@ func TestWizardRegistry(t *testing.T) {
 		if !strings.Contains(warning, "MCP registry") {
 			t.Errorf("warning = %q, want it to name the MCP registry", warning)
 		}
+		assertWarningHoldsForEveryScope(t, warning)
 	})
 
 	t.Run("a malformed extra MCP still only warns inside loadFullRegistry", func(t *testing.T) {
@@ -2053,6 +2053,33 @@ func TestWizardRegistry(t *testing.T) {
 			t.Errorf("got %+v, want the registry entry despite the bad extra", got)
 		}
 	})
+}
+
+// assertWarningHoldsForEveryScope pins the wording against the one way it can
+// be worse than the silence it replaces.
+//
+// The warning is printed before ui.SelectScope runs, so it has to be true for
+// every scope the user is about to pick. "The MCP step will be skipped" holds
+// only for Agents only and Skills only — on Everything and MCPs only the MCP
+// install runs first (install_claude.go:32-41 and its opencode and kimi
+// twins), returns this same error, and the run ends having written nothing.
+// Promising a skipped step and then failing the whole install sends the user
+// looking in the wrong place, which is the defect #102 exists to remove.
+func assertWarningHoldsForEveryScope(t *testing.T, warning string) {
+	t.Helper()
+
+	// A bare "will be skipped" claim, with nothing saying the run can also fail.
+	if strings.Contains(warning, "will be skipped") && !strings.Contains(warning, "will fail") {
+		t.Errorf("warning = %q — it promises a skipped step but never says "+
+			"Everything/MCPs only aborts without installing anything", warning)
+	}
+	// It must say the run can fail, and point at a scope that still works.
+	if !strings.Contains(warning, "will fail") {
+		t.Errorf("warning = %q, want it to say the install can fail", warning)
+	}
+	if !strings.Contains(warning, "Agents only") && !strings.Contains(warning, "Skills only") {
+		t.Errorf("warning = %q, want it to name a scope that still succeeds", warning)
+	}
 }
 
 // ── Backup and stale-removal error paths ──────────────────────────────────────
