@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The documented `go test` command could answer an asset edit with a cached pass** (#208). `go test` decides "nothing changed" from files a test opens **inside the module root**, which here is `cli/`, where `go.mod` lives. Every repo-consistency test reads *upward* out of the module — `hooks/`, `skills/`, `docs/`, `CLAUDE.md`, `README.md` — and those reads never enter the cache key. So after an asset edit, a plain run replayed the previous verdict and printed `ok (cached)`.
+
+  Reproduced with the exact command `CLAUDE.md` documented: point a registry entry at a file that does not exist, run `go test ./... -race -cover`, get `ok (cached)`; add `-count=1` and get the failure naming the missing file. **Not new, and not confined to the new tests** — `TestLoadRegistry_RepoRegistry` predates this and behaves identically: delete a hook from `registry.json`, leaving 9 where it asserts 10, and a plain run still reports `ok`.
+
+  `-count=1` is now in every place this repo gives its own Go test command — `CLAUDE.md`, `docs/development/testing.md` (suite table, before-every-commit checklist, coverage) and `docs/development/setup.md` — and in `ci.yml`, where it is a no-op on a fresh runner but keeps the command labelled "as CI" identical to the one CI runs. The flag looks redundant, since the default count is already 1, so the reason it is really there is written next to it in both places; deleting it as tidying would restore the silent failure.
+
+  The generic `go test ./...` lines in `agents/*.md` are untouched. Those instruct agents working on **users'** projects and are language-agnostic by design; this is a property of this repository's own module layout.
+
+  Found while mutation-testing the guards added for the repo-consistency and drift work — a deliberate mutation reported a pass. CI was never affected, because a fresh runner has an empty cache. The exposure was entirely local, which is why it went unnoticed, and it lands at the worst moment: right after an asset is edited and the tests are run to check.
+
 ### Added
 
 - **Procedures duplicated across skills are guarded against drift** (#196). `/deliver` and `/improve` both advertise that they need no other skill installed, so a step they share cannot be replaced with a pointer — the copy has to stay. What must not happen is the copies drifting unnoticed, which is how the worktree access grant came to be wrong in two independent ways at once: one copy wrote a key Claude Code does not read, and the other had lost the words "the main checkout's", so a grant written from inside a worktree was discarded along with that tree.

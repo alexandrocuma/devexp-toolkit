@@ -10,7 +10,7 @@ CI (`.github/workflows/ci.yml`) runs in three jobs: `test` (Go), `hooks` (the fo
 
 | Type | Framework | Location | Run |
 |------|-----------|----------|-----|
-| Unit — Go CLI | Go stdlib `testing` only; no assertion or mock library in `cli/go.mod` | `cli/**/<file>_test.go`, next to the code, same package | `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover)` — `ci.yml`, job `test` |
+| Unit — Go CLI | Go stdlib `testing` only; no assertion or mock library in `cli/go.mod` | `cli/**/<file>_test.go`, next to the code, same package | `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover -count=1)` — `ci.yml`, job `test` |
 | Hook behaviour — Claude Code | plain bash script, `pass`/`fail` counters | `hooks/claude-code/<hook>.test.sh` | `for f in hooks/claude-code/*.test.sh; do bash "$f" \|\| exit 1; done` — `ci.yml`, job `hooks`, step `claude-code hook tests` |
 | Hook behaviour — Kimi Code CLI | plain bash script, `pass`/`fail` counters | `hooks/kimi/*.test.sh` (`adapter.test.sh`, `runner.test.sh`) | `for f in hooks/kimi/*.test.sh; do bash "$f" \|\| exit 1; done` — `ci.yml`, job `hooks`, step `kimi hook tests` |
 | Hook behaviour — opencode | plain `node` ESM script, no framework (Node 22 in CI) | `hooks/opencode/<hook>.test.js` | `for f in hooks/opencode/*.test.js; do node "$f" \|\| exit 1; done` — `ci.yml`, job `hooks`, step `opencode hook tests` |
@@ -111,7 +111,24 @@ To bump govulncheck itself, change `GOVULNCHECK_VERSION` in `scripts/govulncheck
 
 Mirror CI — it runs all of these on the PR:
 
-- [ ] `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover)`
+> **Keep the `-count=1`.** It looks redundant, because the default count *is* 1 —
+> its real job is to bypass the test cache, and deleting it reintroduces a
+> silent failure. `go test` decides "nothing changed" from files a test opens
+> **inside the module root**, which here is `cli/` (where `go.mod` lives). The
+> repo-consistency tests read *upward* out of the module — `hooks/`, `skills/`,
+> `docs/`, `CLAUDE.md`, `README.md` — and those reads never enter the cache key.
+> So after you edit an asset, a plain run replays the previous verdict and
+> prints `ok (cached)`. Verified against the pre-existing
+> `TestLoadRegistry_RepoRegistry` as well: delete a hook from `registry.json`,
+> leaving 9 where it asserts 10, and a plain run still reports `ok`.
+>
+> CI never needed the flag — a fresh runner has an empty cache — but it carries
+> it anyway so the command here and the one in `ci.yml` are the same command.
+> The exposure is entirely local, and it lands at the worst moment: right after
+> you change an asset and run the tests to check yourself.
+
+
+- [ ] `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover -count=1)`
 - [ ] `for f in hooks/claude-code/*.test.sh; do bash "$f" || exit 1; done`
 - [ ] `for f in hooks/kimi/*.test.sh; do bash "$f" || exit 1; done`
 - [ ] `for f in hooks/opencode/*.test.js; do node "$f" || exit 1; done`
@@ -123,10 +140,10 @@ Mirror CI — it runs all of these on the PR:
 
 ## Coverage & Gaps
 
-No threshold: CI prints per-package coverage (`go test ./... -race -cover`, `ci.yml`, job `test`) and fails only on test failures. For a per-function view:
+No threshold: CI prints per-package coverage (`go test ./... -race -cover -count=1`, `ci.yml`, job `test`) and fails only on test failures. For a per-function view:
 
 ```bash
-cd cli && go test ./... -coverprofile=/tmp/cover.out && go tool cover -func=/tmp/cover.out
+cd cli && go test ./... -count=1 -coverprofile=/tmp/cover.out && go tool cover -func=/tmp/cover.out
 ```
 
 Per package at this commit: `config` 48.5% · `ui` 65.6% · `mcp` 69.7% · `assets` 83.3% · `cmd` 86.7% · `repo` 86.7% · `agents` 89.0% · `removeguard` 90.0% · `manifest` 91.3% · `skills` 91.8% · `hooks` 92.8% · `fsutil` 93.1%.

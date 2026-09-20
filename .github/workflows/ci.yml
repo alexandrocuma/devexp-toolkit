@@ -38,9 +38,15 @@ jobs:
           cache-dependency-path: cli/go.sum
       - name: stage assets
         run: ./scripts/stage-assets.sh
+      # -count=1 is a no-op here: a fresh runner has an empty cache, so CI
+      # always executes. It is present so this line and the command the docs
+      # tell a developer to run are the SAME command. Locally the flag is
+      # load-bearing — the repo-consistency tests read assets from outside
+      # the module root, those reads are not part of the cache key, and a
+      # plain run answers an asset edit with a cached pass.
       - name: go test
         working-directory: cli
-        run: go test ./... -race -cover
+        run: go test ./... -race -cover -count=1
 
   hooks:
     runs-on: ubuntu-latest
