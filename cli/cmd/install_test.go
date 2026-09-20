@@ -1983,6 +1983,105 @@ func TestLoadFullRegistry(t *testing.T) {
 	})
 }
 
+// wizardRegistry is the #102 fix: the wizard used to discard this error
+// outright (`registry, _ := loadFullRegistry(...)`), leaving registry nil.
+// wizard.go guards its MCP step on len(registry) > 0, so the step vanished and
+// an unreadable registry.json looked exactly like a build that ships no MCPs.
+// The failure has to be *visible*, and it must not be fatal — see the
+// function's own comment for why returning would break an agents-only run.
+func TestWizardRegistry(t *testing.T) {
+	t.Run("a good registry loads with no warning", func(t *testing.T) {
+		repo := t.TempDir()
+		writeRegistry(t, repo, `[{"name":"context7"},{"name":"other"}]`)
+
+		got, warning := wizardRegistry(repo, &config.Config{})
+		if warning != "" {
+			t.Errorf("warning = %q, want none on the happy path", warning)
+		}
+		if len(got) != 2 {
+			t.Errorf("got %+v, want the two registry entries", got)
+		}
+	})
+
+	t.Run("a missing registry warns and names the cause", func(t *testing.T) {
+		got, warning := wizardRegistry(t.TempDir(), &config.Config{})
+
+		if got != nil {
+			t.Errorf("registry = %+v, want nil", got)
+		}
+		if warning == "" {
+			t.Fatal("warning = \"\"; a missing registry.json must not be silent — that is #102")
+		}
+		// The message has to point at the registry and say what the user loses,
+		// or it is no better than the empty list it replaces.
+		if !strings.Contains(warning, "MCP registry") {
+			t.Errorf("warning = %q, want it to name the MCP registry", warning)
+		}
+		assertWarningHoldsForEveryScope(t, warning)
+	})
+
+	t.Run("a malformed registry warns and names the cause", func(t *testing.T) {
+		repo := t.TempDir()
+		writeRegistry(t, repo, `[{"name": "context7",]`) // trailing comma, unclosed
+
+		got, warning := wizardRegistry(repo, &config.Config{})
+
+		if got != nil {
+			t.Errorf("registry = %+v, want nil", got)
+		}
+		if warning == "" {
+			t.Fatal("warning = \"\"; a malformed registry.json must not be silent — that is #102")
+		}
+		if !strings.Contains(warning, "MCP registry") {
+			t.Errorf("warning = %q, want it to name the MCP registry", warning)
+		}
+		assertWarningHoldsForEveryScope(t, warning)
+	})
+
+	t.Run("a malformed extra MCP still only warns inside loadFullRegistry", func(t *testing.T) {
+		// Guards the non-goal: #102 must not change how extra MCPs from config
+		// are treated. A bad extra is loadFullRegistry's own ui.Warn, and the
+		// registry still loads, so wizardRegistry reports no warning of its own.
+		repo := t.TempDir()
+		writeRegistry(t, repo, `[{"name":"context7"}]`)
+
+		got, warning := wizardRegistry(repo, &config.Config{ExtraMCPs: []byte(`not json`)})
+		if warning != "" {
+			t.Errorf("warning = %q, want none — a bad extra MCP is not a registry failure", warning)
+		}
+		if len(got) != 1 {
+			t.Errorf("got %+v, want the registry entry despite the bad extra", got)
+		}
+	})
+}
+
+// assertWarningHoldsForEveryScope pins the wording against the one way it can
+// be worse than the silence it replaces.
+//
+// The warning is printed before ui.SelectScope runs, so it has to be true for
+// every scope the user is about to pick. "The MCP step will be skipped" holds
+// only for Agents only and Skills only — on Everything and MCPs only the MCP
+// install runs first (install_claude.go:32-41 and its opencode and kimi
+// twins), returns this same error, and the run ends having written nothing.
+// Promising a skipped step and then failing the whole install sends the user
+// looking in the wrong place, which is the defect #102 exists to remove.
+func assertWarningHoldsForEveryScope(t *testing.T, warning string) {
+	t.Helper()
+
+	// A bare "will be skipped" claim, with nothing saying the run can also fail.
+	if strings.Contains(warning, "will be skipped") && !strings.Contains(warning, "will fail") {
+		t.Errorf("warning = %q — it promises a skipped step but never says "+
+			"Everything/MCPs only aborts without installing anything", warning)
+	}
+	// It must say the run can fail, and point at a scope that still works.
+	if !strings.Contains(warning, "will fail") {
+		t.Errorf("warning = %q, want it to say the install can fail", warning)
+	}
+	if !strings.Contains(warning, "Agents only") && !strings.Contains(warning, "Skills only") {
+		t.Errorf("warning = %q, want it to name a scope that still succeeds", warning)
+	}
+}
+
 // ── Backup and stale-removal error paths ──────────────────────────────────────
 
 // blockedDir returns a path whose parent is a regular file, so MkdirAll on it
