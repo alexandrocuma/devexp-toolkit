@@ -1,3 +1,13 @@
+// Package agents installs the markdown agent definitions in agents/ into each
+// CLI's own agent directory. The file is the contract — frontmatter plus a
+// system prompt — so installing is mostly copying, and the work that is not
+// copying is per-CLI: opencode takes a different directory layout, and Kimi
+// needs ${base_prompt} appended because an agent body replaces its whole
+// system prompt rather than adding to it.
+//
+// Nothing here writes through a symlink or removes through a linked parent
+// directory: a user who keeps their agent directory in a dotfiles checkout
+// must not have devexp reach inside it.
 package agents
 
 import (

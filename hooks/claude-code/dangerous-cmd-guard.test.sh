@@ -52,7 +52,7 @@ expect allow 'git push && rm -f /tmp/.deliver-X-1'
 expect allow 'rm -rf node_modules'                          # common dev cleanup, not sensitive
 expect allow 'rm -rf ./dist'
 
-# ── #100 must BLOCK: a real invocation, in every command position ───────────
+# ── must BLOCK: a real invocation, in every command position ────────────────
 expect block 'git status && git reset --hard'
 expect block 'git status; git reset --hard HEAD~1'
 expect block 'false || git reset --hard'
@@ -83,7 +83,7 @@ expect block 'echo a#b; git reset --hard'                    # mid-word # is not
 expect block 'echo ${#x}; git reset --hard'
 expect block $'echo hi # note\ngit push --force'              # a comment ends at the newline
 
-# ── #100 must BLOCK: a string handed to a shell or evaluator ────────────────
+# ── must BLOCK: a string handed to a shell or evaluator ─────────────────────
 expect block 'bash -c "git reset --hard"'
 expect block "sh -c 'git clean -fdx'"
 expect block 'eval "git reset --hard"'
@@ -117,7 +117,7 @@ expect block 'exec > run.sh; echo "git reset --hard"'
 expect block 'echo "git reset --hard" | pbcopy'              # the clipboard is not a sink
 expect block 'echo "git reset --hard" | uniq - run.sh'       # uniq writes its output file
 
-# ── #100 must BLOCK: masked text read back and run in the same command ──────
+# ── must BLOCK: masked text read back and run in the same command ───────────
 expect block 'git commit -m "git reset --hard"; git log -1 --format=%B | sh'
 expect block 'gh issue create --body "git push --force now"; gh issue view 1 --json body -q .body | bash'
 expect block 'git commit -m "git reset --hard" && ./run.sh'
@@ -164,7 +164,7 @@ expect allow 'git push --follow-tags;'
 expect allow "ssh host 'git push origin main'"
 expect allow $'git push origin \\\n  main'
 
-# ── #151 must BLOCK: an expansion right after the target, or another home spelling ──
+# ── must BLOCK: an expansion right after the target, or another home spelling ───────
 # bash word-splits an unquoted expansion and zsh expands `~` after parameters, so
 # a target followed by an expansion can still name the directory itself.
 expect block 'rm -rf /$IFS'
@@ -208,7 +208,7 @@ expect block 'git push -f$x'
 expect block 'git push --force{,}'
 expect block 'git push --force-with-lease>log'
 
-# ── #151 must ALLOW: a literal component after the protected prefix ─────────
+# ── must ALLOW: a literal component after the protected prefix ──────────────
 expect allow 'rm -rf ~/x$y'
 expect allow 'rm -rf ~/projects/$x'
 expect allow 'rm -rf ~/work-$x'
@@ -234,7 +234,7 @@ expect allow 'git push --follow-tags$x'
 expect allow 'echo rm -rf ${HOME}'
 expect allow 'git commit -m "rm -rf /$IFS"'
 
-# ── PR #160 review: more globs and home spellings end or name a target ──────
+# ── more globs and home spellings end or name a target ──────────────────────
 expect block 'rm -rf ~/?*'                                    # a glob made of `?`
 expect block 'rm -rf /???'
 expect block 'rm -rf /tmp/?*'
@@ -256,7 +256,7 @@ expect block 'rm -rf $=HOME:h'
 expect allow 'rm -rf ${HOME}:h'                               # a modifier needs the unbraced name
 expect allow 'rm -f /tmp/:x'                                  # `:` continues a target
 
-# ── PR #160 review: `rm` must be its own word, and the target in its command ──
+# ── `rm` must be its own word, and the target in its command ──────────────────
 expect allow 'docker run --rm -v /tmp:/tmp alpine ls'
 expect allow 'docker run --rm -v ~/.claude:/root/.claude img'
 expect allow 'docker run --rm -v "$HOME/.claude":/home/node/.claude img'
@@ -303,7 +303,7 @@ expect block 'rm -rf ${HOME^}'
 expect block 'rm -rf ${HOME,}'
 expect block 'rm -rf ${HOME@Q}'
 
-# ── PR #160 re-review: rm followed at once by an expansion, brace, glob or redirect ──
+# ── rm followed at once by an expansion, brace, glob or redirect ─────────────────────
 expect block 'rm$IFS-f /tmp/*'
 expect block 'rm${IFS}-rf ~/.claude/*'
 expect block 'rm<<<x -f /tmp/*'
@@ -325,7 +325,7 @@ expect block 'rm -fr $HOME:h'
 expect allow 'rm${HOME}/.claude'                              # not rm: the word is rm/…/.claude
 expect allow './bin/Xrm /tmp/$x'
 
-# ── PR #160 re-review: a ; or & that is data doesn't end the command ─────────
+# ── a ; or & that is data doesn't end the command ────────────────────────────
 expect block 'rm -rf "a;b" /tmp/*'
 expect block "rm -rf 'a&b' ~/.claude/*"
 expect block 'rm -rf a\;b /tmp/*'
@@ -365,7 +365,7 @@ expect allow 'x=(a;b) ls /tmp/*'
 expect allow 'rm -f $x && cp y /tmp/$z'                       # a bare $ is no quote
 expect allow 'rm -f "a;b" | ls /tmp/*'                        # the scan still ends at the next |
 
-# ── #146: the same decisions, reached in linear time ────────────────────────
+# ── the same decisions, reached in linear time ──────────────────────────────
 # A protected target or force flag in another pipeline stage than the command.
 expect allow 'rm -f a | cat ~/.claude | rm -f b'
 expect allow 'rm -f a | ls ~/.claude/x/*'
@@ -412,7 +412,7 @@ expect block $'git reset x\r--hard'
 expect block $'git push origin\r--force'
 expect block 'rm -rf <NUL>/'
 
-# ── #100 must BLOCK: what the parser cannot classify is scanned whole ───────
+# ── must BLOCK: what the parser cannot classify is scanned whole ────────────
 expect block 'echo "git reset --hard'                        # unbalanced quote
 expect block 'echo "$(git reset --hard"'                     # unbalanced substitution
 expect block $'cat <<\'EOF\'\ngit reset --hard'              # unterminated heredoc
@@ -420,7 +420,7 @@ expect block 'echo "$(case x in a) git reset --hard;; esac)"'
 expect block 'echo `echo \`git reset --hard\``'
 expect block 'echo $((1)) "git reset --hard"'
 
-# ── #100 must ALLOW: a mention is not an invocation ─────────────────────────
+# ── must ALLOW: a mention is not an invocation ──────────────────────────────
 expect allow $'echo "  LOCAL ONLY — remote untouched. Tag still revertible:"\necho "    git reset --hard origin/main"     # <- text inside a quoted echo'
 expect allow "echo 'rm -rf / wipes everything'"
 expect allow 'echo git push --force'
@@ -447,7 +447,7 @@ expect allow $'cat <<\'EOF\' | grep reset\ngit reset --hard\nEOF'
 expect allow 'git status  # never git reset --hard here'
 expect allow $'# git push --force\ngit push'
 
-# ── #100 large input: grep must not lose a match to SIGPIPE ─────────────────
+# ── large input: grep must not lose a match to SIGPIPE ──────────────────────
 # Built inside Python: an argv string this long exceeds Linux's per-argument limit.
 # The filler is many short lines: grep -q stops reading after an early match,
 # which is what used to SIGPIPE the writer.
@@ -469,7 +469,7 @@ expect_big block 'echo "' '" && git push --force'
 expect_big block 'echo "git reset --hard ' ''                # unbalanced: scanned whole, still blocks
 expect_big allow 'echo "' '"'
 
-# ── #146: a long pipeline is checked in linear time ─────────────────────────
+# ── a long pipeline is checked in linear time ───────────────────────────────
 # 400 KB of `a|a|…` takes about a second; checking every stage against the rest
 # of the pipeline took over a minute. The run is cut off at the budget.
 rc=$(python3 - "$HOOK" <<'PY'

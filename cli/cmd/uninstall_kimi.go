@@ -24,10 +24,10 @@ import (
 // Every step reuses the function the install already goes through rather than
 // growing a second set of rules that could drift from it:
 //
-//   - hooks:  hooks.UninstallKimi, written alongside InstallKimi in #114;
+//   - hooks:  hooks.UninstallKimi, written alongside InstallKimi;
 //   - skills
 //     and agents: removeStale with installed = nil, which makes every
-//     recorded name stale. It already carries the #128 removal rules — an
+//     recorded name stale. It already carries the removal rules — an
 //     os.Root handle, names read once, an exact byte-for-byte name match, no
 //     symlinked entry, nothing removed through a symlinked or linked parent
 //     directory — and it hands back what had to stay;
@@ -61,7 +61,7 @@ func doUninstallKimi(home string, dryRun bool) error {
 	// the install path, where an unreadable manifest degrades to "remove
 	// nothing stale this run" and the install still goes ahead — and its
 	// warning says exactly that. Here the same degradation was silently
-	// destructive (PR #176 review).
+	// destructive.
 	//
 	// An empty manifest owns nothing, so nothing was removed — and
 	// kimiRecordEmpty was then trivially true, so the manifest was *deleted*
@@ -154,7 +154,7 @@ func saveKimiUninstallRecord(p kimiPaths, old, kept *manifest.Manifest, info os.
 	// recorded something. A manifest that parses but records nothing otherwise
 	// reproduced the original symptom in a narrower form — removed, with 34
 	// agents still on disk and the config.toml block stripped, exit 0,
-	// "Removed devexp" (PR #176 re-review). devexp's own operations cannot
+	// "Removed devexp". devexp's own operations cannot
 	// write one, so this is the code catching up with the rule its comment
 	// above already states, not a live bug.
 	if !kimiRecordEmpty(old) && kimiRecordEmpty(kept) {

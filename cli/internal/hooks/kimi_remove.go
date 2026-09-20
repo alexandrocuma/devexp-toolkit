@@ -14,12 +14,12 @@ import (
 
 // ── Removing the copied Kimi hook scripts ─────────────────────────────────────
 //
-// The same removal rules as agents and skills (#124, #128), which this path
+// The same removal rules as agents and skills, which this path
 // did not have and had to gain: a script recorded in the manifest was removed
 // with a plain Lstat + Remove on filepath.Join(hooksDir, rel). isKimiHookPath
 // vets the recorded *string* — no traversal, no absolute path, the right
 // shape — but a string check says nothing about what is actually on disk, and
-// two things got through it (PR #176 review):
+// two things got through it:
 //
 //   - **Removal through a linked parent.** With hooks/kimi, hooks/, or the
 //     whole Kimi root symlinked into a dotfiles checkout, the recorded script
@@ -254,7 +254,7 @@ func quoteAllKimi(items []string) []string {
 // isKimiHookPath reports whether rel has the shape of something devexp
 // installs below the hooks directory: "<dir>/<file>.sh", slash-separated,
 // with no traversal, no absolute path and no control character — the last
-// because the name is printed and a raw escape reaches the terminal (#111).
+// because the name is printed and a raw escape reaches the terminal.
 //
 // It vets the recorded string only. What is actually on disk is checked
 // separately, through the pinned directory handle above: a string that looks

@@ -135,7 +135,7 @@ func TestRepoSkillsNoKimiParameterExpansion(t *testing.T) {
 // and no top-level `additionalDirectories`. An unrecognised top-level key is
 // skipped, so a grant step that writes one looks like it worked, grants
 // nothing, and leaves every out-of-project write prompting — which is what
-// /deliver Phase 1.5 and /improve shipped until #180.
+// /deliver Phase 1.5 and /improve both shipped that way until it was caught.
 //
 // The failure is invisible at runtime: nothing errors, the file is written,
 // and only a permission prompt much later hints at it. So it is guarded here,
@@ -168,7 +168,7 @@ func grantLineIsNested(line string) bool {
 
 // grantAssetFiles lists every shipped asset that could carry the grant step.
 // It is deliberately wider than repoSkillFiles: docs/guides/worktree-per-ticket.md
-// documents the same step and regressed alongside the skills in #180, so a
+// documents the same step and regressed alongside the skills, so a
 // guard scoped to SKILL.md alone would let the doc drift back on its own.
 func grantAssetFiles(t *testing.T) map[string]string {
 	t.Helper()
@@ -217,8 +217,9 @@ func TestRepoAssetsGrantUsesNestedPermissionsKey(t *testing.T) {
 
 // The guard above only ever asserts against the current tree, so on its own it
 // would also pass if the pattern stopped matching anything. These pin what it
-// must catch and what it must leave alone — including the exact line #180 was
-// filed for, and the migration lines that legitimately touch the legacy key.
+// must catch and what it must leave alone — including the exact top-level
+// write that shipped, and the migration lines that legitimately touch the
+// legacy key.
 func TestTopLevelAdditionalDirsRe(t *testing.T) {
 	flagged := func(line string) bool {
 		return topLevelAdditionalDirsRe.MatchString(line) && !grantLineIsNested(line)

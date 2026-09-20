@@ -44,7 +44,7 @@ import (
 //
 // Every path this file prints or puts in an error is quoted: it is derived
 // from $KIMI_CODE_HOME, and unquoted, an embedded newline forges a line of
-// devexp output and an escape sequence reaches the terminal (#111).
+// devexp output and an escape sequence reaches the terminal.
 
 // kimiEntry is one mcpServers member as devexp writes it.
 //
@@ -85,7 +85,7 @@ func kimiEntryFor(r resolved) kimiEntry {
 //
 // Nothing is written when nothing changed — not even a re-encoding of the same
 // content — so a second install reports "already configured" and leaves the
-// file alone (#159).
+// file alone.
 func InstallKimi(mcps []MCP, env map[string]string, path string, owned map[string]string, dryRun, reinstall bool) (map[string]string, error) {
 	doc, servers, nullServers, err := loadKimiConfig(path)
 	if err != nil {

@@ -18,7 +18,7 @@
 #
 # Matching happens inside the Python step, which fails closed. An earlier
 # shell pipeline read some of its own failures as "no match", so some kinds
-# of secret and large writes went through unchecked (#101).
+# of secret and large writes went through unchecked.
 #
 # Tests: bash hooks/claude-code/secret-in-write-guard.test.sh
 # Mirror: hooks/opencode/secret-in-write-guard.js — keep the patterns in lockstep.
@@ -26,7 +26,7 @@
 set -euo pipefail
 
 # The whole scan runs under a wall-clock budget and blocks when it is exceeded:
-# a slow scan must never let a tool call through unchecked (#162).
+# a slow scan must never let a tool call through unchecked.
 #
 # Everything up to devexp_scan_budget runs with no floor under it, so this
 # prologue installs one. It cannot be an `if ! . …`: under `set -e` bash leaves
@@ -67,7 +67,7 @@ if isinstance(edits, list):
     parts += [e.get('new_string') for e in edits if isinstance(e, dict)]
 content = '\n'.join(str(p) for p in parts if p)
 
-# Placeholders (#143). The (?!...) right after a prefix skips a body that is
+# Placeholders. The (?!...) right after a prefix skips a body that is
 # only a placeholder: one character repeated (separators aside), a your-...
 # phrase made of letter words, or a key ID ending in EXAMPLE, as in AWS's
 # documentation. A skipped body must run to where the key's characters end,
@@ -90,9 +90,9 @@ PATTERNS = [
     # over 100 characters; ids like desk-admin-... are far shorter. No left
     # boundary: a key can follow an escape, a %XX, a _, a - or a digit.
     ('an OpenAI API key (sk-...)',        r'sk-(?:proj|svcacct|admin)-(?!(?:([A-Za-z0-9])(?:\1|[_-])*|(?:your|YOUR)(?:[_-][A-Za-z]+){1,24})(?![A-Za-z0-9_-]))[A-Za-z0-9_-]{80,}'),
-    # Older service keys (#152): sk-service-, a service-account name, -, then
+    # Older service keys: sk-service-, a service-account name, -, then
     # 48 alphanumerics (20, the T3BlbkFJ watermark, 20), per Trivy's
-    # openai-service-api-key rule (aquasecurity/trivy#10798) and TruffleHog's
+    # openai-service-api-key rule and TruffleHog's
     # OpenAI detector. The name is optional and the watermark isn't required
     # here, so no real key is missed; the 48-character run keeps kebab-case
     # ids like sk-service-account-... from matching. The name is read one
@@ -126,7 +126,7 @@ PATTERNS = [
     # within a few hundred characters of the header, before any -----END or
     # -----BEGIN line. That window leaves room for encrypted-PEM and PGP armor
     # headers. A header quoted alone, or with an elided or placeholder body,
-    # has no material and is allowed (#143); key-like text on the header's
+    # has no material and is allowed; key-like text on the header's
     # line or just after it still blocks. Escaped bodies (JSON, code strings)
     # count too: an escaped slash (\x5c/) is part of a line, and an escaped
     # newline (\x5cn, \x5cr\x5cn) joins two lines of 16 or more characters.
@@ -140,7 +140,7 @@ for name, pattern in PATTERNS:
         found = name
         break
 
-# Proof that this scan ran (#168). Written only here, once every pattern has
+# Proof that this scan ran. Written only here, once every pattern has
 # had its turn, so a run that skipped the work -- or stopped part-way through
 # it -- cannot produce it; the shell blocks when it is missing, whatever this
 # process's exit status.

@@ -21,7 +21,7 @@
  * repository.
  *
  * The scan runs under a wall-clock budget and refuses the call when it is
- * exceeded (#162) — see startScanBudget in utils.js.
+ * exceeded — see startScanBudget in utils.js.
  *
  * Tests: node hooks/opencode/secret-in-write-guard.test.js
  * Mirror: hooks/claude-code/secret-in-write-guard.sh — keep the patterns in lockstep.
@@ -29,7 +29,7 @@
 
 import { startScanBudget } from './utils.js';
 
-// Placeholders (#143). The (?!...) right after a prefix skips a body that is
+// Placeholders. The (?!...) right after a prefix skips a body that is
 // only a placeholder: one character repeated (separators aside), a your-...
 // phrase made of letter words, or a key ID ending in EXAMPLE, as in AWS's
 // documentation. A skipped body must run to where the key's characters end,
@@ -52,9 +52,9 @@ const SECRET_PATTERNS = [
   // over 100 characters; ids like desk-admin-... are far shorter. No left
   // boundary: a key can follow an escape, a %XX, a _, a - or a digit.
   { re: /sk-(?:proj|svcacct|admin)-(?!(?:([A-Za-z0-9])(?:\1|[_-])*|(?:your|YOUR)(?:[_-][A-Za-z]+){1,24})(?![A-Za-z0-9_-]))[A-Za-z0-9_-]{80,}/m, label: 'OpenAI API key (sk-...)' },
-  // Older service keys (#152): sk-service-, a service-account name, -, then
+  // Older service keys: sk-service-, a service-account name, -, then
   // 48 alphanumerics (20, the T3BlbkFJ watermark, 20), per Trivy's
-  // openai-service-api-key rule (aquasecurity/trivy#10798) and TruffleHog's
+  // openai-service-api-key rule and TruffleHog's
   // OpenAI detector. The name is optional and the watermark isn't required
   // here, so no real key is missed; the 48-character run keeps kebab-case
   // ids like sk-service-account-... from matching. The name is read one
@@ -88,7 +88,7 @@ const SECRET_PATTERNS = [
   // within a few hundred characters of the header, before any -----END or
   // -----BEGIN line. That window leaves room for encrypted-PEM and PGP armor
   // headers. A header quoted alone, or with an elided or placeholder body,
-  // has no material and is allowed (#143); key-like text on the header's
+  // has no material and is allowed; key-like text on the header's
   // line or just after it still blocks. Escaped bodies (JSON, code strings)
   // count too: an escaped slash (\x5c/) is part of a line, and an escaped
   // newline (\x5cn, \x5cr\x5cn) joins two lines of 16 or more characters.
