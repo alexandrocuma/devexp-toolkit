@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [0.11.0] - 2026-09-20
 
+### Added
 - **`scripts/smoke.sh` — a mutation smoke test that proves the guards go red** (#210). Every other suite here answers *"is the tree healthy?"*. This one answers *"would we be told if it were not?"* — a distinction that matters because a green suite is exactly the evidence a broken guard also produces, and this repo has rediscovered "the guard doesn't actually guard" four separate times, each by accident rather than by any check.
 
   29 cases, each breaking the thing a guard protects and asserting the guard fails: a registry entry naming a missing file, a `kimi` block switched off with no reason, a hook on disk nothing registers, a new agent (which must trip the catalog *and* the counts), a removed catalog row, a wrong count in a new sentence, `safe_id()` drift between two skills, a dropped grant claim, a deleted copy (where the guard must **refuse to pass**, not pass with one copy left), a `//nolint` stripped of its reason, a newly discarded error, a comment carrying an external reference, and an asset edit after a warm cache.
@@ -18,24 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Not a CI job**, and the reasons are recorded: it takes minutes and it mutates tracked files. Two safety properties make it safe by hand — it refuses to start on a dirty tree, because restore is `git checkout --` and from a dirty tree that would also discard uncommitted work it cannot distinguish from its own; and it restores on any exit including `Ctrl-C`, verified by interrupting a run mid-flight and confirming the tree came back clean.
 
   It also carries a comment explaining why it disables `pipefail`, which looks like a style choice and is not. Every command it runs is *expected* to exit non-zero — that is what a caught mutation looks like — so `pipefail` reports the command's failure even when the grep matched, scoring every successful detection as a miss. That exact mistake produced a run reporting 11 failures against guards that were all working.
-
-### Fixed
-
-- **`CLAUDE.md`'s `scripts/` row omitted `check-comment-refs.sh`** (#210). Added alongside `smoke.sh` while that row was being edited, rather than left describing a directory it no longer matched.
-
-### Fixed
-
-- **The documented `go test` command could answer an asset edit with a cached pass** (#208). `go test` decides "nothing changed" from files a test opens **inside the module root**, which here is `cli/`, where `go.mod` lives. Every repo-consistency test reads *upward* out of the module — `hooks/`, `skills/`, `docs/`, `CLAUDE.md`, `README.md` — and those reads never enter the cache key. So after an asset edit, a plain run replayed the previous verdict and printed `ok (cached)`.
-
-  Reproduced with the exact command `CLAUDE.md` documented: point a registry entry at a file that does not exist, run `go test ./... -race -cover`, get `ok (cached)`; add `-count=1` and get the failure naming the missing file. **Not new, and not confined to the new tests** — `TestLoadRegistry_RepoRegistry` predates this and behaves identically: delete a hook from `registry.json`, leaving 9 where it asserts 10, and a plain run still reports `ok`.
-
-  `-count=1` is now in every place this repo gives its own Go test command — `CLAUDE.md`, `docs/development/testing.md` (suite table, before-every-commit checklist, coverage) and `docs/development/setup.md` — and in `ci.yml`, where it is a no-op on a fresh runner but keeps the command labelled "as CI" identical to the one CI runs. The flag looks redundant, since the default count is already 1, so the reason it is really there is written next to it in both places; deleting it as tidying would restore the silent failure.
-
-  The generic `go test ./...` lines in `agents/*.md` are untouched. Those instruct agents working on **users'** projects and are language-agnostic by design; this is a property of this repository's own module layout.
-
-  Found while mutation-testing the guards added for the repo-consistency and drift work — a deliberate mutation reported a pass. CI was never affected, because a fresh runner has an empty cache. The exposure was entirely local, which is why it went unnoticed, and it lands at the worst moment: right after an asset is edited and the tests are run to check.
-
-### Added
 
 - **Procedures duplicated across skills are guarded against drift** (#196). `/deliver` and `/improve` both advertise that they need no other skill installed, so a step they share cannot be replaced with a pointer — the copy has to stay. What must not happen is the copies drifting unnoticed, which is how the worktree access grant came to be wrong in two independent ways at once: one copy wrote a key Claude Code does not read, and the other had lost the words "the main checkout's", so a grant written from inside a worktree was discarded along with that tree.
 
@@ -52,7 +35,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   **Everywhere else**, `/deliver`'s Phase 5 gains the review question in the repo's own words — *does any failure here collapse into a value that looks like success?* — with the four shapes it takes: a discarded error, a nil or empty default standing in for an error, a function that exits 0 without doing its work, and a guard that returns allow without proving it ran. That half is deliberately language-neutral, because the linter covers one language and one of the four shapes, while the skill runs against users' projects in whatever they are written in.
 
+### Changed
+- **Every external reference is out of the code comments** — 183 sites across 44 files: Go source and tests under `cli/`, the bash guards in `hooks/claude-code/`, the JS twins in `hooks/opencode/`, and the two Kimi adapters. Issue numbers, PR-review notes and one documentation URL are gone; what they stood for is now written where they stood.
+
+  The rewrites are not deletions. Where a reference was load-bearing it was replaced by the constraint it named, because dropping the token alone would have left a sentence that no longer said anything: `cli/internal/skills/installer.go`'s "which is the whole thing #124 forbids" now reads that overwriting after a copy would write *through* a symlink, landing on whatever the user pointed it at instead of the file devexp owns. Where a reference marked a moment in history — "before #113 there was nothing after the MCP step to fail" — the sentence now says what changed rather than when. Where it was a bare label on a test section (`// #100: a real invocation`), the label already had a description next to it and only the number went.
+
+  Two references were kept deliberately. `cli/internal/mcp/kimi.go` holds `"http://user@:80"` as an illustration of why `Hostname()` is read rather than `Host` — that is data, not a citation. `hooks/kimi/adapter.sh` and `hooks/kimi/runner.test.sh` keep quoting Kimi's own `internal/matchHooks.ts` and `internal/runHook.ts`, because a reader cannot resolve that behaviour anywhere in this repo. The Trivy and TruffleHog detectors that `secret-in-write-guard` mirrors keep their rule *names*, which are findable; their upstream issue number, which is not needed to find them, does not.
+
+  `hooks/opencode/devexp-plugin.js`'s `@see https://opencode.ai/docs/plugins` is dropped rather than inlined: the doc block above it already states both halves of the contract the file depends on — that opencode delivers file events only through `event`, and that it calls every export, so this file exports exactly one function.
+
+  No code or test-fixture line was touched; the whole diff is comments. All five CI suites pass.
+
+- **`graphify-read-guard` is now off for opencode** (`opencode.enabled: false`), which is what its own registry description always claimed — "Ships disabled; enable only in projects that maintain a graphify knowledge graph". The entry said one thing and did another, and committing a graph is what made the discrepancy bite: the guard's only precondition is `existsSync('graphify-out/graph.json')` and it never checks the `graphify` CLI is on PATH. Since `./install.sh` ships the graphify *skill* and not the CLI, a committed graph plus an enabled guard would block any contributor without `graphify` installed on their first source-file read, with no way to clear it. `graphify-grep-nudge` and `graphify-session-sentinel` are untouched — neither can block.
+
+- **Vendored graphify skill synced to upstream 0.9.64** (was 0.8.39, a minor line behind). Two separate drifts had to be closed: the deployed copy in `~/.claude/skills/` had moved ahead of `skills/graphify/`, so the next `./install.sh` would have silently rolled it back; and the installed `graphifyy` package was itself two minor versions stale, so `graphify install` alone only ever resynced to 0.8.40. The sync is `uv tool install --upgrade graphifyy` → `graphify install --platform claude` → vendor into `skills/graphify/` → `./install.sh`. A plain `graphify install` refreshes only the *detected* platform, which is not necessarily Claude Code.
+
+  What 0.9.64 brings: `query` gains `--context` edge-context filters and an explicit token budget with a truncation notice naming how many nodes were cut; new `affected`, `god-nodes`, `diagnose multigraph`, `label` and `merge-driver` subcommands; `extract` folded into `update` (`update --force`); `--falkordb` / `--falkordb-push` exports; `build_from_json`/`save_manifest` gain `root=`, which relativizes `source_file` and manifest keys so a graph is portable across clones; and an `--update` fix that prunes a changed file's old nodes before re-inserting fresh AST.
+
+  The frontmatter key `trigger: /graphify` is dropped, following upstream. It was never a devexp convention — 1 of 8 skills carried it, and `cli/internal/skills/kimi.go` documents it as an unknown key that is passed through and ignored. `skills/graphify/.graphify_version` is now tracked so the vendored version is recorded and upstream's staleness check stays accurate after a devexp install overwrites the deployed copy.
+
 ### Fixed
+- **`CLAUDE.md`'s `scripts/` row omitted `check-comment-refs.sh`** (#210). Added alongside `smoke.sh` while that row was being edited, rather than left describing a directory it no longer matched.
+
+- **The documented `go test` command could answer an asset edit with a cached pass** (#208). `go test` decides "nothing changed" from files a test opens **inside the module root**, which here is `cli/`, where `go.mod` lives. Every repo-consistency test reads *upward* out of the module — `hooks/`, `skills/`, `docs/`, `CLAUDE.md`, `README.md` — and those reads never enter the cache key. So after an asset edit, a plain run replayed the previous verdict and printed `ok (cached)`.
+
+  Reproduced with the exact command `CLAUDE.md` documented: point a registry entry at a file that does not exist, run `go test ./... -race -cover`, get `ok (cached)`; add `-count=1` and get the failure naming the missing file. **Not new, and not confined to the new tests** — `TestLoadRegistry_RepoRegistry` predates this and behaves identically: delete a hook from `registry.json`, leaving 9 where it asserts 10, and a plain run still reports `ok`.
+
+  `-count=1` is now in every place this repo gives its own Go test command — `CLAUDE.md`, `docs/development/testing.md` (suite table, before-every-commit checklist, coverage) and `docs/development/setup.md` — and in `ci.yml`, where it is a no-op on a fresh runner but keeps the command labelled "as CI" identical to the one CI runs. The flag looks redundant, since the default count is already 1, so the reason it is really there is written next to it in both places; deleting it as tidying would restore the silent failure.
+
+  The generic `go test ./...` lines in `agents/*.md` are untouched. Those instruct agents working on **users'** projects and are language-agnostic by design; this is a property of this repository's own module layout.
+
+  Found while mutation-testing the guards added for the repo-consistency and drift work — a deliberate mutation reported a pass. CI was never affected, because a fresh runner has an empty cache. The exposure was entirely local, which is why it went unnoticed, and it lands at the worst moment: right after an asset is edited and the tests are run to check.
 
 - **A truncated `mcps/.env` was indistinguishable from a complete one** (#194). `config.LoadDotenv` returns whatever it managed to parse *alongside* its error, and `runInstall` discarded that error — so a `.env` that could not be read through handed the install a partial environment that looked whole. An MCP would then start without a key it was configured with and fail somewhere pointing nowhere near the cause. The two cases behind that one error are now separated: no `mcps/.env` at all stays silent, because that is ordinary, while a file that exists and could not be read through warns and names how many variables did parse. Two tests pin the contract the call site depends on.
 
@@ -122,28 +135,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Portability is what makes this safe to share: `manifest.json` holds 242 **relative** keys (`root=`, upstream #1361/#1417), so the cache still matches after a clone or a move rather than missing every file. Keeping it current is cheap — a code-only `--update` skips semantic extraction entirely and needs no LLM call.
 
   Excluded, deliberately: `graph.html` (a derived view, ~2 MB regenerated wholesale on every build), the version-pinned `cache/` tree, and the local `cost.json`.
-
-### Changed
-
-- **Every external reference is out of the code comments** — 183 sites across 44 files: Go source and tests under `cli/`, the bash guards in `hooks/claude-code/`, the JS twins in `hooks/opencode/`, and the two Kimi adapters. Issue numbers, PR-review notes and one documentation URL are gone; what they stood for is now written where they stood.
-
-  The rewrites are not deletions. Where a reference was load-bearing it was replaced by the constraint it named, because dropping the token alone would have left a sentence that no longer said anything: `cli/internal/skills/installer.go`'s "which is the whole thing #124 forbids" now reads that overwriting after a copy would write *through* a symlink, landing on whatever the user pointed it at instead of the file devexp owns. Where a reference marked a moment in history — "before #113 there was nothing after the MCP step to fail" — the sentence now says what changed rather than when. Where it was a bare label on a test section (`// #100: a real invocation`), the label already had a description next to it and only the number went.
-
-  Two references were kept deliberately. `cli/internal/mcp/kimi.go` holds `"http://user@:80"` as an illustration of why `Hostname()` is read rather than `Host` — that is data, not a citation. `hooks/kimi/adapter.sh` and `hooks/kimi/runner.test.sh` keep quoting Kimi's own `internal/matchHooks.ts` and `internal/runHook.ts`, because a reader cannot resolve that behaviour anywhere in this repo. The Trivy and TruffleHog detectors that `secret-in-write-guard` mirrors keep their rule *names*, which are findable; their upstream issue number, which is not needed to find them, does not.
-
-  `hooks/opencode/devexp-plugin.js`'s `@see https://opencode.ai/docs/plugins` is dropped rather than inlined: the doc block above it already states both halves of the contract the file depends on — that opencode delivers file events only through `event`, and that it calls every export, so this file exports exactly one function.
-
-  No code or test-fixture line was touched; the whole diff is comments. All five CI suites pass.
-
-- **`graphify-read-guard` is now off for opencode** (`opencode.enabled: false`), which is what its own registry description always claimed — "Ships disabled; enable only in projects that maintain a graphify knowledge graph". The entry said one thing and did another, and committing a graph is what made the discrepancy bite: the guard's only precondition is `existsSync('graphify-out/graph.json')` and it never checks the `graphify` CLI is on PATH. Since `./install.sh` ships the graphify *skill* and not the CLI, a committed graph plus an enabled guard would block any contributor without `graphify` installed on their first source-file read, with no way to clear it. `graphify-grep-nudge` and `graphify-session-sentinel` are untouched — neither can block.
-
-- **Vendored graphify skill synced to upstream 0.9.64** (was 0.8.39, a minor line behind). Two separate drifts had to be closed: the deployed copy in `~/.claude/skills/` had moved ahead of `skills/graphify/`, so the next `./install.sh` would have silently rolled it back; and the installed `graphifyy` package was itself two minor versions stale, so `graphify install` alone only ever resynced to 0.8.40. The sync is `uv tool install --upgrade graphifyy` → `graphify install --platform claude` → vendor into `skills/graphify/` → `./install.sh`. A plain `graphify install` refreshes only the *detected* platform, which is not necessarily Claude Code.
-
-  What 0.9.64 brings: `query` gains `--context` edge-context filters and an explicit token budget with a truncation notice naming how many nodes were cut; new `affected`, `god-nodes`, `diagnose multigraph`, `label` and `merge-driver` subcommands; `extract` folded into `update` (`update --force`); `--falkordb` / `--falkordb-push` exports; `build_from_json`/`save_manifest` gain `root=`, which relativizes `source_file` and manifest keys so a graph is portable across clones; and an `--update` fix that prunes a changed file's old nodes before re-inserting fresh AST.
-
-  The frontmatter key `trigger: /graphify` is dropped, following upstream. It was never a devexp convention — 1 of 8 skills carried it, and `cli/internal/skills/kimi.go` documents it as an unknown key that is passed through and ignored. `skills/graphify/.graphify_version` is now tracked so the vendored version is recorded and upstream's staleness check stays accurate after a devexp install overwrites the deployed copy.
-
-### Fixed
 
 - **Four comment references the earlier sweep did not reach**, found by running the new check over the whole tree rather than the paths the ticket listed. `uninstall.test.sh` cited a PR review and is rewritten; `hooks/opencode/dangerous-cmd-guard.js` and `scripts/remote-install.sh` held an example path and a usage command, which are data rather than citations and are now written as such — the shell twin of that `dangerous-cmd-guard` line had already been quoted, so the two now match. Fixtures under `testdata/` are excluded by scope: a legacy plugin reproduced there has to stay verbatim.
 
