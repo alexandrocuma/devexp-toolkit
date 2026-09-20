@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-09-19
+
 ### Fixed
 
 - **A bare `devexp install` no longer dies at the first prompt without a terminal (#171).** #111 taught target selection to fall back when there is nobody to answer it, but the wizard's *first* prompt — the Action menu — is reached before target selection ever runs, so `devexp install` with no flags and no TTY still exited 1 having installed nothing. That is the path `curl … | bash` takes: `scripts/remote-install.sh` finishes by running a bare `devexp install` with stdin still on the curl pipe. Where the answers come from is now one pure decision, `chooseInstallMode(flagsProvided, isTerminal)` — flags win outright, a terminal with no flags gets the wizard, and **no flags and no terminal installs the documented default**: everything, for every detected CLI, announcing that it is doing so and naming the flags that would have narrowed it. The two prompts on the wizard's path finally degrade by the same rule instead of one falling back and the next one being fatal.
