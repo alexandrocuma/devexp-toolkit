@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Vendored graphify skill synced to upstream 0.9.64** (was 0.8.39, a minor line behind). Two separate drifts had to be closed: the deployed copy in `~/.claude/skills/` had moved ahead of `skills/graphify/`, so the next `./install.sh` would have silently rolled it back; and the installed `graphifyy` package was itself two minor versions stale, so `graphify install` alone only ever resynced to 0.8.40. The sync is `uv tool install --upgrade graphifyy` → `graphify install --platform claude` → vendor into `skills/graphify/` → `./install.sh`. A plain `graphify install` refreshes only the *detected* platform, which is not necessarily Claude Code.
+
+  What 0.9.64 brings: `query` gains `--context` edge-context filters and an explicit token budget with a truncation notice naming how many nodes were cut; new `affected`, `god-nodes`, `diagnose multigraph`, `label` and `merge-driver` subcommands; `extract` folded into `update` (`update --force`); `--falkordb` / `--falkordb-push` exports; `build_from_json`/`save_manifest` gain `root=`, which relativizes `source_file` and manifest keys so a graph is portable across clones; and an `--update` fix that prunes a changed file's old nodes before re-inserting fresh AST.
+
+  The frontmatter key `trigger: /graphify` is dropped, following upstream. It was never a devexp convention — 1 of 8 skills carried it, and `cli/internal/skills/kimi.go` documents it as an unknown key that is passed through and ignored. `skills/graphify/.graphify_version` is now tracked so the vendored version is recorded and upstream's staleness check stays accurate after a devexp install overwrites the deployed copy.
+
 ## [0.10.3] - 2026-09-19
 
 ### Fixed
