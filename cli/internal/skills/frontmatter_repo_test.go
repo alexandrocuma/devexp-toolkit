@@ -139,39 +139,75 @@ func TestRepoSkillsNoKimiParameterExpansion(t *testing.T) {
 //
 // The failure is invisible at runtime: nothing errors, the file is written,
 // and only a permission prompt much later hints at it. So it is guarded here,
-// against the shipped asset, rather than left to review.
+// against the shipped assets, rather than left to review.
 
-// topLevelAdditionalDirsWriteRe matches a *write* to `additionalDirectories`
-// straight off the settings root — an assignment or a `.push(` — in either the
-// dot or the bracket form.
+// topLevelAdditionalDirsRe matches the key being written at the settings root
+// in either of the two forms these assets can carry it: a JS member write
+// through any receiver (`x.additionalDirectories = …` / `.push(`, dot or
+// bracket), and a JSON object key (`"additionalDirectories":`) in an example.
 //
 // Reads are deliberately allowed: migrating the dead key off an existing file
 // has to look at it (`Array.isArray(s.additionalDirectories) ? …`) and remove
 // it (`delete s.additionalDirectories`). Banning every mention would make the
-// migration unwritable, so only writing the key back is an error.
-var topLevelAdditionalDirsWriteRe = regexp.MustCompile(
-	`(?:^|[^.\w"'])(?:s|settings|cfg|json|config)\s*(?:\.\s*additionalDirectories|\[\s*["']additionalDirectories["']\s*\])\s*(?:=[^=]|\.\s*push\s*\()`)
+// migration unwritable, so only writing the key is an error.
+//
+// The JSON-key arm is filtered by grantLineIsNested below rather than by the
+// pattern, because whether such a key is top-level depends on the object it
+// sits in, which a line-wise regex cannot see.
+var topLevelAdditionalDirsRe = regexp.MustCompile(
+	`(?:^|[^.\w"'])[A-Za-z_$][\w$]*\s*(?:\.\s*additionalDirectories|\[\s*["']additionalDirectories["']\s*\])\s*(?:=\s*(?:[^=]|$)|\.\s*push\s*\()` +
+		`|["']additionalDirectories["']\s*:`)
 
-func TestRepoSkillsGrantUsesNestedPermissionsKey(t *testing.T) {
+// grantLineIsNested reports whether a matched line is the correct nested form,
+// or prose about it, and so is not a finding.
+func grantLineIsNested(line string) bool {
+	return strings.Contains(line, "permissions.additionalDirectories") ||
+		strings.Contains(line, "permissions\"") ||
+		strings.Contains(line, "s.permissions")
+}
+
+// grantAssetFiles lists every shipped asset that could carry the grant step.
+// It is deliberately wider than repoSkillFiles: docs/guides/worktree-per-ticket.md
+// documents the same step and regressed alongside the skills in #180, so a
+// guard scoped to SKILL.md alone would let the doc drift back on its own.
+func grantAssetFiles(t *testing.T) map[string]string {
+	t.Helper()
+	out := map[string]string{}
 	for name, path := range repoSkillFiles(t) {
+		out["skill:"+name] = path
+	}
+	root := filepath.Join("..", "..", "..")
+	for _, rel := range []string{
+		filepath.Join("docs", "guides", "worktree-per-ticket.md"),
+		filepath.Join("docs", "guides", "cleanup-safety.md"),
+	} {
+		p := filepath.Join(root, rel)
+		if _, err := os.Stat(p); err == nil {
+			out["doc:"+rel] = p
+		}
+	}
+	return out
+}
+
+func TestRepoAssetsGrantUsesNestedPermissionsKey(t *testing.T) {
+	for name, path := range grantAssetFiles(t) {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("ReadFile(%s) error = %v", path, err)
 		}
 		content := string(data)
 		if !strings.Contains(content, "additionalDirectories") {
-			continue // this skill does not grant a directory
+			continue // this asset does not describe the grant
 		}
 		t.Run(name, func(t *testing.T) {
 			for i, line := range strings.Split(content, "\n") {
-				if topLevelAdditionalDirsWriteRe.MatchString(line) {
+				if topLevelAdditionalDirsRe.MatchString(line) && !grantLineIsNested(line) {
 					t.Errorf("%s:%d writes a top-level additionalDirectories, which Claude Code skips — "+
 						"nest it under permissions.additionalDirectories:\n  %s",
 						path, i+1, strings.TrimSpace(line))
 				}
 			}
-			if !strings.Contains(content, "permissions.additionalDirectories") &&
-				!strings.Contains(content, "s.permissions") {
+			if !strings.Contains(content, "permissions.additionalDirectories") {
 				t.Errorf("%s mentions additionalDirectories but never the nested "+
 					"permissions.additionalDirectories key", path)
 			}
@@ -183,32 +219,40 @@ func TestRepoSkillsGrantUsesNestedPermissionsKey(t *testing.T) {
 // would also pass if the pattern stopped matching anything. These pin what it
 // must catch and what it must leave alone — including the exact line #180 was
 // filed for, and the migration lines that legitimately touch the legacy key.
-func TestTopLevelAdditionalDirsWriteRe(t *testing.T) {
-	mustMatch := map[string]string{
-		"the #180 regression": `    s.additionalDirectories = s.additionalDirectories || [];`,
-		"push onto the root":  `    if (!s.additionalDirectories.includes(dir)) s.additionalDirectories.push(dir);`,
-		"bracket assignment":  `  settings["additionalDirectories"] = [dir];`,
-		"spaced assignment":   `  s . additionalDirectories  = [];`,
+func TestTopLevelAdditionalDirsRe(t *testing.T) {
+	flagged := func(line string) bool {
+		return topLevelAdditionalDirsRe.MatchString(line) && !grantLineIsNested(line)
 	}
-	for name, line := range mustMatch {
+
+	mustFlag := map[string]string{
+		"the #180 regression":                 `    s.additionalDirectories = s.additionalDirectories || [];`,
+		"push onto the root":                  `    if (!s.additionalDirectories.includes(dir)) s.additionalDirectories.push(dir);`,
+		"bracket assignment":                  `  settings["additionalDirectories"] = [dir];`,
+		"spaced assignment":                   `  s . additionalDirectories  = [];`,
+		"an unfamiliar receiver":              `  obj.additionalDirectories = [dir];`,
+		"assignment wrapped to the next line": `    cfg.additionalDirectories =`,
+		"a flat JSON example":                 `  "additionalDirectories": ["/path/to/worktrees"]`,
+	}
+	for name, line := range mustFlag {
 		t.Run("catches "+name, func(t *testing.T) {
-			if !topLevelAdditionalDirsWriteRe.MatchString(line) {
-				t.Errorf("did not match a top-level write:\n  %s", line)
+			if !flagged(line) {
+				t.Errorf("did not flag a top-level write:\n  %s", line)
 			}
 		})
 	}
 
-	mustNotMatch := map[string]string{
+	mustAllow := map[string]string{
 		"the nested write":         `    s.permissions.additionalDirectories = list;`,
-		"nested read":              `    const list = s.permissions.additionalDirectories || [];`,
+		"nested read":              `    const cur = s.permissions.additionalDirectories;`,
+		"nested JSON example":      `    "permissions": { "additionalDirectories": ["/wt"] }`,
 		"migration read":           `    for (const d of Array.isArray(s.additionalDirectories) ? s.additionalDirectories : []) {`,
 		"migration delete":         `    delete s.additionalDirectories;`,
 		"prose naming the key":     "  under **`permissions.additionalDirectories`** (nested under `permissions`)",
 		"prose naming the old one": "  a top-level `additionalDirectories` is not part of the schema",
 	}
-	for name, line := range mustNotMatch {
+	for name, line := range mustAllow {
 		t.Run("allows "+name, func(t *testing.T) {
-			if topLevelAdditionalDirsWriteRe.MatchString(line) {
+			if flagged(line) {
 				t.Errorf("wrongly flagged:\n  %s", line)
 			}
 		})
