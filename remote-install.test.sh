@@ -91,5 +91,52 @@ run_remote HOME=home DEVEXP_VERSION=v0.0.0 DEVEXP_INSTALL_DIR="$TMP/abs-bin"
 check "absolute DEVEXP_INSTALL_DIR, relative HOME: goes on to download" curl_called
 check "absolute DEVEXP_INSTALL_DIR, relative HOME: the failed download is reported" out_has "failed to download"
 
+# ── The default path: no DEVEXP_VERSION, so the latest release is looked up ──
+#
+# Every case above pins DEVEXP_VERSION, so none of them enters this branch --
+# and the release guide's post-release check pins it too. The documented
+# one-liner is the one path nothing exercised, and it was broken: the lookup
+# piped curl into `grep -m1`, which closes the pipe at the first match while
+# curl is still writing, so curl died of SIGPIPE and `pipefail` aborted the
+# script before it printed anything useful.
+#
+# The stub below reproduces that deterministically. "tag_name" is on the first
+# line and ~2MB of filler follows it, so a matcher that stops early is
+# guaranteed to close the pipe mid-write -- with a short body curl can finish
+# before the matcher exits, and the bug hides.
+run_remote_lookup() {
+    envs=$((envs+1))
+    E="$TMP/env$envs"
+    mkdir -p "$E/bin" "$E/cwd"
+    cat > "$E/bin/curl" <<'STUB'
+#!/bin/sh
+echo "curl $*" >> "$CALLS"
+case "$*" in
+  *releases/latest*)
+    echo '{"tag_name": "v9.9.9", "name": "v9.9.9",'
+    # filler: enough to outlast any pipe buffer
+    i=0
+    while [ $i -lt 40000 ]; do
+      echo '  "note": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",'
+      i=$((i+1))
+    done
+    echo '  "end": true}'
+    exit 0 ;;
+  *) exit 22 ;;
+esac
+STUB
+    chmod +x "$E/bin/curl"
+    : > "$E/calls"
+    (cd "$E/cwd" && env -i PATH="$E/bin:/usr/bin:/bin" CALLS="$E/calls" "$@" \
+        /bin/bash "$ROOT/scripts/remote-install.sh" </dev/null > "$E/out" 2>&1; echo $? > "$E/rc")
+}
+
+run_remote_lookup HOME="$TMP/home" DEVEXP_INSTALL_DIR="$TMP/lookup-bin"
+check "no DEVEXP_VERSION: the lookup survives a large response" out_lacks "Failure writing output"
+check "no DEVEXP_VERSION: the tag is extracted from the response" out_has "Installing devexp v9.9.9"
+# It then fails at the download, because the stub only answers the API call.
+# That is the point: the run has to get *past* the lookup to reach it.
+check "no DEVEXP_VERSION: it proceeds to the download" out_has "failed to download"
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -50,7 +50,19 @@ esac
 version="${DEVEXP_VERSION:-}"
 if [[ -z "$version" ]]; then
     say "Looking up latest release..."
-    version="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')"
+    # The response is read into a variable before it is parsed, rather than
+    # piped into a matcher. A matcher that stops at the first hit -- grep -m1,
+    # head -1, sed q -- closes the pipe while curl is still writing, so curl
+    # dies of SIGPIPE with "(56) Failure writing output to destination" and
+    # `pipefail` turns that into an abort. The lookup failed for everyone who
+    # did not set DEVEXP_VERSION, which is the documented one-liner.
+    release_json="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest")" ||
+        die "could not reach the GitHub API to find the latest release -- set DEVEXP_VERSION to install a specific tag"
+    # A here-string, not a pipe. sed still stops at the first match, and that
+    # is the whole trap: anything writing into a pipe that a matcher closes
+    # early takes the SIGPIPE instead. bash backs a here-string with a
+    # temporary file, so there is no writer left to kill.
+    version="$(sed -n -E '/"tag_name"/{s/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/p;q;}' <<<"$release_json")"
     [[ -n "$version" ]] || die "could not determine latest release — set DEVEXP_VERSION to install a specific tag"
 fi
 say "Installing devexp $version ($os/$arch)..."
