@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **`hooks/.DS_Store` is no longer tracked, and `.DS_Store` is gitignored.** Repo hygiene only — **nothing about an install changes**. The file never reached anyone: `scripts/stage-assets.sh` excludes it from the staged assets with `rsync --exclude='.DS_Store'`, so it was never embedded in a binary, and every installer iterates `hooks/registry.json` rather than globbing the directory, so a clone install never picked it up either. It was simply committed by accident and had survived since before v0.7.0. The new `.gitignore` rule is unanchored, so it matches at any depth.
+
 ## [0.10.2] - 2026-09-19
 
 ### Fixed
