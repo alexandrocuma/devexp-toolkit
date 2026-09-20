@@ -6,7 +6,7 @@ Where tests live, how they're written and run, and what must pass before a commi
 
 ## Test Types
 
-CI (`.github/workflows/ci.yml`) runs in three jobs: `test` (Go), `hooks` (the four script suites — claude-code, kimi, opencode, installer script) and `govulncheck` (the [vulnerability scan](#vulnerability-scan), not a test suite). It runs on every pull request, on every push to `main`, weekly on a schedule (`on.schedule`, Mondays 06:27 UTC), and on every `v*` tag — `release.yml` calls it through `on.workflow_call` and goreleaser `needs:` that call, so the jobs below are also the release gate. All five suites below were green at this commit.
+CI (`.github/workflows/ci.yml`) runs in four jobs: `test` (Go), `hooks` (the four script suites — claude-code, kimi, opencode, installer script), `lint` (golangci-lint over `cli/`, plus `scripts/check-comment-refs.sh` over every language) and `govulncheck` (the [vulnerability scan](#vulnerability-scan), not a test suite). It runs on every pull request, on every push to `main`, weekly on a schedule (`on.schedule`, Mondays 06:27 UTC), and on every `v*` tag — `release.yml` calls it through `on.workflow_call` and goreleaser `needs:` that call, so the jobs below are also the release gate. All five suites below were green at this commit.
 
 | Type | Framework | Location | Run |
 |------|-----------|----------|-----|
