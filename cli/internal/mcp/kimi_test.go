@@ -171,8 +171,6 @@ func TestValidateKimiEntry(t *testing.T) {
 	}
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 func kimiFile(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "mcp.json")
