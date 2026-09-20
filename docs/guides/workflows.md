@@ -10,6 +10,85 @@ Step-by-step recipes with real paths. Conventions: [conventions](../development/
 2. **Re-run `./install.sh` to deploy** asset changes. It's idempotent: already-registered hooks and MCPs are skipped (`cli/internal/hooks/installer.go`, `cli/internal/mcp/claude.go`). Agents and skills you've removed or disabled are cleaned up through the manifest (`cli/cmd/install_claude.go`). A hook registration is pruned only when its script no longer exists or it came from another install root (`pruneStaleHooks`, `pruneForeignDevexpHooks`). Disabling a hook doesn't remove a registration that already exists. Agents and skills are copies, so they need a re-install. A hook script that's already registered runs from its absolute path in the repo, so edits to it take effect right away. Registry changes (event, matcher, new hook) still need a re-install. See [overview → runtime](../architecture/overview.md#a-tool-call-at-runtime-after-install).
 3. **Preview first** with `./install.sh --dry-run`. Passing any flag skips the wizard (`cli/cmd/install.go`, `flagsProvided`).
 4. **Add a `CHANGELOG.md` entry under `[Unreleased]`** (`### Added` / `### Changed` / `### Fixed` / `### Removed`) in the same commit. Recent PRs all do this (`f06b67e`, `2afc3af`, `06c45a1`, `bdf026f`). Commit and branch naming are covered in [conventions](../development/conventions.md#commits--branches).
+5. **Reach `main` through a pull request with green CI.** `main` is protected: a direct push is rejected, and `test`, `hooks` and `govulncheck` must pass on a branch that is up to date with `main` before merge. The settings and how to restore them are in [Branch Protection](#branch-protection-main).
+
+## Branch Protection (`main`)
+
+`main` is protected so that a red CI run stops a merge. Before this was in
+place every gate in the repo was advisory: CI ran three blocking-by-design jobs
+and nothing consumed the result, so `main` could sit broken until someone cut a
+tag and `release.yml`'s `needs: ci` finally noticed.
+
+| Setting | Value | Why |
+|---|---|---|
+| Pull request before merge | required | a direct push to `main` bypasses every check below |
+| Required checks | `test`, `hooks`, `govulncheck` | the three jobs in `.github/workflows/ci.yml`; add `lint` when it lands |
+| Strict (up to date with `main`) | on | a check that passed against a stale base proves nothing about the merge result |
+| Required approving reviews | **0** | a PR is required, an approval is not — with one maintainer, requiring a review would deadlock the repo. Self-merge after green is the intended flow |
+| Include administrators | **on** | a bypass for the only maintainer is not a gate. To unwedge a genuinely stuck check, toggle protection off deliberately rather than merging around it |
+| Force push | blocked | [release](release.md) states rollback is "revert on `main`... history is never rewritten on `main`" — this makes that a fact rather than a promise |
+| Branch deletion | blocked | same reason |
+
+### Verify
+
+```bash
+gh api repos/:owner/:repo/branches/main/protection \
+  -q '{pr_required: (.required_pull_request_reviews != null),
+       approvals: .required_pull_request_reviews.required_approving_review_count,
+       checks: .required_status_checks.contexts,
+       strict: .required_status_checks.strict,
+       enforce_admins: .enforce_admins.enabled,
+       force_push: .allow_force_pushes.enabled,
+       deletion: .allow_deletions.enabled}'
+```
+
+Expected:
+
+```json
+{"approvals":0,"checks":["test","hooks","govulncheck"],"deletion":false,"enforce_admins":true,"force_push":false,"pr_required":true,"strict":true}
+```
+
+A bare `gh api repos/:owner/:repo/branches/main/protection` returning
+`{"message":"Branch not protected","status":"404"}` means the settings are gone
+— restore them below.
+
+### Restore (fresh fork, or re-created repo)
+
+Needs repo-admin rights.
+
+```bash
+gh api -X PUT repos/:owner/:repo/branches/main/protection --input - <<'JSON'
+{
+  "required_status_checks": { "strict": true, "contexts": ["test", "hooks", "govulncheck"] },
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 0,
+    "dismiss_stale_reviews": false,
+    "require_code_owner_reviews": false
+  },
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false,
+  "required_linear_history": false,
+  "required_conversation_resolution": false,
+  "block_creations": false,
+  "lock_branch": false,
+  "allow_fork_syncing": false
+}
+JSON
+```
+
+`restrictions` is required by the API and must be `null` on a repo without
+push-restriction lists. Adding a required check whose name never appears —
+a typo, or a job renamed in `ci.yml` — blocks every merge permanently, because
+a check that never reports can never pass. The names above are check-run names;
+confirm them against a real run before changing them:
+
+```bash
+gh run list --workflow=ci.yml --limit 1 --json databaseId -q '.[0].databaseId' \
+  | xargs -I{} gh api repos/:owner/:repo/actions/runs/{}/jobs -q '.jobs[].name'
+```
+
 
 ## Add a Feature
 

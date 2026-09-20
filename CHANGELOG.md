@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`main` is protected, so a red CI run now stops a merge** (#195). CI has always run three blocking-by-design jobs — `test`, `hooks`, `govulncheck` — on `pull_request` and `push: main`, and nothing consumed the result: `gh api repos/:owner/:repo/branches/main/protection` returned `404, "Branch not protected"`. Every gate in the repo was advisory, and `main` could sit broken until someone cut a tag and `release.yml`'s `needs: ci` finally noticed. A pull request is now required, the three checks are required and must pass on a branch up to date with `main`, and force-push and deletion are blocked — which turns [release](docs/guides/release.md)'s "history is never rewritten on `main`" from a promise into a fact.
+
+  Two settings were judgement calls, both recorded in [workflows → Branch Protection](docs/guides/workflows.md#branch-protection-main) with the reasoning. **Required approving reviews is 0**: a PR is required, an approval is not, because requiring a review with a single maintainer deadlocks the repo — self-merge after green is the intended flow. **Administrators are included**: a bypass for the only maintainer is not a gate; a genuinely stuck check is unwedged by toggling protection off deliberately, not by merging around it.
+
+  The settings, a verification command with its expected output, and a restore payload for a fresh fork are all written down, because branch protection lives in repository configuration and ships through neither release target — nothing in a clone can recreate it.
+
 - **The knowledge graph is committed** — `graphify-out/graph.json` (2157 nodes, 5239 edges, 129 labelled communities, directed) and `graphify-out/manifest.json`, 2.6 MB together. A clone, and more importantly a new ticket worktree, now starts with the map instead of paying a full semantic extraction to rebuild it. That cost is the whole point: building this one took roughly a million tokens of parallel extraction, and a worktree checks out tracked files only, so under the previous `graphify-out/` ignore every worktree began with no graph and every agent's Phase 0 lookup came up empty.
 
   Portability is what makes this safe to share: `manifest.json` holds 242 **relative** keys (`root=`, upstream #1361/#1417), so the cache still matches after a clone or a move rather than missing every file. Keeping it current is cheap — a code-only `--update` skips semantic extraction entirely and needs no LLM call.
