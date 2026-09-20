@@ -350,7 +350,7 @@ After completing the task:
 
 ## graphify Integration Patterns
 
-graphify turns a codebase (or any folder of files) into a persistent, queryable knowledge graph written to `graphify-out/`. Unlike an always-on MCP knowledge store, a project only has a graph if someone has explicitly run `/graphify` in it — treat its presence as optional and its absence as the normal case.
+graphify turns a codebase (or any folder of files) into a persistent, queryable knowledge graph written to `graphify-out/`. Unlike an always-on MCP knowledge store, a project only has a graph if someone has explicitly run `/graphify` in it — treat its presence as optional and its absence as the normal case. (This repo is one of the exceptions: it commits `graphify-out/graph.json`, so the graph is present in every clone and worktree — see [hooks.md](../reference/hooks.md).)
 
 ### When to Query
 

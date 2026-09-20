@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The knowledge graph is committed** — `graphify-out/graph.json` (2157 nodes, 5239 edges, 129 labelled communities, directed) and `graphify-out/manifest.json`, 2.6 MB together. A clone, and more importantly a new ticket worktree, now starts with the map instead of paying a full semantic extraction to rebuild it. That cost is the whole point: building this one took roughly a million tokens of parallel extraction, and a worktree checks out tracked files only, so under the previous `graphify-out/` ignore every worktree began with no graph and every agent's Phase 0 lookup came up empty.
+
+  Portability is what makes this safe to share: `manifest.json` holds 242 **relative** keys (`root=`, upstream #1361/#1417), so the cache still matches after a clone or a move rather than missing every file. Keeping it current is cheap — a code-only `--update` skips semantic extraction entirely and needs no LLM call.
+
+  Excluded, deliberately: `graph.html` (a derived view, ~2 MB regenerated wholesale on every build), the version-pinned `cache/` tree, and the local `cost.json`.
+
+### Changed
+
+- **`graphify-read-guard` is now off for opencode** (`opencode.enabled: false`), which is what its own registry description always claimed — "Ships disabled; enable only in projects that maintain a graphify knowledge graph". The entry said one thing and did another, and committing a graph is what made the discrepancy bite: the guard's only precondition is `existsSync('graphify-out/graph.json')` and it never checks the `graphify` CLI is on PATH. Since `./install.sh` ships the graphify *skill* and not the CLI, a committed graph plus an enabled guard would block any contributor without `graphify` installed on their first source-file read, with no way to clear it. `graphify-grep-nudge` and `graphify-session-sentinel` are untouched — neither can block.
+
 ### Changed
 
 - **Vendored graphify skill synced to upstream 0.9.64** (was 0.8.39, a minor line behind). Two separate drifts had to be closed: the deployed copy in `~/.claude/skills/` had moved ahead of `skills/graphify/`, so the next `./install.sh` would have silently rolled it back; and the installed `graphifyy` package was itself two minor versions stale, so `graphify install` alone only ever resynced to 0.8.40. The sync is `uv tool install --upgrade graphifyy` → `graphify install --platform claude` → vendor into `skills/graphify/` → `./install.sh`. A plain `graphify install` refreshes only the *detected* platform, which is not necessarily Claude Code.

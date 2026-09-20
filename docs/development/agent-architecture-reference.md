@@ -51,7 +51,7 @@ Tailor the query to the agent's role:
 
 ## graphify Protocol
 
-graphify turns a codebase into a persistent, queryable knowledge graph (`graphify-out/graph.json`). It's optional per project — a project only has a graph if someone has run `/graphify` in it. Agents that write durable artifacts should keep an existing graph current, not build one on the agent's own initiative.
+graphify turns a codebase into a persistent, queryable knowledge graph (`graphify-out/graph.json`). It's optional per project — a project only has a graph if someone has run `/graphify` in it — unless, as here, the project commits `graphify-out/` so every clone and worktree starts with one. Agents that write durable artifacts should keep an existing graph current, not build one on the agent's own initiative.
 
 ### Read protocol (all agents, Phase 0)
 
