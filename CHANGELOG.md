@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Procedures duplicated across skills are guarded against drift** (#196). `/deliver` and `/improve` both advertise that they need no other skill installed, so a step they share cannot be replaced with a pointer — the copy has to stay. What must not happen is the copies drifting unnoticed, which is how the worktree access grant came to be wrong in two independent ways at once: one copy wrote a key Claude Code does not read, and the other had lost the words "the main checkout's", so a grant written from inside a worktree was discarded along with that tree.
+
+  An audit of every paragraph appearing in two or more `skills/*/SKILL.md` found **no byte-identical duplication at all** — which is why this ships two differently-shaped tests rather than the single byte-comparison the ticket imagined.
+
+  `TestSharedSafeIDGuardIsIdentical` asserts the `safe_id()` shell guard is spelled identically in `/cleanup` and `/improve`. Byte-exact is the right bar there and the stakes are why: the function decides whether a caller-supplied ticket id may be interpolated into an `rm -f` glob, and a copy that drifted would keep passing every other test while accepting an identifier its twin rejects, in a code path whose entire job is deleting things.
+
+  `TestGrantProcedureStatesEveryLoadBearingClaim` asserts the grant's four claims — nested `permissions` key, `settings.local.json`, the **main checkout's** file, paths derived from `git worktree list` — across `/deliver`, `/improve` and the guide. Byte-identity is deliberately not asserted, because there are no byte-identical copies: the three renderings differ on purpose, at three lengths, for three readers. Demanding identity would be unsatisfiable; demanding nothing is what let it drift. The wording is free, the claims are not.
+
+  Both tests **refuse to pass vacuously**: each fails if it finds fewer than two copies to compare, since a guard that silently stops guarding is the defect it was written against. Verified by mutation — a drifted `safe_id()`, a dropped claim, and a deleted copy each fail the suite.
+
 - **A written comment standard** — `docs/development/conventions.md` gains a `## Comments` section stating the bar a comment has to clear: brief, concise, self-contained, and explaining what the code cannot. One that does not clear it is deleted rather than reworded, because a restatement of the signature still has to be read and still rots.
 
   The load-bearing half is **no external references**. An issue number in a comment sends the reader out of the file, and usually out of the repo, to learn something the comment could simply have said; `#124` carries no meaning at the point of use, while the constraint it stands for does. The reason goes inline as prose and the history goes in the commit body, where `git log` and `git blame` already reach it. Two categories keep their references because a reader genuinely cannot resolve them here: quoted third-party behaviour (`hooks/kimi/adapter.sh` mirrors Kimi's own `internal/matchHooks.ts`) and test fixture data, which is input rather than commentary.
