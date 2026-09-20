@@ -250,6 +250,7 @@ If there's no graph, or graphify is unavailable, skip silently.
 
 ## Chaining
 
+- **Invoked by `/deliver` Phase 1.7** — the delivery skill runs this before implementation, and consumes the *Required Test Checklist* directly: each dependent named there must be covered by a test in that delivery or recorded as uncovered with a reason. When running in that context, make the checklist items concrete enough to act on without re-reading the report, and state an empty blast radius explicitly — a silent result is indistinguishable from an analysis that never ran.
 - **High blast radius with untested callers** → suggest `test-gen` agent to add coverage before the change
 - **Security-path callers found** → suggest `security` agent to review implications
 - **Many transitive dependents** → suggest `dep-map` for the full module dependency graph

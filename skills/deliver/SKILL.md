@@ -95,9 +95,10 @@ Groom plan loaded:
 
 Delivery sequence:
   1. Worktree           → isolate this ticket in its own git worktree
+  1.7 Blast radius      → impact-analysis on what the plan will touch  [mandatory for coupled areas]
   2. Implement          → dev-agent (or migration agent)
   3. Instrument         → add observability to new code
-  4. Test gaps          → test-gen agent
+  4. Test gaps          → test-gen agent, plus every dependent the blast radius named
   4.5 Release readiness → check each affected target's requirements
   5. Code review        → pr-review agent
   6. Release            → merge worktree + changelog + version tag + platform release  [gated]
@@ -175,6 +176,55 @@ All subsequent phases operate from this worktree directory.
 **Single-stream fallback:** if the environment can't support worktrees (no git, or a shallow/non-worktree-capable checkout) or the user explicitly wants the change applied to the current tree, skip worktree creation and deliver in place on the current branch. The merge step in `/release` then becomes a no-op; the same merge discipline still applies to whatever integration happens.
 
 ---
+
+### Phase 1.7 — Blast Radius
+
+Everything before this looked at **the change**. This phase is the only one that
+looks at **what else depends on what the change touches**, and it runs before a
+line is written — Phase 4 and Phase 5 both inspect code that already exists, so
+neither can tell you that the thing you were about to break was never in the
+plan's file list.
+
+That gap is not hypothetical. The pattern this phase exists to catch: a feature
+lands with a registry, new modules and hundreds of lines of new tests, all green,
+and the install path for it is never called — nobody asked *"who calls this?"*.
+Users got no guards while the installer reported success.
+
+**Run `impact-analysis` against the paths the plan intends to touch:**
+
+> "Map the blast radius of changing these paths: `<paths from the groom plan>`.
+> For each: what depends on it, what could break silently, and what must be
+> tested. Include dynamic and config-driven references, not just imports."
+
+**Mandatory — not a judgement call — when the plan touches any of:**
+
+| Area | Why it is on the list |
+|---|---|
+| a hook/plugin registry, or any file a registry names | a missed mapping is silent: the asset exists, nothing loads it |
+| install / deploy orchestration | its callers are what decide whether the feature ever runs |
+| anything with a mirrored counterpart for another runtime or platform | the twin drifts, and only one of the two is exercised |
+| a shared library many callers source or import | consequence scales with callers, and the callers are not in the plan |
+| a guard, gate or check other code trusts | it can keep returning "fine" after it stops checking |
+
+Outside those areas it is a judgement call, and skipping is fine — say so.
+
+**Its output is used, not printed.** The report's *Required Test Checklist*
+becomes required input to Phase 4: each dependent it names is either covered by
+a test that runs in this delivery, or explicitly recorded as not covered and
+why. "Who else calls this" turns into a test, not a paragraph in a report
+nobody reads again.
+
+**An empty blast radius is stated, never implied.** If nothing depends on the
+target, the phase says *"blast radius: nothing depends on these paths"* and says
+how that was established. Silence is not a pass — a phase that produces no
+output when it finds nothing is indistinguishable from a phase that did not run,
+which is the same defect this phase exists to catch.
+
+**On a 🔴 High verdict, surface it and confirm before implementing.** The phase
+does not veto — it informs — but a high blast radius can change whether the user
+wants this change at all, and they approved a sequence in Phase 1, not a risk
+level discovered after it.
+
 
 ### Phase 2 — Implement
 
@@ -264,6 +314,13 @@ done 2>/dev/null
 If uncovered files exist — invoke the `test-gen` agent:
 
 > "Generate tests for these files: <list>. Match the project's existing test framework and conventions. Focus on the acceptance criteria from ticket <ID>: <list criteria>."
+
+**Then close out Phase 1.7's checklist.** Every dependent the blast radius named
+is a required check here, not a suggestion: for each one, either a test
+exercising it runs in this delivery, or the report states plainly that it is
+uncovered and why that is acceptable. An item silently dropped between the two
+phases is the whole failure mode this pair of phases exists to close — the
+analysis was done, written down, and then not acted on.
 
 **E2E coverage check:**
 
@@ -400,12 +457,14 @@ If the `/release` skill is not installed, **do not improvise a release**: report
 ```
 ## Delivered: <ticket-id> — "<title>"
 
+  Blast radius:    <N dependents across M files, verdict / nothing depends on these paths / skipped — not a coupled area>
   Worktree:        <branch + dir created — merged and removed on release / removed — branch already merged at declined gate / kept — deferred manual release, retire with /cleanup once merged / kept on failure / none (single-stream)>
   Implementation:  complete — <N files changed>
   Infrastructure:  <N IaC files changed / no infrastructure changes detected>
   Observability:   <N log calls added / skipped — no new entry points>
   SLO candidates:  <list of critical paths with suggested SLI measurement points, or "none identified">
   Tests:           <N unit/integration tests added / already covered>
+  Dependents:      <N of M blast-radius dependents covered by a test; uncovered listed with why>
   Release ready:   <per target: ready / gaps — … / unverified — no release guide>
   E2E coverage:    <N scenarios added / no E2E suite detected / already covered>
   Review:          <findings addressed / approved>
@@ -421,6 +480,7 @@ Next:
 ## Guidelines
 
 - **Groom plan is the blueprint** — pass it to `dev-agent`; the agent should not re-derive what grooming already established
+- **Blast radius runs before the code exists, and its findings become tests** — Phases 4 and 5 examine what was written; only Phase 1.7 examines what depends on it. A dependent it names and Phase 4 does not cover is a gap that was found, written down, and shipped anyway
 - **Instrumentation is inline, not delegated** — detecting and adding log calls is straightforward enough to do here; a specialist skill is not required
 - **Release is delegated, and it is the only hard gate** — Phase 6 hands off to `/release`, which asks for its own confirmation. Every other step can be skipped; release is irreversible and affects shared systems, so its consent is never inherited from Phase 1
 - **In scope is fixed, out of scope is filed** — a defect inside the change being delivered is folded into that delivery before the release gate; only work outside its scope becomes a ticket. A follow-up filed for something in scope is a quality gap wearing a ticket
