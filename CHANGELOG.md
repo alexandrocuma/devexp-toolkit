@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **The smoke test's cache control now probes its own precondition** (follow-up to #210). It asserted that a second identical `go test` run reports `(cached)` — true today, but that is Go's behaviour rather than a contract this repo controls. A toolchain that keyed the cache differently, or an environment with caching disabled, would have turned a correct run into a red build over a detail of someone else's tool. The run now checks whether caching is in play and asserts only when it is, reporting `SKIP` with the reason when it is not. The half that always applies — the documented command must report an asset edit — is unchanged and still asserted unconditionally.
+### Fixed
+
+- **The release guide described a `main` that no longer exists.** Four claims went stale the moment #195 protected the branch, and cutting v0.11.0 walked straight into them: the Cut section said the release commit is *"committed directly on `main`"*, and three places asserted *"`main` has no branch protection or rulesets (GitHub API, checked 2026-09-17)"*. A direct push is now rejected outright — a PR is required, `test`, `hooks`, `govulncheck` and `lint` must pass on a branch up to date with `main`, and `enforce_admins` leaves no bypass.
+
+  The guide now says to cut the release on a `chore/release-v<version>` branch and squash-merge it, and records that the squashed subject therefore carries a `(#NN)` suffix like every other commit on `main`. The consequence is an improvement worth stating rather than a cost: the tag is now cut from a commit those four checks have already gone green on, where before it could be pushed while `ci` was still running.
+
+  Two epics landing in the same release is how this was missed — #187 hardened the branch, #186 was being written against the guide, and nothing connected them until the cut.
 
 ## [0.11.0] - 2026-09-20
 

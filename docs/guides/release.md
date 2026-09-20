@@ -1,6 +1,6 @@
 # Release Guide
 
-> Kit doc · Last verified: 2026-09-19 against commit `9e865a3745e40f0fd693a79e2ce79a602b8e57b2`
+> Kit doc · Last verified: 2026-09-20 against commit `fcf877d`
 >
 > Consumed by `/release` (executes ship steps), grooming (affected targets), `/deliver` (release readiness) and `/monitor` (post-release checks). Why release guides exist and how the lifecycle reads them: [`release-targets.md`](release-targets.md). Build and test commands: [`../development/setup.md`](../development/setup.md).
 
@@ -19,9 +19,9 @@ Asset edits reach the two targets at different times. Clone users get them on th
 
 - Version source of truth: **the git tag.** There is no version file. goreleaser injects the tag's version at build time with `-X devexp/cmd.version={{ .Version }}` (`.goreleaser.yaml:25`, `cli/cmd/root.go:9-15`); local builds report `dev`. Scheme: SemVer (stated in `CHANGELOG.md`'s header).
 - Tag format: `v<version>`, annotated, message `Release v<version> — <summary>` (`git tag -n1 v0.7.0 v0.6.0`). Any pushed `v*` tag starts the `release` workflow (`.github/workflows/release.yml`, `on.push.tags`).
-- Release commit: `chore: release v<version>`, committed directly on `main`, changing only `CHANGELOG.md`. It moves the `## [Unreleased]` entries under `## [<version>] - YYYY-MM-DD` (Keep a Changelog — see `CHANGELOG.md`'s header and its version headings). See `git show --stat d5f6943 f88f123 879a5c8 d15c02d` (v0.7.0, v0.6.0, v0.5.0, v0.4.0).
+- Release commit: `chore: release v<version>`, changing only `CHANGELOG.md`. It goes through a pull request — protection rejects a direct push, and `enforce_admins` leaves no bypass — so the squash-merged subject carries a `(#NN)` suffix like every other commit on `main`. Cut it on a `chore/release-v<version>` branch, let the four required checks run, then squash-merge. It moves the `## [Unreleased]` entries under `## [<version>] - YYYY-MM-DD` (Keep a Changelog — see `CHANGELOG.md`'s header and its version headings). See `git show --stat d5f6943 f88f123 879a5c8 d15c02d` (v0.7.0, v0.6.0, v0.5.0, v0.4.0).
 - GitHub Release object: **created by `/release` as a draft right after the tag push**, with the version's `CHANGELOG.md` section as notes: `gh release create v<version> --draft --title v<version> --notes-file <section> --verify-tag`. A draft isn't public and doesn't move Latest. With `release.use_existing_draft: true` (`.goreleaser.yaml:49`), goreleaser looks for a draft whose name is its `name_template` (default `{{.Tag}}`, which matches `--title v<version>`), keeps its notes (default `release.mode` keep-existing), uploads the assets while it is still a draft, and only then publishes it; it becomes Latest at that moment. Source, goreleaser v2.18.2 (the `~> v2` the action installs today): `findRelease` → `findDraftRelease` matches `r.GetDraft() && r.GetName() == name`, `createOrUpdateRelease` keeps `Draft` and `getReleaseNotes` returns the existing body, `doPublish` uploads and then calls `PublishRelease` with `Draft: false` (`internal/client/github.go`, `internal/client/release_notes.go`, `internal/pipe/release/release.go`). Before this, `/release` created a published release and goreleaser uploaded into it — how v0.7.1, v0.7.0 and v0.5.0 were released. v0.6.0 was the exception: goreleaser created it with its own commit-list notes, which leave out `docs:`, `test:` and `chore:` commits (`.goreleaser.yaml:36-42`).
-- Nothing waits for CI before the **tag**: `main` has no branch protection or rulesets (GitHub API, checked 2026-09-17), so the tag can be pushed while `ci` is still running on the release commit — for v0.7.0, `ci` started at 04:48:20Z and `release` started from the tag at 04:48:23Z (`gh run list`). Nothing **publishes** before CI, though: since #155 `release.yml` calls `ci.yml` and goreleaser `needs:` that call, so the whole suite and the vulnerability scan run on the tagged commit first (see Target: cli → Build).
+- **CI has already passed on the release commit by the time it is tagged.** `main` is protected (GitHub API, checked 2026-09-20): a pull request is required, `test`, `hooks`, `govulncheck` and `lint` are required and must pass on a branch up to date with `main`, and administrators are included. The release commit therefore lands through a PR like any other change, and the tag is pushed to a commit those four checks already went green on. Before protection the tag could be pushed while `ci` was still running — for v0.7.0, `ci` started at 04:48:20Z and `release` started from the tag at 04:48:23Z (`gh run list`). Nothing **publishes** before CI either way: since #155 `release.yml` calls `ci.yml` and goreleaser `needs:` that call, so the whole suite and the vulnerability scan run on the tagged commit first (see Target: cli → Build).
 
 ## Target: cli
 
@@ -58,7 +58,7 @@ N/A — there is no pre-production channel. The draft `/release` creates is only
 
 | Stage | How | Gate |
 |-------|-----|------|
-| tag push + draft → published GitHub Release, marked **Latest** | automatic once the `v*` tag is pushed (`.github/workflows/release.yml`): goreleaser uploads into the draft, then publishes it. New `remote-install.sh` installs pick it up at once, because the script resolves `releases/latest` (`scripts/remote-install.sh:51-55`), and the assets are already there when it turns Latest | manual — the tag push at the cut gate. One automated gate: the whole `ci` workflow — Go tests, the three script suites and the vulnerability scan — must pass on the tagged commit before the goreleaser job runs (`needs: ci`, `.github/workflows/release.yml`). Still no branch protection, so the gate is on publishing, not on tagging |
+| tag push + draft → published GitHub Release, marked **Latest** | automatic once the `v*` tag is pushed (`.github/workflows/release.yml`): goreleaser uploads into the draft, then publishes it. New `remote-install.sh` installs pick it up at once, because the script resolves `releases/latest` (`scripts/remote-install.sh:51-55`), and the assets are already there when it turns Latest | manual — the tag push at the cut gate. One automated gate: the whole `ci` workflow — Go tests, the three script suites and the vulnerability scan — must pass on the tagged commit before the goreleaser job runs (`needs: ci`, `.github/workflows/release.yml`). Since #195 `main` is protected, so the release commit is gated too: the same four checks must pass before it can merge, and the tag is cut from that commit |
 
 ### Rollback
 
@@ -107,7 +107,7 @@ N/A — no pre-production branch or channel. Work reaches `main` through pull re
 
 | Stage | How | Gate |
 |-------|-----|------|
-| push to `main` | `git push` of the release commit at the cut (feature work lands earlier through squash-merged PRs, `(#NN)` subjects in `git log --first-parent origin/main`) | `ci` on the PR and on push to `main` (`.github/workflows/ci.yml`, `on.pull_request` and `on.push`). It isn't enforced: `main` has no branch protection or rulesets |
+| push to `main` | squash-merge of the release PR at the cut (feature work lands the same way earlier, `(#NN)` subjects in `git log --first-parent origin/main`) | `ci` on the PR and on push to `main` (`.github/workflows/ci.yml`, `on.pull_request` and `on.push`), and since #195 it **is** enforced: `test`, `hooks`, `govulncheck` and `lint` are required, the branch must be up to date with `main`, and administrators are included |
 
 ### Rollback
 
