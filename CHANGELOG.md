@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`hooks/opencode/large-file-guard.js` now covers the paths that cannot be read as a file** (#144) — a directory, and a real file with its permissions removed. Both allow, and both are now pinned with the reason: `utils.countLines` swallows the read error and returns 0, so anything unreadable measures as "0 lines" and passes. That is a deliberate fail-**open**, defensible only because this hook is advisory — its strongest verdict is "ask", it protects against losing work rather than against an attacker, and a version that blocked whenever it could not read the target would fire on every unusual path until someone switched it off. The fail-closed guards make the opposite trade and must keep making it, so the choice is written down where a future change to `countLines` has to come past it.
+
+  Mutation-checked: making `countLines` report an unreadable file as 99999 lines fails both new cases.
+
+### Changed
+
+- **The smoke test's cache control now probes its own precondition** (follow-up to #210). It asserted that a second identical `go test` run reports `(cached)` — true today, but that is Go's behaviour rather than a contract this repo controls. A toolchain that keyed the cache differently, or an environment with caching disabled, would have turned a correct run into a red build over a detail of someone else's tool. The run now checks whether caching is in play and asserts only when it is, reporting `SKIP` with the reason when it is not. The half that always applies — the documented command must report an asset edit — is unchanged and still asserted unconditionally.
+
 ### Fixed
 
 - **The release guide described a `main` that no longer exists.** Four claims went stale the moment #195 protected the branch, and cutting v0.11.0 walked straight into them: the Cut section said the release commit is *"committed directly on `main`"*, and three places asserted *"`main` has no branch protection or rulesets (GitHub API, checked 2026-09-17)"*. A direct push is now rejected outright — a PR is required, `test`, `hooks`, `govulncheck` and `lint` must pass on a branch up to date with `main`, and `enforce_admins` leaves no bypass.

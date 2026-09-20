@@ -212,14 +212,29 @@ mutate hooks/registry.json
 # Prime WITHOUT -count=1: that flag bypasses the cache, so priming with it
 # stores nothing and the control below would prove nothing.
 (cd "$REPO/cli" && go test ./internal/repocheck/ -race -cover >/dev/null 2>&1)
+
+# Establish the precondition before asserting anything about it. Whether a
+# second identical run is served from cache is Go's behaviour, not a contract
+# this repo controls — if a future toolchain keys the cache differently, or
+# caching is disabled in this environment, there is no staleness to protect
+# against and the control below would be asserting a detail of someone else's
+# tool. Probe it, assert only when it holds, and say so plainly when it does not.
+CACHE_ACTIVE=0
+echo "$(cd "$REPO/cli" && go test ./internal/repocheck/ -race -cover 2>&1)" | grep -q "(cached)" && CACHE_ACTIVE=1
 python3 - <<'PY'
 import json; p='hooks/registry.json'; d=json.load(open(p))
 d[0]['claude_code']['script']='hooks/claude-code/STALE-CHECK.sh'; json.dump(d,open(p,'w'),indent=2)
 PY
 expect "the documented command catches an edit after a warm cache" "STALE-CHECK.sh" \
   "$(cd "$REPO/cli" && go test ./internal/repocheck/ -race -cover -count=1 2>&1)"
-expect "without the flag it is still cached, so the flag is what fixes it" "cached" \
-  "$(cd "$REPO/cli" && go test ./internal/repocheck/ -race -cover 2>&1)"
+# This half is what shows the FLAG is doing the work rather than the test simply
+# being correct — but it is only meaningful where caching is actually in play.
+if [ "$CACHE_ACTIVE" = 1 ]; then
+  expect "without the flag it is still cached, so the flag is what fixes it" "cached" \
+    "$(cd "$REPO/cli" && go test ./internal/repocheck/ -race -cover 2>&1)"
+else
+  skip "cache control — this toolchain served no cached result, so there is nothing to bypass"
+fi
 undo hooks/registry.json
 
 echo
