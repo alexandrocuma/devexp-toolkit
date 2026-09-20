@@ -22,6 +22,11 @@ type ocEntry struct {
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
+// InstallOpencode merges the servers into opencode's config.json, a file
+// devexp does not own. Everything outside the "mcp" key is written back
+// exactly as it was read, and a config devexp cannot parse is refused with a
+// *ConfigRefusedError rather than overwritten — losing a user's opencode
+// settings is a worse outcome than not installing.
 func InstallOpencode(mcps []MCP, env map[string]string, configPath string, dryRun, reinstall bool) error {
 	config, err := loadOpencodeConfig(configPath)
 	if err != nil {
@@ -144,6 +149,8 @@ type ConfigRefusedError struct {
 	Servers []string
 }
 
+// Error says what was left alone, not just what went wrong: the caller prints
+// this and then lists the servers the user has to add by hand.
 func (e *ConfigRefusedError) Error() string {
 	return fmt.Sprintf("mcp: %v — it was left untouched and no MCP servers were added; fix it and re-run", e.Reason)
 }

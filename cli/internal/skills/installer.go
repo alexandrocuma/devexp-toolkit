@@ -1,3 +1,11 @@
+// Package skills installs the skills/<name>/SKILL.md trees into each CLI's
+// skill directory. A skill is a directory rather than a file, so the unit of
+// work is a recursive copy, and the same symlink rule as agents applies to
+// every entry in it: nothing is written through a link, and nothing is removed
+// through a linked parent.
+//
+// Kimi needs SKILL.md rewritten as it is copied rather than overwritten after
+// the copy, which is why copyDir takes a transform.
 package skills
 
 import (
