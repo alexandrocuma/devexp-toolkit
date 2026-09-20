@@ -90,9 +90,9 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) (err error) {
 	defer func() {
 		if err != nil {
 			if !closed {
-				f.Close() //nolint:errcheck
+				f.Close() //nolint:errcheck // unwinding a write that already failed; the caller is returning that failure with the target left untouched
 			}
-			os.Remove(tmp) //nolint:errcheck
+			os.Remove(tmp) //nolint:errcheck // cleanup of the temp file on a failed write; a leftover temp is swept later and never becomes the target
 		}
 	}()
 	if err = writeTemp(f, data); err != nil {
@@ -181,8 +181,8 @@ func syncDir(dir string) {
 	if err != nil {
 		return
 	}
-	d.Sync()  //nolint:errcheck
-	d.Close() //nolint:errcheck
+	d.Sync()  //nolint:errcheck // not every file system supports it, and the rename has already happened: the durability hint is all that is lost
+	d.Close() //nolint:errcheck // read-only handle opened solely to fsync the directory
 }
 
 // IsSymlink reports whether path itself, not what it resolves to, is a

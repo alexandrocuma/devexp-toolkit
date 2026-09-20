@@ -120,7 +120,21 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		cfg.Model = flagModel
 	}
 
-	dotenv, _ := config.LoadDotenv(filepath.Join(repoDir, "mcps", ".env"))
+	// Loading state never blocks an install, but a degraded load has to be
+	// visible. Two cases hide behind one error here and they are not the same:
+	// no mcps/.env at all is the ordinary case and says nothing, while a file
+	// that exists and could not be read through says something — LoadDotenv
+	// returns whatever it managed to parse alongside the error, so discarding
+	// it silently would hand the install a PARTIAL environment that is
+	// indistinguishable from a complete one. An MCP would then start without a
+	// key it was configured with and fail somewhere that points nowhere near
+	// the cause.
+	dotenvPath := filepath.Join(repoDir, "mcps", ".env")
+	dotenv, dotenvErr := config.LoadDotenv(dotenvPath)
+	if dotenvErr != nil && !os.IsNotExist(dotenvErr) {
+		ui.Warn(fmt.Sprintf("%s could not be read through (%v) — continuing with the %d variable(s) that parsed; any MCP expecting one of the rest will start without it",
+			dotenvPath, dotenvErr, len(dotenv)))
+	}
 	if dotenv == nil {
 		dotenv = map[string]string{}
 	} else if len(dotenv) > 0 {
