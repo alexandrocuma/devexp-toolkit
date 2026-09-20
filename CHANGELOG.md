@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`hooks/opencode/large-file-guard.js` now covers the paths that cannot be read as a file** (#144) — a directory, and a real file with its permissions removed. Both allow, and both are now pinned with the reason: `utils.countLines` swallows the read error and returns 0, so anything unreadable measures as "0 lines" and passes. That is a deliberate fail-**open**, defensible only because this hook is advisory — its strongest verdict is "ask", it protects against losing work rather than against an attacker, and a version that blocked whenever it could not read the target would fire on every unusual path until someone switched it off. The fail-closed guards make the opposite trade and must keep making it, so the choice is written down where a future change to `countLines` has to come past it.
+
+  Mutation-checked: making `countLines` report an unreadable file as 99999 lines fails both new cases.
+
+### Changed
+
+- **The smoke test's cache control now probes its own precondition** (follow-up to #210). It asserted that a second identical `go test` run reports `(cached)` — true today, but that is Go's behaviour rather than a contract this repo controls. A toolchain that keyed the cache differently, or an environment with caching disabled, would have turned a correct run into a red build over a detail of someone else's tool. The run now checks whether caching is in play and asserts only when it is, reporting `SKIP` with the reason when it is not. The half that always applies — the documented command must report an asset edit — is unchanged and still asserted unconditionally.
+
+### Added
+
 - **`scripts/smoke.sh` — a mutation smoke test that proves the guards go red** (#210). Every other suite here answers *"is the tree healthy?"*. This one answers *"would we be told if it were not?"* — a distinction that matters because a green suite is exactly the evidence a broken guard also produces, and this repo has rediscovered "the guard doesn't actually guard" four separate times, each by accident rather than by any check.
 
   29 cases, each breaking the thing a guard protects and asserting the guard fails: a registry entry naming a missing file, a `kimi` block switched off with no reason, a hook on disk nothing registers, a new agent (which must trip the catalog *and* the counts), a removed catalog row, a wrong count in a new sentence, `safe_id()` drift between two skills, a dropped grant claim, a deleted copy (where the guard must **refuse to pass**, not pass with one copy left), a `//nolint` stripped of its reason, a newly discarded error, a comment carrying an external reference, and an asset edit after a warm cache.
