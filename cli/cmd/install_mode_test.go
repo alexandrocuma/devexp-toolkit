@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// chooseInstallMode is the fix for #171's first half: before it, no flags meant
+// chooseInstallMode exists because, before it, no flags meant
 // the wizard unconditionally, and the wizard's first prompt needs a terminal.
 // The rule is pure, so all four combinations are checkable without one.
 func TestChooseInstallMode(t *testing.T) {

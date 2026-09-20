@@ -1,5 +1,5 @@
 /**
- * scan-budget.test.js — the budget every fail-closed security guard scans under (#162)
+ * scan-budget.test.js — the budget every fail-closed security guard scans under
  *
  * Mirrors hooks/claude-code/scan-budget.test.sh, and checks the two twins
  * against each other: the same input has to get the same verdict from both,
@@ -362,7 +362,7 @@ for (const [guard, factory, call] of INSIDE) {
 }
 
 // ── The twins agree on the values that used to divide them ──────────────────
-// Before #167 the shell read U+0663 as 3 ms (blocking every call) and raised on
+// The shell once read U+0663 as 3 ms (blocking every call) and raised on
 // U+00B2, and did not trim; `scan-budget.test.sh` pins the shell side of this.
 for (const [label, budget, wantBlock] of [
   ['a non-ASCII digit', '\u0663', false],

@@ -74,7 +74,7 @@ func TestMultiSelectLogic(t *testing.T) {
 				t.Errorf("collectSelected = %v, want %v", got, tt.want)
 			}
 			// equalStrings cannot tell nil from empty, and here the difference
-			// is the whole bug (#171): every resolver in cli/cmd/registry.go
+			// is the whole bug: every resolver in cli/cmd/registry.go
 			// reads nil as "no filter", so a nil from an emptied checklist
 			// installed all of them.
 			if got == nil {

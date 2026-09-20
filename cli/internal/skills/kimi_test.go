@@ -226,7 +226,7 @@ func TestInstallKimi(t *testing.T) {
 		}
 	})
 
-	// #124: install never writes through a symlinked skill directory, nor
+	// Install never writes through a symlinked skill directory, nor
 	// through a symlinked file inside a real one. The Kimi install substitutes
 	// SKILL.md through copyDir rather than overwriting it after the copy, which
 	// is the only way the second case holds.
