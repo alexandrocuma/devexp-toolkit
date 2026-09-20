@@ -116,7 +116,7 @@ func InstallKimi(registry Registry, repoDir, home, hooksDir, configPath string, 
 
 // UninstallKimi takes the block out of config.toml and removes the scripts
 // devexp recorded, returning what is still on disk. It is the removal half of
-// InstallKimi, kept here so the two cannot drift apart (#115).
+// InstallKimi, kept here so the two cannot drift apart.
 func UninstallKimi(home, hooksDir, configPath string, recorded []string, dryRun bool) ([]string, error) {
 	changed, err := RemoveKimiHooks(configPath, hooksDir, dryRun)
 	if err != nil {

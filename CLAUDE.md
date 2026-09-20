@@ -41,6 +41,7 @@ Sources: `install.sh`, `cli/cmd/install.go`, `.github/workflows/ci.yml`. Full li
 - **Never** call the `Agent` tool with a custom agent name as `subagent_type` — read `agents/<name>.md` and follow it in the current context — see `agents/README.md`, [conventions](docs/development/conventions.md#module-structure)
 - **Always** give a new hook an `opencode.module` + `opencode.export` (and `fail_closed` for security guards) in `hooks/registry.json` — see [workflows](docs/guides/workflows.md#add-a-hook)
 - **Always** add a `CHANGELOG.md` entry under `[Unreleased]` in the same commit — see [conventions](docs/development/conventions.md#commits--branches)
+- **Never** cite an issue number, PR link or URL in a code comment — write the reason inline; history goes in the commit body — see [conventions](docs/development/conventions.md#comments)
 - **Never** put knowledge in `CLAUDE.md` — directives and pointers only; content goes in `docs/` — see [docs-architecture](docs/guides/docs-architecture.md)
 - **Always** reach `main` through a pull request with green CI — `main` is protected; a direct push is rejected — see [workflows](docs/guides/workflows.md#branch-protection-main)
 - **Before marking work done:** all five CI suites pass — see [testing](docs/development/testing.md#before-every-commit)

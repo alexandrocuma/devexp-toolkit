@@ -6,14 +6,14 @@
  * Two false-positive classes are deliberately excluded, mirroring
  * hooks/claude-code/secret-guard.sh:
  *
- *   Templates (#87). A committed `.env.example` documents which keys exist;
+ *   Templates. A committed `.env.example` documents which keys exist;
  *   it never holds their values.
  *
- *   Mentions (#81). A shell token only counts as a path if it plausibly is
+ *   Mentions. A shell token only counts as a path if it plausibly is
  *   one — heredoc bodies, program text and bare extensions are not reads.
  *
  * The scan runs under a wall-clock budget and refuses the call when it is
- * exceeded (#162) — see startScanBudget in utils.js.
+ * exceeded — see startScanBudget in utils.js.
  *
  * Tests: node hooks/opencode/secret-guard.test.js
  */

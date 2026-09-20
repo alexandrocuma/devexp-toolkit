@@ -1,3 +1,11 @@
+// Package skills installs the skills/<name>/SKILL.md trees into each CLI's
+// skill directory. A skill is a directory rather than a file, so the unit of
+// work is a recursive copy, and the same symlink rule as agents applies to
+// every entry in it: nothing is written through a link, and nothing is removed
+// through a linked parent.
+//
+// Kimi needs SKILL.md rewritten as it is copied rather than overwritten after
+// the copy, which is why copyDir takes a transform.
 package skills
 
 import (
@@ -79,8 +87,10 @@ func CopyDir(src, dst string) error {
 // transform, when non-nil, gets each file's slash-separated path relative to
 // src and its contents, and returns what to write instead. It is how the Kimi
 // install substitutes a rewritten SKILL.md: copying the directory and then
-// overwriting that one file would write through it when it is a symlink, which
-// is the whole thing #124 forbids.
+// overwriting that one file would write *through* it when it is a symlink,
+// landing on whatever the user pointed it at instead of the file devexp
+// owns. Nothing here may write through a link, or remove through a linked
+// parent directory.
 //
 // The symlink check and the write are separate steps: a link created in
 // between is followed (fsutil.WriteFileAtomic replaces its target). Only a

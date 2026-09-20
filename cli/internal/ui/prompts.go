@@ -8,8 +8,13 @@ import (
 
 // ── Action ────────────────────────────────────────────────────────────────────
 
+// Action is the index of the chosen entry in SelectAction's menu, so the
+// constants below and that menu's Items must stay in the same order.
 type Action int
 
+// The actions, in the order SelectAction lists them. iota ties each value to
+// its menu position, so reordering these without reordering that menu
+// silently changes what every answer means.
 const (
 	ActionInstall Action = iota
 	ActionReinstallMCPs
@@ -17,6 +22,9 @@ const (
 	ActionDryRun
 )
 
+// SelectAction asks what the run should do. The returned Action is the menu
+// index, valid only when err is nil — on a cancelled prompt promptui returns
+// index 0, which is ActionInstall and would otherwise read as a choice.
 func SelectAction() (Action, error) {
 	p := promptui.Select{
 		Label: "Action",
@@ -33,8 +41,12 @@ func SelectAction() (Action, error) {
 
 // ── Scope ─────────────────────────────────────────────────────────────────────
 
+// Scope is the index of the chosen entry in SelectScope's menu, under the
+// same ordering constraint as Action.
 type Scope int
 
+// The scopes, in the order SelectScope lists them, under the same constraint
+// as the actions above.
 const (
 	ScopeFull Scope = iota
 	ScopeMCPsOnly
@@ -42,6 +54,8 @@ const (
 	ScopeSkillsOnly
 )
 
+// SelectScope asks which kinds of asset to install. The returned Scope is
+// the menu index and, as with SelectAction, means nothing unless err is nil.
 func SelectScope() (Scope, error) {
 	p := promptui.Select{
 		Label: "Scope",
@@ -150,6 +164,9 @@ func collectSelected(items []string, selected []bool) []string {
 
 // ── Confirm ───────────────────────────────────────────────────────────────────
 
+// Confirm asks a yes/no question, reading a declined answer as (false, nil)
+// rather than an error: promptui reports a "no" the same way it reports a
+// broken terminal, and only the second is a failure the caller should report.
 func Confirm(label string) (bool, error) {
 	p := promptui.Prompt{
 		Label:     label,

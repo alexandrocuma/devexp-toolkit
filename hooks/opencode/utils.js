@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join, dirname, resolve, extname, basename, isAbsolute } from 'path';
 
 /**
- * The scan budget shared by the fail-closed security guards (#162).
+ * The scan budget shared by the fail-closed security guards.
  *
  * opencode loads plugins with a plain dynamic import inside its server process
  * and puts no timeout on a hook, so a slow scan stalls the session and a hook
@@ -136,7 +136,7 @@ export function findRoot(filePath) {
  * opencode's edit tool resolves it: against the session directory
  * (ctx.directory), else the process cwd, normalised by path.join as the
  * Claude Code hooks do. Tools run from the project root, so they get the
- * absolute path, which no tool reads as an option (#121). An
+ * absolute path, which no tool reads as an option. An
  * absolute path passes unchanged.
  */
 export function editedPath(file, directory) {

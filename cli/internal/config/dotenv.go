@@ -6,6 +6,14 @@ import (
 	"strings"
 )
 
+// LoadDotenv reads mcps/.env into a map for MCP ${VAR} substitution. It is a
+// deliberately minimal reader: KEY=VALUE, blank lines and # comments, with
+// whitespace trimmed and everything after the first = kept as the value.
+// Quotes are not stripped and \n is not unescaped, so a quoted value arrives
+// with its quotes — the file holds tokens, not shell.
+//
+// A line without = is skipped rather than rejected, so one malformed entry
+// cannot cost the user every other secret in the file.
 func LoadDotenv(path string) (map[string]string, error) {
 	f, err := os.Open(path)
 	if err != nil {

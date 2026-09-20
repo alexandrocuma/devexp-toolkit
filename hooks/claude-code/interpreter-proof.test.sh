@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Tests that a fail-closed guard allows only against proof that its own
-# scanning code ran (#168).
+# scanning code ran.
 #
 # The guards do their parsing and matching in a program they run through an
 # interpreter found on PATH, and their pattern checks through `grep`. The shell
 # can read only those programs' exit statuses. So anything on PATH that reports
 # success without doing the work — a wrapper, a shim, a broken virtualenv, a
 # stand-in that does nothing — used to read as "the scan found nothing", and
-# the tool call went through unscanned. The scan budget (#162) widened it: the
+# the tool call went through unscanned. The scan budget widened it: the
 # watchdog runs through the same interpreter, so a stand-in answered before the
 # guard had read the envelope at all.
 #
@@ -118,8 +118,8 @@ blocks() { # $1=stub  $2=guard  $3=envelope  $4=label
 }
 
 # ── An interpreter that answers without running the guard's program ─────────
-# Each of these exits 0, which before #168 was read as "the scan found
-# nothing". None of them runs a line of the guard's code.
+# Each of these exits 0, which without proof of work would be read as "the
+# scan found nothing". None of them runs a line of the guard's code.
 stub silent      python3 'exit 0'
 stub chatty      python3 'echo
 echo "ok"
@@ -363,8 +363,8 @@ check "the patterns use enough constructs for that to mean something" \
 
 # ── The proof descriptor reaches the watchdog and nobody else ───────────────
 # The guard waits for every holder of that pipe, so anything the guarded run
-# leaves behind would hold the guard open past its budget — the #162 fail-open
-# again. The only thing keeping descendants off it is close_fds on the
+# leaves behind would hold the guard open past its budget — the same
+# fail-open again. The only thing keeping descendants off it is close_fds on the
 # watchdog's Popen, so that is pinned here rather than assumed.
 cat > "$TMP/fd-guard.sh" <<EOF
 #!/usr/bin/env bash

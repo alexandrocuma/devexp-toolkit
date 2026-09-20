@@ -17,7 +17,7 @@ input=$(cat)
 
 # A relative path is resolved against the directory Claude Code works in (the
 # input's cwd, else the hook's own) and normalised, as opencode does. Tools run from the project root, so they
-# get the absolute path, which no tool reads as an option (#121). An absolute
+# get the absolute path, which no tool reads as an option. An absolute
 # path passes unchanged.
 # The trailing "x" keeps $(...) from trimming newlines that belong to the path.
 file_path=$(echo "$input" | python3 -I -c '
@@ -104,7 +104,7 @@ if ext in ('.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'):
     # can match other tests or none. It works on jest 29 and 30 (30 renamed
     # --testPathPattern). After '--' a path starting with '-' is never read as
     # options, and it stays relative to root: an absolute path through a
-    # symlinked root finds no tests (#121). vitest gets no '--': it would drop
+    # symlinked root finds no tests. vitest gets no '--': it would drop
     # the file filter.
     jest_args     = ['--passWithNoTests', '--no-coverage', '--runTestsByPath', '--', os.path.relpath(test_file, root)]
 

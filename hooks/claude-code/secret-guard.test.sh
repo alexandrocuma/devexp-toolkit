@@ -49,7 +49,7 @@ expect block Bash "cp mcps/$DOTENV /tmp/backup"
 expect block Bash "cat $HOME/.ssh/id_rsa"
 expect block Bash "openssl x509 -in certs/server.pem -text"
 
-# ── must ALLOW: committed templates are not secrets (#87) ───────────────────
+# ── must ALLOW: committed templates are not secrets ─────────────────────────
 expect allow Read "$TEMPLATE"
 expect allow Read "mcps/$TEMPLATE"
 expect allow Read "${DOTENV}.production.example"
@@ -58,7 +58,7 @@ expect allow Read "server.pem.template"
 expect allow Bash "cat mcps/$TEMPLATE"
 expect allow Bash "grep -c UI_INSPECTOR_DIR mcps/$TEMPLATE"
 
-# ── must ALLOW: a mention is not a read (#81) ───────────────────────────────
+# ── must ALLOW: a mention is not a read ─────────────────────────────────────
 expect allow Bash "jq -r '.key' entries.json"
 expect allow Bash "jq '.entries[].key' seed.json"
 expect allow Bash "echo .key"

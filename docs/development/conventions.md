@@ -1,6 +1,6 @@
 # Conventions
 
-> Kit doc · Last verified: 2026-09-16 against commit `a86d2c3f6a41a6d033d31afd858ff723d5267dd7`
+> Kit doc · Last verified: 2026-09-20 against commit `e8e52c9f8af96506b93c819a5674a7880169b0ad`
 
 How code is written in this repo. Every rule cites the files that prove it.
 
@@ -116,13 +116,36 @@ Hooks report only on stderr, prefixed `[devexp <hook-name>]`, and print nothing 
 - **MCP secrets** are never written into the registry. The registry uses `${VAR}` placeholders plus `required_env` (`mcps/registry.json`). Values come from `mcps/.env`, which is gitignored (`.gitignore`) and has a template at `mcps/.env.example`. `buildEnv` merges the OS env, `DEVEXP_DIR` and dotenv, with dotenv winning (`cli/cmd/registry.go`), and `resolveStr` substitutes the values (`cli/internal/mcp/claude.go`). See the [MCP guide](mcp-guide.md#secrets-with-mcpsenv).
 - **Hooks** read only the JSON envelope on stdin (`hooks/claude-code/secret-guard.sh`, `hooks/claude-code/dangerous-cmd-guard.sh`), or `(input, output)` in opencode (`hooks/opencode/dangerous-cmd-guard.js`).
 
+## Comments
+
+A comment is **brief, concise, self-contained, and explains what the code cannot** — the invariant, the failure mode, the constraint, or why this shape was chosen over the obvious one. A comment that does not clear that bar is deleted rather than reworded; a restatement of the signature (`// Load loads the config`) is worse than silence, because it still has to be read and it still rots. What this looks like when it works: `cli/cmd/paths.go`, `cli/cmd/targets.go`, `cli/internal/repo/repo.go` (`userCacheDir`), `cli/internal/hooks/installer.go` (`isForeignDevexpHook`), `cli/internal/skills/installer.go` (`stripFrontMatterName`).
+
+**Self-contained means no external references.** Issue numbers, PR links, tracker IDs and URLs do not appear in comments, whatever the language. A reader must never leave the file — let alone the repo — to understand the code in front of them. Where a reference carries the reason today, the reason is written inline instead: `#124` tells the reader nothing, while "copying the directory and then overwriting that one file would write *through* the symlink into the user's own skill" tells them the whole constraint. History belongs in the commit body and `CHANGELOG.md`, where `git log` and `git blame` reach it.
+
+Two things that look like comments keep their references, because the reader genuinely cannot resolve them from this repo:
+
+- **Quoted third-party behaviour.** Code that reproduces an external contract cites it: `hooks/kimi/adapter.sh` and `hooks/kimi/runner.test.sh` mirror Kimi's own `internal/matchHooks.ts` and `internal/runHook.ts`, and a reader has to know that is what they are reading.
+- **Test fixture data.** A string a test feeds to the code under test is an input, not commentary. A fake URL or a `#`-bearing path stays exactly as the case needs it (`hooks/claude-code/secret-in-write-guard.test.sh`, `hooks/claude-code/dangerous-cmd-guard.test.sh`).
+
+**Every exported symbol carries a doc comment**, and every package has one on
+exactly one file. It has to clear the same bar as any other comment: `// Load
+loads the config` is a restatement and fails review, while "never returns a
+nil `*Config`: on a missing or unreadable file it returns the zero Config
+alongside the error" tells a caller something the signature cannot. Go's own
+form applies — the comment opens with the symbol's name — because `go doc` and
+the linter both read it that way.
+
+**Section banners** (`// ── Kimi Code CLI paths ──`, ~80 of them across `cli/`) are navigation, not commentary. One earns its place when it names a topic the reader would otherwise have to infer from the declarations under it (`cli/cmd/paths.go:90`, `cli/cmd/install.go:268`). One that only labels what the next declaration already says does not.
+
+This section governs **code comments**, in whatever language a file is written in. Prose under `docs/`, `agents/`, `skills/` and `templates/` is documentation, and cites issues and links out freely.
+
 ## Style
 
 Nothing enforces style: no linter or formatter config exists, and CI runs only tests and a govulncheck scan (`.github/workflows/ci.yml`). The Go code is gofmt-clean today (`gofmt -l cli` prints nothing for tracked files at this commit), and #97 records "go vet and gofmt clean" as a manual check (`06c45a1`). `//nolint:errcheck` marks errors that are ignored on purpose (`cli/cmd/backup.go`, `cli/internal/hooks/installer.go`, `cli/internal/mcp/opencode.go`).
 
 Rules that no tool enforces:
 
-- **Doc comments explain why,** including what went wrong before and why the current shape was chosen. See `cli/cmd/targets.go`, `cli/cmd/paths.go`, `cli/internal/repo/repo.go` (`userCacheDir`), `cli/internal/hooks/installer.go` (`isForeignDevexpHook`) and `cli/internal/skills/installer.go` (`stripFrontMatterName`). Issue numbers go in hook headers (`#87`, `#81` in `hooks/claude-code/secret-guard.sh` and `hooks/opencode/secret-guard.js`) and in commit bodies. Go source doesn't cite issue numbers.
+- **Comments follow the [comment standard](#comments)** above — self-contained, no external references, in every language the repo writes.
 - **Unexported by default.** Only a package's API is exported, and all of `cli/cmd` is unexported apart from `Execute` (`cli/cmd/root.go`).
 - **Keep Go files small.** #97 split `cli/cmd/install.go` from 762 lines to 193 across cohesive siblings. No non-test Go file is over 270 lines; the largest is `cli/internal/hooks/installer.go` at 269.
 - **Shell scripts start with `set -euo pipefail`** (`install.sh`, `scripts/stage-assets.sh`, every `hooks/claude-code/*.sh` hook). Test scripts use `set -uo pipefail` so a failing case is counted instead of aborting the run (`hooks/claude-code/fail-closed.test.sh`, `hooks/claude-code/dangerous-cmd-guard.test.sh`).
@@ -142,7 +165,6 @@ Rules that no tool enforces:
 ## Inconsistencies
 
 - `[INCONSISTENT — output through ui helpers (cli/cmd/backup.go, cli/cmd/targets.go, cli/internal/agents/installer.go) vs inline fmt.Printf with raw ANSI codes (cli/cmd/install.go, cli/internal/hooks/installer.go, cli/internal/mcp/opencode.go)]`. New code should use `cli/internal/ui`, as the files written after #97 do.
-- `[INCONSISTENT — documented exported API with package doc comments (cli/internal/manifest/manifest.go, cli/internal/repo/repo.go, cli/internal/assets/assets.go) vs no doc comments (cli/internal/config/config.go, cli/internal/mcp/types.go, cli/internal/mcp/claude.go, hooks.LoadRegistry and hooks.InstallClaude in cli/internal/hooks/installer.go)]`. New code should follow the documented style.
 - `[INCONSISTENT — one test file per source file (cli/internal/manifest/manifest_test.go, cli/internal/config/dotenv_test.go, cli/internal/hooks/installer_test.go) vs one test file per package (cli/cmd/install_test.go covers targets.go, paths.go, registry.go, backup.go and wizard.go; cli/internal/mcp/mcp_test.go; cli/internal/ui/ui_test.go)]`. The repo doesn't show which one to prefer; see [testing](testing.md).
 - `[INCONSISTENT — branch naming <type>/<ticket-id> in docs/guides/worktree-per-ticket.md ("Naming scheme") vs <type>/<topic-slug> on the remote (fix/hooks-fail-closed, refactor/split-install-go), with a few older <type>/<issue>-<slug> branches (docs/36-worktree-convention, test/23-cli-test-coverage)]`
 - `[INCONSISTENT — docs/development/agent-architecture-reference.md "Agent File Checklist" requires color: and a ## Chaining section vs agents without color: (gen-docs, gen-indexer, update-docs, update-indexer) and agents without ## Chaining (dev-agent, gen-docs, gen-indexer, grooming-agent, update-docs, update-indexer)]`. Either update the checklist or the agents.

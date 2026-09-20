@@ -1,5 +1,5 @@
 /**
- * Tests that the on-save modules hand each tool the edited file, as a path (#121).
+ * Tests that the on-save modules hand each tool the edited file, as a path.
  * Run: node hooks/opencode/on-save-path.test.js
  *
  * Mirrors the "Tool argv" part of hooks/claude-code/on-save-path.test.sh.
