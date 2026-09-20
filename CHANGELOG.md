@@ -19,8 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`graphify-read-guard` is now off for opencode** (`opencode.enabled: false`), which is what its own registry description always claimed — "Ships disabled; enable only in projects that maintain a graphify knowledge graph". The entry said one thing and did another, and committing a graph is what made the discrepancy bite: the guard's only precondition is `existsSync('graphify-out/graph.json')` and it never checks the `graphify` CLI is on PATH. Since `./install.sh` ships the graphify *skill* and not the CLI, a committed graph plus an enabled guard would block any contributor without `graphify` installed on their first source-file read, with no way to clear it. `graphify-grep-nudge` and `graphify-session-sentinel` are untouched — neither can block.
 
-### Changed
-
 - **Vendored graphify skill synced to upstream 0.9.64** (was 0.8.39, a minor line behind). Two separate drifts had to be closed: the deployed copy in `~/.claude/skills/` had moved ahead of `skills/graphify/`, so the next `./install.sh` would have silently rolled it back; and the installed `graphifyy` package was itself two minor versions stale, so `graphify install` alone only ever resynced to 0.8.40. The sync is `uv tool install --upgrade graphifyy` → `graphify install --platform claude` → vendor into `skills/graphify/` → `./install.sh`. A plain `graphify install` refreshes only the *detected* platform, which is not necessarily Claude Code.
 
   What 0.9.64 brings: `query` gains `--context` edge-context filters and an explicit token budget with a truncation notice naming how many nodes were cut; new `affected`, `god-nodes`, `diagnose multigraph`, `label` and `merge-driver` subcommands; `extract` folded into `update` (`update --force`); `--falkordb` / `--falkordb-push` exports; `build_from_json`/`save_manifest` gain `root=`, which relativizes `source_file` and manifest keys so a graph is portable across clones; and an `--update` fix that prunes a changed file's old nodes before re-inserting fresh AST.
@@ -32,10 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`docs/` indexes described a two-CLI toolkit.** Every content doc already covered the Kimi Code CLI target, but `docs/README.md` and all four `docs/*/README.md` folder indexes predated it and mentioned Kimi nowhere. The concrete error was a miscount: `testing.md` said CI's `hooks` job runs "the three script suites" and that "all four suites" were green, when the job has four steps (claude-code, kimi, opencode, installer script) and there are five suites counting Go. Corrected in `testing.md`, in the `CLAUDE.md` rule that gates "work done" on them, and in the index rows that repeat the count. `docs/coverage.md` was orphaned — no index linked it — and is now listed.
 
 - **`docs/guides/release.md` re-verified against HEAD.** Its job names were still correct (the Kimi suite is a step inside `ci / hooks`, not a new job) and its cited `.goreleaser.yaml` and `cli/cmd/root.go` line numbers still resolve, so the guide is re-stamped rather than rewritten; the CI line now names the four hook steps so a reader can tell which one failed.
-
-### Documentation
-
-- **`docs/reference/hooks.md`: don't commit `graphify-out/`.** `graphify-read-guard` is `opencode.enabled: true` and its only precondition is `existsSync('graphify-out/graph.json')` — it never checks that the graphify CLI is installed. Committing a graph would arm the gate for every contributor working in opencode: their first source-file read blocks until they run 5 `graphify query` calls, with no way to clear it without graphify installed. Upstream recommends committing `graphify-out/` so a team shares one map; that advice is sound for a repo that doesn't also ship this hook. The `.gitignore` entry now carries the reason.
 
 ## [0.10.3] - 2026-09-19
 

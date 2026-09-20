@@ -962,10 +962,20 @@ func TestLoadRegistry_RepoRegistry(t *testing.T) {
 		t.Fatalf("LoadRegistry() = %d hooks, want 10", len(registry))
 	}
 
-	graphify := map[string]bool{
-		"graphify-read-guard":       true,
+	// All three graphify hooks are off for Claude Code. For opencode they split
+	// by whether the hook can block: grep-nudge only adds additionalContext and
+	// session-sentinel only increments counters, so both are safe to leave on.
+	// graphify-read-guard blocks, and its only precondition is that
+	// graphify-out/graph.json exists — it never checks the graphify CLI is on
+	// PATH, and install.sh ships the skill, not the CLI. Since this repo commits
+	// the graph, leaving it on would block a contributor without graphify on
+	// their first source read with no way to clear it.
+	graphifyOnForOpencode := map[string]bool{
 		"graphify-session-sentinel": true,
 		"graphify-grep-nudge":       true,
+	}
+	graphifyOffForOpencode := map[string]bool{
+		"graphify-read-guard": true,
 	}
 	for _, h := range registry {
 		cc, ok := h.Target(TargetClaudeCode)
@@ -976,13 +986,16 @@ func TestLoadRegistry_RepoRegistry(t *testing.T) {
 		if !ok || oc.Module == "" || oc.Export == "" {
 			t.Errorf("%s: opencode.module/export missing, got %+v (block present = %v)", h.Name, oc, ok)
 		}
-		if graphify[h.Name] {
+		if graphifyOnForOpencode[h.Name] || graphifyOffForOpencode[h.Name] {
 			if h.Enabled {
 				t.Errorf("%s: Enabled = true, want false (Claude Code ships it off)", h.Name)
 			}
-			if !h.EnabledFor(TargetOpencode) {
-				t.Errorf("%s: EnabledFor(%q) = false, want true", h.Name, TargetOpencode)
-			}
+		}
+		if graphifyOnForOpencode[h.Name] && !h.EnabledFor(TargetOpencode) {
+			t.Errorf("%s: EnabledFor(%q) = false, want true (it cannot block)", h.Name, TargetOpencode)
+		}
+		if graphifyOffForOpencode[h.Name] && h.EnabledFor(TargetOpencode) {
+			t.Errorf("%s: EnabledFor(%q) = true, want false (it can block, and the graph is committed)", h.Name, TargetOpencode)
 		}
 	}
 
