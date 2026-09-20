@@ -455,8 +455,11 @@ func extractEmbedded(version string) (string, error) {
 	swapped := false
 	defer func() {
 		if !swapped {
-			os.RemoveAll(tree) //nolint:errcheck
-			os.Remove(link)    //nolint:errcheck
+			// Unwinding an extraction that did not complete. What the user sees
+			// is the error being returned; a leftover temp tree is swept by
+			// sweepStale on a later run and is never linked into place.
+			os.RemoveAll(tree) //nolint:errcheck // failed extraction is swept later; the real error is what the caller returns
+			os.Remove(link)    //nolint:errcheck // same unwind: a stale link is replaced, never followed
 		}
 	}()
 	if err := os.Chmod(tree, 0o755); err != nil {
@@ -492,7 +495,7 @@ func extractEmbedded(version string) (string, error) {
 			return "", err
 		}
 		if err := rename(dest, filepath.Join(old, name)); err != nil {
-			os.Remove(old) //nolint:errcheck
+			os.Remove(old) //nolint:errcheck // discarding an empty temp dir after a rename that did not move anything into it
 			if !os.IsNotExist(err) {
 				return "", err
 			}
@@ -505,7 +508,7 @@ func extractEmbedded(version string) (string, error) {
 		if movedAside != "" {
 			// Put the only complete tree back rather than leave dest missing.
 			if rename(movedAside, dest) == nil {
-				os.Remove(filepath.Dir(movedAside)) //nolint:errcheck
+				os.Remove(filepath.Dir(movedAside)) //nolint:errcheck // the tree has been restored; this only discards the now-empty holding dir
 			}
 		}
 		return "", err
@@ -513,7 +516,7 @@ func extractEmbedded(version string) (string, error) {
 	swapped = true
 	if retired != "" {
 		t := time.Now()
-		os.Chtimes(retired, t, t) //nolint:errcheck
+		os.Chtimes(retired, t, t) //nolint:errcheck // stamps a retired tree so sweepStale ages it out; on failure it is swept later or not at all, and nothing reads it meanwhile
 	}
 	sweepStale(parent, name)
 	return dest, nil
@@ -549,7 +552,7 @@ func sweepStale(parent, name string) {
 		if target, _ := os.Readlink(filepath.Join(parent, name)); target == n {
 			continue
 		}
-		os.RemoveAll(filepath.Join(parent, n)) //nolint:errcheck
+		os.RemoveAll(filepath.Join(parent, n)) //nolint:errcheck // opportunistic sweep of an aged-out tree; a failure leaves disk in use and is retried on the next run
 	}
 }
 

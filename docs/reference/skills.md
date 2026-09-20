@@ -49,9 +49,10 @@ The first four orchestrators *build* software and `/release` *ships* it; `/monit
 
 ### `/deliver <ticket>`
 - Loads the groom plan (or runs grooming if missing)
+- **Phase 1.7:** Blast radius — runs `impact-analysis` on the paths the plan will touch, *before* any code exists. Mandatory for a change to a registry or a file a registry names, install/deploy orchestration, anything with a mirrored counterpart for another runtime, a widely-sourced shared library, or a guard other code trusts. Its *Required Test Checklist* becomes required input to Phase 4, an empty result is stated explicitly rather than implied, and a 🔴 High verdict is surfaced for confirmation — it informs, it does not veto
 - Implements changes — infrastructure files handled inline
 - **Phase 3:** Adds observability (structured logs at entry/error points, SLO candidate notes)
-- **Phase 4:** Fills test gaps (unit/integration via `test-gen` agent, E2E if suite exists), runs regression check, offers load test generation for new endpoints
+- **Phase 4:** Fills test gaps (unit/integration via `test-gen` agent, E2E if suite exists), closes out Phase 1.7's dependent checklist — each named dependent is covered by a test or recorded as uncovered with a reason — runs regression check, offers load test generation for new endpoints
 - **Phase 4.5:** Release readiness per affected target — versioning rule satisfiable, cross-target ordering safe, risky behaviour flagged when rollback is flag-only, open `[CONFIRM]` markers listed
 - **Phase 5:** Correctness pass (null dereferences, error paths, race conditions — fix before review), quality pass (large functions, duplication — document for reviewer), then `pr-review` agent
 - **Phase 6:** Hands off to `/release`, which runs its own gate. Delivery never releases on the "yes" given at Phase 1

@@ -28,7 +28,11 @@ func backupExisting(dir, pattern, backupDir string, dryRun bool) {
 		if err != nil {
 			continue
 		}
-		os.WriteFile(filepath.Join(backupDir, filepath.Base(src)), data, 0644) //nolint:errcheck
+		// A backup is best effort and never gates the install: a file that
+		// cannot be copied means that one file has no backup, and the user is
+		// told nothing because there is nothing they can do differently. What
+		// they see is unchanged — the install proceeds either way.
+		os.WriteFile(filepath.Join(backupDir, filepath.Base(src)), data, 0644) //nolint:errcheck // best-effort backup; a failed copy leaves that file unbacked and the install proceeds
 	}
 }
 
@@ -54,7 +58,8 @@ func backupExistingDirs(dir, backupDir string, dryRun bool) {
 		if err := os.MkdirAll(backupDir, 0755); err != nil {
 			return
 		}
-		skills.CopyDir(srcDir, filepath.Join(backupDir, name)) //nolint:errcheck
+		// Same contract as the agent backup above.
+		skills.CopyDir(srcDir, filepath.Join(backupDir, name)) //nolint:errcheck // best-effort backup; a failed copy leaves that skill unbacked and the install proceeds
 	}
 }
 
@@ -119,7 +124,7 @@ var (
 		if err != nil {
 			return nil, err
 		}
-		defer f.Close()
+		defer f.Close() //nolint:errcheck // read-only handle, nothing buffered: a close error cannot change what was already read
 		return f.Readdirnames(-1)
 	}
 )
@@ -188,7 +193,7 @@ func removeStale(home, dir string, old, installed []string, shape staleShape, re
 		ui.Warn(fmt.Sprintf("%q can't be checked (%v), so these stale entries were left untouched: %s", dir, pathErrCause(err), quoteAll(candidates)))
 		return candidates
 	}
-	defer sd.root.Close()
+	defer sd.root.Close() //nolint:errcheck // read-only handle opened to enumerate the directory; nothing is written through it
 
 	var leftBehind []string
 	for _, name := range candidates {
@@ -289,7 +294,7 @@ func openRemovalDir(home, dir string) (*removalDir, error) {
 	}
 	names, err := readDirNames(root)
 	if err != nil {
-		root.Close()
+		root.Close() //nolint:errcheck // closing after an error that is already being returned; a close error would replace the real cause
 		return nil, err
 	}
 	sd.root, sd.listed = root, names
