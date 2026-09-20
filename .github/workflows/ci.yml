@@ -71,6 +71,26 @@ jobs:
             echo "== $f"; bash "$f" || exit 1
           done
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+      # The embed directives under cli/internal/assets/ point at staged files
+      # that are gitignored, so the package does not type-check in a fresh
+      # clone — and a linter that cannot build a package reports no problems
+      # in it, which reads exactly like a clean run.
+      - name: stage assets
+        run: ./scripts/stage-assets.sh
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.13.2
+          working-directory: cli
+          args: --config=../.golangci.yml
+
   govulncheck:
     runs-on: ubuntu-latest
     # Same as the workflow default above, restated because this is the job that

@@ -48,9 +48,19 @@ var (
 	kimiOpenRoot     = os.OpenRoot
 	kimiRootLstat    = (*os.Root).Lstat
 	kimiReadDirNames = func(root *os.Root) ([]string, error) {
-		entries, err := root.FS().(interface {
+		// Comma-ok, not a bare assertion. os.Root.FS() satisfying fs.ReadDirFS
+		// is an implementation detail of the standard library; a bare
+		// assertion would panic the uninstall if that ever stopped holding,
+		// and a panic mid-removal leaves the user's config half-edited with no
+		// message they can act on. An error here is reported and the directory
+		// is left alone.
+		dirFS, ok := root.FS().(interface {
 			ReadDir(string) ([]os.DirEntry, error)
-		}).ReadDir(".")
+		})
+		if !ok {
+			return nil, fmt.Errorf("cannot enumerate the directory: this Go runtime's os.Root does not support ReadDir")
+		}
+		entries, err := dirFS.ReadDir(".")
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +116,7 @@ func openKimiRemovalDir(home, dir string) (*kimiDir, error) {
 	}
 	names, err := kimiReadDirNames(root)
 	if err != nil {
-		root.Close()
+		root.Close() //nolint:errcheck // closing after an error that is already being returned; a close error would replace the real cause
 		return nil, err
 	}
 	d.root = root
@@ -155,7 +165,7 @@ func removeKimiFiles(home, hooksDir string, stale []string, dryRun bool) (kept [
 		if d.blocked != "" {
 			ui.Warn(fmt.Sprintf("%q %s; remove these by hand: %s", dir, d.blocked, strings.Join(quoteAllKimi(byDir[sub]), ", ")))
 			kept = append(kept, byDir[sub]...)
-			d.root.Close()
+			d.root.Close() //nolint:errcheck // read-only handle; the directory was left untouched and the warning above already said so
 			continue
 		}
 		for _, rel := range byDir[sub] {
@@ -163,7 +173,7 @@ func removeKimiFiles(home, hooksDir string, stale []string, dryRun bool) (kept [
 				removedAny = true
 			}
 		}
-		d.root.Close()
+		d.root.Close() //nolint:errcheck // read-only handle opened to enumerate this directory; nothing is written through it
 	}
 
 	// Only when something actually went: a run that removed nothing has no
@@ -301,7 +311,7 @@ func pruneEmptyKimiDirs(home, hooksDir string) {
 		if _, behind, err := removeguard.BehindSymlink(home, dir); err != nil || behind {
 			return
 		}
-		os.Remove(dir) //nolint:errcheck
+		os.Remove(dir) //nolint:errcheck // prunes the directory only when it is already empty; a non-empty one fails here, which is the intended no-op
 	}
 	for _, dir := range []string{"kimi", "claude-code"} {
 		prune(filepath.Join(hooksDir, dir))

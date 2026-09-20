@@ -655,7 +655,7 @@ func pruneOpencodeDir(pluginsDir string, dryRun bool) {
 	if fi, err := os.Lstat(dir); dryRun || err != nil || !fi.IsDir() {
 		return
 	}
-	os.Remove(dir) //nolint:errcheck
+	os.Remove(dir) //nolint:errcheck // prunes the plugin directory only when it is already empty; a non-empty one fails here, which is the intended no-op
 }
 
 func contains(list []string, s string) bool {
@@ -786,8 +786,19 @@ func removeLegacyConfigEntry(configPath, entry string, dryRun bool) error {
 	if err := json.Unmarshal(out, &after); err != nil {
 		return fmt.Errorf("legacy plugin entry removal produced invalid JSON; %s left untouched", configPath)
 	}
+	// Comma-ok, not a bare assertion. spliceOutPluginEntry matched the entry
+	// textually, which does not prove "plugin" is a JSON array — a config
+	// holding a string or an object there would panic the uninstall on the
+	// next line. This function's own rule is that the splice must equal the
+	// semantic edit exactly or nothing is written, and a shape it cannot read
+	// semantically is precisely a case where it cannot show that. Leave the
+	// file untouched.
+	beforePlugins, ok := before["plugin"].([]any)
+	if !ok {
+		return nil
+	}
 	var kept []any
-	for _, v := range before["plugin"].([]any) {
+	for _, v := range beforePlugins {
 		if s, ok := v.(string); !ok || s != entry {
 			kept = append(kept, v)
 		}

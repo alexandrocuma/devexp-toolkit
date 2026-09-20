@@ -330,6 +330,33 @@ With no release guide, skip the table and report readiness as `unverified — no
 
 Before invoking the automated PR review, run a targeted correctness check on the changed code. Read each changed file and scan for:
 
+**First, the question this repo keeps learning the hard way:**
+
+> **Does any failure here collapse into a value that looks like success?**
+
+Ask it of every changed file, in whatever language the project is written in —
+this is a review question, not a linter, and it applies wherever a failure can
+be converted into a plausible-looking result. Four shapes to look for:
+
+| Shape | What it looks like | Why it survives review |
+|---|---|---|
+| **A discarded error** | the error is dropped and the value beside it is used anyway | the call site reads as if it succeeded |
+| **A nil or empty default standing in for an error** | a failed load returns "nothing found" | *nothing found* and *could not look* are indistinguishable downstream |
+| **A function that exits 0 without doing its work** | it writes a file, returns cleanly, and the effect never happened | the exit status is the only thing anyone checks |
+| **A guard that returns allow without proving it ran** | the check is skipped, crashes, or is stubbed, and the caller reads that as "nothing wrong" | an allow is the same answer as a genuine pass |
+
+Discarding a failure is sometimes correct, and the distinction is not severity —
+it is whether the degradation is **visible**. A dropped error is acceptable only
+where a comment states why *and* the caller still reports the degraded state to
+the user. A failure absorbed silently is the defect; one that is announced and
+then tolerated is a design choice.
+
+Where the project's language has a linter for the first shape, it should be
+running in CI — but it only ever covers that one shape, and only in that one
+language. The question above is what covers the rest.
+
+**Then scan for:**
+
 - **Unhandled error paths** — `err` returned from a function call and not checked or propagated
 - **Null/nil dereferences** — variables used without nil/null guards after potentially-nil operations
 - **Off-by-one errors** — loop bounds, slice operations, pagination math
