@@ -1,6 +1,6 @@
 # Release Guide
 
-> Kit doc · Last verified: 2026-09-16 against commit `653387863c7fdc8d4e2ee1075bd2dc801c1e751b`
+> Kit doc · Last verified: 2026-09-19 against commit `9e865a3745e40f0fd693a79e2ce79a602b8e57b2`
 >
 > Consumed by `/release` (executes ship steps), grooming (affected targets), `/deliver` (release readiness) and `/monitor` (post-release checks). Why release guides exist and how the lifecycle reads them: [`release-targets.md`](release-targets.md). Build and test commands: [`../development/setup.md`](../development/setup.md).
 
@@ -35,7 +35,7 @@ The tag push from the cut starts the build. Watch it; don't start it again (re-r
 
 ```bash
 gh run list --workflow release.yml --limit 1   # watch the tag-triggered run until completed/success   # source: .github/workflows/release.yml, on.push.tags
-# CI runs: job ci (calls ci.yml, read-only) → checks ci / test, ci / hooks, ci / govulncheck → job goreleaser (needs: ci): ./scripts/stage-assets.sh (before-hook) → goreleaser release --clean → publishes the draft   # source: .github/workflows/release.yml, .github/workflows/ci.yml, .goreleaser.yaml:5-7,44-49
+# CI runs: job ci (calls ci.yml, read-only) → checks ci / test (go test -race), ci / hooks (four steps: claude-code, kimi, opencode, installer-script), ci / govulncheck → job goreleaser (needs: ci): ./scripts/stage-assets.sh (before-hook) → goreleaser release --clean → publishes the draft   # source: .github/workflows/release.yml, .github/workflows/ci.yml, .goreleaser.yaml:5-7,44-49
 ```
 
 The `ci` job *is* `ci.yml`, called through its `on.workflow_call` trigger: the same three jobs a pull request runs (`test`, `hooks`, `govulncheck`), against the tagged commit, with this workflow's read-only token; the scan still runs `scripts/govulncheck.sh` with no persisted credentials. Nothing is copied into `release.yml`, and the call reports success only once every job inside it has passed. The suites run again here because the tag can be pushed before `ci` finishes on the release commit, and the scan runs again because a new advisory can appear between the PR's CI run and the tag. Until goreleaser publishes, the release is only the draft `/release` created: nothing is public and Latest doesn't move.

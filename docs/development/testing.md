@@ -1,12 +1,12 @@
 # Testing
 
-> Kit doc · Last verified: 2026-09-16 against commit `eaebd52de9323825e6f3fdf286253a89ea89a7a5`
+> Kit doc · Last verified: 2026-09-19 against commit `9e865a3745e40f0fd693a79e2ce79a602b8e57b2`
 
 Where tests live, how they're written and run, and what must pass before a commit. Commands for everything else (build, install, env vars) are in [`setup.md`](setup.md); code style in [`conventions.md`](conventions.md).
 
 ## Test Types
 
-CI (`.github/workflows/ci.yml`) runs in three jobs: `test` (Go), `hooks` (the three script suites) and `govulncheck` (the [vulnerability scan](#vulnerability-scan), not a test suite). It runs on every pull request, on every push to `main`, weekly on a schedule (`on.schedule`, Mondays 06:27 UTC), and on every `v*` tag — `release.yml` calls it through `on.workflow_call` and goreleaser `needs:` that call, so the jobs below are also the release gate. All four suites below were green at this commit.
+CI (`.github/workflows/ci.yml`) runs in three jobs: `test` (Go), `hooks` (the four script suites — claude-code, kimi, opencode, installer script) and `govulncheck` (the [vulnerability scan](#vulnerability-scan), not a test suite). It runs on every pull request, on every push to `main`, weekly on a schedule (`on.schedule`, Mondays 06:27 UTC), and on every `v*` tag — `release.yml` calls it through `on.workflow_call` and goreleaser `needs:` that call, so the jobs below are also the release gate. All five suites below were green at this commit.
 
 | Type | Framework | Location | Run |
 |------|-----------|----------|-----|
