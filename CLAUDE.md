@@ -25,7 +25,7 @@ New to this repo? Read in order: [architecture overview](docs/architecture/overv
 | Install (interactive wizard) | `./install.sh` |
 | Dry-run (preview, non-interactive) | `./install.sh --dry-run` |
 | Uninstall | `./uninstall.sh` |
-| Test — Go (as CI) | `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover)` |
+| Test — Go (as CI) | `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover -count=1)` |
 | Test — Claude Code hooks (as CI) | `for f in hooks/claude-code/*.test.sh; do bash "$f" \|\| exit 1; done` |
 | Test — Kimi hooks (as CI) | `for f in hooks/kimi/*.test.sh; do bash "$f" \|\| exit 1; done` |
 | Rebuild local CLI after Go changes | `rm bin/devexp && ./install.sh --dry-run` |
@@ -54,6 +54,7 @@ Sources: `install.sh`, `cli/cmd/install.go`, `.github/workflows/ci.yml`. Full li
 - **Go changes don't reach `bin/devexp`** — `install.sh` builds only when the binary is missing; `rm bin/devexp` first — see `install.sh`
 - **`./install.sh` with no flags opens an interactive wizard — only when stdin is a TTY** (with no TTY it installs everything for every detected CLI instead); `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, `--skills-only` and `--target` take the non-interactive path, `--model` alone does not — see [setup](docs/development/setup.md#commands)
 - **Two of the three graphify hooks are on for opencode** (`opencode.enabled` in the registry), all three off for Claude Code; `graphify-read-guard` is off everywhere because it can block and this repo commits the graph — turn the rest off with `hooks.disabled` — see [reference/hooks](docs/reference/hooks.md)
+- **A plain `go test` can answer an asset edit with a cached pass** — the repo-consistency tests read `hooks/`, `skills/`, `docs/` and `CLAUDE.md` from outside the module root (`cli/`), so those reads are not in the cache key; run them with `-count=1`, as every documented command now does — see [testing](docs/development/testing.md#before-every-commit)
 - **Adding or removing an agent, skill or hook leaves counts stale** in `CLAUDE.md`, `README.md`, `docs/README.md` and more — see [workflows](docs/guides/workflows.md#add-a-feature)
 
 ---
