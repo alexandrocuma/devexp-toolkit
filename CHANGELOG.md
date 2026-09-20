@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-09-19
+
 ### Fixed
 
 - **The install wizard no longer swallows a broken `mcps/registry.json` (#102).** The wizard loaded the registry with `registry, _ := loadFullRegistry(...)`, discarding the error. `registry` was then `nil`, and because the wizard guards its MCP step on `len(registry) > 0`, **the step simply vanished** — a registry.json that failed to parse looked exactly like a build that ships no MCP servers. No warning, no diagnostic, and a symptom pointing nowhere near the cause. You now get the reason and what it costs you:
