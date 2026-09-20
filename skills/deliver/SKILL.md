@@ -126,23 +126,46 @@ cd "$wt"
 
 **Grant the runtime access to the worktree.** The worktree lives at `../<repo>-worktrees/<ticket>` — a sibling of the main checkout, **outside the project root**. Without a grant, every write there triggers an out-of-project permission prompt, and Phases 2–5 do a lot of writing. Grant right after creation, before any work starts:
 
-- **Claude Code** — merge the worktrees parent directory (absolute path) into the **main checkout's** `.claude/settings.json` under `additionalDirectories` (not the worktree's — project settings live in the primary tree, and this step may run after `cd`-ing into the worktree). Create the file and keys if absent; preserve all existing JSON content; skip if the path is already present (idempotent):
+- **Claude Code** — merge the worktrees parent directory (absolute path) into the **main checkout's** `.claude/settings.local.json` under **`permissions.additionalDirectories`**. Three things about that sentence are load-bearing:
+  - **`permissions.additionalDirectories`, not a top-level `additionalDirectories`** — the flat key is not in Claude Code's settings schema, so it is skipped and the grant silently does nothing while looking like it worked.
+  - **`settings.local.json`, not `settings.json`** — the value is an absolute path on this machine. `settings.json` is the shared, committable project file; a home directory written there is meaningless to every other developer and to CI, and it makes the main checkout dirty mid-delivery where a later `git add -A` can commit it. `settings.local.json` is the machine-local override (same schema, gitignored by Claude Code's convention).
+  - **the main checkout's**, not the worktree's — project settings live in the primary tree, and a grant written inside a worktree is thrown away with it. Neither path below is derived from the current directory, so this step is safe to run from either tree.
+
+  Create the file and keys if absent; preserve all existing JSON content; skip if the path is already present (idempotent); and leave an unparseable file untouched:
   ```bash
-  main="$(git worktree list --porcelain | head -1 | cut -d' ' -f2)"   # main checkout — always the first entry
-  wt_dir="$(cd "$(dirname "$wt")" && pwd)"                            # absolute path of ../<repo>-worktrees
-  settings="$main/.claude/settings.json"
+  # Both paths come from git, never from $PWD or $wt: this block may run as its
+  # own shell invocation (no variables carried over) and from inside the
+  # worktree, where the relative ../<repo>-worktrees resolves to nothing.
+  main="$(git worktree list --porcelain | sed -n '1s/^worktree //p')"  # main checkout — always the first entry
+  wt_dir="$(cd "$main/.." && pwd -P)/$(basename "$main")-worktrees"    # absolute path of ../<repo>-worktrees
+  settings="$main/.claude/settings.local.json"
   mkdir -p "$main/.claude"
   node -e '
     const fs = require("fs");
     const f = process.argv[1], dir = process.argv[2];
-    let s = {};
-    try { s = JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { /* absent or unreadable — start fresh */ }
-    s.additionalDirectories = s.additionalDirectories || [];
-    if (!s.additionalDirectories.includes(dir)) s.additionalDirectories.push(dir);
+    let s = {}, raw = null;
+    try { raw = fs.readFileSync(f, "utf8"); }
+    catch (e) { if (e.code !== "ENOENT") { console.error("settings unreadable — left untouched:", e.message); process.exit(1); } }
+    if (raw !== null) {
+      // Absent is "start fresh"; unparseable is NOT — overwriting it would
+      // destroy the project permissions, hooks and env it still holds.
+      try { s = JSON.parse(raw); }
+      catch (e) { console.error("settings unparseable — left untouched:", e.message); process.exit(1); }
+    }
+    s.permissions = s.permissions || {};
+    const cur = s.permissions.additionalDirectories;
+    const list = Array.isArray(cur) ? cur : [];
+    // Migrate anything an older devexp wrote to the dead top-level key.
+    for (const d of Array.isArray(s.additionalDirectories) ? s.additionalDirectories : []) {
+      if (!list.includes(d)) list.push(d);
+    }
+    delete s.additionalDirectories;
+    if (!list.includes(dir)) list.push(dir);
+    s.permissions.additionalDirectories = list;
     fs.writeFileSync(f, JSON.stringify(s, null, 2) + "\n");
   ' "$settings" "$wt_dir"
   ```
-  If the settings file can't be updated (not writable, JSON unparseable even after the fallback), print a one-line note: "Approve access to $wt_dir once when prompted." Do not retry or force it.
+  The snippet exits non-zero without writing when the file exists but cannot be read or parsed, and it replaces a `permissions.additionalDirectories` that is not an array rather than throwing on it. On any failure, print a one-line note: "Approve access to $wt_dir once when prompted." Do not retry or force it.
 - **opencode** — this repo's opencode idiom is tool-scoped permissions (agent frontmatter `permission:` blocks, e.g. `task: "*": allow`); there is no path-scoped write grant. Fall back to a one-line note: the first write to the worktree will prompt — approve it with "always allow" for the worktrees directory.
 
 All subsequent phases operate from this worktree directory.
