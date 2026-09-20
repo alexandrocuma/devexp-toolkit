@@ -10,12 +10,16 @@ cli/internal/assets/mcps/
 cli/internal/assets/devexp.config.json
 cli/internal/assets/uninstall.sh
 cli/internal/assets/.devexp-toolkit
-# graphify knowledge graph — stays local, deliberately. Upstream suggests
-# committing it, but this repo ships graphify-read-guard (opencode-enabled),
-# which gates source reads on `graphify-out/graph.json` existing and nothing
-# else — committing a graph would silently make every contributor run graphify
-# queries before they could read a file. See docs/reference/hooks.md.
-graphify-out/
+# graphify knowledge graph — graph.json and manifest.json ARE committed, so a
+# clone or a new ticket worktree starts with the map instead of paying a full
+# extraction to rebuild it. manifest.json keys are relative, so the cache still
+# matches after a move. Excluded: graph.html (derived view, ~2MB, regenerated
+# wholesale), the version-pinned cache, and the local cost tracker.
+graphify-out/graph.html
+graphify-out/cache/
+graphify-out/cost.json
+graphify-out/.graphify_*
+graphify-out/.chunklist_*
 .devexp/health-baseline.json
 .devexp/system-health-review.md
 

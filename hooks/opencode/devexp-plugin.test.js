@@ -352,7 +352,13 @@ const BENIGN = [{ tool: 'bash' }, { args: { command: 'ls' } }];
 {
   const registry = JSON.parse(readFileSync(join(REPO, 'hooks', 'registry.json'), 'utf8'));
   const FAIL_CLOSED = ['dangerous-cmd-guard', 'secret-guard', 'secret-in-write-guard'];
-  const GRAPHIFY = ['graphify-grep-nudge', 'graphify-read-guard', 'graphify-session-sentinel'];
+  // graphify hooks that cannot block are on for opencode; the one that can is not.
+  // graphify-read-guard's only precondition is that graphify-out/graph.json exists —
+  // it never checks the graphify CLI is on PATH, and install.sh ships the skill, not
+  // the CLI. Since this repo commits the graph, leaving it enabled would block any
+  // contributor without graphify on their first source read, with no way to clear it.
+  const GRAPHIFY_ON = ['graphify-grep-nudge', 'graphify-session-sentinel'];
+  const GRAPHIFY_OFF = ['graphify-read-guard'];
 
   check('10 registry has 10 hooks', registry.length === 10, `got ${registry.length}`);
   for (const h of registry) {
@@ -371,9 +377,14 @@ const BENIGN = [{ tool: 'bash' }, { args: { command: 'ls' } }];
   }
   const failClosed = registry.filter((h) => h.opencode?.fail_closed === true).map((h) => h.name).sort();
   check('10 exactly the security guards are fail_closed', JSON.stringify(failClosed) === JSON.stringify(FAIL_CLOSED), `got ${failClosed}`);
-  for (const name of GRAPHIFY) {
+  for (const name of GRAPHIFY_ON) {
     const h = registry.find((x) => x.name === name);
     check(`10 ${name} is enabled for opencode`, h?.opencode?.enabled === true);
+  }
+  for (const name of GRAPHIFY_OFF) {
+    const h = registry.find((x) => x.name === name);
+    check(`10 ${name} is NOT enabled for opencode (it can block)`, h?.opencode?.enabled === false,
+      `got ${h?.opencode?.enabled}`);
   }
 }
 
