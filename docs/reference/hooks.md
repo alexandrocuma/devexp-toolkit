@@ -362,6 +362,47 @@ parity tests use a zero budget or the real one.
 
 ---
 
+### Latency is a contributor's obligation
+
+A budget hit **blocks**, so guard latency is not a comfort property. A guard
+that grows slower does not make the session slower — past the budget it starts
+**denying legitimate tool calls**, with a message about a budget the user did
+not set and cannot see the cause of.
+
+That matters most to the thing contributors most often want to do here: widen a
+pattern set. Every pattern added to `secret-guard`,
+`secret-in-write-guard` or `dangerous-cmd-guard` spends budget that nobody
+re-measures by hand.
+
+So it is measured on every run. `hooks/claude-code/scan-latency.test.sh` and
+`hooks/opencode/scan-latency.test.js` drive each fail-closed guard on the worst
+realistic inputs — a 2 MB write, a 400 KB pipeline, a 1 MB command line, and the
+ordinary small call every session pays constantly — and fail when a guard
+consumes more than **half** its budget.
+
+Half, not all, is the whole design. Failing at the budget would mean the first
+signal of a too-slow guard is a user's blocked tool call; failing at half means
+it is a red build naming the guard, with 2x of real budget still in hand. The
+suites print the percentage consumed on every run, pass or fail, so growth is
+visible as a trend well before it is a failure.
+
+Two consequences when you touch a guard:
+
+- **Widening a pattern set requires re-running these suites** and reading the
+  percentages, not just the pass/fail. A jump from 7% to 30% passes and is still
+  the story.
+- **Do not raise `DEVEXP_SCAN_BUDGET_DEFAULT_MS` to make this pass.** The
+  ceiling exists because a budget at or above the hook `timeout` reinstates the
+  bug the budget prevents — Claude Code cancels the guard first, and a cancelled
+  command hook does not block. If a guard genuinely needs more room, that is a
+  decision about the guard, made deliberately.
+
+The two suites measure their own runtimes and are not comparable to each other:
+a Claude Code hook is a fresh process per tool call and really does pay bash and
+python3 startup every time, while the opencode plugin loads once and runs
+in-process thereafter.
+
+
 ## Proof of Work
 
 **A guard exits 0 only against proof that its own scanning code ran** (#168).

@@ -26,7 +26,7 @@ New to this repo? Read in order: [architecture overview](docs/architecture/overv
 | Dry-run (preview, non-interactive) | `./install.sh --dry-run` |
 | Uninstall | `./uninstall.sh` |
 | Test — Go (as CI) | `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover)` |
-| Lint — Go (as CI) | `./scripts/golangci-lint.sh` |
+| Lint — Go (as CI) | `./scripts/stage-assets.sh && (cd cli && golangci-lint run --config ../.golangci.yml)` |
 | Lint — comment refs, any language (as CI) | `./scripts/check-comment-refs.sh` |
 | Test — Claude Code hooks (as CI) | `for f in hooks/claude-code/*.test.sh; do bash "$f" \|\| exit 1; done` |
 | Test — Kimi hooks (as CI) | `for f in hooks/kimi/*.test.sh; do bash "$f" \|\| exit 1; done` |
@@ -45,6 +45,7 @@ Sources: `install.sh`, `cli/cmd/install.go`, `.github/workflows/ci.yml`. Full li
 - **Always** add a `CHANGELOG.md` entry under `[Unreleased]` in the same commit — see [conventions](docs/development/conventions.md#commits--branches)
 - **Never** cite an issue number, PR link or URL in a code comment — write the reason inline; history goes in the commit body — see [conventions](docs/development/conventions.md#comments)
 - **Never** put knowledge in `CLAUDE.md` — directives and pointers only; content goes in `docs/` — see [docs-architecture](docs/guides/docs-architecture.md)
+- **Always** reach `main` through a pull request with green CI — `main` is protected; a direct push is rejected — see [workflows](docs/guides/workflows.md#branch-protection-main)
 - **Before marking work done:** all five CI suites pass — see [testing](docs/development/testing.md#before-every-commit)
 
 ---

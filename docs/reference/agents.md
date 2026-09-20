@@ -82,7 +82,7 @@ memory: user
 | `dep-audit.md` | dep-audit | Dependency vulnerability (CVE) and staleness audit | "Audit our dependencies for vulnerabilities" |
 | `runbook.md` | runbook | Generates operational runbooks from actual project config | "Generate a runbook for deploying this service" |
 | `grooming-agent.md` | grooming-agent | Autonomous pre-code ticket grooming — fetches ticket, validates against codebase, produces execution plan | "Groom PAY-1179 before I start coding" |
-| `impact-analysis.md` | impact-analysis | Maps the blast radius of any change — callers, transitive dependents, shared state | "What breaks if I change getUserById?" |
+| `impact-analysis.md` | impact-analysis | Maps the blast radius of any change — callers, transitive dependents, shared state. **Invoked by `/deliver` Phase 1.7**, mandatory for changes to registries, install orchestration, mirrored runtime counterparts, shared libraries and guards | "What breaks if I change getUserById?" |
 | `data-flow.md` | data-flow | Maps how data moves through the system — entry points, transformations, storage, egress, PII tracking | "Map how customer data flows before we migrate the DB" |
 | `synthesis.md` | synthesis | Consolidates findings from multiple specialist agents into one prioritized action plan | "We ran security, arch-review, and performance — synthesize the findings" |
 | `tech-debt.md` | tech-debt | Business-prioritized tech debt register — what debt exists, what it costs to carry and fix | "Make the case for paying down tech debt this quarter" |

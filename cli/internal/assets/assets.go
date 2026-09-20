@@ -13,6 +13,14 @@ import (
 	"path/filepath"
 )
 
+// FS holds the staged asset tree the binary installs from. The `all:` prefix
+// on each directory is load-bearing: without it embed skips entries beginning
+// with `.` or `_`, which would silently drop dotfiles the install needs.
+//
+// It is empty in a working tree that has not run scripts/stage-assets.sh — or
+// rather, the package does not compile at all, which is the intended failure:
+// a binary that embedded nothing would install nothing and report success.
+//
 //go:embed all:agents all:skills all:hooks all:mcps devexp.config.json uninstall.sh .devexp-toolkit
 var FS embed.FS
 

@@ -49,3 +49,46 @@ If delivery fails at any step — failing tests, an unresolved review finding, a
 ## Single-stream / no-isolation note
 
 Worktree isolation is the default for delivery, but it is not mandatory in every environment. When isolation is unavailable or unwanted — a single-stream setup, a shallow or non-worktree-capable checkout, or a one-off change the user explicitly wants applied to the current tree — delivery may proceed **in place** on the current branch. In that mode the lifecycle collapses to work → release on the existing checkout, the merge step is a no-op, and the same merge discipline (serialized, conflicts surfaced) still applies to whatever integration happens.
+
+
+## Duplicated on purpose, guarded by test
+
+`/deliver` and `/improve` both advertise that they need no other skill
+installed, so a step they share cannot be replaced with "see the other skill" —
+the copy has to stay. What must not happen is the copies drifting apart
+unnoticed, which is exactly how the grant came to be wrong in **two independent
+ways at once**: one copy wrote a key Claude Code does not read, and the other
+had lost the words *"the main checkout's"*, so a grant written from inside a
+worktree was discarded along with that tree.
+
+Prose has no compiler, so tests stand in for one. Two shapes, matched to what is
+actually duplicated:
+
+| Duplicated thing | Where | Asserted as | Test |
+|---|---|---|---|
+| the `safe_id()` shell guard | `/cleanup`, `/improve` | **byte-identical** | `TestSharedSafeIDGuardIsIdentical` |
+| the worktree access grant | `/deliver`, `/improve`, this guide | **its claims**, not its wording | `TestGrantProcedureStatesEveryLoadBearingClaim` |
+
+The split is deliberate. `safe_id()` decides whether a caller-supplied ticket id
+may be interpolated into an `rm -f` glob; it has one correct spelling and no
+reason to be phrased differently in two files, so byte-identity is both
+assertable and the right bar.
+
+The grant is the opposite. There are **no byte-identical copies to compare** —
+`/deliver` carries the executable snippet, `/improve` carries a compressed
+paragraph that points at it, and this guide carries a third rendering for
+someone reading about the convention. They differ on purpose and at three
+different lengths. Demanding byte-identity there would be unsatisfiable;
+demanding nothing is what let it drift. So what is pinned is what each one
+**promises**, and every description of the grant must say all four:
+
+1. the key is nested under `permissions` — a top-level `additionalDirectories`
+   is not in the schema, so the step writes a file, exits 0, and grants nothing
+2. the file is `settings.local.json`, not `settings.json` — the value is an
+   absolute path on one machine, and `settings.json` is shared and committable
+3. the file written is the **main checkout's** — a grant written inside a
+   worktree is thrown away with it
+4. both paths are derived from `git worktree list` — the step may run from
+   inside the worktree, where `$PWD` is the wrong tree
+
+The wording is free. The claims are not.

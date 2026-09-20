@@ -79,13 +79,21 @@ jobs:
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
-      # Pinned version and exit codes live in the script: 1 = finding,
-      # 2 = infrastructure. It stages the embedded assets itself, because a
-      # linter that cannot load a package reports nothing rather than failing.
-      - name: golangci-lint
-        run: ./scripts/golangci-lint.sh
+      # The embed directives under cli/internal/assets/ point at staged files
+      # that are gitignored, so the package does not type-check in a fresh
+      # clone — and a linter that cannot build a package reports no problems
+      # in it, which reads exactly like a clean run.
+      - name: stage assets
+        run: ./scripts/stage-assets.sh
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.13.2
+          working-directory: cli
+          args: --config=../.golangci.yml
       # The comment standard spans Go, bash and JS, so it is checked by a
-      # language-agnostic scanner rather than a Go linter. Needs no toolchain.
+      # language-agnostic scanner rather than a Go linter: a Go linter could
+      # only ever hold the rule in cli/ and would abandon it in the hooks.
+      # Needs no toolchain beyond python3.
       - name: comment references
         run: ./scripts/check-comment-refs.sh
 

@@ -8,7 +8,8 @@
 #   comment-refs.sh <file>...   prints one line per finding; exit 1 if any
 #
 # WHAT IT LOOKS FOR: an external reference inside a comment -- an issue number
-# (#1234), a URL, or a tracker id (ABC-123). The rule it enforces is that a
+# `#1234`, a URL, or a tracker id `ABC-123` — quoted here because that is how
+# this scanner tells an example from a citation. The rule it enforces is that a
 # comment is self-contained: a reader must not have to leave the file, let
 # alone the repo, to understand the code in front of them.
 #
@@ -127,8 +128,9 @@ for path in sys.argv[1:]:
 
 if found:
     print('', file=sys.stderr)
-    print('%d comment%s cite something outside the file. Write the reason inline '
-          'instead; history belongs in the commit body.'
-          % (found, '' if found == 1 else 's'), file=sys.stderr)
+    print('%d comment%s cite%s something outside the file. Write the reason '
+          'inline instead; history belongs in the commit body.'
+          % (found, '' if found == 1 else 's', 's' if found == 1 else ''),
+          file=sys.stderr)
     sys.exit(1)
 PYREFS

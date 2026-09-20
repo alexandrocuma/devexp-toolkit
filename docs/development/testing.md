@@ -17,9 +17,10 @@ CI (`.github/workflows/ci.yml`) runs in three jobs: `test` (Go), `hooks` (the fo
 | Installer script | plain bash script | repo root `*.test.sh` (`uninstall.test.sh`, `install.test.sh`, `remote-install.test.sh`) | `for f in ./*.test.sh; do bash "$f" \|\| exit 1; done` — `ci.yml`, job `hooks`, step `installer script tests` |
 | Integration | N/A — no separate suite. Go tests already do real file I/O inside `t.TempDir()`, and each hook `.test.sh` executes the real hook script against a real tool-call JSON envelope | — |
 | E2E | N/A — no automated end-to-end install test. `runInstall`, `doInstallClaude`, `doInstallOpencode` and `runWizard` have 0% coverage. Manual check: `./install.sh --dry-run` | — |
-| Agents / skills (Markdown) | N/A — no automated validation. Edit → `./install.sh` → try it in Claude Code or opencode | `docs/development/README.md` (Notes) |
+| Repo consistency (registry ↔ disk ↔ prose) | Go, `testing` | `cli/internal/repocheck/{consistency,counts}_test.go` | `(cd cli && go test ./internal/repocheck/)` — `ci.yml`, job `test` |
+| Agents / skills (Markdown) | **Structure is checked**, behaviour is not. `repocheck` asserts every agent and skill has a catalog row and that the counts in prose match disk; what an agent *does* is still Edit → `./install.sh` → try it in Claude Code or opencode | `docs/development/README.md` (Notes) |
 
-At this commit: 10 Go packages with tests; `dangerous-cmd-guard.test.sh` 380 cases, `fail-closed.test.sh` 10, `interpreter-isolation.test.sh` 11, `interpreter-proof.test.sh` 120, `large-file-guard.test.sh` 34, `on-save-path.test.sh` 73, `scan-budget.test.sh` 64, `secret-guard.test.sh` 37, `secret-in-write-guard.test.sh` 321; `dangerous-cmd-guard.test.js` 434 (incl. timing checks on crafted long lines), `devexp-plugin.test.js` 130, `on-save-path.test.js` 61, `scan-budget.test.js` 81 (incl. both twins on the same input), `secret-guard.test.js` 38, `secret-in-write-guard.test.js` 301; `uninstall.test.sh` 250 (241 when running as root, as in CI, which skips the read-only permission checks), `install.test.sh` 21, `remote-install.test.sh` 24.
+At this commit: 13 Go packages with tests; `dangerous-cmd-guard.test.sh` 380 cases, `fail-closed.test.sh` 10, `interpreter-isolation.test.sh` 11, `interpreter-proof.test.sh` 120, `large-file-guard.test.sh` 34, `on-save-path.test.sh` 73, `scan-budget.test.sh` 64, `scan-latency.test.sh` 6 (wall-clock, best of 3, fails above half the budget), `secret-guard.test.sh` 37, `secret-in-write-guard.test.sh` 321; `dangerous-cmd-guard.test.js` 434 (incl. timing checks on crafted long lines), `devexp-plugin.test.js` 130, `on-save-path.test.js` 61, `scan-budget.test.js` 81 (incl. both twins on the same input), `scan-latency.test.js` 6 (wall-clock, best of 3, plus a check that both twins carry the same budget), `large-file-guard.test.js` 35, `secret-guard.test.js` 38, `secret-in-write-guard.test.js` 301; `uninstall.test.sh` 250 (241 when running as root, as in CI, which skips the read-only permission checks), `install.test.sh` 21, `remote-install.test.sh` 24.
 
 Run one test:
 
@@ -116,9 +117,9 @@ Mirror CI — it runs all of these on the PR:
 - [ ] `for f in hooks/opencode/*.test.js; do node "$f" || exit 1; done`
 - [ ] `for f in ./*.test.sh; do bash "$f" || exit 1; done`
 - [ ] Touched `cli/go.mod`/`go.sum`, the Go toolchain or `.goreleaser.yaml` platforms? `./scripts/govulncheck.sh` — CI fails on a called finding (see [vulnerability scan](#vulnerability-scan)).
-- [ ] Lint: `./scripts/golangci-lint.sh` (gofmt + revive's `exported` rule over `cli/`) and `./scripts/check-comment-refs.sh` (no issue number, URL or tracker id in a comment, in any language). Both run in the `lint` job in `ci.yml` and block.
+- [ ] Lint: `(cd cli && golangci-lint run --config ../.golangci.yml)` — `errcheck`, `nolintlint`, `revive`'s `exported` rule and `gofmt` — and `./scripts/check-comment-refs.sh`, which holds the comment standard in every language rather than only in Go. Both run in the `lint` job in `ci.yml` and block.
 - [ ] Type check: N/A — covered by `go test`/`go vet` for Go; none configured for shell/JS.
-- [ ] Changed an agent, skill or hook? `./install.sh` and exercise it in Claude Code, opencode or Kimi Code (see [`setup.md`](setup.md#commands)).
+- [ ] Changed an agent, skill or hook? `./install.sh` and exercise it in Claude Code, opencode or Kimi Code (see [`setup.md`](setup.md#commands)). The *coupling* around it — registry entry, catalog row, counts in prose — is asserted by `cli/internal/repocheck/`, so a missed mapping fails `go test` rather than waiting to be noticed; what the asset actually does when it runs still needs a human.
 
 ## Coverage & Gaps
 
