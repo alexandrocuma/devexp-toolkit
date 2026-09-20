@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"devexp/internal/config"
+	"devexp/internal/mcp"
 	"devexp/internal/repo"
 	"devexp/internal/ui"
 )
@@ -170,7 +171,11 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// Interactive wizard
-		registry, _ := loadFullRegistry(repoDir, cfg)
+		registry, warning := wizardRegistry(repoDir, cfg)
+		if warning != "" {
+			ui.Warn(warning)
+			fmt.Println()
+		}
 		agentNames := listAgentNames(repoDir)
 
 		wiz, err := runWizard(repoDir, registry, agentNames)
@@ -220,6 +225,31 @@ func runInstall(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("\033[0;32m\033[1mAll done.\033[0m\n\n")
 	return nil
+}
+
+// wizardRegistry loads the MCP registry for the wizard's checklist and reports
+// a load failure as text instead of an error. Split out of runInstall so the
+// decision is checkable without a terminal — the wizard's own prompt flow is
+// not testable, but what it is handed is.
+//
+// A failure is warned about and swallowed rather than returned, deliberately.
+// The registry is read here only to build the MCP checklist, and that happens
+// before the wizard asks for scope, so returning would fail an agents-only or
+// skills-only install over a file it never reads.
+//
+// The abort is not lost, only narrowed to the runs that need it:
+// installMCPs{Claude,Opencode,Kimi} load the registry again and propagate this
+// same error, so anything that actually installs MCPs still stops. What this
+// fixes is the silence. The error used to be discarded outright, leaving
+// registry nil — which wizard.go reads as "no MCPs to offer" (its len > 0
+// guard), so the step vanished with no hint that a file had failed to parse.
+// An empty list and an unreadable file looked identical.
+func wizardRegistry(repoDir string, cfg *config.Config) (registry []mcp.MCP, warning string) {
+	registry, err := loadFullRegistry(repoDir, cfg)
+	if err != nil {
+		return nil, fmt.Sprintf("%v — the MCP step will be skipped", err)
+	}
+	return registry, ""
 }
 
 // ── How an install run gets its answers ───────────────────────────────────────
