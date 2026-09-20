@@ -16,7 +16,7 @@ For **contributors** working on the toolkit from a clone: prerequisites, build, 
 | `claude`, `opencode` and/or `kimi` on `PATH` | `claude`/`opencode` any; Kimi Code CLI ≥ `0.31.0` (older is skipped, and the legacy kimi-cli is not Kimi Code). `devexp install` refuses to run without at least one | `cli/cmd/targets.go` (`selectTargets`), `cli/cmd/kimi_detect.go` (`kimiMinVersion`) |
 | git | any — to clone | `README.md:83` |
 
-No lint, formatter, scanner or release tool needs to be installed locally: CI has no lint job, `scripts/govulncheck.sh` installs the pinned govulncheck into a temporary directory, and goreleaser runs only in GitHub Actions (see [`../guides/release.md`](../guides/release.md)).
+Only golangci-lint has to be installed to reproduce CI locally, and only for the Go half: CI runs it through `golangci/golangci-lint-action` pinned to v2.13.2. `scripts/check-comment-refs.sh` needs nothing but python3, `scripts/govulncheck.sh` installs its pinned govulncheck into a temporary directory that is removed on exit, and goreleaser runs only in GitHub Actions (see [`../guides/release.md`](../guides/release.md)).
 
 ## First Run
 
@@ -58,7 +58,8 @@ The full list — `CLAUDE.md` shows only the most-used few and links here.
 | Test — hooks / installer script | `for f in hooks/claude-code/*.test.sh; do bash "$f" \|\| exit 1; done` · `for f in hooks/kimi/*.test.sh; do bash "$f" \|\| exit 1; done` · `for f in hooks/opencode/*.test.js; do node "$f" \|\| exit 1; done` · `for f in ./*.test.sh; do bash "$f" \|\| exit 1; done` | `.github/workflows/ci.yml` (job `hooks`) |
 | Coverage | `cd cli && go test ./... -cover -count=1` | `.github/workflows/ci.yml` (job `test`) |
 | Vulnerability scan (CI job `govulncheck` — on every PR and push to `main`, weekly, and before every release) | `./scripts/govulncheck.sh` — every release platform; exit 3 on a called vulnerability, any other failure is infrastructure. Policy and how to respond in [`testing.md`](testing.md#vulnerability-scan) | `scripts/govulncheck.sh`, `.github/workflows/ci.yml` (job `govulncheck`), `.github/workflows/release.yml` (job `ci`, which calls `ci.yml`) |
-| Lint / format | Not enforced — no lint job in CI and no linter config in the repo. `(cd cli && go vet ./... && gofmt -l .)` is clean at this commit and was run by hand for #97 | `.github/workflows/ci.yml`, `CHANGELOG.md` (`## [0.7.0]`, the `cmd/install.go` split entry) |
+| Lint — Go | `(cd cli && golangci-lint run --config ../.golangci.yml)` — `errcheck` + `nolintlint` (a discarded error must say why), `revive`'s `exported` rule, and `gofmt`. Run `./scripts/stage-assets.sh` first, or the package will not build and the linter will report nothing | `.golangci.yml`, `.github/workflows/ci.yml` (job `lint`) |
+| Lint — comment refs | `./scripts/check-comment-refs.sh` — no issue number, URL or tracker id in a comment, in any language the syntax table covers. Needs only python3 | `hooks/claude-code/comment-refs.sh`, `scripts/check-comment-refs.sh` |
 | Shell syntax check (hooks) | `bash -n hooks/claude-code/<hook>.sh` | `docs/development/hook-authoring-guide.md` (Deployment Checklist) |
 | Type check | N/A — Go is type-checked by `go build`/`go vet`; no type checker is configured for the shell or JS hooks | `cli/go.mod`, `hooks/opencode/package.json` |
 | Release build | CI only — tag push → the whole `ci` workflow → goreleaser. See [`../guides/release.md`](../guides/release.md) | `.github/workflows/release.yml` |

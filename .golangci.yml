@@ -37,6 +37,13 @@ linters:
     # in /deliver's Phase 5 review question instead.
     - nolintlint
 
+    # Every exported symbol carries a doc comment. It is the one gap a reader
+    # cannot close by reading the code: an unexported helper can be understood
+    # from its body, while an exported one is read by someone who has decided
+    # not to. Only the `exported` rule is on — revive's default set is a style
+    # opinion this repo has not taken.
+    - revive
+
   settings:
     errcheck:
       # A type assertion that fails yields the zero value, which is the same
@@ -46,6 +53,13 @@ linters:
       # already reads as deliberate. Requiring an annotation on it too would
       # produce noise without adding information.
       check-blank: false
+
+    revive:
+      rules:
+        # See docs/development/conventions.md ("Comments") for the bar a doc
+        # comment has to clear: it says what the signature cannot, and a
+        # restatement of the name is deleted rather than kept.
+        - name: exported
 
     nolintlint:
       # The whole point. `//nolint:errcheck` with no explanation records that
@@ -84,3 +98,9 @@ issues:
   # the count was 21. Report everything.
   max-issues-per-linter: 0
   max-same-issues: 0
+
+formatters:
+  enable:
+    # Formatting should never reach a review comment, and gofmt is the one
+    # formatting question Go does not leave open.
+    - gofmt

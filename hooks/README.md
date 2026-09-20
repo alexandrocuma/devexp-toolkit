@@ -8,7 +8,7 @@ Install them by running `./install.sh` from the repo root. The installer registe
 
 ## Hook Catalog
 
-10 hooks in `registry.json`. 7 are enabled by default: 4 safety guards (secret reads, secrets in writes, destructive commands, large-file overwrites) and 3 advisory lint/format/test-on-save hooks that never block. The other 3 are an opt-in `graphify-*` set (`"enabled": false`) for projects using the `graphify` skill.
+11 hooks in `registry.json`. 7 are enabled by default: 4 safety guards (secret reads, secrets in writes, destructive commands, large-file overwrites) and 3 advisory lint/format/test-on-save hooks that never block. The other 4 ship `"enabled": false`: the `graphify-*` set for projects using the `graphify` skill, and `comment-refs-on-save`, which reports comments that cite an issue number, URL or tracker id — a house style rather than a safety property, so it is opt-in.
 
 Full catalog with triggers and behavior: [`docs/reference/hooks.md`](../docs/reference/hooks.md)
 

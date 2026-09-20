@@ -4,7 +4,7 @@
 # hooks, and the MCP registry, so `devexp install` works standalone.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/alexandrocuma/devexp-toolkit/main/scripts/remote-install.sh | bash
+#   `curl -fsSL https://raw.githubusercontent.com/alexandrocuma/devexp-toolkit/main/scripts/remote-install.sh | bash`
 #
 # Env overrides:
 #   DEVEXP_VERSION   install a specific tag (e.g. v1.2.3) instead of latest

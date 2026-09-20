@@ -145,7 +145,7 @@ This section governs **code comments**, in whatever language a file is written i
 
 ## Style
 
-Nothing enforces style: no linter or formatter config exists, and CI runs only tests and a govulncheck scan (`.github/workflows/ci.yml`). The Go code is gofmt-clean today (`gofmt -l cli` prints nothing for tracked files at this commit), and #97 records "go vet and gofmt clean" as a manual check (`06c45a1`). `//nolint:errcheck` marks errors that are ignored on purpose (`cli/cmd/backup.go`, `cli/internal/hooks/installer.go`, `cli/internal/mcp/opencode.go`).
+Style is enforced by the `lint` job in `.github/workflows/ci.yml`, and the two checks behind it split along what is Go and what is a rule about all code. `.golangci.yml` covers the Go CLI — `errcheck` and `nolintlint` (a discarded error is allowed only where a comment says why), revive's `exported` rule, and `gofmt`. The default linter set stays off; widening is a decision, not a default. The comment standard is checked by `scripts/check-comment-refs.sh`, which is language-agnostic because the rule is: a Go linter could only ever hold it in `cli/` and would quietly abandon it in the shell and JS hooks. `//nolint:errcheck` marks errors that are ignored on purpose (`cli/cmd/backup.go`, `cli/internal/hooks/installer.go`, `cli/internal/mcp/opencode.go`).
 
 Rules that no tool enforces:
 
@@ -153,7 +153,7 @@ Rules that no tool enforces:
 - **Unexported by default.** Only a package's API is exported, and all of `cli/cmd` is unexported apart from `Execute` (`cli/cmd/root.go`).
 - **Keep Go files small.** #97 split `cli/cmd/install.go` from 762 lines to 193 across cohesive siblings. No non-test Go file is over 270 lines; the largest is `cli/internal/hooks/installer.go` at 269.
 - **Shell scripts start with `set -euo pipefail`** (`install.sh`, `scripts/stage-assets.sh`, every `hooks/claude-code/*.sh` hook). Test scripts use `set -uo pipefail` so a failing case is counted instead of aborting the run (`hooks/claude-code/fail-closed.test.sh`, `hooks/claude-code/dangerous-cmd-guard.test.sh`).
-- **Shell hook headers** follow the same pattern: `# devexp hook: <name>`, then `# Event: <event> | Matcher: <matcher>`, then a short rationale (all 10 of `hooks/claude-code/*.sh`).
+- **Shell hook headers** follow the same pattern: `# devexp hook: <name>`, then `# Event: <event> | Matcher: <matcher>`, then a short rationale (every hook in `hooks/claude-code/`; `comment-refs.sh` and `scan-budget.sh` are shared code rather than hooks and say so instead).
 - **Hooks use only standard libraries.** Shell hooks import only python3 stdlib modules (`json`, `sys`, `os`, `re`, `shlex`, `shutil`, `subprocess`, `glob`). JS hooks import only `child_process`, `fs` and `path` plus local modules, and `hooks/opencode/package.json` is just `{ "type": "module" }`. The installer has no npm or pip step (`cli/cmd/install_claude.go`).
 - **Fix the cause.** When a bug has shaped how assets are written, the workaround guidance is removed together with the fix (`f41c79f`: "a workaround outliving its bug is a trap for the next author").
 

@@ -49,6 +49,10 @@ var nonHookFiles = map[string]string{
 	// Sourced by the guards to enforce a wall-clock scan budget; it registers
 	// nothing itself and is copied next to the guards for Kimi.
 	"scan-budget.sh": "shared budget library, sourced by the guards",
+	// The language-agnostic comment-reference scanner. comment-refs-on-save
+	// invokes it per file and scripts/check-comment-refs.sh runs it over the
+	// whole tree in CI, so it has two callers and no envelope of its own.
+	"comment-refs.sh": "shared comment scanner, invoked by the hook and by CI",
 	// The opencode plugin entry point. It *reads* the registry and wires every
 	// module in it, so it is the consumer, never an entry.
 	"devexp-plugin.js": "opencode plugin entry point, wires the registry",

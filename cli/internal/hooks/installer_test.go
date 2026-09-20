@@ -958,8 +958,8 @@ func TestLoadRegistry_RepoRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadRegistry() error = %v", err)
 	}
-	if len(registry) != 10 {
-		t.Fatalf("LoadRegistry() = %d hooks, want 10", len(registry))
+	if len(registry) != 11 {
+		t.Fatalf("LoadRegistry() = %d hooks, want 11", len(registry))
 	}
 
 	// All three graphify hooks are off for Claude Code. For opencode they split
@@ -1810,20 +1810,26 @@ func TestIsOrphanedDevexpHook(t *testing.T) {
 		"missing script in a root with no registry":                        {cmd: filepath.Join(userDir, "hooks", "claude-code", "removed.sh")},
 		"missing script in a root that is gone":                            {cmd: filepath.Join(base, "deleted", "hooks", "claude-code", "removed.sh")},
 		"missing script under repoDir (not orphaned: isStaleDevexpHook's)": {cmd: filepath.Join(repoDir, "hooks", "claude-code", "removed.sh")},
-		"with an argument":                                                 {cmd: plainGone + " --flag"},
-		"double-quoted":                                                    {cmd: `"` + plainGone + `"`},
-		"through a wrapper":                                                {cmd: "bash " + plainGone},
-		"chained":                                                          {cmd: plainGone + ";true"},
-		"through a variable":                                               {cmd: "$HOME/plain/hooks/claude-code/removed.sh"},
-		"relative":                                                         {cmd: "plain/hooks/claude-code/removed.sh"},
-		"nested below hooks/claude-code/":                                  {cmd: filepath.Join(plainOther, "hooks", "claude-code", "sub", "removed.sh")},
-		"directly under hooks/":                                            {cmd: filepath.Join(plainOther, "hooks", "removed.sh")},
-		"under my-hooks/claude-code/":                                      {cmd: filepath.Join(plainOther, "my-hooks", "claude-code", "removed.sh")},
-		"an unclean path":                                                  {cmd: plainOther + "/hooks/../hooks/claude-code/removed.sh"},
-		"the scripts directory itself":                                     {cmd: filepath.Join(plainOther, "hooks", "claude-code") + "/"},
-		"at the file-system root":                                          {cmd: "/hooks/claude-code/removed.sh"},
-		"a leading // (Clean folds it, so not a clean path)":               {cmd: "/" + plainGone},
-		"relative with ./":                                                 {cmd: "./plain/hooks/claude-code/removed.sh"},
+
+		// A blank line, so the keys above and below are two alignment groups
+		// rather than one. The key above is long enough to sit on go/printer's
+		// group-break threshold, and Go versions disagree about which side of it
+		// falls on -- which made gofmt's verdict depend on the toolchain the
+		// linter was built with. Splitting the group deliberately settles it.
+		"with an argument":                {cmd: plainGone + " --flag"},
+		"double-quoted":                   {cmd: `"` + plainGone + `"`},
+		"through a wrapper":               {cmd: "bash " + plainGone},
+		"chained":                         {cmd: plainGone + ";true"},
+		"through a variable":              {cmd: "$HOME/plain/hooks/claude-code/removed.sh"},
+		"relative":                        {cmd: "plain/hooks/claude-code/removed.sh"},
+		"nested below hooks/claude-code/": {cmd: filepath.Join(plainOther, "hooks", "claude-code", "sub", "removed.sh")},
+		"directly under hooks/":           {cmd: filepath.Join(plainOther, "hooks", "removed.sh")},
+		"under my-hooks/claude-code/":     {cmd: filepath.Join(plainOther, "my-hooks", "claude-code", "removed.sh")},
+		"an unclean path":                 {cmd: plainOther + "/hooks/../hooks/claude-code/removed.sh"},
+		"the scripts directory itself":    {cmd: filepath.Join(plainOther, "hooks", "claude-code") + "/"},
+		"at the file-system root":         {cmd: "/hooks/claude-code/removed.sh"},
+		"a leading // (Clean folds it, so not a clean path)": {cmd: "/" + plainGone},
+		"relative with ./": {cmd: "./plain/hooks/claude-code/removed.sh"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

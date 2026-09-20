@@ -63,7 +63,7 @@ The orchestrators handle everything internally — implementation, testing, code
 
 ### Hooks
 
-Hooks run automatically on matching tool calls — no configuration needed. 10 hooks ship in `hooks/registry.json`: 7 enabled by default — safety guards for secret protection, destructive command blocking and large-file confirmation, plus advisory lint/format/test-on-save — and 3 opt-in `graphify-*` hooks. The installer registers them for **Claude Code** (shell scripts) and installs the **opencode** plugin (JS modules).
+Hooks run automatically on matching tool calls — no configuration needed. 11 hooks ship in `hooks/registry.json`: 7 enabled by default — safety guards for secret protection, destructive command blocking and large-file confirmation, plus advisory lint/format/test-on-save — and 4 opt-in: 3 `graphify-*` hooks and `comment-refs-on-save`, which reports comments citing an issue number, URL or tracker id. The installer registers them for **Claude Code** (shell scripts) and installs the **opencode** plugin (JS modules).
 
 → Browse the catalog: [`hooks/`](hooks/) · Full reference: [`docs/reference/hooks.md`](docs/reference/hooks.md)
 

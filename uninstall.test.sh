@@ -1719,7 +1719,7 @@ check "kimi menu: says the choice was invalid" out_has "Invalid choice"
 check "kimi menu: a valid number beside it removes nothing" test -f "$E/h/.claude/agents/dev-agent.md"
 
 # ── Kimi round trip with the real binary ─────────────────────────────────────
-# PR #175's review left two things unaudited: UninstallKimi beyond its adoption
+# Review left two things unaudited: UninstallKimi beyond its adoption
 # path, and --dry-run / the --*-only flags exercised through the *built*
 # binary rather than by calling doInstallKimi directly. Both are here: an
 # in-process test cannot catch a flag that never reaches the handler, or a

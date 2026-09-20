@@ -221,7 +221,7 @@ export const BLOCK_PATTERNS = [
   {
     // Unanchored wildcard delete in a sensitive dir (/tmp/* , ~/.claude/.../* , or the dir
     // wholesale) — the blanket wipe an empty variable produces. Prefix-anchored globs like
-    // /tmp/.deliver-PAY-123-* are allowed (no '*' right after the '/'). The target must follow
+    // `/tmp/.deliver-PAY-123-*` are allowed (no '*' right after the '/'). The target must follow
     // `rm` in the same simple command: the scan stops at `;`, `|` and a `&` that isn't part of
     // a redirect (`2>&1`, `&>`), unless a quote or substitution opens first. `rm` may be followed
     // by whitespace, a quote, an expansion, a brace or glob character, or a redirect.

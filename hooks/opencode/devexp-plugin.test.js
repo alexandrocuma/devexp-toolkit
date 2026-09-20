@@ -360,7 +360,7 @@ const BENIGN = [{ tool: 'bash' }, { args: { command: 'ls' } }];
   const GRAPHIFY_ON = ['graphify-grep-nudge', 'graphify-session-sentinel'];
   const GRAPHIFY_OFF = ['graphify-read-guard'];
 
-  check('10 registry has 10 hooks', registry.length === 10, `got ${registry.length}`);
+  check('10 registry has 11 hooks', registry.length === 11, `got ${registry.length}`);
   for (const h of registry) {
     const oc = h.opencode ?? {};
     const mod = oc.module ?? '';

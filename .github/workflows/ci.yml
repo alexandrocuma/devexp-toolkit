@@ -96,6 +96,12 @@ jobs:
           version: v2.13.2
           working-directory: cli
           args: --config=../.golangci.yml
+      # The comment standard spans Go, bash and JS, so it is checked by a
+      # language-agnostic scanner rather than a Go linter: a Go linter could
+      # only ever hold the rule in cli/ and would abandon it in the hooks.
+      # Needs no toolchain beyond python3.
+      - name: comment references
+        run: ./scripts/check-comment-refs.sh
 
   govulncheck:
     runs-on: ubuntu-latest
