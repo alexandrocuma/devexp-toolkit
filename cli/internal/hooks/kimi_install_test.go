@@ -264,7 +264,8 @@ func TestInstallKimiMissingSourceRegistersNothing(t *testing.T) {
 		t.Errorf("a half-finished copy still registered commands (%v)", statErr)
 	}
 	// What it did write has to come back, or the next run has no record of it
-	// and UninstallKimi cannot remove it either (#113's lesson).
+	// and UninstallKimi cannot remove it either: whatever a step wrote before
+	// it failed is still devexp's to own.
 	for _, rel := range []string{"kimi/adapter.sh", "claude-code/scan-budget.sh", "claude-code/secret-guard.sh"} {
 		if !slices.Contains(got, rel) {
 			t.Errorf("the failed step did not report writing %s: %v", rel, got)

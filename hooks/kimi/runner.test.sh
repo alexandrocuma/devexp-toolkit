@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # devexp: the Kimi acceptance criteria, proved against a faithful simulation of
-# Kimi's own hook runner (#114).
+# Kimi's own hook runner.
 #
 # WHY A SIMULATION. The ticket asks that reading a .env, a destructive shell
 # command and a write carrying a secret are each blocked in a Kimi session.

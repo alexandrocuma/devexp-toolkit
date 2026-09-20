@@ -6,11 +6,11 @@
 #
 # Two false-positive classes are deliberately excluded:
 #
-#   Templates (#87). A committed `.env.example` documents which keys exist;
+#   Templates. A committed `.env.example` documents which keys exist;
 #   it never holds their values. Blocking it blocks the one file a user is
 #   meant to read in order to configure the others.
 #
-#   Mentions (#81). A shell token only counts as a path if it plausibly is
+#   Mentions. A shell token only counts as a path if it plausibly is
 #   one. Heredoc bodies, program text (`jq -r '.key'`), quoted programs and
 #   bare extensions are not file reads, and refusing them obstructs without
 #   protecting anything.
@@ -23,7 +23,7 @@
 set -euo pipefail
 
 # The whole scan runs under a wall-clock budget and blocks when it is exceeded:
-# a slow scan must never let a tool call through unchecked (#162).
+# a slow scan must never let a tool call through unchecked.
 #
 # Everything up to devexp_scan_budget runs with no floor under it, so this
 # prologue installs one. It cannot be an `if ! . …`: under `set -e` bash leaves
@@ -137,7 +137,7 @@ elif tool_name == 'Bash':
             found = hit
             break
 
-# Proof that this scan ran (#168). Written only here, once the scan is over and
+# Proof that this scan ran. Written only here, once the scan is over and
 # a verdict is in hand, so nothing that skipped the work can produce it; the
 # shell blocks when it is missing, whatever this process's exit status.
 sys.stdout.write(sys.argv[1] + '\n' + found)

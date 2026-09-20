@@ -1,3 +1,11 @@
+// Package hooks installs the guards and on-save helpers in hooks/registry.json
+// into each CLI that runs them. The registry is the single source of truth:
+// one hook entry carries a block per target, and adding a target means adding
+// a block rather than a Go type.
+//
+// Every install path here merges into a settings file the user owns, so the
+// rule throughout is that only the keys devexp wrote are rewritten and a file
+// that cannot be parsed is left untouched.
 package hooks
 
 import (
@@ -13,6 +21,9 @@ import (
 	"devexp/internal/ui"
 )
 
+// Registry is hooks/registry.json in order. The order is the order hooks are
+// registered in, and for a given event the CLIs run them in that order, so it
+// is part of the data rather than an artifact of decoding.
 type Registry []Hook
 
 // Target ids — the sibling block keys in hooks/registry.json.
@@ -51,6 +62,9 @@ type TargetSpec struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+// Hook is one entry of the registry. Enabled is the default across every
+// target; a TargetSpec.Enabled overrides it for one target, which is how a
+// hook ships on for opencode and off for Claude Code.
 type Hook struct {
 	Name        string
 	Description string
@@ -125,6 +139,9 @@ func (h Hook) EnabledFor(id string) bool {
 	return h.Enabled
 }
 
+// LoadRegistry reads hooks/registry.json from a checkout. A binary built by
+// goreleaser has no checkout to read and uses ParseRegistry on its embedded
+// copy instead.
 func LoadRegistry(path string) (Registry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -140,6 +157,16 @@ func ParseRegistry(data []byte) (Registry, error) {
 	return r, json.Unmarshal(data, &r)
 }
 
+// InstallClaude registers the enabled hooks in Claude Code's settings.json.
+//
+// repoDir must be absolute. Claude Code runs a hook command from whatever
+// directory it happens to be in, so a relative path would resolve somewhere
+// unpredictable — and a guard that fails to start is a guard that does not
+// block. That is refused up front rather than registered and discovered later.
+//
+// Only the "hooks" value is rewritten. Every other byte of settings.json, and
+// every field of a hook devexp does not own, is written back as read; a
+// settings.json that cannot be parsed is left alone and nothing is registered.
 func InstallClaude(registry Registry, repoDir, settingsPath string, disabled []string, dryRun bool) error {
 	// Every command is registered as repoDir/<script> and run later from
 	// whatever directory Claude Code is in, so it must be absolute.

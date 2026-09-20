@@ -24,7 +24,7 @@ const BLOCK = [
   'rm -rf "$HOME"/.claude',
   'git commit -m x && git push --force',
 
-  // #100: a real invocation, in every command position
+  // A real invocation, in every command position
   'git status && git reset --hard',
   'git status; git reset --hard HEAD~1',
   'false || git reset --hard',
@@ -55,7 +55,7 @@ const BLOCK = [
   'echo ${#x}; git reset --hard',
   'echo hi # note\ngit push --force', // a comment ends at the newline
 
-  // #100: a string handed to a shell or evaluator
+  // A string handed to a shell or evaluator
   'bash -c "git reset --hard"',
   "sh -c 'git clean -fdx'",
   'eval "git reset --hard"',
@@ -89,7 +89,7 @@ const BLOCK = [
   'echo "git reset --hard" | pbcopy', // the clipboard is not a sink
   'echo "git reset --hard" | uniq - run.sh', // uniq writes its output file
 
-  // #100: masked text read back and run in the same command
+  // Masked text read back and run in the same command
   'git commit -m "git reset --hard"; git log -1 --format=%B | sh',
   'gh issue create --body "git push --force now"; gh issue view 1 --json body -q .body | bash',
   'git commit -m "git reset --hard" && ./run.sh',
@@ -125,7 +125,7 @@ const BLOCK = [
   "sh -c 'git push origin main \\\n  --force'",
   'bash -c "rm -rf \\\n  ~"',
 
-  // #151: an expansion right after the target, or another home spelling (bash word-splits
+  // An expansion right after the target, or another home spelling (bash word-splits
   // an unquoted expansion and zsh expands `~` after parameters)
   'rm -rf /$IFS',
   'rm -rf /${IFS}',
@@ -168,7 +168,7 @@ const BLOCK = [
   'git push --force{,}',
   'git push --force-with-lease>log',
 
-  // #146: the same decisions, reached in linear time; nesting deeper than 100 levels is
+  // The same decisions, reached in linear time; nesting deeper than 100 levels is
   // scanned whole in both implementations
   ':(){ :|:& };:',
   'echo "`#`"; git reset --hard\necho done', // a comment inside backticks ends there
@@ -185,7 +185,7 @@ const BLOCK = [
   ':(){ :;:|:& };:', // the fork bomb scans past ;
   'git push --force-with-lease=main',
 
-  // PR #160 review: more globs and home spellings end or name a target
+  // More globs and home spellings end or name a target
   'rm -rf ~/?*', // a glob made of `?`
   'rm -rf /???',
   'rm -rf /tmp/?*',
@@ -205,7 +205,7 @@ const BLOCK = [
   'rm -rf ~a.b',
   'rm -rf $=HOME:h',
 
-  // PR #160 review: a real rm after ; && || & |, as an argument, or with a redirect's &
+  // A real rm after ; && || & |, as an argument, or with a redirect's &
   'docker run --rm img; rm -rf /tmp/*',
   'terraform init && rm -f ~/.claude/*',
   'make || rm -rf /tmp/$x',
@@ -234,7 +234,7 @@ const BLOCK = [
   'rm -rf ${HOME,}',
   'rm -rf ${HOME@Q}',
 
-  // PR #160 re-review: rm followed at once by an expansion, brace, glob or redirect
+  // Rm followed at once by an expansion, brace, glob or redirect
   'rm$IFS-f /tmp/*',
   'rm${IFS}-rf ~/.claude/*',
   'rm<<<x -f /tmp/*',
@@ -254,7 +254,7 @@ const BLOCK = [
   'rm /tmp/*', // no flags, one space
   'rm -fr $HOME:h',
 
-  // PR #160 re-review: a ; or & that is data doesn't end the command
+  // A ; or & that is data doesn't end the command
   'rm -rf "a;b" /tmp/*',
   "rm -rf 'a&b' ~/.claude/*",
   'rm -rf a\\;b /tmp/*',
@@ -292,7 +292,7 @@ const BLOCK = [
   'git push origin\r--force',
   'rm -rf \0/',
 
-  // #100: what the parser cannot classify is scanned whole
+  // What the parser cannot classify is scanned whole
   'echo "git reset --hard', // unbalanced quote
   'echo "$(git reset --hard"', // unbalanced substitution
   "cat <<'EOF'\ngit reset --hard", // unterminated heredoc
@@ -300,7 +300,7 @@ const BLOCK = [
   'echo `echo \\`git reset --hard\\``',
   'echo $((1)) "git reset --hard"',
 
-  // #100: large input (many short lines)
+  // Large input (many short lines)
   `git reset --hard; echo ${'a\n'.repeat(125000)}`,
   `echo "${'a\n'.repeat(125000)}" && git push --force`,
   `echo "git reset --hard ${'a\n'.repeat(125000)}`, // unbalanced: scanned whole
@@ -328,7 +328,7 @@ const ALLOW = [
   "ssh host 'git push origin main'",
   'git push origin \\\n  main',
 
-  // #151: a literal component after the protected prefix
+  // A literal component after the protected prefix
   'rm -rf ~/x$y',
   'rm -rf ~/projects/$x',
   'rm -rf ~/work-$x',
@@ -354,7 +354,7 @@ const ALLOW = [
   'echo rm -rf ${HOME}',
   'git commit -m "rm -rf /$IFS"',
 
-  // #146: the same decisions, reached in linear time — a protected target or force flag in
+  // The same decisions, reached in linear time — a protected target or force flag in
   // another pipeline stage than the command; nesting within the limit is still masked
   'rm -f a | cat ~/.claude | rm -f b',
   'rm -f a | ls ~/.claude/x/*',
@@ -367,11 +367,11 @@ const ALLOW = [
   'ls ~/.claude/x/*; rm -f b',
   'rm -f x.claude\tb/*', // a tab ends the .claude…/* run
 
-  // PR #160 review: a modifier needs the unbraced name; `:` continues a target
+  // A modifier needs the unbraced name; `:` continues a target
   'rm -rf ${HOME}:h',
   'rm -f /tmp/:x',
 
-  // PR #160 review: `rm` must be its own word, and the target in its command
+  // `rm` must be its own word, and the target in its command
   'docker run --rm -v /tmp:/tmp alpine ls',
   'docker run --rm -v ~/.claude:/root/.claude img',
   'docker run --rm -v "$HOME/.claude":/home/node/.claude img',
@@ -410,7 +410,7 @@ const ALLOW = [
   'rm -rf /home/x\n/tmp/*',
   'git push origin \\\r\n  --force', // CRLF after a backslash is no continuation
 
-  // #100: a mention is not an invocation
+  // A mention is not an invocation
   'echo "  LOCAL ONLY — remote untouched. Tag still revertible:"\necho "    git reset --hard origin/main"     # <- text inside a quoted echo',
   "echo 'rm -rf / wipes everything'",
   'echo git push --force',
@@ -437,7 +437,7 @@ const ALLOW = [
   'git status  # never git reset --hard here',
   '# git push --force\ngit push',
 
-  // #100: large input
+  // Large input
   `echo "${'a\n'.repeat(125000)}"`,
 ];
 
@@ -466,7 +466,7 @@ for (const [want, c] of ENTRY) {
   if (got !== want) { console.log(`FAIL entry want ${want}, got ${got}:`, show(c)); fail++; }
 }
 
-// #146: deciding stays fast on crafted long lines. Each input used to make a pattern (or the
+// Deciding stays fast on crafted long lines. Each input used to make a pattern (or the
 // masking pass) backtrack or rescan: at 100 KB the old module took seconds on the first ones
 // and far longer on the last; this module takes milliseconds. The first tier stops at its
 // first failure so an old module fails fast; the 1 MB tier runs only when the first passed.

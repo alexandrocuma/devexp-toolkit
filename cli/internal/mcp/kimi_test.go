@@ -171,8 +171,6 @@ func TestValidateKimiEntry(t *testing.T) {
 	}
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 func kimiFile(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "mcp.json")
@@ -664,7 +662,7 @@ func TestInstallKimi_NoMcpServersKey(t *testing.T) {
 }
 
 // A dotfiles-managed mcp.json is a symlink; the file it points at is what gets
-// replaced, and the link stays a link (#124).
+// replaced, and the link stays a link.
 func TestInstallKimi_FollowsASymlink(t *testing.T) {
 	dir := t.TempDir()
 	real := filepath.Join(dir, "dotfiles", "mcp.json")

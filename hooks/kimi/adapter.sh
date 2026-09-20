@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# devexp: the Kimi Code CLI adapter for the Claude Code guard scripts (#114).
+# devexp: the Kimi Code CLI adapter for the Claude Code guard scripts.
 #
 # Usage — as the whole `command` of a Kimi [[hooks]] entry, with the guard to
 # run as its one argument:

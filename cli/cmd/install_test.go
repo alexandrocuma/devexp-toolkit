@@ -279,7 +279,7 @@ func TestResolveHookDisabled(t *testing.T) {
 			want:        nil,
 		},
 		"an emptied checklist disables every enabled hook": {
-			// #171: ui.MultiSelect used to return nil here, which is the
+			// ui.MultiSelect used to return nil here, which is the
 			// arm above — unticking everything installed everything.
 			// cfgDisabled is set to prove the empty slice wins over it.
 			selected:    []string{},
@@ -324,7 +324,7 @@ func TestResolveAgentDisabled(t *testing.T) {
 			want:        nil,
 		},
 		"an emptied checklist disables every agent": {
-			// #171: ui.MultiSelect used to return nil here, which is the
+			// ui.MultiSelect used to return nil here, which is the
 			// first arm — unticking everything installed everything.
 			// cfgDisabled is set to prove the empty slice wins over it.
 			agentFiles:  []string{"alpha.md", "beta.md", "gamma.md"},
@@ -1776,7 +1776,7 @@ func testKimiPaths(t *testing.T, kimiCodeHome, home string) kimiPaths {
 }
 
 // resolveKimiHome mirrors Kimi Code's own rule, and refuses the values that
-// would aim an install — and from #113 a removal — somewhere it must not.
+// would aim an install — and a removal — somewhere it must not.
 func TestResolveKimiHome(t *testing.T) {
 	tests := map[string]struct {
 		kimiCodeHome string
@@ -1857,7 +1857,7 @@ func TestKimiTargetPaths(t *testing.T) {
 			agentsRef: "~/.kimi-code/agents",
 			skills:    "/home/u/.kimi-code/skills",
 			// The guards are copied here rather than run from the checkout,
-			// which may move or be deleted (#114).
+			// which may move or be deleted.
 			hooks:    "/home/u/.kimi-code/hooks",
 			mcp:      "/home/u/.kimi-code/mcp.json",
 			config:   "/home/u/.kimi-code/config.toml",
@@ -1983,7 +1983,7 @@ func TestLoadFullRegistry(t *testing.T) {
 	})
 }
 
-// wizardRegistry is the #102 fix: the wizard used to discard this error
+// wizardRegistry exists because the wizard used to discard this error
 // outright (`registry, _ := loadFullRegistry(...)`), leaving registry nil.
 // wizard.go guards its MCP step on len(registry) > 0, so the step vanished and
 // an unreadable registry.json looked exactly like a build that ships no MCPs.
@@ -2039,7 +2039,7 @@ func TestWizardRegistry(t *testing.T) {
 	})
 
 	t.Run("a malformed extra MCP still only warns inside loadFullRegistry", func(t *testing.T) {
-		// Guards the non-goal: #102 must not change how extra MCPs from config
+		// Guards the non-goal: surfacing that error must not change how extra MCPs from config
 		// are treated. A bad extra is loadFullRegistry's own ui.Warn, and the
 		// registry still loads, so wizardRegistry reports no warning of its own.
 		repo := t.TempDir()
@@ -2064,7 +2064,7 @@ func TestWizardRegistry(t *testing.T) {
 // install runs first (install_claude.go:32-41 and its opencode and kimi
 // twins), returns this same error, and the run ends having written nothing.
 // Promising a skipped step and then failing the whole install sends the user
-// looking in the wrong place, which is the defect #102 exists to remove.
+// looking in the wrong place, which is the defect this removes.
 func assertWarningHoldsForEveryScope(t *testing.T, warning string) {
 	t.Helper()
 
@@ -2815,7 +2815,7 @@ func kimiFullRepo(t *testing.T) string {
 		"agents/dev-agent.md":      "---\nname: dev-agent\ndescription: \"a test agent\"\ntools: Read, Bash\n---\n\n# dev-agent\n",
 		"skills/graphify/SKILL.md": "---\nname: graphify\ndescription: \"a test skill\"\n---\n\n# graphify\n",
 		// One hook Kimi takes and one it refuses, so a run exercises both the
-		// copy-and-register path and the "say why not" path (#114).
+		// copy-and-register path and the "say why not" path.
 		"hooks/registry.json": `[
   {"name": "secret-guard", "enabled": true,
    "claude_code": {"event": "PreToolUse", "matcher": "Read", "script": "hooks/claude-code/secret-guard.sh"},
@@ -2975,7 +2975,7 @@ func TestInstallCmd_NonInteractive(t *testing.T) {
 }
 
 // TestInstallCmd_KimiSelection: Kimi is a target the user can pick, and
-// picking it installs its MCP servers — and, until #113 and #114 land, says
+// picking it installs its MCP servers — and says
 // what it did not install. The point of these cases is that neither half can
 // be misread: a run that installed MCP servers says so, and a run that could
 // only have installed the parts Kimi does not have yet still refuses to report
@@ -2996,7 +2996,7 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		return home, calls
 	}
 
-	// After #112-#114 a Kimi run installs everything devexp ships: MCP
+	// A Kimi run installs everything devexp ships: MCP
 	// servers, agents, skills and hooks. Nothing may claim it is incomplete.
 	t.Run("kimi alone installs its MCP servers, agents, skills and hooks", func(t *testing.T) {
 		home, calls := setup(t, "2.0.1")
@@ -3025,7 +3025,7 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 			t.Errorf("no skill was installed:\n%s", out)
 		}
 		// One manifest records all three kinds, which is what a later run and
-		// the uninstall added in #115 read back.
+		// the uninstall read back.
 		saved, err := os.ReadFile(filepath.Join(root, ".devexp-manifest.json"))
 		if err != nil {
 			t.Fatalf("read manifest: %v", err)
@@ -3075,7 +3075,7 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 	})
 
 	// A second run is the one that proves the merge is a merge: the files it
-	// already wrote are left exactly as they are (#159).
+	// already wrote are left exactly as they are.
 	t.Run("a second run changes nothing", func(t *testing.T) {
 		home, _ := setup(t, "2.0.1")
 		if out, err := executeRoot(t, "install", "--target", "kimi", "--mcps-only"); err != nil {
@@ -3096,7 +3096,7 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		}
 	})
 
-	// Each --*-only flag installs exactly its own kind and says so. #111's
+	// Each --*-only flag installs exactly its own kind and says so. The old
 	// "installs nothing" case is gone: every one of these now writes something
 	// for Kimi, so none of them exits non-zero any more.
 	scopes := map[string]struct {
@@ -3153,7 +3153,7 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		if !strings.Contains(out, "Installing for Claude Code") {
 			t.Errorf("the real target did not run:\n%s", out)
 		}
-		// #114 finished the Kimi installer and #115 the way out, so neither
+		// The Kimi installer and the way back out are both finished, so neither
 		// the "not installed for it yet" notice nor the "cannot remove it
 		// yet" one may survive anywhere in the output.
 		if strings.Contains(out, "not installed for it yet") {
@@ -3190,7 +3190,7 @@ func TestInstallCmd_KimiSelection(t *testing.T) {
 		}
 	})
 
-	// Since #113 the resolved root is written into agent and skill bodies,
+	// The resolved root is written into agent and skill bodies,
 	// which are prompts, so a root holding a newline is refused outright
 	// rather than merely quoted on the way to the terminal. Both properties
 	// are asserted: the run stops, and nothing it prints can be forged.
@@ -3683,7 +3683,7 @@ func runKimi(t *testing.T, repoDir string, opts installOpts) (string, error) {
 func kimiRepo(t *testing.T) string {
 	t.Helper()
 	repoDir := t.TempDir()
-	// agents/ and skills/ exist but are empty: since #113 the Kimi installer
+	// agents/ and skills/ exist but are empty: the Kimi installer
 	// reads both, and an asset root without them is a broken root rather than
 	// an empty install — the other two targets error on it the same way.
 	// These tests are about the MCP step, so there is nothing in them.
@@ -3742,8 +3742,8 @@ func TestDoInstallKimi_MCPs(t *testing.T) {
 		}
 	})
 
-	// #112 returned early here, because Kimi installed MCP servers only. Since
-	// #113 --agents-only installs agents, so the run does its own step and
+	// This returned early when Kimi installed MCP servers only. Now
+	// --agents-only installs agents, so the run does its own step and
 	// leaves mcp.json alone rather than reporting nothing to do.
 	t.Run("--agents-only runs the agent step and leaves mcp.json alone", func(t *testing.T) {
 		root, repoDir := setup(t)
@@ -3764,9 +3764,9 @@ func TestDoInstallKimi_MCPs(t *testing.T) {
 		}
 	})
 
-	// #112 let a non-UTF-8 root through: it only ever named a directory to
+	// A non-UTF-8 root used to get through: it only ever named a directory to
 	// write mcp.json into, and the bytes never entered a file's contents.
-	// #113 writes the resolved root into agent and skill bodies whenever
+	// The resolved root is now written into agent and skill bodies whenever
 	// $KIMI_CODE_HOME is set, and those bodies are prompts Kimi reads as
 	// UTF-8 — so the root is now refused at resolveKimiHome, for every step
 	// rather than only the one that embeds it. One gate and one answer beats

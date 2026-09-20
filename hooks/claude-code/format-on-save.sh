@@ -17,7 +17,7 @@ input=$(cat)
 
 # A relative path is resolved against the directory Claude Code works in (the
 # input's cwd, else the hook's own) and normalised, as opencode does. Tools run from the project root, so they
-# get the absolute path, which no tool reads as an option (#121). An absolute
+# get the absolute path, which no tool reads as an option. An absolute
 # path passes unchanged.
 # The trailing "x" keeps $(...) from trimming newlines that belong to the path.
 file_path=$(echo "$input" | python3 -I -c '

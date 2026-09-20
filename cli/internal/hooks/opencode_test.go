@@ -14,8 +14,6 @@ import (
 	"testing"
 )
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 // captureOutput runs fn with os.Stdout redirected and returns what it printed.
 // ui writes straight to stdout, so this is how install output is asserted
 // (mirrors captureStdout in cli/cmd/install_test.go).

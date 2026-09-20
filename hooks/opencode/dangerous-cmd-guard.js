@@ -5,7 +5,7 @@
  *
  * All guarded patterns are hard-blocked (throw). No prompts.
  *
- * A mention is not an invocation (#100). Before the patterns run, text that
+ * A mention is not an invocation. Before the patterns run, text that
  * provably never executes is blanked out (maskInert): arguments of
  * `echo`/`printf`, commit/tag messages, `gh` issue/PR/release bodies, heredoc
  * bodies fed to a plain text sink, and comments — only when that text cannot
@@ -13,7 +13,7 @@
  * cannot classify is scanned whole. Mirrors hooks/claude-code/dangerous-cmd-guard.sh.
  *
  * The scan runs under a wall-clock budget and refuses the call when it is
- * exceeded (#162) — see startScanBudget in utils.js.
+ * exceeded — see startScanBudget in utils.js.
  *
  * Tests: node hooks/opencode/dangerous-cmd-guard.test.js
  */
@@ -43,7 +43,7 @@ const RM_WORD = String.raw`(?:(?<![A-Za-z0-9_.-])|(?<=\$[0-9]))rm`; // grep: (^|
 // (blockReason splits the text; a backslash-continued command was joined by maskInert).
 // Within a line, `\s` is whitespace, CR included, as it is for grep's `\s`.
 //
-// Each rule runs in time linear in the line (#146). JavaScript's regex engine backtracks,
+// Each rule runs in time linear in the line. JavaScript's regex engine backtracks,
 // so the grep patterns are not copied as they are:
 // - "rm, then -flags" names the first 'r' (or 'f') of the flags, so the letters are not
 //   split every possible way;
@@ -267,7 +267,7 @@ export const BLOCK_PATTERNS = [
   { test: regex(String.raw`TRUNCATE\s+TABLE`, 'i'), label: 'TRUNCATE TABLE will permanently destroy table data' },
 ];
 
-// ── Inert-text masking (#100) ─────────────────────────────────────────────────
+// ── Inert-text masking ────────────────────────────────────────────────────────
 
 /** The command cannot be classified: scan all of it. */
 class Raw extends Error {}
