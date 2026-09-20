@@ -15,7 +15,7 @@
  * thrown message embeds `basename(filePath)`, and a name must survive into it
  * unchanged rather than being mangled or swallowed.
  */
-import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, existsSync, mkdirSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { largeFileGuard } from './large-file-guard.js';
@@ -85,6 +85,34 @@ for (const tool of ['edit', 'read', 'bash', 'patch', 'apply_patch']) {
 ok((await run(join(dir, 'does-not-exist.txt'))) === null, 'non-existent path allows (a new file is not an overwrite)');
 ok((await run('')) === null, 'empty filePath allows');
 ok((await run(undefined)) === null, 'missing filePath allows');
+
+// ── Paths that cannot be read as a file ─────────────────────────────────────
+//
+// utils.countLines swallows the read error and returns 0, so anything
+// unreadable measures as "0 lines" and is allowed. That is a deliberate
+// fail-OPEN, and it is only defensible because this hook is advisory: its
+// strongest verdict is "ask", it protects against losing work rather than
+// against an attacker, and a version that blocked whenever it could not read
+// the target would fire on every unusual path until someone switched it off.
+//
+// The fail-closed guards make the opposite trade, and must keep making it.
+// Pinning the choice here means a future change to countLines has to come past
+// a test that states which hooks may treat "cannot read" as "fine".
+
+const subdir = join(dir, 'a-directory');
+mkdirSync(subdir);
+ok((await run(subdir)) === null, 'a directory path allows (it reads as 0 lines, and is not a file overwrite)');
+
+// A real file, made unreadable. Skipped as root, where the mode is not enforced.
+if (typeof process.getuid === 'function' && process.getuid() !== 0) {
+  const locked = fileOf(THRESHOLD + 1, 'locked.txt');
+  chmodSync(locked, 0o000);
+  ok((await run(locked)) === null, 'an unreadable file allows — advisory hook, deliberate fail-open');
+  chmodSync(locked, 0o644);
+} else {
+  ran++;
+  console.log('  (skipped unreadable-file case: running as root)');
+}
 
 // ── A file name is data ─────────────────────────────────────────────────────
 //
