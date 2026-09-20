@@ -137,10 +137,15 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		cmd.Flags().Changed("skills-only") ||
 		cmd.Flags().Changed("target")
 
+	mode := chooseInstallMode(flagsProvided, stdinIsTerminal())
+
 	var opts *installOpts
 	var targets []target
 
-	if flagsProvided {
+	if mode != modeWizard {
+		if mode == modeDefault {
+			announceDefaultMode()
+		}
 		// Non-interactive: use flags directly (CI / scripting path)
 		if flagDryRun {
 			fmt.Println("\033[1;33mDRY RUN MODE — no files will be written\033[0m")
@@ -215,6 +220,53 @@ func runInstall(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("\033[0;32m\033[1mAll done.\033[0m\n\n")
 	return nil
+}
+
+// ── How an install run gets its answers ───────────────────────────────────────
+
+// installMode is where the answers come from. Split out because the wizard is
+// the default and the wizard cannot always run: promptui needs a terminal, so
+// without one the wizard's very first prompt (ui.SelectAction) failed and the
+// install ended having done nothing. That is exactly what a piped install got,
+// since scripts/remote-install.sh runs a bare `devexp install` with stdin
+// still on the curl pipe.
+type installMode int
+
+const (
+	// modeWizard: no flags and a terminal — ask.
+	modeWizard installMode = iota
+	// modeFlags: flags were given, so they are the answer.
+	modeFlags
+	// modeDefault: no flags and nobody to ask — install the documented
+	// default rather than dying at a prompt.
+	modeDefault
+)
+
+// chooseInstallMode picks where the answers come from. Pure — no terminal
+// lookup, no printing — so every combination is checkable here, including the
+// ones that need a pty to reach for real.
+//
+// The default arm is deliberately an install and not an error: resolveTargets
+// already answers the target prompt this way when there is no terminal, and a
+// run that half-degrades (one prompt falling back, the next one fatal) is
+// worse than either rule applied consistently.
+func chooseInstallMode(flagsProvided, isTerminal bool) installMode {
+	switch {
+	case flagsProvided:
+		return modeFlags
+	case isTerminal:
+		return modeWizard
+	default:
+		return modeDefault
+	}
+}
+
+// announceDefaultMode says that the wizard was skipped and why, so a run that
+// installs more than the user would have picked never does it silently.
+func announceDefaultMode() {
+	ui.Info("No terminal to prompt on — installing everything with defaults.")
+	ui.Info("To choose: --dry-run, --mcps-only, --agents-only, --skills-only, --target.")
+	fmt.Println()
 }
 
 // labelList renders targets the way the user sees them named.

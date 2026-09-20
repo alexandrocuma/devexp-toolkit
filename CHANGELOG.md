@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A bare `devexp install` no longer dies at the first prompt without a terminal (#171).** #111 taught target selection to fall back when there is nobody to answer it, but the wizard's *first* prompt — the Action menu — is reached before target selection ever runs, so `devexp install` with no flags and no TTY still exited 1 having installed nothing. That is the path `curl … | bash` takes: `scripts/remote-install.sh` finishes by running a bare `devexp install` with stdin still on the curl pipe. Where the answers come from is now one pure decision, `chooseInstallMode(flagsProvided, isTerminal)` — flags win outright, a terminal with no flags gets the wizard, and **no flags and no terminal installs the documented default**: everything, for every detected CLI, announcing that it is doing so and naming the flags that would have narrowed it. The two prompts on the wizard's path finally degrade by the same rule instead of one falling back and the next one being fatal.
+
+  **If a script of yours runs a bare `devexp install` without a terminal**, it used to exit 1 having done nothing, and it now performs a full install. A CI step that treated that failure as "no wizard here, skip" will start installing; pass `--dry-run` to keep it a no-op, or `--target`/`--*-only` to narrow what it writes.
+
+- **Unticking every item in a wizard checklist installs none of that kind, not all of it (#171).** `collectSelected` returned `nil` for an empty pick, and every resolver in `cli/cmd/registry.go` reads `nil` as "no filter" — so deliberately unticking every agent, MCP or hook installed all of them. `ui.MultiSelect` now always returns a non-nil slice, which is the whole fix: `nil` means "the wizard never asked" and an empty slice means "it asked and the answer was none", and the three resolvers were already correct once told apart. #111 had closed this for target selection alone. Unticking one checklist leaves the others untouched, and the `Done` row shows the live count (`0 / 34 selected`) before you confirm. The target checklist keeps its stricter rule — an empty pick there is still an error, because installing for no CLI installs nothing at all.
+
 ## [0.10.0] - 2026-09-19
 
 ### Added

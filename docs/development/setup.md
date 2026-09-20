@@ -48,8 +48,8 @@ The full list — `CLAUDE.md` shows only the most-used few and links here.
 | Run locally (from source) | `cd cli && go run . install --dry-run` | `cli/main.go`; a dev build uses the checkout it was compiled from, wherever it runs — `sourceRoot` in `cli/internal/repo/repo.go` |
 | Show version | `bin/devexp --version` → `devexp version dev` for local builds | `cli/cmd/root.go:15` |
 | Preview an install | `./install.sh --dry-run` (or `-n`) | `cli/cmd/install.go:32` |
-| Install — interactive wizard | `./install.sh` (no flags; needs a TTY) | `cli/cmd/install.go:115-151` |
-| Install — non-interactive | `./install.sh` with any of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, `--skills-only` (`--model` alone does **not** skip the wizard) | `cli/cmd/install.go:115-119` |
+| Install — interactive wizard | `./install.sh` (no flags, **and** a TTY) | `cli/cmd/install.go:133-140`, `chooseInstallMode` |
+| Install — non-interactive | `./install.sh` with any of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, `--skills-only`, `--target` (`--model` alone does **not** skip the wizard). With no TTY, no flags are needed: a bare run installs everything for every detected CLI | `cli/cmd/install.go:133-148`, `chooseInstallMode` |
 | Uninstall | `./uninstall.sh` / `./uninstall.sh --yes` | [`../guides/install.md`](../guides/install.md#uninstallsh) |
 | Test — all (what CI runs) | the four suites in [`testing.md`](testing.md#test-types) | `.github/workflows/ci.yml` (also called by `release.yml` on a tag) |
 | Test — Go | `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover)` | `.github/workflows/ci.yml` (job `test`) |
@@ -96,7 +96,7 @@ Configuration file: `devexp.config.json` at the repo root (model default, disabl
 
 **Problem:** `KIMI_CODE_HOME is "…", which contains a control character devexp will not write into an agent file` (or `is not valid UTF-8`, or names a `${…}` form) · **Cause:** the Kimi root is written into the installed agent and skill bodies, which are prompts, so a root holding any of those would inject or corrupt text in every agent · **Fix:** point `$KIMI_CODE_HOME` at a path with none of them, or unset it to use `~/.kimi-code`.
 
-**Problem:** the installer opens an interactive wizard · **Cause:** none of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, `--skills-only`, `--target` was passed — `--model` alone doesn't count (`cli/cmd/install.go`, `flagsProvided`) · **Fix:** pass one of those flags for the non-interactive path. Without a terminal that path no longer prompts at all: it installs for every detected CLI unless `--target` says otherwise.
+**Problem:** the installer opens an interactive wizard · **Cause:** none of `--dry-run`, `--reinstall-mcps`, `--mcps-only`, `--agents-only`, `--skills-only`, `--target` was passed **and** stdin is a terminal — `--model` alone doesn't count (`cli/cmd/install.go`, `flagsProvided` → `chooseInstallMode`) · **Fix:** pass one of those flags for the non-interactive path. Without a terminal the wizard is skipped entirely and never prompts: a bare `devexp install` installs everything for every detected CLI, saying so first.
 
 **Problem:** `[REQUIRED] ui-inspector — missing required env vars: UI_INSPECTOR_DIR` · **Cause:** the MCP's `required_env` isn't set (`mcps/registry.json:18`) · **Fix:** set it in `mcps/.env` and re-run `./install.sh --mcps-only`; add `--reinstall-mcps` if the MCP was already registered with an old value.
 

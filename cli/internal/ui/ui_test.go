@@ -32,11 +32,18 @@ func TestMultiSelectLogic(t *testing.T) {
 			want:     []string{"alpha", "gamma"},
 		},
 		"toggle-all off when all selected": {
+			// Empty, and — see the nil assertion below — not nil. Callers read
+			// nil as "was never asked", which means everything.
 			selected: allTrue(),
 			choice:   1,
 			applyOne: true,
 			wantDone: false,
-			want:     nil,
+			want:     []string{},
+		},
+		"every item toggled off one at a time": {
+			selected: []bool{false, false, false},
+			applyOne: false,
+			want:     []string{},
 		},
 		"toggle-all on when some deselected": {
 			selected: []bool{true, false, true},
@@ -65,6 +72,13 @@ func TestMultiSelectLogic(t *testing.T) {
 			got := collectSelected(items, tt.selected)
 			if !equalStrings(got, tt.want) {
 				t.Errorf("collectSelected = %v, want %v", got, tt.want)
+			}
+			// equalStrings cannot tell nil from empty, and here the difference
+			// is the whole bug (#171): every resolver in cli/cmd/registry.go
+			// reads nil as "no filter", so a nil from an emptied checklist
+			// installed all of them.
+			if got == nil {
+				t.Error("collectSelected = nil; must be non-nil so an empty pick stays tellable from no pick")
 			}
 		})
 	}
