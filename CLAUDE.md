@@ -4,7 +4,7 @@
 
 A curated collection of Claude Code agents, skills, hooks, and MCP servers that brings a consistent, expert-level development experience to any project. Install once, distribute to your team.
 
-**Components**: `agents/` (34 agents) · `skills/` (8 user commands) · `hooks/` (10 hooks — 7 enabled by default, 3 opt-in `graphify-*`) · `mcps/` (MCP registry) · `cli/` (Go installer CLI `devexp`)
+**Components**: `agents/` (34 agents) · `skills/` (8 user commands) · `hooks/` (11 hooks — 7 enabled by default, 4 opt-in: 3 `graphify-*` and `comment-refs-on-save`) · `mcps/` (MCP registry) · `cli/` (Go installer CLI `devexp`)
 
 **Stack:** Markdown assets · bash + python3 (Claude Code hooks) · ESM JS on Node builtins (opencode hooks) · Go 1.25 CLI (cobra, viper, promptui) · **Entry point:** `install.sh` → `cli/main.go`
 
@@ -26,6 +26,8 @@ New to this repo? Read in order: [architecture overview](docs/architecture/overv
 | Dry-run (preview, non-interactive) | `./install.sh --dry-run` |
 | Uninstall | `./uninstall.sh` |
 | Test — Go (as CI) | `./scripts/stage-assets.sh && (cd cli && go test ./... -race -cover)` |
+| Lint — Go (as CI) | `./scripts/golangci-lint.sh` |
+| Lint — comment refs, any language (as CI) | `./scripts/check-comment-refs.sh` |
 | Test — Claude Code hooks (as CI) | `for f in hooks/claude-code/*.test.sh; do bash "$f" \|\| exit 1; done` |
 | Test — Kimi hooks (as CI) | `for f in hooks/kimi/*.test.sh; do bash "$f" \|\| exit 1; done` |
 | Rebuild local CLI after Go changes | `rm bin/devexp && ./install.sh --dry-run` |

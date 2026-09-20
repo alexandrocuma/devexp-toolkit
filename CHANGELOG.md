@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A `lint` job in CI, and the two checks behind it.** `.github/workflows/ci.yml` grew a fourth job that blocks, closing the gap `docs/development/testing.md` recorded as "Lint: not enforced — no lint job in `ci.yml`, no linter config".
+
+  **`.golangci.yml` + `scripts/golangci-lint.sh`** cover the Go CLI: `gofmt`, and `revive`'s `exported` rule so a new undocumented exported symbol fails. Deliberately narrow — the default linter set is off, and widening is a decision rather than a default. The pinned golangci-lint installs into a temporary GOBIN that is removed on exit, the way `govulncheck.sh` already worked, so nothing lands on anyone's PATH. `cli/internal/assets/` is excluded as the generated mirror it is, and the script stages assets first, because a linter that cannot load a package reports nothing rather than reporting a failure.
+
+  **`comment-refs.sh` + `scripts/check-comment-refs.sh`** enforce the comment standard, and are **language-agnostic on purpose**. The rule — no issue number, URL or tracker id in a comment — holds for the bash and JS hooks devexp ships as much as for the Go CLI, and a Go linter could only ever hold it in `cli/` while quietly abandoning it in the other two-thirds of the repo. The language-specific part is one extension→comment-syntax table covering the `//`, `#`, `--`, `;` and `%` families plus C-style block comments; adding a language is one line.
+
+- **`comment-refs-on-save`, the eleventh hook** (`hooks/claude-code/comment-refs-on-save.sh`, `hooks/opencode/comment-refs-on-save.js`), reporting the same findings on the file just written. Advisory — it prints to stderr and never blocks a write.
+
+  It **ships disabled**, and for a different reason from the `graphify-*` set. Those are off because they need a tool and a graph; this one is off because "no issue numbers in comments" is devexp's house opinion, not a universal truth. Plenty of projects deliberately want `#123` in a comment, and none of the hooks beside it imposes a style opinion — the rest are safety guards or advisory tool runners. devexp's own repo opts in through its CI rather than through the hook.
+
+  The scan is shared with the CI check rather than reimplemented, so the editor and the gate can never disagree about what a violation is. The opencode twin is a mirror, case for case with the shell suite, because it cannot share the file.
+
+  What it deliberately does not report is asserted rather than assumed: a trailing comment after code (telling it from a marker inside a string literal needs a real parser per language), a shebang, a quoted example inside a comment, and any file whose extension has no table entry. A blocking check that cries wolf gets switched off, so under-reporting is the safe direction.
+
 - **The exported API of `cli/` is documented** — 38 declarations across 11 files, plus a package doc comment on each of the seven packages that had none (`cmd`, `agents`, `config`, `hooks`, `mcp`, `skills`, `ui`). `revive`'s `exported` rule now passes across `cli/` with `cli/internal/assets/` excluded, which is what #189 needs in order to turn that rule on without turning CI red.
 
   The bar was that a doc comment has to say what the signature cannot, so the ones worth having are the ones recording an invariant or a failure mode: `config.Load` never returns a nil `*Config`, because callers treat a missing file as "install everything" and would otherwise need a nil check; `mcp.LoadRegistry` can return a partially decoded slice alongside its error, so length is not a substitute for checking it; `ui.Error` is the only line in that package on stderr; `ui.Action` and `ui.Scope` are menu *indices*, so their constant order and the prompt's item order are one fact in two places. `hooks.InstallClaude` records why a relative `repoDir` is refused up front — Claude Code runs a hook command from wherever it happens to be, and a guard that fails to start is a guard that does not block.
@@ -50,6 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The frontmatter key `trigger: /graphify` is dropped, following upstream. It was never a devexp convention — 1 of 8 skills carried it, and `cli/internal/skills/kimi.go` documents it as an unknown key that is passed through and ignored. `skills/graphify/.graphify_version` is now tracked so the vendored version is recorded and upstream's staleness check stays accurate after a devexp install overwrites the deployed copy.
 
 ### Fixed
+
+- **Four comment references the earlier sweep did not reach**, found by running the new check over the whole tree rather than the paths the ticket listed. `uninstall.test.sh` cited a PR review and is rewritten; `hooks/opencode/dangerous-cmd-guard.js` and `scripts/remote-install.sh` held an example path and a usage command, which are data rather than citations and are now written as such — the shell twin of that `dangerous-cmd-guard` line had already been quoted, so the two now match. Fixtures under `testdata/` are excluded by scope: a legacy plugin reproduced there has to stay verbatim.
 
 - **Two false claims in `docs/development/conventions.md`.** The Style section asserted that issue numbers live in hook *headers* and commit bodies, and that "Go source doesn't cite issue numbers". Neither half held: references run through hook *bodies*, and 8 non-test Go files plus 9 test files cite issue numbers on disk. A convention page that describes code the repo does not have is worse than no page, because it is read as permission. The sentence is replaced by a pointer to the new standard, and the distance between the standard and the tree is recorded where such gaps belong — under `## Inconsistencies`, with the scope of the remaining cleanup named.
 

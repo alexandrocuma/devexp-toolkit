@@ -71,6 +71,24 @@ jobs:
             echo "== $f"; bash "$f" || exit 1
           done
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+      # Pinned version and exit codes live in the script: 1 = finding,
+      # 2 = infrastructure. It stages the embedded assets itself, because a
+      # linter that cannot load a package reports nothing rather than failing.
+      - name: golangci-lint
+        run: ./scripts/golangci-lint.sh
+      # The comment standard spans Go, bash and JS, so it is checked by a
+      # language-agnostic scanner rather than a Go linter. Needs no toolchain.
+      - name: comment references
+        run: ./scripts/check-comment-refs.sh
+
   govulncheck:
     runs-on: ubuntu-latest
     # Same as the workflow default above, restated because this is the job that

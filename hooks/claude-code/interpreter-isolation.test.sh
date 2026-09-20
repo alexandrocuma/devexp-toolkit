@@ -73,6 +73,7 @@ check large-file-guard          "$WRITE"
 check format-on-save            "$WRITE"
 check lint-on-save              "$WRITE"
 check test-on-save              "$WRITE"
+check comment-refs-on-save      "$WRITE"
 check graphify-read-guard       '{"tool_name":"Read","tool_input":{"file_path":"src/app.py"}}'
 check graphify-session-sentinel '{"tool_name":"Bash","tool_input":{"command":"graphify query \"x\""}}'
 check graphify-grep-nudge       '{"tool_name":"Grep","tool_input":{"pattern":"x"}}'
@@ -81,11 +82,13 @@ check graphify-grep-nudge       '{"tool_name":"Grep","tool_input":{"pattern":"x"
 # every file, not just the ones hooks/registry.json registers, because the next
 # shared helper that runs python3 is exactly what this is for.
 #
-# HELPERS are the exceptions: sourced by the guards, with no envelope of their
-# own, so they are covered transitively -- every check above runs scan-budget.sh
-# from the crowded working directory too, and a module it picked up there would
-# show in the sentinel. Adding one is deliberate, and it must exist.
-HELPERS="scan-budget"
+# HELPERS are the exceptions: shared code the hooks source or invoke, with no
+# envelope of their own, so they are covered transitively -- every check above
+# runs scan-budget.sh from the crowded working directory, and the
+# comment-refs-on-save check runs comment-refs.sh from it, so a module either
+# picked up there would show in the sentinel. Adding one is deliberate, and it
+# must exist.
+HELPERS="scan-budget comment-refs"
 
 for name in $HELPERS; do
   [ -f "$DIR/$name.sh" ] || { fail=$((fail+1)); printf 'FAIL %-26s is allowlisted but does not exist\n' "$name"; }

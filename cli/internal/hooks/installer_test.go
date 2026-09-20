@@ -958,8 +958,8 @@ func TestLoadRegistry_RepoRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadRegistry() error = %v", err)
 	}
-	if len(registry) != 10 {
-		t.Fatalf("LoadRegistry() = %d hooks, want 10", len(registry))
+	if len(registry) != 11 {
+		t.Fatalf("LoadRegistry() = %d hooks, want 11", len(registry))
 	}
 
 	// All three graphify hooks are off for Claude Code. For opencode they split

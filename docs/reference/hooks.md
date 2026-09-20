@@ -2,7 +2,7 @@
 
 ## How Hooks Work
 
-Hooks intercept tool calls automatically — no user action required. Some are safety guards that block or ask; others (`lint-on-save`, `format-on-save`, `test-on-save`, `graphify-grep-nudge`) are advisory and never block. Each hook has an implementation per CLI, and the installer installs all three: the Claude Code scripts (`cli/cmd/install_claude.go`), the opencode plugin (`cli/cmd/install_opencode.go`), and — for the guards Kimi can honour — the same Claude Code scripts behind an adapter (`cli/cmd/install_kimi.go`).
+Hooks intercept tool calls automatically — no user action required. Some are safety guards that block or ask; others (`lint-on-save`, `format-on-save`, `test-on-save`, `comment-refs-on-save`, `graphify-grep-nudge`) are advisory and never block. Each hook has an implementation per CLI, and the installer installs all three: the Claude Code scripts (`cli/cmd/install_claude.go`), the opencode plugin (`cli/cmd/install_opencode.go`), and — for the guards Kimi can honour — the same Claude Code scripts behind an adapter (`cli/cmd/install_kimi.go`).
 
 **Claude Code** hooks are shell scripts registered in `~/.claude/settings.json` under `PreToolUse` or `PostToolUse` events. devexp edits only its own handlers there; your hooks keep every field ([install guide](../guides/install.md#what-install-and-uninstall-change-in-settingsjson)). Claude Code calls the script with a JSON payload on stdin and reads the response:
 
@@ -30,6 +30,7 @@ hooks/
   registry.json               # Source of truth — one entry per hook
   claude-code/                # One .sh file per hook + tests
   └── scan-budget.sh           # Shared: the wall-clock scan budget the fail-closed guards run under, and the proof of work they allow on
+  └── comment-refs.sh          # Shared: the language-agnostic comment-reference scanner, also run by CI over the whole repo
   └── secret-guard.sh
   └── secret-in-write-guard.sh
   └── dangerous-cmd-guard.sh
@@ -37,6 +38,7 @@ hooks/
   └── lint-on-save.sh
   └── format-on-save.sh
   └── test-on-save.sh
+  └── comment-refs-on-save.sh
   └── graphify-read-guard.sh
   └── graphify-session-sentinel.sh
   └── graphify-grep-nudge.sh
@@ -45,6 +47,7 @@ hooks/
   └── fail-closed.test.sh      # Guards fail closed / advisory hooks fail open but loud
   └── scan-budget.test.sh      # The scan budget: forced hits block, ordinary input is untouched
   └── interpreter-proof.test.sh # A guard allows only against proof its own scan ran
+  └── comment-refs.test.sh     # The scanner across five languages, and what it deliberately does not report
   kimi/                       # The Kimi Code CLI adapter for the Claude Code guards
   └── adapter.sh              # Translates Kimi's envelope, runs the guard, fail-closed on anything ambiguous
   └── adapter.test.sh         # The translation, the verdict mapping and every fail-closed path
@@ -58,12 +61,14 @@ hooks/
   └── lint-on-save.js
   └── format-on-save.js
   └── test-on-save.js
+  └── comment-refs-on-save.js
   └── graphify-read-guard.js
   └── graphify-session-sentinel.js
   └── graphify-grep-nudge.js
   └── secret-guard.test.js     # Hook tests (*.test.js), run by CI
   └── dangerous-cmd-guard.test.js
   └── scan-budget.test.js     # The scan budget, and both twins agreeing on the same input
+  └── comment-refs-on-save.test.js # The JS twin of the scanner, case for case with the shell side
   └── devexp-plugin.js        # Entry point — composes the modules listed in devexp/hooks.json
   └── devexp-plugin.test.js   # Entry tests: selection, failure isolation, fail-closed stubs, event adapter
   └── package.json            # { "type": "module" } — required for ESM
@@ -131,9 +136,12 @@ Every key other than `name`, `description` and `enabled` whose value is an objec
 | `lint-on-save` | PostToolUse | `Write\|Edit` | Runs the project linter on edited source files (JS/TS → biome/eslint, Python → ruff/flake8, Go → go vet, Ruby → rubocop) |
 | `format-on-save` | PostToolUse | `Write\|Edit` | Runs the project formatter in-place (JS/TS → biome/prettier, Python → ruff/black, Go → gofmt, Ruby → rubocop). In opencode it rewrites the file after the edit tool computed its diff, so the reported diff can differ from the file on disk |
 | `test-on-save` | PostToolUse | `Write\|Edit` | Runs the associated test file after editing a source file — skips silently if no test file found |
+| `comment-refs-on-save` *(disabled)* | PostToolUse | `Write\|Edit` | Reports comments that cite an issue number, URL or tracker id — the rule being that a comment is self-contained. Language-agnostic: an extension→comment-syntax table rather than a per-language linter, so it covers the shell and JS hooks as well as `cli/`. Shares `hooks/claude-code/comment-refs.sh` with the repo's own `lint` CI job, which blocks on the same findings |
 | `graphify-read-guard` *(disabled)* | PreToolUse | `Read\|Glob` | Gates source reads/globs behind a tapering `graphify query` cadence (5 → 3 → 1 queries to unlock, ~6 reads per cycle) — pairs with the [`graphify`](../../skills/graphify/SKILL.md) skill |
 | `graphify-session-sentinel` *(disabled)* | PostToolUse | `Bash` | Tracks `graphify query/path/explain` usage toward `graphify-read-guard`'s tapering gate |
 | `graphify-grep-nudge` *(disabled)* | PreToolUse | `Bash\|Grep` | Soft-nudges toward `graphify query` (via `additionalContext`, never a block) when grep-like commands or the `Grep` tool run |
+
+`comment-refs-on-save` ships with `enabled: false` for a different reason from the `graphify-*` set: it enforces a **house style**, not a safety property or a tool integration. Plenty of projects deliberately keep an issue number in a comment, and none of the hooks beside it imposes a style opinion — so it is opt-in, and devexp's own repo opts in through its CI rather than through the hook.
 
 The three `graphify-*` hooks ship with `enabled: false` — they're an **optional set** for projects that adopt the `graphify` skill and maintain a `graphify-out/` knowledge graph. All three self-gate on `graphify-out/graph.json` existing, so flipping them on is harmless even if a project hasn't built a graph yet (they simply no-op). Enable them in a fork by setting `"enabled": true` in `hooks/registry.json`. `devexp.config.json` can't enable them: it supports only `hooks.disabled` (`cli/internal/config/config.go`), and the installer skips any hook not enabled for its target (`EnabledFor`: the target block's `enabled`, else the top-level one) before it looks at config (`cli/internal/hooks/installer.go`). The install wizard lists only enabled hooks (`listHookNames` in `cli/cmd/registry.go`).
 

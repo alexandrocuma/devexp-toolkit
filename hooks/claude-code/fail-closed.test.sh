@@ -52,6 +52,7 @@ check large-file-guard        0 advisory
 check format-on-save          0 advisory
 check lint-on-save            0 advisory
 check test-on-save            0 advisory
+check comment-refs-on-save    0 advisory
 
 # ── The happy path must be untouched ────────────────────────────────────────
 # A well-formed envelope with nothing to block still exits 0 and stays silent.

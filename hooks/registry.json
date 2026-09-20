@@ -160,6 +160,28 @@
     "enabled": true
   },
   {
+    "name": "comment-refs-on-save",
+    "description": "Reports comments that cite an issue number, URL or tracker id in the file just written — the rule being that a comment is self-contained, so a reader never has to open a tracker to understand the code in front of them. Language-agnostic: an extension→comment-syntax table, not a per-language linter. Advisory, never blocks. Ships disabled by default — it enforces a house style rather than a safety property, and plenty of projects deliberately want an issue number in a comment.",
+    "claude_code": {
+      "event": "PostToolUse",
+      "matcher": "Write|Edit",
+      "script": "hooks/claude-code/comment-refs-on-save.sh"
+    },
+    "opencode": {
+      "event": "file.edited",
+      "module": "hooks/opencode/comment-refs-on-save.js",
+      "export": "commentRefsOnSave"
+    },
+    "kimi": {
+      "event": "PostToolUse",
+      "matcher": "^(Write|Edit)$",
+      "script": "hooks/claude-code/comment-refs-on-save.sh",
+      "enabled": false,
+      "reason": "Kimi reads a PostToolUse hook's stderr only when it blocks, and this one never does — it would run on every write and say nothing"
+    },
+    "enabled": false
+  },
+  {
     "name": "graphify-read-guard",
     "description": "Gate source-file reads/globs behind a tapering graphify-query cadence (5 → 3 → 1 queries to unlock, ~6 reads per cycle) instead of a flat timer — requires the graphify skill and an existing graphify-out/graph.json. Ships disabled; enable only in projects that maintain a graphify knowledge graph.",
     "claude_code": {

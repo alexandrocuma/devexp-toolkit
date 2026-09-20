@@ -116,7 +116,7 @@ Mirror CI — it runs all of these on the PR:
 - [ ] `for f in hooks/opencode/*.test.js; do node "$f" || exit 1; done`
 - [ ] `for f in ./*.test.sh; do bash "$f" || exit 1; done`
 - [ ] Touched `cli/go.mod`/`go.sum`, the Go toolchain or `.goreleaser.yaml` platforms? `./scripts/govulncheck.sh` — CI fails on a called finding (see [vulnerability scan](#vulnerability-scan)).
-- [ ] Lint: not enforced — no lint job in `ci.yml`, no linter config. `(cd cli && go vet ./... && gofmt -l .)` is clean at this commit and was run by hand for #97 (`CHANGELOG.md`, `## [0.7.0]`, the `cmd/install.go` split entry).
+- [ ] Lint: `./scripts/golangci-lint.sh` (gofmt + revive's `exported` rule over `cli/`) and `./scripts/check-comment-refs.sh` (no issue number, URL or tracker id in a comment, in any language). Both run in the `lint` job in `ci.yml` and block.
 - [ ] Type check: N/A — covered by `go test`/`go vet` for Go; none configured for shell/JS.
 - [ ] Changed an agent, skill or hook? `./install.sh` and exercise it in Claude Code, opencode or Kimi Code (see [`setup.md`](setup.md#commands)).
 
