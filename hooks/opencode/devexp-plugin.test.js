@@ -429,7 +429,7 @@ const BENIGN = [{ tool: 'bash' }, { args: { command: 'ls' } }];
   }
 
   // Contract: the entry reads exactly name, module, export and failClosed —
-  // the keys #108's installer must write. The documented example is the target.
+  // the keys devexp's installer must write. The documented example is the target.
   const guide = readFileSync(join(REPO, 'docs', 'development', 'hook-authoring-guide.md'), 'utf8');
   const section = guide.slice(guide.indexOf('### The `devexp/hooks.json` contract'));
   const documented = JSON.parse(section.match(/```json\n([\s\S]*?)```/)[1]);

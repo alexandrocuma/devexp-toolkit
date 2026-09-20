@@ -158,7 +158,7 @@ block Edit  GitHub "export GITHUB_TOKEN=$GH_S_JWT"
 block Write GitHub "${GH}u_eyJ$(rep FAKE 5)"
 block Write GitHub "${GH}r_9_eyJ$(rep FAKE 5)"
 block Write GitHub "${GH}s_12_34_eyJ$(rep FAKE 5)"
-# A large write, secret first — once allowed silently (#101).
+# A large write, secret first — once allowed silently.
 block Write OpenAI        "$OPENAI"$'\n'"$FILLER"
 block Edit  'private key' "$PK_RSA$FILLER"
 
@@ -206,14 +206,14 @@ allow Write 'const github_pat_rotation_reminder_days_for_organization_members_wi
 allow Write 'const REGION = "ASIAPACIFICDATACENTER01";'
 allow Edit  'EURASIAPACIFICREGION024 = load_regions()'
 # Long snake_case names holding a GitHub prefix: right_ holds ght_, highs_ holds
-# ghs_. Joined at runtime, since the guard blocked them before (#143).
+# ghs_. Joined at runtime, since the guard blocked them before.
 allow Write "def test_blocks_ri${GH}t_token_when_a_write_holds_a_long_snake_case_name(): pass"
 allow Edit  "hi${GH}s_and_lows_for_every_region_in_the_dataset_since_2000 = {}"
 allow Write "const wei${GH}t_surveyJson_for_every_respondent_in_the_panel = load();"
 allow Edit  "ri${GH}t_eye_contact_duration_for_the_whole_recorded_session = 3"
 allow Write 'Installation tokens now look like ghs_APPID_JWT.'
 
-# ── must ALLOW: placeholders shaped like a key (#143) ───────────────────────
+# ── must ALLOW: placeholders shaped like a key ──────────────────────────────
 # Documented example values, your-... phrases, one repeated character, <...>.
 allow Write "SLACK_BOT_TOKEN=${XOX}b-your-token"
 allow Edit  "slack_token: ${XOX}p-your-slack-user-token-here"
@@ -259,7 +259,7 @@ block Edit  Anthropic "${SK}-ant-your-key-FAKE0-$(body FAKE0 40)"
 block Write Anthropic "${SK}-ant-your-key-here-$ANTHROPIC"
 block Write OpenAI    "${SK}-proj-your-project-key-$(rep FAKE0_ 16)FAKE0"
 block Write AWS       "id = ${AS}EXAMPLE$(body FAKE 9)"
-# A service-key name may hold an empty segment (a doubled separator) (#158).
+# A service-key name may hold an empty segment (a doubled separator).
 block Edit  OpenAI    "${SK}-service-svc--$(body 0FAKE 48)"
 # Only the whole body counts: "your" glued to more letters, or an unknown
 # key-type segment before a repeated run, is not a placeholder.
@@ -267,16 +267,16 @@ block Edit  Anthropic "${SK}-ant-your$(rep FAKEfake 6)"
 block Write OpenAI    "${SK}-proj-YOUR$(rep FAKEfake 12)"
 block Write Slack     "${XOX}b-your$(rep FAKEfake 2)"
 block Write Anthropic "${SK}-ant-fake0-$(rep x 60)"
-# A repeated run followed by a separator isn't the whole body (#158).
+# A repeated run followed by a separator isn't the whole body.
 block Edit  OpenAI    "${SK}-service-$(rep x 4)-$(body 0FAKE 48)"
-# A stateless GitHub token's id segment may hold letters (#158).
+# A stateless GitHub token's id segment may hold letters.
 block Write GitHub    "${GH}s_Iv23liFAKE_eyJ$(rep FAKE 5)"
 # Known and kept: a gh?_ fragment followed by a segment starting eyJ reads as a
-# stateless token, since GitHub's JWT starts that way (#158).
+# stateless token, since GitHub's JWT starts that way.
 block Write GitHub    "hi${GH}s_eyJson_parser_for_every_region = 1"
 block Edit  OpenAI    "${SK}-proj-$(rep x 80)FAKE"
 
-# ── must ALLOW: a private-key header with no key material (#143) ────────────
+# ── must ALLOW: a private-key header with no key material ───────────────────
 allow Write "Keys in PKCS#1 form start with \"${D5}BEGIN RSA PRIVATE KEY${D5}\"; see https://docs.example.com/security/private-keys.html"
 allow Edit  "if line.startswith('${D5}BEGIN OPENSSH PRIVATE KEY${D5}'):"$'\n'"    return True"
 allow Write "${D5}BEGIN PRIVATE KEY${D5}"$'\n'"<your private key>"$'\n'"${D5}END PRIVATE KEY${D5}"
@@ -294,7 +294,7 @@ block Write 'private key' "${D5}BEGIN OPENSSH PRIVATE KEY${D5}"$'\n'"$(body b3Bl
 block Write 'private key' "Look for ${D5}BEGIN RSA PRIVATE KEY${D5} at the top."$'\n'"$PK_RSA"
 block Edit  'private key' "${D5}BEGIN EC PRIVATE KEY${D5}"$'\n'"${D5}END EC PRIVATE KEY${D5}"$'\n'"$PK_EC"
 # A dash rule between header and body doesn't end the search; only an END or
-# BEGIN line does (#158).
+# BEGIN line does.
 for kind in 'RSA PRIVATE KEY' 'PRIVATE KEY' 'EC PRIVATE KEY' 'DSA PRIVATE KEY' 'ENCRYPTED PRIVATE KEY' 'OPENSSH PRIVATE KEY' 'PGP PRIVATE KEY BLOCK' 'PGP SECRET KEY BLOCK'; do
   block Write 'private key' "${D5}BEGIN $kind${D5}"$'\n'"${D5}"$'\n'"$(body MIIEFAKE0+/ 64)"$'\n'"${D5}END $kind${D5}"
 done
@@ -307,7 +307,7 @@ block Write 'private key' "\"${D5}BEGIN RSA PRIVATE KEY${D5}\\r\\n$(body MIIEFAK
 # Key-like text on the header's line, or just after it, still blocks.
 block Edit  'private key' "if (pem.startsWith(\"${D5}BEGIN PRIVATE KEY${D5}\")) return parsePkcs8PrivateKeyFromPemEncodedString(pem);"
 
-# ── must ALLOW: a quoted header, whatever the rest of the write holds (#158) ─
+# ── must ALLOW: a quoted header, whatever the rest of the write holds ────────
 # Only text near the header counts as its key material, and the search ends at
 # an END or BEGIN line, so a later identifier, fingerprint, path or hash in the
 # same file doesn't block.
@@ -318,7 +318,7 @@ allow Edit  "Paste the key (it starts with ${D5}BEGIN OPENSSH PRIVATE KEY${D5}).
 allow Write "Store the ${D5}BEGIN EC PRIVATE KEY${D5} file on the host."$'\n'"$PROSE"$'\n'"Path: /home/deploy/configuration/secrets/keys/"
 allow Write "${D5}BEGIN PRIVATE KEY${D5}"$'\n'"<paste your private key here>"$'\n'"${D5}END PRIVATE KEY${D5}"$'\n'"checksum: $(body 0123456789abcdef 64)"
 allow Edit  "Header: ${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n\n'"$PROSE$PROSE"$'\n'"Fixed in commit $(body 0123456789abcdef 40)."
-# Backslashes near a quoted header that aren't an escaped key body (#158):
+# Backslashes near a quoted header that aren't an escaped key body:
 # Windows paths, escapes in code strings, \u escapes, escaped prose, LaTeX.
 allow Write 'Save the '"${D5}BEGIN RSA PRIVATE KEY${D5}"' file as C:\ProgramData\ContosoDeploy\Certificates\Private\server.pem'
 allow Edit  'Header '"${D5}BEGIN OPENSSH PRIVATE KEY${D5}"'. Key path: C:\Users\Administrator\AppData\Roaming\SshAgent\keys\id_ed25519'
@@ -336,7 +336,7 @@ block Write 'private key' "${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n'"$(body FAKE0+/ 
 allow Write "\"${D5}BEGIN RSA PRIVATE KEY${D5}\\n$(body FAKE0abcdefghijk 15)\\n$(body FAKE0abcdefghijk 16)\\n${D5}END RSA PRIVATE KEY${D5}\""
 allow Write "\"${D5}BEGIN RSA PRIVATE KEY${D5}\\n$(body FAKE0abcdefghijk 16)\\n$(body FAKE0abcdefghijk 15)\\n${D5}END RSA PRIVATE KEY${D5}\""
 block Write 'private key' "\"${D5}BEGIN RSA PRIVATE KEY${D5}\\n$(body FAKE0abcdefghijk 16)\\n$(body FAKE0abcdefghijk 16)\\n${D5}END RSA PRIVATE KEY${D5}\""
-# Bounded repetitions (#158), pinned at the edge: material that starts just
+# Bounded repetitions, pinned at the edge: material that starts just
 # inside the search window after a header, the header's words, the words of a
 # your-... phrase, service-key name segments, and GitHub id segments.
 block Write 'private key' "${D5}BEGIN RSA PRIVATE KEY${D5}"$'\n'"$(body ' ' 494)$(body FAKE0+/ 32)"
@@ -401,7 +401,7 @@ sys.exit(0 if sys.argv[2] in [t.strip() for t in m.split("|")] else 1)' \
   fi
 done
 
-# ── timing: every pattern decides in linear time (#158) ─────────────────────
+# ── timing: every pattern decides in linear time ────────────────────────────
 # A hook that runs past Claude Code's timeout doesn't block the call, so a slow
 # pattern lets the write through. These writes repeat a prefix or a header so
 # that an unbounded repetition would rescan from every start. The 100 KB tier

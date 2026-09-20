@@ -142,14 +142,14 @@ var kimiUnrenderableRe = regexp.MustCompile(`\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$ARGU
 // else ~/.kimi-code — and refuses the values that would aim an install, and
 // later a removal, somewhere it must never point. Kimi resolves a relative
 // value against whatever directory it happens to run in; devexp refuses one
-// outright, for the same reason targetHome refuses a relative HOME (#126).
+// outright, for the same reason targetHome refuses a relative HOME.
 // Kimi treats an empty value as unset, so devexp does too.
 //
 // The two branches converge on one root and one set of content checks before
 // a single return. They were two returns, and the content checks sat only on
 // the explicit branch: with $KIMI_CODE_HOME unset — the path almost every user
 // takes — a $HOME holding a newline installed 34 agents and 8 skills with
-// attacker-chosen lines spliced into six of their bodies (PR #174 review).
+// attacker-chosen lines spliced into six of their bodies.
 // Anything that rejects a root has to be reachable from both branches, so
 // there is only one place to add the next one.
 func resolveKimiHome(kimiCodeHome, home string) (string, error) {
@@ -167,8 +167,8 @@ func resolveKimiHome(kimiCodeHome, home string) (string, error) {
 			return "", fmt.Errorf("KIMI_CODE_HOME is %q, not an absolute path", kimiCodeHome)
 		}
 		root, named = filepath.Clean(kimiCodeHome), "KIMI_CODE_HOME"
-		// The root gets a manifest, a backup directory and, from #113,
-		// removals, so it may not be the filesystem root, the home directory,
+		// The root gets a manifest, a backup directory and removals, so it
+		// may not be the filesystem root, the home directory,
 		// or anything containing the home directory (/Users, $HOME/.., …). An
 		// unrelated absolute path such as /opt/kimi is deliberately allowed:
 		// pointing $KIMI_CODE_HOME somewhere outside $HOME is the whole reason
@@ -184,7 +184,7 @@ func resolveKimiHome(kimiCodeHome, home string) (string, error) {
 		}
 	}
 
-	// From #113 this path is written into the installed agent and skill
+	// This path is written into the installed agent and skill
 	// bodies, which are prompts a model reads, so what it may contain is no
 	// longer only devexp's problem. It reaches here from $KIMI_CODE_HOME or
 	// from $HOME, and both are attacker-controlled in the cases that matter:
@@ -198,7 +198,8 @@ func resolveKimiHome(kimiCodeHome, home string) (string, error) {
 	//   - Bytes that are not valid UTF-8 cannot survive the round trip. Kimi
 	//     reads these files as UTF-8 and would substitute replacement
 	//     characters, so the rewritten reference would point at a path that
-	//     does not exist, silently (#140, the same class for settings.json).
+	//     does not exist, silently. settings.json is exposed to the same
+	//     class of failure.
 	//     macOS refuses such a directory name outright; Linux does not.
 	//
 	// All three are refused here rather than escaped at each use, because this

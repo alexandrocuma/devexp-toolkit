@@ -20,7 +20,7 @@ const BLOCK_PATHS = [
   'deploy_ed25519',
 ];
 
-// Committed templates are not secrets (#87).
+// Committed templates are not secrets.
 const ALLOW_PATHS = [
   TEMPLATE,
   `mcps/${TEMPLATE}`,
@@ -44,7 +44,7 @@ const BLOCK_CMDS = [
   'grep secret id_rsa',  // pattern is 'secret'; id_rsa is the file argument
 ];
 
-// A mention is not a read (#81), and templates stay readable (#87).
+// A mention is not a read, and templates stay readable.
 const ALLOW_CMDS = [
   `cat mcps/${TEMPLATE}`,
   `grep -c UI_INSPECTOR_DIR mcps/${TEMPLATE}`,

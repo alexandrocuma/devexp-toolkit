@@ -17,9 +17,8 @@ import (
 
 // ── Kimi Code CLI ─────────────────────────────────────────────────────────────
 //
-// MCP servers (#112), agents and skills (#113) and hooks (#114) all install
-// here, so a Kimi run writes everything devexp ships, and #115 takes it all
-// out again. What every run says instead is how much less of it Kimi honours
+// MCP servers, agents and skills, and hooks all install here, so a Kimi run
+// writes everything devexp ships, and doUninstallKimi takes it all out again. What every run says instead is how much less of it Kimi honours
 // than Claude Code does (warnKimiFeatureSubset).
 //
 // The order matches doInstallClaude: MCP servers first, then agents, then
@@ -48,11 +47,12 @@ func doInstallKimi(opts *installOpts) error {
 
 	old := loadOldManifest(p.manifest)
 	// The whole struct, so a field this target does not write — and a field a
-	// later version adds — is carried forward rather than dropped (#108).
+	// later version adds — is carried forward rather than dropped.
 	newManifest := *old
 
 	// Deferred, so the record survives a step that fails after an earlier one
-	// wrote. Before #113 there was nothing after the MCP step to fail; now a
+	// wrote. When MCP servers were all a Kimi run installed, there was
+	// nothing after that step to fail; now a
 	// failing agent or skill install would return with mcp.json already
 	// merged and its ownership unrecorded, and the next run would read
 	// devexp's own entries as the user's and never touch them again. The
@@ -80,7 +80,7 @@ func doInstallKimi(opts *installOpts) error {
 		if err != nil {
 			// An mcp.json devexp cannot merge into without losing what is
 			// there costs only the MCP step; it is not a reason to fail the
-			// run, and since #113 there is always more to do afterwards.
+			// run, and there is always more to do afterwards.
 			var refused *mcp.ConfigRefusedError
 			if !errors.As(err, &refused) {
 				return err
@@ -180,7 +180,7 @@ func doInstallKimi(opts *installOpts) error {
 	ui.Success("Kimi Code CLI installation complete.")
 	// Only what this run actually did. With three kinds of asset and three
 	// --*-only flags, listing all three every time would claim work that did
-	// not happen. Quoted, because the paths come from $KIMI_CODE_HOME (#111).
+	// not happen. Quoted, because the paths come from $KIMI_CODE_HOME.
 	if !opts.agentsOnly && !opts.skillsOnly {
 		fmt.Printf("  MCPs   : %q\n", p.mcp)
 	}
