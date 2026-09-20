@@ -113,7 +113,9 @@ New slash commands should be rare. First check whether the capability fits insid
 
 ### Add a hook
 
-Full guide: [hook-authoring-guide](../development/hook-authoring-guide.md#deployment-checklist). Every hook has three touch points, and **the `opencode` and `kimi` mappings in step 3 are the ones people miss**:
+Full guide: [hook-authoring-guide](../development/hook-authoring-guide.md#deployment-checklist). Every hook has three touch points, and **the `opencode` and `kimi` mappings in step 3 are the ones people miss**.
+
+Steps 3, 4 and 5 are now asserted by `cli/internal/repocheck/` — a registry entry naming a file that does not exist, a hook on disk with no registry entry, a `kimi` block switched off with no reason, a hook no test mentions, and a count in prose that no longer matches disk each fail `go test`. The prose below still explains *why* each step exists; the test is what notices when one is skipped.
 
 1. `hooks/claude-code/<hook-name>.sh`: start with the `# devexp hook:` / `# Event: … | Matcher: …` header and `set -euo pipefail`, then `chmod +x`. A security guard must fail closed (`exit 2`) if it can't parse its input, and an advisory hook fails open but prints an internal error ([conventions](../development/conventions.md#error-handling)).
 2. `hooks/opencode/<hook-name>.js`: export `async function <hookName>(_ctx)` that returns the event handlers, using `hooks/opencode/utils.js` for shared helpers.
@@ -121,7 +123,7 @@ Full guide: [hook-authoring-guide](../development/hook-authoring-guide.md#deploy
 
    Decide the **`kimi`** block in the same commit: either `kimi{event,matcher,script,fail_closed?,timeout}` with an *anchored* matcher and a timeout above the scan budget, or `kimi{enabled:false,reason}` saying what Kimi does that makes the hook meaningless there — a `PostToolUse` result Kimi never reads, an `ask` Kimi runs as an allow. The Kimi install copies the adapter, the mapped guards and `scan-budget.sh` into `$KIMI_CODE_HOME/hooks/` and registers the commands in `config.toml` (`cli/internal/hooks/kimi_install.go`). A hook with no `kimi` block is simply absent there and says nothing; one with a reason says it on the run that would have installed it.
 4. Write tests. Add a mirrored `<hook-name>.test.sh` and `<hook-name>.test.js` for the decision logic (pattern: `hooks/claude-code/secret-guard.test.sh` ↔ `hooks/opencode/secret-guard.test.js`). If the script extracts input with python3, add a `check <hook-name> 2 guard` or `check <hook-name> 0 advisory` line to `hooks/claude-code/fail-closed.test.sh`. If Kimi installs it, add a case to `hooks/kimi/runner.test.sh`, which drives the registered command the way Kimi's own runner does. CI runs every `*.test.sh` / `*.test.js` automatically (`.github/workflows/ci.yml`). How to write them: [testing](../development/testing.md).
-5. Update the hook catalog and counts: `docs/reference/hooks.md` (catalog table and file tree), `hooks/README.md`, `README.md` ("10 hooks") and `CLAUDE.md` ("10 safety guards").
+5. Update the hook catalog and counts: `docs/reference/hooks.md` (catalog table and file tree), `hooks/README.md`, `README.md` and `CLAUDE.md`. The numbers are no longer written here, because a checklist that states a count goes stale the same way the prose it points at does — `cli/internal/repocheck/counts_test.go` derives them from disk and names every sentence to edit when one moves.
 6. Run `./install.sh`, then check that the hook appears in `~/.claude/settings.json` (Claude Code), in `~/.config/opencode/plugins/devexp/hooks.json` (opencode) or in the `# devexp:hooks:begin` block of `$KIMI_CODE_HOME/config.toml` with its script under `$KIMI_CODE_HOME/hooks/` (Kimi), and exercise both the block and allow paths.
 
 ### Add an MCP server
