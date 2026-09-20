@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The worktree access grant now uses a key Claude Code actually reads, and stops destroying a settings file it cannot parse (#180).** `/deliver` Phase 1.5 and `/improve`'s parallel cleanup streams grant the runtime access to each new worktree by editing the project's `.claude/settings.json`. Three things were wrong with that one step, all of them invisible while it ran.
+
+  **The grant never happened.** It wrote a **top-level** `additionalDirectories`, but Claude Code's schema defines only **`permissions.additionalDirectories`**; an unrecognised top-level key is skipped, the rest of the file stays in effect, and nothing reports it. So the step wrote a file, exited cleanly, and granted nothing — every write into the worktree still prompted, which is exactly what it exists to prevent, and a non-interactive delivery stalled at the first one. The key is now nested, and **a dead top-level key an earlier devexp wrote is migrated into the nested one and removed**, so an affected `settings.json` heals itself on the next run rather than keeping a no-op key and the settings warning that comes with it.
+
+  **An unparseable `settings.json` was replaced, not preserved.** The snippet's `catch` treated *absent* and *unparseable* as the same thing and then wrote — so a settings file with a trailing comma, a comment or a partial write was overwritten wholesale by the grant object, taking the project's `permissions.allow`/`deny`/`ask`, `hooks` and `env` with it. It contradicted the step's own wording twice over ("preserve all existing JSON content"; "unparseable … print a note"). Absent now means start fresh, unreadable or unparseable means **write nothing, say why, exit non-zero** — the file comes back byte-identical.
+
+  **A repo path containing a space was truncated.** `git worktree list --porcelain | cut -d' ' -f2` cut `/Users/x/My Projects/repo` down to `/Users/x/My`, creating a stray `.claude/` in the wrong place and writing the settings somewhere unrelated to the project. It reads the porcelain line with `sed` now.
+
+  A repo-asset guard (`cli/internal/skills/frontmatter_repo_test.go`) fails the build if any shipped skill writes the top-level key again. It allows reading and deleting it, because the migration has to do both, and it is pinned by its own table test so it cannot quietly stop matching. `docs/guides/worktree-per-ticket.md` and `skills/improve/SKILL.md` carried the same wrong key and are corrected too.
+
 ## [0.10.1] - 2026-09-19
 
 ### Fixed

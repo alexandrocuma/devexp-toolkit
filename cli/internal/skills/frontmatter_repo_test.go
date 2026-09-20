@@ -128,3 +128,89 @@ func TestRepoSkillsNoKimiParameterExpansion(t *testing.T) {
 		})
 	}
 }
+
+// ── Repo-asset guard: the worktree grant must name a key Claude Code reads ────
+//
+// Claude Code's settings schema defines `permissions.additionalDirectories`
+// and no top-level `additionalDirectories`. An unrecognised top-level key is
+// skipped, so a grant step that writes one looks like it worked, grants
+// nothing, and leaves every out-of-project write prompting — which is what
+// /deliver Phase 1.5 and /improve shipped until #180.
+//
+// The failure is invisible at runtime: nothing errors, the file is written,
+// and only a permission prompt much later hints at it. So it is guarded here,
+// against the shipped asset, rather than left to review.
+
+// topLevelAdditionalDirsWriteRe matches a *write* to `additionalDirectories`
+// straight off the settings root — an assignment or a `.push(` — in either the
+// dot or the bracket form.
+//
+// Reads are deliberately allowed: migrating the dead key off an existing file
+// has to look at it (`Array.isArray(s.additionalDirectories) ? …`) and remove
+// it (`delete s.additionalDirectories`). Banning every mention would make the
+// migration unwritable, so only writing the key back is an error.
+var topLevelAdditionalDirsWriteRe = regexp.MustCompile(
+	`(?:^|[^.\w"'])(?:s|settings|cfg|json|config)\s*(?:\.\s*additionalDirectories|\[\s*["']additionalDirectories["']\s*\])\s*(?:=[^=]|\.\s*push\s*\()`)
+
+func TestRepoSkillsGrantUsesNestedPermissionsKey(t *testing.T) {
+	for name, path := range repoSkillFiles(t) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile(%s) error = %v", path, err)
+		}
+		content := string(data)
+		if !strings.Contains(content, "additionalDirectories") {
+			continue // this skill does not grant a directory
+		}
+		t.Run(name, func(t *testing.T) {
+			for i, line := range strings.Split(content, "\n") {
+				if topLevelAdditionalDirsWriteRe.MatchString(line) {
+					t.Errorf("%s:%d writes a top-level additionalDirectories, which Claude Code skips — "+
+						"nest it under permissions.additionalDirectories:\n  %s",
+						path, i+1, strings.TrimSpace(line))
+				}
+			}
+			if !strings.Contains(content, "permissions.additionalDirectories") &&
+				!strings.Contains(content, "s.permissions") {
+				t.Errorf("%s mentions additionalDirectories but never the nested "+
+					"permissions.additionalDirectories key", path)
+			}
+		})
+	}
+}
+
+// The guard above only ever asserts against the current tree, so on its own it
+// would also pass if the pattern stopped matching anything. These pin what it
+// must catch and what it must leave alone — including the exact line #180 was
+// filed for, and the migration lines that legitimately touch the legacy key.
+func TestTopLevelAdditionalDirsWriteRe(t *testing.T) {
+	mustMatch := map[string]string{
+		"the #180 regression": `    s.additionalDirectories = s.additionalDirectories || [];`,
+		"push onto the root":  `    if (!s.additionalDirectories.includes(dir)) s.additionalDirectories.push(dir);`,
+		"bracket assignment":  `  settings["additionalDirectories"] = [dir];`,
+		"spaced assignment":   `  s . additionalDirectories  = [];`,
+	}
+	for name, line := range mustMatch {
+		t.Run("catches "+name, func(t *testing.T) {
+			if !topLevelAdditionalDirsWriteRe.MatchString(line) {
+				t.Errorf("did not match a top-level write:\n  %s", line)
+			}
+		})
+	}
+
+	mustNotMatch := map[string]string{
+		"the nested write":         `    s.permissions.additionalDirectories = list;`,
+		"nested read":              `    const list = s.permissions.additionalDirectories || [];`,
+		"migration read":           `    for (const d of Array.isArray(s.additionalDirectories) ? s.additionalDirectories : []) {`,
+		"migration delete":         `    delete s.additionalDirectories;`,
+		"prose naming the key":     "  under **`permissions.additionalDirectories`** (nested under `permissions`)",
+		"prose naming the old one": "  a top-level `additionalDirectories` is not part of the schema",
+	}
+	for name, line := range mustNotMatch {
+		t.Run("allows "+name, func(t *testing.T) {
+			if topLevelAdditionalDirsWriteRe.MatchString(line) {
+				t.Errorf("wrongly flagged:\n  %s", line)
+			}
+		})
+	}
+}
