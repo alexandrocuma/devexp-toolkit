@@ -65,6 +65,8 @@ fi
 | **SMALL** — only peripheral paths changed | Proceed, but note the scoped deltas to the user and re-verify any plan step that touches a changed path |
 | **BIG** — a structural section's paths changed | The plan may be built on a stale map — **re-groom before building** (invoke `grooming-agent` as above), then reload the refreshed plan |
 
+**Load the repo's definition of done.** Read the pull/merge request template (`.github/pull_request_template.md`, `.gitlab/merge_request_templates/`) and any document the repo's `CLAUDE.md` names as its definition of done, crafting rules or PR checklist. Every section it requires is something this delivery produces, not something to fill in afterwards: Phase 1.8 produces the class sweep, Phase 4 the proof, Phase 5 checks the rest. When the repo's rules are stricter than this skill, the repo wins. A repo with none of these is a note, not a blocker.
+
 **Load the release guide.** Read `docs/guides/release.md` alongside the plan and take the plan's **Affected Release Targets** section as this delivery's target list. A missing guide or section is a note, not a blocker — the delivery proceeds and Phase 4.5 reports readiness as unverified.
 
 If the plan has no anchor (groomed before A3), or the anchor is not an ancestor of HEAD (per the guard above), treat it as drift-unknown: run the classification against the plan's `Groomed` date instead (`git log --since="<Groomed date> 00:00:00" --name-only`), and prefer re-grooming if that date is not same-day.
@@ -96,6 +98,7 @@ Groom plan loaded:
 Delivery sequence:
   1. Worktree           → isolate this ticket in its own git worktree
   1.7 Blast radius      → impact-analysis on what the plan will touch  [mandatory for coupled areas]
+  1.8 Class sweep       → every other place with the same shape as the fix  [mandatory for fixes and guards]
   2. Implement          → dev-agent (or migration agent)
   3. Instrument         → add observability to new code
   4. Test gaps          → test-gen agent, plus every dependent the blast radius named
@@ -226,6 +229,44 @@ wants this change at all, and they approved a sequence in Phase 1, not a risk
 level discovered after it.
 
 
+### Phase 1.8 — Class Sweep
+
+Blast radius asks *who depends on what I am about to touch*. The class sweep asks
+a different question: **where else does the defect I am fixing already exist?**
+A missing scope check, a hand-copied list, an unpinned image, a gate that can pass
+without checking: each is a shape, and a fix that closes one instance leaves its
+siblings open. The pattern this phase exists to stop: each review of a fix finds
+the next sibling, so one defect becomes a chain of tickets over days, every one
+found by accident.
+
+**Mandatory for a bug fix, a security fix, or a new guard.** For a feature it is a
+judgement call (does it repeat a shape that already exists elsewhere?); say which.
+
+1. **Name the shape in one sentence**, e.g. *"a request field ending in `_id` used
+   before it is resolved in the caller's scope"*. If you cannot name it, you have
+   not found the root cause yet: go back to grooming.
+2. **Enumerate it.** If the repo keeps a knowledge graph (`graphify-out/`, or one
+   its `CLAUDE.md` names), start there: `graphify query "<the shape>"`, or
+   `graphify path` between the defect and its callers. Relationship questions are
+   what the graph answers, and its sweep is reproducible. Then grep for what the
+   graph cannot see: config, compose files, docs, generated code. Record the
+   exact queries; they go in the PR.
+3. **Decide every hit:** *fixed in this delivery*, *filed as <ticket>*, or *not
+   affected* with the reason. A hit inside this ticket's scope is fixed, per
+   Phase 5's scope rule. Siblings of a security defect are in scope unless they
+   would take the delivery past the repo's size limit, in which case they are
+   filed and named in the PR.
+4. **Prefer a guard that enumerates the class** over a test of the one instance:
+   a test that walks every route, every field, every file of the shape and fails
+   on a new member nobody mapped. A fix without one is how the class comes back.
+
+**Its output is used, not printed.** The table (*where · fixed / filed / not
+affected*) and the queries go into the PR description's class-sweep section
+(Phase 5), and every *fixed* row gets a test in Phase 4.
+
+**An empty sweep is stated, never implied**: *"class sweep: only this instance"*,
+with the query that showed it.
+
 ### Phase 2 — Implement
 
 **Scan for infrastructure changes first:**
@@ -253,6 +294,12 @@ If the ticket or changed files include infrastructure definitions, apply the sam
 Wait for the implementation agent to complete.
 
 ---
+
+**Keep the knowledge graph honest.** If the repo keeps a knowledge graph, follow
+its own refresh rule after implementing (its `CLAUDE.md` or graph guide says
+whether a hook refreshes it, whether it is committed per change or only at
+release). Never commit a regenerated graph the repo says not to; never query a
+graph that predates the change you just made without refreshing it first.
 
 ### Phase 3 — Instrument
 
@@ -321,6 +368,14 @@ exercising it runs in this delivery, or the report states plainly that it is
 uncovered and why that is acceptable. An item silently dropped between the two
 phases is the whole failure mode this pair of phases exists to close — the
 analysis was done, written down, and then not acted on.
+
+**Prove each fix, and each new guard.** A passing test proves nothing until it
+has failed for the right reason. For every fix in this delivery, remove the fix,
+run the suite, and name the test that fails; restore it. For every new guard or
+gate, seed the violation it exists for and show it red, then trace what invokes
+it (the repo's local CI target *and* its CI config). A fix no test notices being
+removed is not covered; add the test. The resulting table (*fix removed · test
+that fails*) goes into the PR's proof section.
 
 **E2E coverage check:**
 
@@ -443,11 +498,15 @@ Filing a follow-up for something in scope ships a known gap with a ticket attach
 
 Document the **out-of-scope** findings in the PR description for the reviewer. The in-scope ones should already be gone by the time they read it.
 
-Create a PR if one doesn't exist:
+Create a PR if one doesn't exist. **Its description is the repo's template, filled
+in**, not a one-line "Closes": the class sweep from Phase 1.8 (queries and table),
+the proof table from Phase 4, the size and any waiver the repo asks for, and the
+out-of-scope findings above. Some repos gate the description in CI; an empty
+section fails the build there and the reviewer here.
 
 ```bash
-gh pr view 2>/dev/null || gh pr create --title "<ticket-id>: <title>" --body "Closes <ticket-id>" 2>/dev/null
-glab mr view 2>/dev/null || glab mr create --title "<ticket-id>: <title>" --description "Closes <ticket-id>" 2>/dev/null
+gh pr view 2>/dev/null || gh pr create --title "<ticket-id>: <title>" --body-file <filled-template.md> 2>/dev/null
+glab mr view 2>/dev/null || glab mr create --title "<ticket-id>: <title>" --description "$(cat <filled-template.md>)" 2>/dev/null
 ```
 
 Invoke the `pr-review` agent:
@@ -485,6 +544,8 @@ If the `/release` skill is not installed, **do not improvise a release**: report
 ## Delivered: <ticket-id> — "<title>"
 
   Blast radius:    <N dependents across M files, verdict / nothing depends on these paths / skipped — not a coupled area>
+  Class sweep:     <"<shape>": N hits — X fixed, Y filed (<tickets>), Z not affected / only this instance (<query>) / skipped — feature, no repeated shape>
+  Proof:           <N fixes and M guards mutation-proven / gaps listed>
   Worktree:        <branch + dir created — merged and removed on release / removed — branch already merged at declined gate / kept — deferred manual release, retire with /cleanup once merged / kept on failure / none (single-stream)>
   Implementation:  complete — <N files changed>
   Infrastructure:  <N IaC files changed / no infrastructure changes detected>
@@ -508,6 +569,7 @@ Next:
 
 - **Groom plan is the blueprint** — pass it to `dev-agent`; the agent should not re-derive what grooming already established
 - **Blast radius runs before the code exists, and its findings become tests** — Phases 4 and 5 examine what was written; only Phase 1.7 examines what depends on it. A dependent it names and Phase 4 does not cover is a gap that was found, written down, and shipped anyway
+- **Fix the class, not the instance** — Phase 1.8 names the defect's shape and enumerates every place it occurs, graph first; each hit is fixed or filed, and a guard that enumerates the class beats a test of the one instance. A fix that leaves its siblings open is the next ticket waiting to be found by accident
 - **Instrumentation is inline, not delegated** — detecting and adding log calls is straightforward enough to do here; a specialist skill is not required
 - **Release is delegated, and it is the only hard gate** — Phase 6 hands off to `/release`, which asks for its own confirmation. Every other step can be skipped; release is irreversible and affects shared systems, so its consent is never inherited from Phase 1
 - **In scope is fixed, out of scope is filed** — a defect inside the change being delivered is folded into that delivery before the release gate; only work outside its scope becomes a ticket. A follow-up filed for something in scope is a quality gap wearing a ticket
