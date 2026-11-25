@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-25
+
 ### Changed
 - `/refine` plan decks draw only short labels: at most five words per box and four per arrow, with captions at most 12 words, so a diagram reads as a picture instead of the plan's prose in boxes. `grooming-agent` writes each label into the plan as a bold lead before the full text (steps, risks, the drawn `## Decisions` cells) and keeps flow edge labels to four words; the deck copies labels as written and never shortens them, and an older plan with no labels shows item names or numbers with *adjust* suggested. `TestShortLabels_LimitsAgree` fails CI when the two sides' limits drift apart. Recorded as ADR-0008 (#242)
 
