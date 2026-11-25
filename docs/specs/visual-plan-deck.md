@@ -6,7 +6,7 @@
 **Approved by**: Alexandro Cu
 **Approved on**: 2026-11-24
 **Approved in**: commit "docs(spec): visual-plan-deck approved"
-**Tickets**: —
+**Tickets**: #236 (M1), #237 (M2), #238 (M3)
 
 ## S-1 Overview
 
