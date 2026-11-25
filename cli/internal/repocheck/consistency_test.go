@@ -629,7 +629,8 @@ func TestRefineDeckSVGRulesTravelToSubagents(t *testing.T) {
 		"changed edge label":      {mustSay: "with a different label it is **changed**"},
 		"top to bottom":           {mustSay: "reads top to bottom"},
 		"never left to right":     {mustSay: "No diagram runs left to right"},
-		"split, never truncate":   {mustSay: "grouped sub-diagrams"},
+		"four slides, no more":    {mustSay: "A deck has at most four slides"},
+		"too long gets no deck":   {mustSay: "gets **no deck**"},
 		"per-node traceability":   {mustSay: "every arrow label"},
 	}
 	for name, r := range inSpan {

@@ -381,12 +381,13 @@ The groomed plan is written for the agents that build from it: paths, line numbe
 
 **Epic — decks in parallel.** When 5b groomed several tickets, apply the gate to each ticket on its own, and ask about every S ticket at once: "Small tickets <IDs> — plan decks? (all / none / pick)". Then build the decks at the same time:
 
-- Start one general-purpose subagent per ticket that gets a deck, in one message. Its prompt names only that ticket's plan path, copies the **Input**, **Slides**, **Every diagram reads top to bottom**, **Diagram catalog**, **Traceability check before writing** and **The file** paragraphs of this phase word for word (they are safety rules, and a paraphrase is where they erode), and tells it to write only `plans/<ID>.deck.html` and return the path with its counts of diagrams (each `<svg role="img">`, sub-diagrams counted separately), decisions, steps and open questions. Subagents never publish.
+- Start one general-purpose subagent per ticket that gets a deck, in one message. Its prompt names only that ticket's plan path, copies the **Input**, **Four slides, no more**, **Slides**, **Every diagram reads top to bottom**, **Diagram catalog**, **Traceability check before writing** and **The file** paragraphs of this phase word for word (they are safety rules, and a paraphrase is where they erode), and tells it to write only `plans/<ID>.deck.html` and return the path with its counts of diagrams (each `<svg role="img">`), decisions, steps and open questions — or, for a plan that does not fit four slides, to write nothing and return what overflowed. Subagents never publish.
 - Back here, publish each deck in turn (the rule below still applies) and ask for sign-off once, as one list:
 
   ```
   Plan decks:
     <ID>  <title>  <path> [<link>]  Diagrams: N  Decisions: D  Steps: K  Open questions: Q   approve / adjust / skip
+    <ID>  <title>  too long — <what overflowed>, would need <S> slides                         split / adjust
   ```
 
 - Record each answer per ticket with the approve / adjust / skip table below. An **adjust** grooms only that ticket again (5a) and rebuilds only its deck.
@@ -399,16 +400,14 @@ The groomed plan is written for the agents that build from it: paths, line numbe
 - **A source that cannot be found is stated, never invented.** Its slide says "`<section>` is not in the plan — suggest `adjust`" in place of the diagram.
 - **Edges are read only inside the fenced `text` blocks** under `### Flow: before` and `### Flow: after` in `## Diagrams`, one `a -> b : label` edge per line. A node spelled the same in both flows is unchanged; one only in *after* is new; one only in *before* is removed. Edges compare by their two ends: the same `a -> b` with the same label is unchanged, with a different label it is **changed** (draw the after label, marked changed, and keep the before label in the `<desc>`), and an edge only in *after* or only in *before* is new or removed. An `a -> b` line anywhere else in the plan is prose, not an edge.
 
-**Slides, in this order.** Slides 2-6 each lead with a diagram, the first and largest thing on the slide — or, where its source is missing from the plan, with the note that says so. Each diagram is drawn once: when the change map moves up to slide 2, slide 3 leads with its scope text instead. Any diagram with more than about 12 nodes is split into grouped sub-diagrams, never truncated, just as steps split past seven. Under it come a one-line headline and at most three short captions. The slide's full plan text follows in a closed `<details>`, so nothing is lost and the traceability check has a place to look.
+**Four slides, no more.** A deck has at most four slides. Before writing anything, check the plan fits: at most seven execution steps, at most four rows in `## Decisions`, and no diagram past about 12 nodes. A plan that does not fit gets **no deck** — needing five to seven slides means the feature is too long or the plan is not yet well defined, and a longer deck only hides that. Name what overflowed and how many slides it would have needed, and offer **split** (cut the ticket smaller, back to Phase 4) or **adjust** (re-groom it). Never squeeze, truncate, group into sub-diagrams or add a fifth slide to make a plan fit.
 
-1. **Title** — ticket id and title, estimate, affected release targets, the commit the plan was validated against
-2. **Problem** — the problem statement and who it affects, led by the **before → after flow**. If the flow is `Not applicable`, the **change map** is the hero diagram here instead. If the plan has no `## Diagrams` section, the slide leads with the note "no flow in this plan — suggest `adjust`" and draws no flow
-3. **Scope** — what is in, and the non-goals, led by the **change map**
-4. **One slide per row of the plan's `## Decisions` table**, each led by its **decision board** — the decision as the headline, then *why*, then *what else was considered and why it lost*. A row marked `none — <why>` shows that reason; it is not dropped
-5. **The steps**, led by the **step graph** — the execution plan in order, one row each with the files it touches; split across slides past seven steps, never truncated
-6. **Risks and release impact**, led by the **blast radius** — blast-radius notes, security notes, per-target release impact
-7. **Open questions** — each with its recommended default (text; the plan gives it no diagram)
-8. **The ask** — "Approve this plan, or tell me what to change" (text)
+**Slides, in this order.** Each slide leads with its diagram, the first and largest thing on the slide — or, where its source is missing from the plan, with the note that says so. Under it come a one-line headline and at most three short captions. The slide's full plan text follows in a closed `<details>`, so nothing is lost and the traceability check has a place to look. Each diagram is drawn once.
+
+1. **What** — ticket id and title, estimate, affected release targets and the commit the plan was validated against in the header; the problem as the headline; led by the **before → after flow**. If the flow is `Not applicable`, the **change map** leads here instead. If the plan has no `## Diagrams` section, the slide leads with the note "no flow in this plan — suggest `adjust`" and draws no flow
+2. **Where** — scope and non-goals as captions, led by the **change map** above the **blast radius** (the blast radius alone when the change map already led slide 1)
+3. **How** — led by the **step graph**: the execution plan in order, one row each with the files it touches
+4. **Why** — one **decision board** per row of the plan's `## Decisions` table, each with the decision, *why*, and *what else was considered and why it lost*; a row marked `none — <why>` shows that reason, it is not dropped. Below the boards, as text: open questions with their recommended defaults, then the ask — "Approve this plan, or tell me what to change"
 
 **Every diagram reads top to bottom.** Order and cause run down the page:
 
@@ -418,17 +417,17 @@ The groomed plan is written for the agents that build from it: paths, line numbe
 - **Blast radius** — tiers going down, from changed part to what it touches to release target
 - **Change map** — changed files first, then the files checked and left alone
 
-Two diagrams of the same kind may sit side by side, such as the before and after flows, each still reading top to bottom. No diagram runs left to right.
+Two diagrams of the same kind may sit side by side, such as the before and after flows or two decision boards, each still reading top to bottom. No diagram runs left to right.
 
 **Diagram catalog.** Each diagram kind is drawn from these plan sections and nothing else:
 
 | Diagram | Source | Slide |
 |---|---|---|
-| Before → after flow, node under node | `## Diagrams` | 2 |
-| Change map, changed files above checked ones | `## Files that change` + `## Files confirmed NOT changing` | 3 (2 when the flow is `Not applicable`) |
-| Decision board, chosen option on top | `## Decisions` (one per row) | 4 |
-| Step graph, one row per step | `## Execution Steps` | 5 |
-| Blast radius, changed part → what it touches → release target | `## Risks` + `## Affected Release Targets` | 6 |
+| Before → after flow, node under node | `## Diagrams` | 1 What |
+| Change map, changed files above checked ones | `## Files that change` + `## Files confirmed NOT changing` | 2 Where (1 when the flow is `Not applicable`) |
+| Blast radius, changed part → what it touches → release target | `## Risks` + `## Affected Release Targets` | 2 Where |
+| Step graph, one row per step | `## Execution Steps` | 3 How |
+| Decision board, chosen option on top | `## Decisions` (one per row) | 4 Why |
 
 For an older plan, the source is found by content as **Input** says.
 
@@ -458,11 +457,19 @@ Plan deck: <path>  [<link>]
 Approve this plan? (approve / adjust / skip)
 ```
 
+A plan that does not fit four slides gets no deck and no approval; ask instead:
+
+```
+Plan too long for a deck: <what overflowed> — would need <S> slides.
+Split the ticket, or adjust the plan? (split / adjust)
+```
+
 | Answer | Action |
 |--------|--------|
 | **approve** | Stamp the approval into the local plan, directly under the `**Validated against**:` line: `**Approved**: <approver> on <YYYY-MM-DD> (plan deck)`. Then record it on the ticket with the platform's comment operation (the ticket copy is the plan's source of truth — an approval only on this machine is lost on the next one). With no ticket platform, say the approval is recorded locally only |
 | **adjust** | Capture what should change, groom the ticket again (5a) with the plan and that change, then rebuild the deck from the refreshed plan and ask again. Never edit the deck by hand to match a change the plan does not contain |
 | **skip** | Leave the plan unapproved. `/deliver` will show it as not reviewed |
+| **split** | Only for a plan too long for a deck. Go back to Phase 4 with the overflow as the reason, cut the ticket into smaller ones, then groom and present each. The original plan stays unapproved |
 
 ---
 
@@ -509,6 +516,7 @@ Start now (they can run at the same time, each in its own worktree):
 - **Non-goals are not optional** — a spec without explicit exclusions will be interpreted as "build everything adjacent"
 - **Grooming is mandatory before /deliver** — an unvalidated ticket puts implementation at risk; never skip Phase 5
 - **The deck presents the plan; it never extends it** — rationale lives in the plan's Decisions table, and a change asked for during sign-off goes back through grooming, not into the slides. That holds for every node of every diagram: a box or arrow the plan does not contain is invented, however obvious it looks
+- **Four slides or it goes back** — a plan that needs a fifth slide is too large or not yet clear; split or re-groom it rather than presenting a long deck
 - **Parallel grooms never share a write** — each writes only its own plan and ticket comment; the memory index, the project memory file and the graph rebuild run once, here, after the last groom returns, and the atlas check runs once before the first one starts
 - **Atlas absence is a warning, not a blocker** — requirements can be written; grooming accuracy will be reduced without codebase context
 - **The spec explains, grooming orients** — the tech spec says how the whole feature will be built; grooming checks each ticket against it and the code. A spec is not an ADR: it plans a feature and retires when it ships, an ADR records one decision for good
