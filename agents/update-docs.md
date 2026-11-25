@@ -57,6 +57,8 @@ docs/
 
 Every folder that contains documentation files **must have a `README.md` index**. Sub-folder READMEs are the navigation layer that `gen-indexer`, `codebase-navigator`, and other agents rely on to orient without reading every file — if one is missing or its status fields are wrong, that's drift too.
 
+**`docs/specs/` is never refreshed to match the code.** A tech spec states what was *agreed* before the code existed; where the code differs, that difference is the information. Rewriting a spec to describe the code erases the record of intent and hides the divergence `/deliver` exists to surface. Specs change only through `/refine` (before approval) or an Amendments row (after). You may **report** a spec whose `Status` looks wrong — every ticket closed but still `in-build` — and point the user at `/release` or `/cleanup`; never edit one.
+
 Root-level files that are also in scope:
 - `README.md` — project root README (quickstart + links to docs/)
 - `CHANGELOG.md` — managed by the deliver orchestrator, not this agent
@@ -140,6 +142,7 @@ For each candidate doc, compare its claims against the current code:
 - **Examples**: do request/response examples reflect the current schema?
 - **Status fields**: are folder-index `status` values (`ready`/`draft`/`reference`/`blocked`) still accurate given what you found?
 - **Kit docs**: do setup commands still exist in the manifests/task files, and env vars in config? Do cited convention and reference-test files still exist and still show the stated pattern? Does the overview's layer table and request trace match the current layout? Do workflow steps name real files in a working order? Is every template section still present (filled, marked, or `N/A — <reason>`)? A marker the code now answers is drift — resolve it with a citation. After refreshing, update the doc's `Last verified` stamp and its `ready`/`draft` status.
+- **Specs** (`docs/specs/`): out of scope for refresh — see the rule under the Standard Documentation Tree. Check only that `docs/specs/README.md` lists every spec file with the status its header says
 - **Release guide** (`docs/guides/release.md`): does every release target detected in the repo have a section, and does every section still map to a real target? Do the cited build/distribute/promote/rollback commands still exist at their `source:` locations (CI workflow, script, lane config)? Are versioning files still where the guide says? A `[CONFIRM]` marker that the code now answers is drift — resolve it with a citation; one it still doesn't answer stays. Bump `Last verified` only after this check passes.
 
 Record each finding as **accurate** (leave alone) or **drifted** (note exactly what's wrong and what the correct value is, with a code citation).

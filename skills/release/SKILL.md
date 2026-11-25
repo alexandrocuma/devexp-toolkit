@@ -179,6 +179,28 @@ Then apply each affected target's **Versioning** rule from the guide — typical
 
 ---
 
+### Phase 5.5 — Retire the Spec  *(only when the ticket was cut from a tech spec)*
+
+A tech spec (`docs/specs/<slug>.md`, written by `/refine`) is the contract for a feature until it ships. The release that ships its last ticket retires it. Do it here, **before** the release commit, so the status change and any ADRs ship in the same commit as the code — nothing is written after the tag push.
+
+Find the spec in the plan's `## Spec` section, or the ticket's. No spec → skip this phase.
+
+**1. Is this the last ticket?** Read the spec's `Tickets` field. Every *other* ticket in it must be closed on the tracker (`gh issue view <id> --json state`, or the detected tracker's equivalent). One still open → leave the spec `in-build`, report how many remain, and skip the rest of this phase. A tracker that cannot be reached → skip with `state unknown`; never retire on a guess.
+
+**2. Offer its decisions as ADRs, one at a time.** Most spec decisions only mattered while building; a few shape the system for years. Show each row of **S-9 Decisions** (and any Amendments row that changed it) and ask: *keep as an ADR? (yes / skip)*. For each yes:
+
+- Use the ADR directory the repo already has (`find . -path '*/adr/*.md' -not -path './node_modules/*' | head -1`); with none, `docs/architecture/adr/`.
+- Take the next number, and write the ADR in the repo's existing ADR format — or, with none, Status / Context / Decision / Consequences / Alternatives Considered. Map the row: *Decision* → Decision, *Rationale* → Context, *Alternatives considered* + *Why rejected* → Alternatives Considered. Consequences come from what actually shipped, not from the spec.
+- Add it to the ADR index, and append `→ ADR-<NNNN>` to the row's Decision cell in S-9 so the spec points at what outlived it.
+
+Only accepted rows become ADRs. Skipping every row is a valid answer.
+
+**3. Mark it implemented.** Set `Status: implemented` and update the spec's row in `docs/specs/README.md`. This is bookkeeping, not a design change — no Amendments row. The spec stays where it is: tickets and ADRs link to it.
+
+`implemented` means every ticket cut from the spec has been released. A target that later fails or waits in Phase 7 is a release problem, resumed with `/release <ticket>` — it does not reopen the spec.
+
+---
+
 ### Phase 6 — Tag and Create the Release
 
 The guide's **Cut** section owns this phase the way each target's section owns Phase 7. **Resolve it before anything is committed** — Phase 1 already classified it read-only, and nothing below runs unless that classification was one of the first two rows:
@@ -211,7 +233,7 @@ Then commit and tag — with the guide's Cut format for the release commit, the 
 
 ```bash
 tag="v<version>"        # or the guide's format, e.g. <target>@<version>
-git add CHANGELOG.md <version-file> <target build-number files>
+git add CHANGELOG.md <version-file> <target build-number files> <spec, spec index and ADR files from Phase 5.5, if any>
 git commit -m "chore: release v<version>"
 git tag -a "$tag" -m "Release v<version>"   # or the guide's tag-message format
 git push && git push --tags
@@ -360,6 +382,7 @@ With `$ticket` verified, retire each artifact:
   Changelog:    <N entries — N feat, N fix, N breaking / skipped>
   Version:      <vOLD → vNEW (patch|minor|major) / tag-only, no version file>
   Tag:          <v<version> pushed / not pushed / already existed (resumed)>
+  Spec:         <docs/specs/<slug>.md implemented — N ADRs written / still in-build — N tickets open / not retired — tracker state unknown / no spec>
   Platform:     <published on github|gitlab / created unpublished on github|gitlab — published by <target> / not created — the guide's Cut is unfinished (/devxp) / tag only — no platform detected>
 
   Targets:      <cut only — no release guide>

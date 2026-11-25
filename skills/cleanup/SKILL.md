@@ -55,7 +55,12 @@ ls ~/.claude/agent-memory/grooming-agent/plans/ 2>/dev/null
 ls ~/.claude/agent-memory/grooming-agent/sessions/ 2>/dev/null
 ls ~/.claude/agent-memory/release/ 2>/dev/null        # per-target release state — a pending line keeps its ticket live
 ls -1 /tmp/.deliver-* /tmp/.improve-* /tmp/.groom-* 2>/dev/null
+
+# Tech specs and their status (report only — specs are never cleanup candidates)
+grep -H '^\*\*Status\*\*:' docs/specs/*.md 2>/dev/null
 ```
+
+For each spec in `approved` or `in-build`, read its `Tickets` field and look up each ticket's state on the detected tracker (`gh issue view <id> --json state`, or the equivalent). A tracker that cannot be reached gives `state unknown`, never `stuck`.
 
 The main checkout (the first entry in `git worktree list`) is never a candidate. The default branch is never a candidate.
 
@@ -71,6 +76,7 @@ Classify every discovered candidate before proposing any action:
 | Persisted plan | candidate | Its ticket is closed/delivered; keep plans for open tickets |
 | Groom session | candidate | Its ticket is closed; keep sessions for open tickets |
 | Release state (`release/<id>.md`) | candidate | Every target line is `shipped` or `skipped`; any `awaiting-external`, `blocked` or `failed` line makes the whole ticket **live** — its plan and worktree stay too |
+| Tech spec | **report only — never removed** | `approved` or `in-build`, with a non-empty `Tickets` field whose tickets are all closed: **stuck** — the feature shipped without the spec being retired (`/release` retires it when it ships the last ticket), or the work was abandoned. `draft`: a draft has no tickets by design, so it is listed with the date of its last commit (`git log -1 --format=%cs -- <spec>`) for the user to judge. The user decides either way; cleanup never edits or deletes a spec |
 | /tmp scratch | candidate | Matches a toolkit prefix (`.deliver-`, `.improve-`, `.groom-`) and the owning run is finished |
 
 When the evidence is mixed or incomplete, classify as **live** — preserve on doubt.
@@ -91,6 +97,9 @@ Artifacts:
   plans/<id>.md        ticket closed                     → remove (with plans/<id>.deck.html)
   sessions/<id>-*      ticket closed                     → remove
   /tmp/.deliver-<id>-* owning run finished              → remove
+Specs (report only — nothing here is removed):
+  docs/specs/<slug>.md   in-build, all N tickets closed → stuck: retire with /release <last-ticket>, or amend
+  docs/specs/<slug>.md   draft since <date>             → unapproved: approve with /refine, or remove it yourself
 
 Nothing will be removed until you confirm.
 Remove these N items? (yes / choose / skip)
