@@ -562,3 +562,70 @@ func TestRelease_ReadsTargetsByHeading(t *testing.T) {
 		})
 	}
 }
+
+// ─── Plan deck: the diagram rules reach every deck subagent ────────────────
+
+// refineDeckRules returns the Phase 6 paragraphs an epic's deck subagents
+// receive word for word: from **Input** up to **Publish where the host can.**,
+// which subagents never do. A rule placed outside this span reaches a
+// single-ticket deck but silently skips every epic deck.
+func refineDeckRules(t *testing.T, body string) string {
+	t.Helper()
+	start := strings.Index(body, "**Input is the persisted plan")
+	end := strings.Index(body, "**Publish where the host can.**")
+	if start < 0 || end < start {
+		t.Fatal("skills/refine/SKILL.md no longer has Phase 6's **Input is the persisted plan** … **Publish where the host can.** span.\n" +
+			"  Fix: restore both paragraphs, or move this test's anchors with them.")
+	}
+	return body[start:end]
+}
+
+// TestRefineDeckSVGRulesTravelToSubagents fails when a diagram rule of the
+// plan deck sits where a deck subagent never reads it, when the subagent is
+// no longer told to copy the diagram catalog, or when a sign-off stops
+// counting diagrams. Each of these leaves epic decks without the rule and
+// raises no error: the subagent still returns a deck that looks finished.
+func TestRefineDeckSVGRulesTravelToSubagents(t *testing.T) {
+	body := readFile(t, "skills", "refine", "SKILL.md")
+	rules := refineDeckRules(t, body)
+	inSpan := map[string]struct{ mustSay string }{
+		"diagram catalog":         {mustSay: "**Diagram catalog.**"},
+		"no foreignObject":        {mustSay: "foreignObject"},
+		"accessible svg":          {mustSay: `role="img"`},
+		"svg description":         {mustSay: "<desc>"},
+		"no href from plan text":  {mustSay: "xlink:href"},
+		"plan text in details":    {mustSay: "<details>"},
+		"missing source stated":   {mustSay: "not in the plan"},
+		"edges only inside fence": {mustSay: "fenced `text` blocks"},
+		"top to bottom":           {mustSay: "reads top to bottom"},
+		"never left to right":     {mustSay: "No diagram runs left to right"},
+		"split, never truncate":   {mustSay: "grouped sub-diagrams"},
+		"per-node traceability":   {mustSay: "every arrow label"},
+	}
+	for name, r := range inSpan {
+		t.Run(name, func(t *testing.T) {
+			if !strings.Contains(rules, r.mustSay) {
+				t.Errorf("Phase 6 of skills/refine/SKILL.md does not say %q inside the paragraphs deck subagents copy (**Input** … **The file**).\n"+
+					"  Fix: put the rule inside one of those paragraphs, not after **Publish where the host can.**", r.mustSay)
+			}
+		})
+	}
+
+	copyList := regexp.MustCompile(`copies the (\*\*Input\*\*[^\n]*?) paragraphs of this phase word for word`).FindStringSubmatch(body)
+	if copyList == nil {
+		t.Fatal("skills/refine/SKILL.md no longer tells deck subagents which Phase 6 paragraphs to copy word for word.\n" +
+			"  Fix: restore the epic bullet that lists them.")
+	}
+	if !strings.Contains(copyList[1], "**Diagram catalog**") {
+		t.Errorf("the deck subagent copy list (%s) does not name **Diagram catalog**: epic decks would not know which plan section feeds which diagram.\n"+
+			"  Fix: add it to the list.", copyList[1])
+	}
+	if !strings.Contains(body, "counts of diagrams") {
+		t.Error("deck subagents are no longer asked to return a count of diagrams.\n" +
+			"  Fix: ask for `counts of diagrams, decisions, steps and open questions`.")
+	}
+	if n := strings.Count(body, "Diagrams: N"); n < 2 {
+		t.Errorf("skills/refine/SKILL.md shows `Diagrams: N` %d time(s); the single-ticket sign-off and the epic list both need it.\n"+
+			"  Fix: add `Diagrams: N` beside `Decisions: D` in both.", n)
+	}
+}

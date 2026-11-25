@@ -381,12 +381,12 @@ The groomed plan is written for the agents that build from it: paths, line numbe
 
 **Epic — decks in parallel.** When 5b groomed several tickets, apply the gate to each ticket on its own, and ask about every S ticket at once: "Small tickets <IDs> — plan decks? (all / none / pick)". Then build the decks at the same time:
 
-- Start one general-purpose subagent per ticket that gets a deck, in one message. Its prompt names only that ticket's plan path, copies the **Input**, **Slides**, **Traceability check before writing** and **The file** paragraphs of this phase word for word (they are safety rules, and a paraphrase is where they erode), and tells it to write only `plans/<ID>.deck.html` and return the path with its counts of decisions, steps and open questions. Subagents never publish.
+- Start one general-purpose subagent per ticket that gets a deck, in one message. Its prompt names only that ticket's plan path, copies the **Input**, **Slides**, **Diagram catalog**, **Traceability check before writing** and **The file** paragraphs of this phase word for word (they are safety rules, and a paraphrase is where they erode), and tells it to write only `plans/<ID>.deck.html` and return the path with its counts of diagrams (each `<svg role="img">`, sub-diagrams counted separately), decisions, steps and open questions. Subagents never publish.
 - Back here, publish each deck in turn (the rule below still applies) and ask for sign-off once, as one list:
 
   ```
   Plan decks:
-    <ID>  <title>  <path> [<link>]  Decisions: D  Steps: K  Open questions: Q   approve / adjust / skip
+    <ID>  <title>  <path> [<link>]  Diagrams: N  Decisions: D  Steps: K  Open questions: Q   approve / adjust / skip
   ```
 
 - Record each answer per ticket with the approve / adjust / skip table below. An **adjust** grooms only that ticket again (5a) and rebuilds only its deck.
@@ -394,18 +394,47 @@ The groomed plan is written for the agents that build from it: paths, line numbe
 
 **Input is the persisted plan, and only the plan.** Read `~/.claude/agent-memory/grooming-agent/plans/<ID>.md` (or the ticket-platform copy if the local one is missing). The deck adds no claim, step or rationale the plan does not contain — if the deck needs something the plan lacks (most often: a decision with no recorded rationale), the plan is incomplete; re-groom rather than inventing it here.
 
-**Slides, in this order:**
+- **Find each section by its heading.** A plan groomed today has seven fixed level-2 headings: `## Files that change`, `## Files confirmed NOT changing`, `## Execution Steps`, `## Risks`, `## Affected Release Targets`, `## Decisions`, `## Diagrams`.
+- **An older plan is read by what it holds.** A plan groomed before the headings were fixed names them differently (`### Steps`, `Files confirmed safe`, `### Risk`), so find each source by its content: the ordered steps list, the files table, the risks list. With no `## Risks`, the blast radius comes from the Ticket Health Report's `### Release Impact` and `### Security Notes`.
+- **A source that cannot be found is stated, never invented.** Its slide says "`<section>` is not in the plan — suggest `adjust`" in place of the diagram.
+- **Edges are read only inside the fenced `text` blocks** under `### Flow: before` and `### Flow: after` in `## Diagrams`, one `a -> b : label` edge per line. A node spelled the same in both flows is unchanged; one only in *after* is new; one only in *before* is removed. An `a -> b` line anywhere else in the plan is prose, not an edge.
+
+**Slides, in this order.** Slides 2-6 each lead with a diagram, the first and largest thing on the slide. Under it come a one-line headline and at most three short captions. The slide's full plan text follows in a closed `<details>`, so nothing is lost and the traceability check has a place to look.
 
 1. **Title** — ticket id and title, estimate, affected release targets, the commit the plan was validated against
-2. **Problem** — the problem statement and who it affects
-3. **Scope** — what is in, and the non-goals, side by side
-4. **One slide per row of the plan's `## Decisions` table** — the decision as the headline, then *why*, then *what else was considered and why it lost*. A row marked `none — <why>` shows that reason; it is not dropped
-5. **The steps** — the execution plan in order, one line each with the files it touches; split across slides past seven steps, never truncated
-6. **Risks and release impact** — blast-radius notes, security notes, per-target release impact
-7. **Open questions** — each with its recommended default
-8. **The ask** — "Approve this plan, or tell me what to change"
+2. **Problem** — the problem statement and who it affects, led by the **before → after flow**. If the flow is `Not applicable`, the **change map** is the hero diagram here instead. If the plan has no `## Diagrams` section, the slide says "no flow in this plan — suggest `adjust`" and shows no flow
+3. **Scope** — what is in, and the non-goals, led by the **change map**
+4. **One slide per row of the plan's `## Decisions` table**, each led by its **decision board** — the decision as the headline, then *why*, then *what else was considered and why it lost*. A row marked `none — <why>` shows that reason; it is not dropped
+5. **The steps**, led by the **step graph** — the execution plan in order, one row each with the files it touches; split across slides past seven steps, never truncated
+6. **Risks and release impact**, led by the **blast radius** — blast-radius notes, security notes, per-target release impact
+7. **Open questions** — each with its recommended default (text; the plan gives it no diagram)
+8. **The ask** — "Approve this plan, or tell me what to change" (text)
 
-**Traceability check before writing.** Every execution step and every Decisions row appears in the deck, and nothing appears that is not in the plan. If either fails, fix the deck — do not ship a deck that disagrees with the plan it presents.
+Any diagram with more than about 12 nodes is split into grouped sub-diagrams, never truncated, just as steps split past seven.
+
+**Every diagram reads top to bottom.** Order and cause run down the page:
+
+- **Flow** — one node under the next, each arrow's label beside it; a return edge, such as *adjust*, loops back up the side
+- **Step graph** — one row per step, in order, with the file it touches on the same row
+- **Decision board** — the chosen option on top, and what it beat below with an arrow up to the winner carrying the deciding reason
+- **Blast radius** — tiers going down, from changed part to what it touches to release target
+- **Change map** — changed files first, then the files checked and left alone
+
+Two diagrams of the same kind may sit side by side, such as the before and after flows, each still reading top to bottom. No diagram runs left to right.
+
+**Diagram catalog.** Each diagram kind is drawn from these plan sections and nothing else:
+
+| Diagram | Source | Slide |
+|---|---|---|
+| Before → after flow, node under node | `## Diagrams` | 2 |
+| Change map, changed files above checked ones | `## Files that change` + `## Files confirmed NOT changing` | 3 (2 when the flow is `Not applicable`) |
+| Decision board, chosen option on top | `## Decisions` (one per row) | 4 |
+| Step graph, one row per step | `## Execution Steps` | 5 |
+| Blast radius, changed part → what it touches → release target | `## Risks` + `## Affected Release Targets` | 6 |
+
+For an older plan, the source is found by content as **Input** says.
+
+**Traceability check before writing.** Every execution step and every Decisions row appears in the deck, and nothing appears that is not in the plan. The check runs per node: every box and every arrow label in every diagram maps to a plan item (a file, a step, a decision row, an edge line, a risk, a release target), and every step and every decision row appears in some diagram. If either fails, fix the deck — do not ship a deck that disagrees with the plan it presents.
 
 **The file.** Write one self-contained HTML document to `~/.claude/agent-memory/grooming-agent/plans/<ID>.deck.html`, next to the plan, so everything that retires the plan retires the deck with it:
 
@@ -414,6 +443,11 @@ The groomed plan is written for the agents that build from it: paths, line numbe
 - one `<section>` per slide; arrow keys and scrolling both move between slides, and any script that does this never reads or evaluates slide text
 - readable in light and dark (`prefers-color-scheme`), and prints one slide per page (`@media print` with `break-after: page`)
 - no slide framework or library is bundled — the structure above is small enough to write by hand, and a dependency would have to be vendored to stay offline
+- diagrams are inline `<svg>` written by hand; no diagram library, no external image
+- the escape rule covers SVG too: `<text>`, `<title>`, `<desc>` and every attribute value. Inside SVG there is no `<foreignObject>`, no `<script>` and no `on*` attribute, and no `href`, `xlink:href`, `style` or `class` value is built from plan text. Ids (for `aria-labelledby`) are generated, such as `s3-t`, never derived from plan text
+- every `<svg>` has `role="img"` and `aria-labelledby` pointing at its `<title>` and a `<desc>` that states the diagram in one sentence, so a screen reader, a text dump or a colourless print still carries it
+- new, changed, removed and checked-but-unchanged differ by a label or a line style (for example dashed for removed, dotted for untouched) as well as by colour; colours are CSS custom properties redefined under `prefers-color-scheme: dark`
+- each diagram reads top to bottom (see **Slides**), so its `viewBox` is portrait (taller than wide), or two same-kind columns side by side; `@media print` keeps diagrams at full width, one slide per page
 
 **Publish where the host can.** If this session has a tool that publishes a page or artifact, publish the same deck through it — privately — and report the link. If it has none (other CLIs, or a declined permission), say "deck written to <path>; no publishing tool in this session" and carry on. Never make publishing a precondition for approval.
 
@@ -421,7 +455,7 @@ The groomed plan is written for the agents that build from it: paths, line numbe
 
 ```
 Plan deck: <path>  [<link>]
-  Decisions: D   Steps: K   Open questions: Q
+  Diagrams: N   Decisions: D   Steps: K   Open questions: Q
 
 Approve this plan? (approve / adjust / skip)
 ```
@@ -476,7 +510,7 @@ Start now (they can run at the same time, each in its own worktree):
 - **Requirements describe what the user can do, not how the code works** — no implementation details in acceptance criteria
 - **Non-goals are not optional** — a spec without explicit exclusions will be interpreted as "build everything adjacent"
 - **Grooming is mandatory before /deliver** — an unvalidated ticket puts implementation at risk; never skip Phase 5
-- **The deck presents the plan; it never extends it** — rationale lives in the plan's Decisions table, and a change asked for during sign-off goes back through grooming, not into the slides
+- **The deck presents the plan; it never extends it** — rationale lives in the plan's Decisions table, and a change asked for during sign-off goes back through grooming, not into the slides. That holds for every node of every diagram: a box or arrow the plan does not contain is invented, however obvious it looks
 - **Parallel grooms never share a write** — each writes only its own plan and ticket comment; the memory index, the project memory file and the graph rebuild run once, here, after the last groom returns, and the atlas check runs once before the first one starts
 - **Atlas absence is a warning, not a blocker** — requirements can be written; grooming accuracy will be reduced without codebase context
 - **The spec explains, grooming orients** — the tech spec says how the whole feature will be built; grooming checks each ticket against it and the code. A spec is not an ADR: it plans a feature and retires when it ships, an ADR records one decision for good
