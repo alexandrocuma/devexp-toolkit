@@ -69,6 +69,15 @@ Plans groomed before the headings were fixed name these sections differently (`#
 ### S-4.3 Slide layout rules (Phase 6 "The file")
 A diagram is the first and largest element on each slide. Text is limited to a one-line headline plus at most three short captions. The full plan text for the slide sits in a closed `<details>` under the diagram, so nothing is lost and the traceability check still has a place to look.
 
+Every diagram reads top to bottom. Order and cause run down the page:
+- **Flows**: one node under the next, with each arrow's label beside it. A return edge, such as adjust, loops back up the side.
+- **Steps**: one row per step, in order, with the file it touches on the same row.
+- **Decision boards**: the chosen option on top, and what it beat below with an arrow up to the winner.
+- **Blast radius**: tiers going down, from changed part to what it touches to release target.
+- **Change map**: changed files first, then the files checked and left alone.
+
+Two things of the same kind may sit side by side, such as the before and after flows, but each one reads top to bottom. A diagram never runs left to right.
+
 ### S-4.4 Traceability check, per node (Phase 6)
 Today's check is per step and per decision row. It extends to diagrams: every node and edge label maps to a plan item (a file, step, decision or edge-list line), and no plan step or decision is missing from some diagram.
 
@@ -156,3 +165,4 @@ Not applicable: the deck is a local file produced in a chat session. The Phase 6
 | 2026-11-24 | S-2, S-3, S-4.1 | Phase 7 fixes seven plan headings, including a new `## Risks`. The Non-Goal now says only section content stays unchanged | Grooming #236–#238 found that Phase 7 fixes only `## Spec` and `## Decisions`, and past plans name the other sections differently. The deck and the drift test had nothing reliable to read |
 | 2026-11-24 | S-4.2, S-7.3 | Plans groomed before the headings were fixed have their sources found by what they hold, with the Health Report as the fallback for risks. A missing source is stated | Existing plans must still produce a deck, without inventing diagrams |
 | 2026-11-24 | S-6.1 | Flows sit in fenced `text` blocks. Node names keep one spelling across before and after | GitHub reads `<id>`, `_` and `*` in bare lines as markup. Inconsistent spelling turns an unchanged node into a removed node plus a new one |
+| 2026-11-25 | S-4.3 | Every diagram reads top to bottom, with a rule per diagram kind. Side by side is allowed only for two things of the same kind | The owner reviewed the first visual deck (#237) and asked for vertical diagrams, required by the skill and not just by one deck |
