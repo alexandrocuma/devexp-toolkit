@@ -42,6 +42,7 @@ The first four orchestrators *build* software and `/release` *ships* it; `/monit
 ### `/refine`
 - Structures vague ideas into user stories + acceptance criteria
 - Estimates complexity from the actual codebase
+- **Tech spec** — for a multi-part feature or a greenfield project, writes `docs/specs/<slug>.md` before any ticket exists: architecture, components, data model, interfaces, cross-cutting concerns, milestones and decisions, each section with a stable ID (`S-4.2`). The user approves it; the approval is a commit (or a recorded hash) anyone can diff against, and every later change appends an Amendments row. Tickets are cut from its milestones and name the sections they implement. The spec explains; grooming orients against it. Single atomic changes skip it
 - Creates a structured ticket on GitHub Issues, GitLab, Linear, or Jira (auto-detected)
 - Validates ticket claims against the codebase (via `grooming-agent`)
 - Records **affected release targets** and release impact (store review lead time, cross-target ordering, flag-only rollback) — multi-target or externally-gated releases raise the estimate

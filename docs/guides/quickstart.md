@@ -54,9 +54,10 @@ We need to let users export their data as CSV. The settings page should have an 
 What it does:
 1. Turns your input into structured user stories and acceptance criteria
 2. Estimates complexity from the actual codebase (files to change, test coverage, risk)
-3. Creates a well-formed ticket on your issue tracker (GitHub Issues, GitLab, Linear, or Jira — auto-detected), recording which release targets it affects
-4. Grooms the new ticket against the codebase: validates its claims and writes a verified execution plan back to it
-5. Presents the plan as a slide deck — what will be built, why each decision was made, the steps — and asks you to approve or adjust it
+3. For a multi-part feature or a new project, writes a tech spec to `docs/specs/<slug>.md` — how the whole thing will be built — and asks you to approve it. Tickets are cut from the approved spec, and any later change to it is recorded as an amendment
+4. Creates a well-formed ticket on your issue tracker (GitHub Issues, GitLab, Linear, or Jira — auto-detected), recording which release targets it affects
+5. Grooms the new ticket against the codebase: validates its claims and writes a verified execution plan back to it
+6. Presents the plan as a slide deck — what will be built, why each decision was made, the steps — and asks you to approve or adjust it
 
 Output: a groomed, approved ticket with an attached execution plan — ready for `/deliver`.
 

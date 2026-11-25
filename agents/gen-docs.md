@@ -49,6 +49,8 @@ docs/
 │   ├── setup.md            # KIT — install, run, commands, env vars
 │   ├── conventions.md      # KIT — how code is written here
 │   └── testing.md          # KIT — where tests go, how to write and run them
+├── specs/
+│   └── README.md           # Spec index: every tech spec with status (draft/approved/in-build/implemented)
 └── postmortems/            # Incident postmortems (no index required)
 ```
 
@@ -114,6 +116,7 @@ Before writing anything, decide where it goes:
 | Step-by-step dev recipes (feature, bug, migration) | `docs/guides/workflows.md` (kit) |
 | Dev environment, setup, contributing | `docs/development/<topic>.md` |
 | Architecture decisions | `docs/architecture/adr/NNNN-<title>.md` |
+| Tech spec for a feature or project in flight | `docs/specs/<slug>.md` — written by `/refine`, never by this agent |
 | Incident postmortems | `docs/postmortems/YYYY-MM-DD-<title>.md` |
 | Project overview, quickstart | `README.md` (root) |
 | Docs navigation index | `docs/README.md` |

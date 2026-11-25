@@ -48,6 +48,8 @@ docs/
 │   ├── setup.md            # KIT — install, run, commands, env vars
 │   ├── conventions.md      # KIT — how code is written here
 │   └── testing.md          # KIT — where tests go, how to write and run them
+├── specs/
+│   └── README.md           # Spec index: every tech spec with status (draft/approved/in-build/implemented)
 └── postmortems/            # Incident postmortems (no index required)
 ```
 
