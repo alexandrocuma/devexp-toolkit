@@ -490,6 +490,33 @@ func groomingPhase7(t *testing.T) string {
 		"### Phase 7", "### Phase 8")
 }
 
+// planTemplateHeadings returns the headings on Phase 7's one fixed list —
+// the line that tells grooming-agent which level-2 headings a plan uses. A
+// heading named only in a later bullet is a description of a section, not a
+// promise to write it under that name.
+func planTemplateHeadings(t *testing.T) map[string]bool {
+	t.Helper()
+	const lead = "- Use exactly these level-2 headings"
+	for _, line := range strings.Split(groomingPhase7(t), "\n") {
+		if strings.HasPrefix(line, lead) {
+			got := map[string]bool{}
+			for _, m := range planHeadingRe.FindAllStringSubmatch(line, -1) {
+				got[m[1]] = true
+			}
+			return got
+		}
+	}
+	t.Fatalf("Phase 7 of agents/grooming-agent.md has no line starting %q.\n"+
+		"  Fix: restore the fixed list of plan headings — the plan deck finds each section by it.", lead)
+	return nil
+}
+
+// planTemplateWant is the fixed heading list the plan deck depends on.
+var planTemplateWant = []string{
+	"## Files that change", "## Files confirmed NOT changing", "## Execution Steps",
+	"## Risks", "## Affected Release Targets", "## Decisions", "## Diagrams",
+}
+
 // TestGroomingAgent_DiagramsFormat fails when Phase 7 stops describing the
 // before → after flow in the form the plan deck parses. The deck may add
 // nothing the plan lacks, so a plan written without the flow, or in another
@@ -497,19 +524,14 @@ func groomingPhase7(t *testing.T) string {
 func TestGroomingAgent_DiagramsFormat(t *testing.T) {
 	phase7 := groomingPhase7(t)
 	format := map[string]struct{ mustSay string }{
-		"section heading":    {mustSay: "`## Diagrams`"},
-		"before subsection":  {mustSay: "`### Flow: before`"},
-		"after subsection":   {mustSay: "`### Flow: after`"},
-		"fenced text block":  {mustSay: "```text"},
-		"edge form":          {mustSay: "`a -> b : label`"},
-		"one spelling":       {mustSay: "exactly one spelling"},
-		"no-flow escape":     {mustSay: "`Not applicable — <why>`"},
-		"never empty":        {mustSay: "Never leave the section empty"},
-		"risks heading":      {mustSay: "`## Risks`"},
-		"steps heading":      {mustSay: "`## Execution Steps`"},
-		"targets heading":    {mustSay: "`## Affected Release Targets`"},
-		"files heading":      {mustSay: "`## Files that change`"},
-		"not-changing files": {mustSay: "`## Files confirmed NOT changing`"},
+		"section heading":   {mustSay: "`## Diagrams`"},
+		"before subsection": {mustSay: "`### Flow: before`"},
+		"after subsection":  {mustSay: "`### Flow: after`"},
+		"fenced text block": {mustSay: "```text"},
+		"edge form":         {mustSay: "`a -> b : label`"},
+		"one spelling":      {mustSay: "exactly one spelling"},
+		"no-flow escape":    {mustSay: "`Not applicable — <why>`"},
+		"never empty":       {mustSay: "Never leave the section empty"},
 	}
 	for name, f := range format {
 		t.Run(name, func(t *testing.T) {
@@ -518,6 +540,13 @@ func TestGroomingAgent_DiagramsFormat(t *testing.T) {
 					"  Fix: restore it — /refine Phase 6 reads plans in exactly this form, and a plan written otherwise loses its diagram silently.", f.mustSay)
 			}
 		})
+	}
+	fixed := planTemplateHeadings(t)
+	for _, h := range planTemplateWant {
+		if !fixed[h] {
+			t.Errorf("Phase 7's fixed heading list in agents/grooming-agent.md does not name `%s`.\n"+
+				"  Fix: add it back to the `Use exactly these level-2 headings` line.", h)
+		}
 	}
 }
 
@@ -616,9 +645,28 @@ func TestRefineDeckSVGRulesTravelToSubagents(t *testing.T) {
 		t.Fatal("skills/refine/SKILL.md no longer tells deck subagents which Phase 6 paragraphs to copy word for word.\n" +
 			"  Fix: restore the epic bullet that lists them.")
 	}
-	if !strings.Contains(copyList[1], "**Diagram catalog**") {
-		t.Errorf("the deck subagent copy list (%s) does not name **Diagram catalog**: epic decks would not know which plan section feeds which diagram.\n"+
-			"  Fix: add it to the list.", copyList[1])
+	var named []string
+	for _, m := range regexp.MustCompile(`\*\*([^*]+)\*\*`).FindAllStringSubmatch(copyList[1], -1) {
+		named = append(named, m[1])
+	}
+	// Every paragraph that opens with a bold lead in the span is a rule block;
+	// the orchestrator copies only the ones the list names, so an unnamed one
+	// never reaches an epic deck.
+	for _, m := range regexp.MustCompile(`(?m)^\*\*([^*]+)\*\*`).FindAllStringSubmatch(rules, -1) {
+		lead := m[1]
+		listed := false
+		for _, n := range named {
+			if strings.HasPrefix(lead, n) {
+				listed = true
+			}
+		}
+		if !listed {
+			t.Errorf("Phase 6 paragraph **%s** is not in the deck subagent copy list (%s): epic decks would never receive it.\n"+
+				"  Fix: name it in the list, or fold it into a paragraph the list names.", lead, copyList[1])
+		}
+	}
+	if len(named) < 6 {
+		t.Errorf("the deck subagent copy list names %d paragraphs (%v), want the six Phase 6 rule blocks.", len(named), named)
 	}
 	if !strings.Contains(body, "counts of diagrams") {
 		t.Error("deck subagents are no longer asked to return a count of diagrams.\n" +
@@ -676,10 +724,7 @@ func TestDeckCatalog_MatchesPlanTemplate(t *testing.T) {
 			"  Fix: write each source as a backticked level-2 heading in the table rows, as `## Execution Steps`.", len(catalog), catalog, minCatalogSources)
 	}
 
-	template := map[string]bool{}
-	for _, m := range planHeadingRe.FindAllStringSubmatch(groomingPhase7(t), -1) {
-		template[m[1]] = true
-	}
+	template := planTemplateHeadings(t)
 	for name, side := range map[string]struct {
 		file     string
 		headings map[string]bool

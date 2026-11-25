@@ -381,7 +381,7 @@ The groomed plan is written for the agents that build from it: paths, line numbe
 
 **Epic — decks in parallel.** When 5b groomed several tickets, apply the gate to each ticket on its own, and ask about every S ticket at once: "Small tickets <IDs> — plan decks? (all / none / pick)". Then build the decks at the same time:
 
-- Start one general-purpose subagent per ticket that gets a deck, in one message. Its prompt names only that ticket's plan path, copies the **Input**, **Slides**, **Diagram catalog**, **Traceability check before writing** and **The file** paragraphs of this phase word for word (they are safety rules, and a paraphrase is where they erode), and tells it to write only `plans/<ID>.deck.html` and return the path with its counts of diagrams (each `<svg role="img">`, sub-diagrams counted separately), decisions, steps and open questions. Subagents never publish.
+- Start one general-purpose subagent per ticket that gets a deck, in one message. Its prompt names only that ticket's plan path, copies the **Input**, **Slides**, **Every diagram reads top to bottom**, **Diagram catalog**, **Traceability check before writing** and **The file** paragraphs of this phase word for word (they are safety rules, and a paraphrase is where they erode), and tells it to write only `plans/<ID>.deck.html` and return the path with its counts of diagrams (each `<svg role="img">`, sub-diagrams counted separately), decisions, steps and open questions. Subagents never publish.
 - Back here, publish each deck in turn (the rule below still applies) and ask for sign-off once, as one list:
 
   ```
@@ -399,10 +399,10 @@ The groomed plan is written for the agents that build from it: paths, line numbe
 - **A source that cannot be found is stated, never invented.** Its slide says "`<section>` is not in the plan — suggest `adjust`" in place of the diagram.
 - **Edges are read only inside the fenced `text` blocks** under `### Flow: before` and `### Flow: after` in `## Diagrams`, one `a -> b : label` edge per line. A node spelled the same in both flows is unchanged; one only in *after* is new; one only in *before* is removed. An `a -> b` line anywhere else in the plan is prose, not an edge.
 
-**Slides, in this order.** Slides 2-6 each lead with a diagram, the first and largest thing on the slide. Under it come a one-line headline and at most three short captions. The slide's full plan text follows in a closed `<details>`, so nothing is lost and the traceability check has a place to look.
+**Slides, in this order.** Slides 2-6 each lead with a diagram, the first and largest thing on the slide — or, where its source is missing from the plan, with the note that says so. Each diagram is drawn once: when the change map moves up to slide 2, slide 3 leads with its scope text instead. Any diagram with more than about 12 nodes is split into grouped sub-diagrams, never truncated, just as steps split past seven. Under it come a one-line headline and at most three short captions. The slide's full plan text follows in a closed `<details>`, so nothing is lost and the traceability check has a place to look.
 
 1. **Title** — ticket id and title, estimate, affected release targets, the commit the plan was validated against
-2. **Problem** — the problem statement and who it affects, led by the **before → after flow**. If the flow is `Not applicable`, the **change map** is the hero diagram here instead. If the plan has no `## Diagrams` section, the slide says "no flow in this plan — suggest `adjust`" and shows no flow
+2. **Problem** — the problem statement and who it affects, led by the **before → after flow**. If the flow is `Not applicable`, the **change map** is the hero diagram here instead. If the plan has no `## Diagrams` section, the slide leads with the note "no flow in this plan — suggest `adjust`" and draws no flow
 3. **Scope** — what is in, and the non-goals, led by the **change map**
 4. **One slide per row of the plan's `## Decisions` table**, each led by its **decision board** — the decision as the headline, then *why*, then *what else was considered and why it lost*. A row marked `none — <why>` shows that reason; it is not dropped
 5. **The steps**, led by the **step graph** — the execution plan in order, one row each with the files it touches; split across slides past seven steps, never truncated
@@ -410,13 +410,11 @@ The groomed plan is written for the agents that build from it: paths, line numbe
 7. **Open questions** — each with its recommended default (text; the plan gives it no diagram)
 8. **The ask** — "Approve this plan, or tell me what to change" (text)
 
-Any diagram with more than about 12 nodes is split into grouped sub-diagrams, never truncated, just as steps split past seven.
-
 **Every diagram reads top to bottom.** Order and cause run down the page:
 
 - **Flow** — one node under the next, each arrow's label beside it; a return edge, such as *adjust*, loops back up the side
 - **Step graph** — one row per step, in order, with the file it touches on the same row
-- **Decision board** — the chosen option on top, and what it beat below with an arrow up to the winner carrying the deciding reason
+- **Decision board** — the chosen option on top, and what it beat below with an arrow up to the winner carrying the deciding reason; a row marked `none — <why>` draws the chosen option alone, with that reason under it
 - **Blast radius** — tiers going down, from changed part to what it touches to release target
 - **Change map** — changed files first, then the files checked and left alone
 
