@@ -370,3 +370,94 @@ func TestSpecStatus_ValuesAgree(t *testing.T) {
 		})
 	}
 }
+
+// refineParallelGroomPrompt returns the quoted subagent prompt in /refine's
+// "5b" section: the only instruction a parallel groom receives. Text outside
+// the quote is read by the orchestrator, not by the groom, so it does not count.
+func refineParallelGroomPrompt(t *testing.T) string {
+	t.Helper()
+	body := readFile(t, "skills", "refine", "SKILL.md")
+	start := strings.Index(body, "\n#### 5b.")
+	if start < 0 {
+		t.Fatal("skills/refine/SKILL.md has no `#### 5b.` section (parallel grooming of an epic).\n" +
+			"  Fix: restore it, or move this test with it.")
+	}
+	section := body[start+1:]
+	if end := regexp.MustCompile(`\n#{2,4} `).FindStringIndex(section); end != nil {
+		section = section[:end[0]]
+	}
+	var quoted []string
+	for _, line := range strings.Split(section, "\n") {
+		if l := strings.TrimSpace(line); strings.HasPrefix(l, ">") {
+			quoted = append(quoted, l)
+		}
+	}
+	if len(quoted) == 0 {
+		t.Fatal("the `5b.` section of skills/refine/SKILL.md has no quoted subagent prompt.\n" +
+			"  Fix: restore the `> \"Read ~/.claude/agents/grooming-agent.md …\"` prompt.")
+	}
+	return strings.Join(quoted, "\n")
+}
+
+// TestRefineParallelGroomDefersEverySharedWrite fails when the grooming agent
+// writes something every groom of a repo shares and /refine's parallel prompt
+// does not tell the groom to leave it alone. Several grooms writing the same
+// memory index, project memory file, graph or atlas at once corrupt it, and
+// nothing reports it: each groom still returns a good plan.
+func TestRefineParallelGroomDefersEverySharedWrite(t *testing.T) {
+	agent := readFile(t, "agents", "grooming-agent.md")
+	prompt := refineParallelGroomPrompt(t)
+
+	// agentSays is how agents/grooming-agent.md asks for the shared write;
+	// promptSays is how the 5b prompt tells a parallel groom not to do it.
+	sharedWrites := map[string]struct {
+		agentSays  string
+		promptSays string
+	}{
+		"memory index":        {agentSays: "Update `MEMORY.md` index", promptSays: "do not update `MEMORY.md`"},
+		"project memory file": {agentSays: "`<PROJECT-NAME>.md`", promptSays: "do not write `<PROJECT-NAME>.md`"},
+		"graph rebuild":       {agentSays: "/graphify --update", promptSays: "do not run `/graphify --update`"},
+		"atlas rebuild":       {agentSays: "for a full rebuild", promptSays: "do not rebuild it"},
+	}
+	for name, w := range sharedWrites {
+		t.Run(name, func(t *testing.T) {
+			if !strings.Contains(agent, w.agentSays) {
+				t.Errorf("agents/grooming-agent.md no longer says %q, so this test no longer knows how it asks for the %s.\n"+
+					"  Fix: point agentSays at the new wording, and check the 5b prompt in skills/refine/SKILL.md still defers it.", w.agentSays, name)
+			}
+			if !strings.Contains(strings.ToLower(prompt), strings.ToLower(w.promptSays)) {
+				t.Errorf("the 5b prompt in skills/refine/SKILL.md does not say %q: parallel grooms would each do the %s at once.\n"+
+					"  Fix: tell the groom subagent not to, and do it once in the orchestrator after the grooms return.", w.promptSays, name)
+			}
+		})
+	}
+}
+
+// TestRefineNeverStartsCustomAgentByName fails when /refine starts a subagent
+// with a custom agent's name. That name is not a valid subagent type, so the
+// call fails or silently runs a different agent; custom agents are run by
+// reading their file.
+func TestRefineNeverStartsCustomAgentByName(t *testing.T) {
+	custom := map[string]bool{}
+	for _, dir := range []string{"agents", filepath.Join("agents", "opencode")} {
+		files, err := filepath.Glob(root(dir, "*.md"))
+		if err != nil {
+			t.Fatalf("cannot list %s: %v", dir, err)
+		}
+		for _, f := range files {
+			if name := strings.TrimSuffix(filepath.Base(f), ".md"); name != "README" {
+				custom[name] = true
+			}
+		}
+	}
+	if !custom["grooming-agent"] {
+		t.Fatal("agents/grooming-agent.md was not found, so the custom agent list is wrong.")
+	}
+	body := readFile(t, "skills", "refine", "SKILL.md")
+	for _, m := range regexp.MustCompile(`subagent_type\W{0,4}([A-Za-z0-9_-]+)`).FindAllStringSubmatch(body, -1) {
+		if custom[m[1]] {
+			t.Errorf("skills/refine/SKILL.md starts the custom agent %q as a subagent type.\n"+
+				"  Fix: start a general-purpose subagent and tell it to read ~/.claude/agents/%s.md and follow it.", m[1], m[1])
+		}
+	}
+}
