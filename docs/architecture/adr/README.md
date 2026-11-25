@@ -6,7 +6,13 @@ Decisions that shaped how the devexp framework is built. Read before implementin
 
 | ADR | Title | Status | Impact |
 |-----|-------|--------|--------|
-| — | No ADRs yet | — | — |
+| [0001](0001-use-hand-written-inline-svg-for-plan-deck-diagrams.md) | Use hand-written inline SVG for plan-deck diagrams | Accepted | `/refine` plan deck, `grooming-agent` plans |
+| [0002](0002-derive-plan-deck-diagrams-from-existing-plan-sections.md) | Derive plan-deck diagrams from existing plan sections | Accepted | `/refine` plan deck, `grooming-agent` plans |
+| [0003](0003-store-the-change-flow-as-a-plain-text-edge-list.md) | Store a change's flow in the plan as a plain-text edge list | Accepted | `/refine` plan deck, `grooming-agent` plans |
+| [0004](0004-fix-the-plan-deck-diagram-catalog-to-plan-headings.md) | Fix the plan-deck diagram catalog to the plan's headings | Accepted | `/refine` plan deck, `grooming-agent` plans |
+| [0005](0005-present-a-plan-in-at-most-four-diagram-first-slides.md) | Present a plan in at most four diagram-first slides | Accepted | `/refine` plan deck, `grooming-agent` plans |
+| [0006](0006-build-the-visual-deck-on-the-parallel-epic-deck-rewrite.md) | Build the visual deck on the parallel epic-deck rewrite | Accepted | `/refine` plan deck, `grooming-agent` plans |
+| [0007](0007-make-plan-deck-diagrams-accessible-by-contract.md) | Make plan-deck diagrams accessible by contract | Accepted | `/refine` plan deck, `grooming-agent` plans |
 
 ## Status Values
 
