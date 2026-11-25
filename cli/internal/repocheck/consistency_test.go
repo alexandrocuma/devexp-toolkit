@@ -629,3 +629,75 @@ func TestRefineDeckSVGRulesTravelToSubagents(t *testing.T) {
 			"  Fix: add `Diagrams: N` beside `Decisions: D` in both.", n)
 	}
 }
+
+// ─── Plan deck: the diagram catalog against the plan template ──────────────
+
+// planHeadingRe finds a backticked level-2 plan heading, such as
+// `## Execution Steps`. Exactly two `#`: the catalog's prose about older plans
+// names `### Steps` and must never count as a source.
+var planHeadingRe = regexp.MustCompile("`(## [A-Z][^`]*)`")
+
+// minCatalogSources is how many distinct source headings the catalog must
+// name. A table that was deleted or reformatted would otherwise compare zero
+// headings and pass.
+const minCatalogSources = 7
+
+// TestDeckCatalog_MatchesPlanTemplate fails when /refine's diagram catalog
+// names a plan section grooming-agent no longer writes, or when the flow
+// section drops out of either side. The deck may only draw what the plan
+// holds, so a source heading the template stopped writing is a diagram that
+// disappears from every deck with no error.
+func TestDeckCatalog_MatchesPlanTemplate(t *testing.T) {
+	refine := readFile(t, "skills", "refine", "SKILL.md")
+	phase6 := phaseRegion(t, "skills/refine/SKILL.md", refine, "### Phase 6", "### Phase 7")
+	at := strings.Index(phase6, "**Diagram catalog.**")
+	if at < 0 {
+		t.Fatal("Phase 6 of skills/refine/SKILL.md has no `**Diagram catalog.**` line.\n" +
+			"  Fix: restore it and its table — it is the list of plan sections the deck draws from.")
+	}
+	// The catalog is the table under that line: skip to its first row, then
+	// stop at the first line that is not a row.
+	var rows []string
+	started := false
+	for _, line := range strings.Split(phase6[at:], "\n")[1:] {
+		if strings.HasPrefix(line, "|") {
+			started = true
+			rows = append(rows, line)
+		} else if started {
+			break
+		}
+	}
+	catalog := map[string]bool{}
+	for _, m := range planHeadingRe.FindAllStringSubmatch(strings.Join(rows, "\n"), -1) {
+		catalog[m[1]] = true
+	}
+	if len(catalog) < minCatalogSources {
+		t.Fatalf("the diagram catalog in skills/refine/SKILL.md names %d source headings (%v), want at least %d.\n"+
+			"  Fix: write each source as a backticked level-2 heading in the table rows, as `## Execution Steps`.", len(catalog), catalog, minCatalogSources)
+	}
+
+	template := map[string]bool{}
+	for _, m := range planHeadingRe.FindAllStringSubmatch(groomingPhase7(t), -1) {
+		template[m[1]] = true
+	}
+	for name, side := range map[string]struct {
+		file     string
+		headings map[string]bool
+	}{
+		"refine catalog":    {file: "the diagram catalog in skills/refine/SKILL.md", headings: catalog},
+		"grooming template": {file: "Phase 7 of agents/grooming-agent.md", headings: template},
+	} {
+		if !side.headings["## Diagrams"] {
+			t.Errorf("%s (%s) no longer names `## Diagrams`: decks would lose the before → after flow.\n"+
+				"  Fix: restore it on this side.", side.file, name)
+		}
+	}
+	for heading := range catalog {
+		t.Run(heading, func(t *testing.T) {
+			if !template[heading] {
+				t.Errorf("the diagram catalog in skills/refine/SKILL.md draws from `%s`, which Phase 7 of agents/grooming-agent.md does not write.\n"+
+					"  Fix: rename the catalog source to the heading Phase 7 writes, or add the heading to Phase 7 — in the same commit.", heading)
+			}
+		})
+	}
+}
