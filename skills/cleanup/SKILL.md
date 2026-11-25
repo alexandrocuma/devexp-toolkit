@@ -88,7 +88,7 @@ Worktrees:
 Branches (no worktree):
   <branch>     finished — merged to <base>                → git branch -d
 Artifacts:
-  plans/<id>.md        ticket closed                     → remove
+  plans/<id>.md        ticket closed                     → remove (with plans/<id>.deck.html)
   sessions/<id>-*      ticket closed                     → remove
   /tmp/.deliver-<id>-* owning run finished              → remove
 
@@ -118,7 +118,7 @@ git branch -d "<type>/<ticket-id>"          # -d, never -D — refuse if not mer
 git worktree prune
 
 # Scoped artifact removal — prefix-anchored globs, validated ids only
-id="<finished-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/grooming-agent/plans/"$id".md
+id="<finished-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/grooming-agent/plans/"$id".md ~/.claude/agent-memory/grooming-agent/plans/"$id".deck.html
 id="<finished-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/grooming-agent/sessions/"$id"-* 2>/dev/null
 id="<finished-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/release/"$id".md
 id="<finished-ticket-id>"; safe_id "$id" && rm -f /tmp/.deliver-"$id"-* /tmp/.improve-"$id"-* /tmp/.groom-"$id"-* 2>/dev/null

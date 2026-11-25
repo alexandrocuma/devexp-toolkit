@@ -167,6 +167,46 @@ func TestGrantProcedureStatesEveryLoadBearingClaim(t *testing.T) {
 	}
 }
 
+// ─── A class: every plan deletion retires the plan's deck ────────────────────
+
+// planDeleteRe matches a line that removes a persisted groom plan, capturing the
+// shell variable that names the ticket: rm -f …/plans/"$ticket".md
+var planDeleteRe = regexp.MustCompile(`rm -f [^\n]*grooming-agent/plans/"\$(\w+)"\.md`)
+
+// TestEveryPlanDeletionAlsoRetiresItsDeck enumerates the class rather than its
+// known members. /refine writes plans/<id>.deck.html beside plans/<id>.md, and
+// three skills retire plans on their own schedules — /release after shipping,
+// /cleanup on demand, /improve in its hygiene sweep. A fourth site that learns
+// to delete the plan and not the deck leaves a page describing work that was
+// already delivered, or abandoned, sitting where the next run lists it as live.
+// Nothing else would notice: the plan is gone, so nothing reads the deck again.
+func TestEveryPlanDeletionAlsoRetiresItsDeck(t *testing.T) {
+	sites := 0
+	for name, path := range repoSkillFiles(t) {
+		for _, line := range strings.Split(readAsset(t, path), "\n") {
+			m := planDeleteRe.FindStringSubmatch(line)
+			if m == nil {
+				continue
+			}
+			sites++
+			deck := `grooming-agent/plans/"$` + m[1] + `".deck.html`
+			if !strings.Contains(line, deck) {
+				t.Errorf("%s deletes a persisted plan without its deck:\n    %s\n"+
+					"  Fix: remove %s in the same rm, so the two can never be retired apart.",
+					name, strings.TrimSpace(line), deck)
+			}
+		}
+	}
+
+	if sites < 3 {
+		// Not a pass. /release, /cleanup and /improve each retire plans; fewer
+		// matches means the regex stopped matching how they are written, and
+		// the test would be asserting nothing.
+		t.Fatalf("found %d plan deletion(s) across skills; expected at least 3 (/release, /cleanup, /improve).\n"+
+			"  If the deletes were rewritten, update planDeleteRe to match them.", sites)
+	}
+}
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 func readAsset(t *testing.T, path string) string {

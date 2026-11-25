@@ -56,8 +56,9 @@ What it does:
 2. Estimates complexity from the actual codebase (files to change, test coverage, risk)
 3. Creates a well-formed ticket on your issue tracker (GitHub Issues, GitLab, Linear, or Jira — auto-detected), recording which release targets it affects
 4. Grooms the new ticket against the codebase: validates its claims and writes a verified execution plan back to it
+5. Presents the plan as a slide deck — what will be built, why each decision was made, the steps — and asks you to approve or adjust it
 
-Output: a groomed ticket with an attached execution plan — ready for `/deliver`.
+Output: a groomed, approved ticket with an attached execution plan — ready for `/deliver`.
 
 ---
 

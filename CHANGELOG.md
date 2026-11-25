@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`/refine` now ends by presenting the plan to a person** (#221). The groomed plan is written for the agents that build from it; nobody approving the work should have to read file paths and drift anchors to learn what is about to be built. A new Phase 6 turns the plan into a self-contained HTML deck written next to it (`plans/<id>.deck.html`) — problem, scope and non-goals, one slide per decision with its rationale and the alternatives it beat, the ordered steps, risks and release impact, open questions — publishes it privately where the CLI can publish pages, and asks to approve, adjust or skip. *Adjust* goes back through grooming and rebuilds the deck, so the slides can never say something the plan does not. *Approve* stamps the plan and comments on the ticket, because the ticket copy is the plan's source of truth. Produced for M+ estimates, offered for S; `/refine present <ticket>` re-presents an existing plan.
+
+  Supporting changes: `grooming-agent` now writes a `## Decisions` table into every plan, which is where the deck's rationale comes from; `/deliver` shows the approval in its Phase 1 summary and warns — never blocks — when a plan was not reviewed; `/release`, `/cleanup` and `/improve` delete the deck wherever they delete its plan. The deck spec lives inline in the skill rather than in a template file because opencode installs a skill's `SKILL.md` alone. Every string taken from the ticket is HTML-escaped, since ticket text is untrusted and a deck can be shared.
+
+  A new consistency test enumerates every skill that deletes a persisted plan and fails if one does not delete the deck with it, so a fourth retirement site cannot leave decks behind.
+
 - **`hooks/opencode/large-file-guard.js` now covers the paths that cannot be read as a file** (#144) — a directory, and a real file with its permissions removed. Both allow, and both are now pinned with the reason: `utils.countLines` swallows the read error and returns 0, so anything unreadable measures as "0 lines" and passes. That is a deliberate fail-**open**, defensible only because this hook is advisory — its strongest verdict is "ask", it protects against losing work rather than against an attacker, and a version that blocked whenever it could not read the target would fire on every unusual path until someone switched it off. The fail-closed guards make the opposite trade and must keep making it, so the choice is written down where a future change to `countLines` has to come past it.
 
   Mutation-checked: making `countLines` report an unreadable file as 99999 lines fails both new cases.
@@ -19,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The smoke test's cache control now probes its own precondition** (follow-up to #210). It asserted that a second identical `go test` run reports `(cached)` — true today, but that is Go's behaviour rather than a contract this repo controls. A toolchain that keyed the cache differently, or an environment with caching disabled, would have turned a correct run into a red build over a detail of someone else's tool. The run now checks whether caching is in play and asserts only when it is, reporting `SKIP` with the reason when it is not. The half that always applies — the documented command must report an asset edit — is unchanged and still asserted unconditionally.
 ### Fixed
+
+- **Go toolchain bumped to go1.26.11.** Advisories published against the go1.26.8 standard library (`crypto/tls`, `net/http`, `html/template`; the last of them, GO-2026-6859, fixed only in go1.26.11) put `govulncheck` — a required check — red on every branch, `main` included, with no code change. `cli/go.mod`'s `toolchain` line and the docs that name it now say go1.26.11; CI and release pick it up through `go-version-file`.
 
 - **The documented install one-liner did not work.** `curl -fsSL .../remote-install.sh | bash` failed for anyone who did not set `DEVEXP_VERSION`, which is everyone following the README. The release lookup piped curl into `grep -m1`; `-m1` closes the pipe at the first match while curl is still writing the response, so curl died of SIGPIPE — `curl: (56) Failure writing output to destination` — and `set -o pipefail` turned that into an abort two lines into the run.
 
