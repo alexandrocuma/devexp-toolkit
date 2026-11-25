@@ -310,7 +310,7 @@ Write the formatted plan document yourself, using all Phase 3–6 findings. The 
 - Have a **`## Diagrams`** section, placed after Validation Notes and before `## Files that change`, holding how the change alters the system's flow. `/refine` draws it as the deck's before → after diagram and may not add anything the plan lacks, so this is the only place the flow can come from:
   - two subsections, `### Flow: before` and `### Flow: after`, each holding one fenced block opened with ```` ```text ```` so ticket platforms render `<ID>`, `_` and `*` literally
   - one edge per line, in the form `a -> b : label` — the label says what passes or happens along the edge
-  - node names are the plan's own terms (file paths, skill and agent names, components). A node keeps exactly one spelling in both flows: a node only in *after* is new, a node only in *before* is removed, a node in both is unchanged
+  - node names are the plan's own terms (file paths, skill and agent names, components). A node keeps exactly one spelling in both flows: a node only in *after* is new, a node only in *before* is removed, a node in both is unchanged. Edges compare by their two ends too, so an edge whose label changes keeps the same two ends and reads as changed
   - when no runtime flow changes (a docs-only change, say), write `Not applicable — <why>` in place of the two flows. Never leave the section empty and never invent a flow
 
 **Stamp the plan with a validation anchor.** Every line/path in the plan was verified against a specific commit; record which one so consumers can detect drift later. Capture it:

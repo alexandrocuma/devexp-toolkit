@@ -626,6 +626,7 @@ func TestRefineDeckSVGRulesTravelToSubagents(t *testing.T) {
 		"plan text in details":    {mustSay: "<details>"},
 		"missing source stated":   {mustSay: "not in the plan"},
 		"edges only inside fence": {mustSay: "fenced `text` blocks"},
+		"changed edge label":      {mustSay: "with a different label it is **changed**"},
 		"top to bottom":           {mustSay: "reads top to bottom"},
 		"never left to right":     {mustSay: "No diagram runs left to right"},
 		"split, never truncate":   {mustSay: "grouped sub-diagrams"},
