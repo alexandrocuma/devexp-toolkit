@@ -13,6 +13,7 @@ Decisions that shaped how the devexp framework is built. Read before implementin
 | [0005](0005-present-a-plan-in-at-most-four-diagram-first-slides.md) | Present a plan in at most four diagram-first slides | Accepted | `/refine` plan deck, `grooming-agent` plans |
 | [0006](0006-build-the-visual-deck-on-the-parallel-epic-deck-rewrite.md) | Build the visual deck on the parallel epic-deck rewrite | Accepted | `/refine` plan deck, `grooming-agent` plans |
 | [0007](0007-make-plan-deck-diagrams-accessible-by-contract.md) | Make plan-deck diagrams accessible by contract | Accepted | `/refine` plan deck, `grooming-agent` plans |
+| [0008](0008-write-plan-deck-diagram-labels-in-the-plan.md) | Write plan-deck diagram labels in the plan | Accepted | `/refine` plan deck, `grooming-agent` plans |
 
 ## Status Values
 

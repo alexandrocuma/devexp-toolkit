@@ -398,27 +398,30 @@ The groomed plan is written for the agents that build from it: paths, line numbe
 - **Find each section by its heading.** A plan groomed today has seven fixed level-2 headings: `## Files that change`, `## Files confirmed NOT changing`, `## Execution Steps`, `## Risks`, `## Affected Release Targets`, `## Decisions`, `## Diagrams`.
 - **An older plan is read by what it holds.** A plan groomed before the headings were fixed names them differently (`### Steps`, `Files confirmed safe`, `### Risk`), so find each source by its content: the ordered steps list, the files table, the risks list. With no `## Risks`, the blast radius comes from the Ticket Health Report's `### Release Impact` and `### Security Notes`.
 - **A source that cannot be found is stated, never invented.** Its slide says "`<section>` is not in the plan — suggest `adjust`" in place of the diagram. With no files table, the changed files are the ones the steps name. A source found only in part is drawn from the part that exists, with a caption naming what is missing.
+- **An item with no short label, or one over its limit** (a plan groomed before labels existed) shows its name — a file path, a release target id — or its number (`Step 3`, `D2`, `Risk 1`) in its place, never a rewording, and the sign-off suggests `adjust`.
 - **A text field the plan lacks** (estimate, problem statement, non-goals) shows as "not in the plan"; the problem headline falls back to the ticket title.
 - **Edges are read only inside the fenced `text` blocks** under `### Flow: before` and `### Flow: after` in `## Diagrams`, one `a -> b : label` edge per line. A node spelled the same in both flows is unchanged; one only in *after* is new; one only in *before* is removed. Edges compare by their two ends: the same `a -> b` with the same label is unchanged, with a different label it is **changed** (draw the after label, marked changed, and keep the before label in the `<desc>`), and an edge only in *after* or only in *before* is new or removed. An `a -> b` line anywhere else in the plan is prose, not an edge.
 
 **Four slides, no more.** A deck has at most four slides. Once the gate says a deck is built, and before writing anything, check the plan fits: at most seven execution steps, at most six rows in `## Decisions`, and at most 12 nodes in any diagram. A node is one box: a step row with its files is one node, and a file listed as both changed and checked is one node (changed). A plan that does not fit gets **no deck** — needing five to seven slides means the feature is too long or the plan is not yet well defined, and a longer deck only hides that. Name every limit it broke and how many slides it would have needed — one more for each further seven steps, six decisions or 12-node diagram — and offer **split** (cut the ticket smaller, back to Phase 4) or **adjust** (re-groom it: tighten the steps, or keep in `## Decisions` only the choices a reviewer could reasonably have made differently). Never squeeze, truncate, group into sub-diagrams or add a fifth slide to make a plan fit.
 
-**Slides, in this order.** Each slide leads with its diagram, the first and largest thing on the slide — or, where its source is missing from the plan, with the note that says so. Under it come a one-line headline and at most three short captions. The slide's full plan text follows in a closed `<details>`, so nothing is lost and the traceability check has a place to look. Each diagram is drawn once.
+**Slides, in this order.** Each slide leads with its diagram, the first and largest thing on the slide — or, where its source is missing from the plan, with the note that says so. Under it come a one-line headline and at most three captions of at most 12 words each. The slide's full plan text follows in a closed `<details>`, so nothing is lost and the traceability check has a place to look. Each diagram is drawn once.
 
 1. **What** — ticket id and title, estimate, affected release targets and the commit the plan was validated against in the header; the problem as the headline; led by the **before → after flow**. If the flow is `Not applicable`, the **change map** leads here instead. If the plan has no `## Diagrams` section, the slide leads with the note "no flow in this plan — suggest `adjust`" and draws no flow
 2. **Where** — scope and non-goals as captions, led by the **change map** above the **blast radius** (the blast radius alone when the change map already led slide 1)
 3. **How** — led by the **step graph**: the execution plan in order, one row each with the files it touches
-4. **Why** — one **decision board** per row of the plan's `## Decisions` table, each with the decision, *why*, and *what else was considered and why it lost*; a row marked `none — <why>` shows that reason, it is not dropped. Below the boards, as text: open questions with their recommended defaults, then the ask — "Approve this plan, or tell me what to change"
+4. **Why** — one **decision board** per row of the plan's `## Decisions` table, each with the decision, the deciding reason, and what else was considered (the full *why* sits in the slide's `<details>`); a row marked `none — <why>` shows that reason, it is not dropped. Below the boards, as text: open questions with their recommended defaults, then the ask — "Approve this plan, or tell me what to change"
 
 **Every diagram reads top to bottom.** Order and cause run down the page:
 
 - **Flow** — one node under the next, each arrow's label beside it; a return edge, such as *adjust*, loops back up the side
-- **Step graph** — one row per step, in order, with the files it touches on the same row
-- **Decision board** — the chosen option on top, and what it beat below with an arrow up to the winner carrying the deciding reason; a row marked `none — <why>` draws the chosen option alone, with that reason under it
+- **Step graph** — one row per step, in order: the step's label, with the files it touches on the same row and no description
+- **Decision board** — the chosen option's label on top, and the labels of what it beat below with an arrow up to the winner carrying the `Why rejected` label as the deciding reason; a row marked `none — <why>` draws the chosen option alone, with `none` and the first five words of that reason under it
 - **Blast radius** — tiers going down, from changed part to what it touches to release target
-- **Change map** — changed files first, then the files checked and left alone
+- **Change map** — changed files first, then the files checked and left alone; each box holds its path only
 
 Two diagrams of the same kind may sit side by side, such as the before and after flows or two decision boards, each still reading top to bottom; three to six decision boards sit two per row. No diagram runs left to right.
+
+A diagram is a picture, not the plan's prose in boxes. Every label it shows is the plan's **short label** — the bold lead grooming writes before an item's full text — copied as written: at most five words in a box (a file path or a release target id counts as one label) and at most four words on an arrow. Descriptions, rationale and sub-bullets never go in a diagram; they live in the slide's `<details>`. Never shorten, reword or truncate plan text to make a label.
 
 **Diagram catalog.** Each diagram kind is drawn from these plan sections and nothing else:
 
@@ -432,7 +435,7 @@ Two diagrams of the same kind may sit side by side, such as the before and after
 
 For an older plan, the source is found by content as **Input** says.
 
-**Traceability check before writing.** Every execution step and every Decisions row appears in the deck, and nothing appears that is not in the plan. The check runs per node: every box and every arrow label in every diagram maps to a plan item (a file, a step, a decision row, an edge line, a risk, a release target), and every step and every decision row appears in some diagram. If either fails, fix the deck — do not ship a deck that disagrees with the plan it presents.
+**Traceability check before writing.** Every execution step and every Decisions row appears in the deck, and nothing appears that is not in the plan. The check runs per node: every box and every arrow label in every diagram maps to a plan item (a file, a step, a decision row, an edge line, a risk, a release target) and is that item's short label copied as written, or its name or number, and every step and every decision row appears in some diagram. If either fails, fix the deck — do not ship a deck that disagrees with the plan it presents.
 
 **The file.** Write one self-contained HTML document to `~/.claude/agent-memory/grooming-agent/plans/<ID>.deck.html`, next to the plan, so everything that retires the plan retires the deck with it:
 
@@ -516,7 +519,7 @@ Start now (they can run at the same time, each in its own worktree):
 - **Requirements describe what the user can do, not how the code works** — no implementation details in acceptance criteria
 - **Non-goals are not optional** — a spec without explicit exclusions will be interpreted as "build everything adjacent"
 - **Grooming is mandatory before /deliver** — an unvalidated ticket puts implementation at risk; never skip Phase 5
-- **The deck presents the plan; it never extends it** — rationale lives in the plan's Decisions table, and a change asked for during sign-off goes back through grooming, not into the slides. That holds for every node of every diagram: a box or arrow the plan does not contain is invented, however obvious it looks
+- **The deck presents the plan; it never extends it** — rationale lives in the plan's Decisions table, and a change asked for during sign-off goes back through grooming, not into the slides. That holds for every node of every diagram: a box or arrow the plan does not contain is invented, however obvious it looks, and a label the deck shortened itself is a rewording
 - **Four slides or it goes back** — a plan that needs a fifth slide is too large or not yet clear; split or re-groom it rather than presenting a long deck
 - **Parallel grooms never share a write** — each writes only its own plan and ticket comment; the memory index, the project memory file and the graph rebuild run once, here, after the last groom returns, and the atlas check runs once before the first one starts
 - **Atlas absence is a warning, not a blocker** — requirements can be written; grooming accuracy will be reduced without codebase context
