@@ -41,6 +41,8 @@ The atlas gives you the layer map, module structure, and conventions. If no atla
 
 Store the atlas location for use in later phases.
 
+**Greenfield exception.** When the repo has no source code yet (empty, or only docs and config), skip the freshness gate and the `codebase-navigator` spawn — there is nothing to map. Say so in the report. The ticket's tech spec (Step 1c) is then the only thing to validate against.
+
 Also read the project's **release guide** if it exists — it lists every release target (web, service, iOS, Android, library…), the path each one ships from, and how it is promoted and rolled back:
 
 ```bash
@@ -84,12 +86,30 @@ Using the detected platform's fetch operation, retrieve the ticket. Parse and re
 - **Acceptance criteria** — what "done" means according to the ticket
 - **Labels** — type classification
 - **Linked tickets** — blockers, dependencies, related work
+- **Spec reference** — the `## Spec` section `/refine` writes into tickets cut from a tech spec: the spec path (`docs/specs/<slug>.md`) and the section IDs the ticket implements (`S-4.2`). Absent on most tickets; then Step 1c is skipped and grooming runs exactly as it always has
 
 **If the ticket has no description or is completely vague:**
 Stop. Report to the user: "This ticket has no description. Grooming cannot proceed until the ticket has sufficient context."
 
 **If the ticket references other tickets:**
 Fetch those too — a claim in a linked ticket often affects the plan.
+
+#### Step 1c — Load the Tech Spec  *(only when the ticket has a Spec reference)*
+
+The spec is the contract the ticket was cut from. Grooming checks the ticket against it as well as against the code.
+
+1. **Read it.** Open the spec file, its header (`Status`, `Approved in`) and every section the ticket names. A missing file, or a section ID the spec does not contain, is an ⚠️ incorrect claim.
+2. **Check it is approved.** `Status: draft` means nobody has agreed to the contract yet — verdict **BLOCKED**: "spec `<slug>` is not approved — approve it with `/refine` before grooming its tickets". `approved` and `in-build` are both fine.
+3. **Check for silent changes.** Find the approval point and diff the ticket's sections against it:
+
+   ```bash
+   spec="docs/specs/<slug>.md"
+   approved=$(git log -1 --format=%H --grep='^docs(spec): <slug> approved' -- "$spec")
+   [ -n "$approved" ] && git diff "$approved" -- "$spec"
+   ```
+
+   When `Approved in` names a blob instead (`blob <hash> (uncommitted …)`), compare with `git diff <hash> "$(git hash-object -w "$spec")"`; if that blob is not in this machine's object store, say the check could not run. A ticket section that changed since approval with no Amendments row naming it is an ⚠️ finding: "S-x changed after approval without an amendment".
+4. **Record the anchor.** Capture `git hash-object "$spec"` — the spec's content at groom time, committed or not. Phase 7 writes it into the plan so `/deliver` can tell whether the contract moved after grooming.
 
 ---
 
@@ -123,6 +143,10 @@ This is the most important phase. Launch validation agents **concurrently**. Do 
 **Agent 2 — `backend-senior-dev`** or **`frontend-senior-dev`** (choose based on ticket area — spawn both if it crosses boundaries)
 
 > "Review this ticket: [paste full ticket]. Does the technical approach described match how this codebase is actually structured? Check: Is the proposed solution architecturally correct? Does it follow existing patterns? Are there edge cases or side effects the ticket ignores? Are any claims technically impossible or wrong? Be direct about what's correct, what's wrong, and what's missing."
+
+**When the ticket has a tech spec (Step 1c)**, paste the sections it names into both prompts and add: *"This ticket was cut from these spec sections. Does the ticket say the same thing as the spec — same contracts, same data model, same behaviour? List every point where they differ, and every part of these sections the ticket does not cover."*
+
+**Greenfield:** skip Agent 1 — there is no code to map. Agent 2 reviews the ticket against the spec alone.
 
 ---
 
@@ -190,6 +214,12 @@ Collect all agent findings. Produce a **Ticket Health Report**:
 - [Side effect not mentioned]
 - [Dependency not declared]
 
+### 📐 Spec Conformance  *(only when the ticket has a Spec reference)*
+- Spec: `docs/specs/<slug>.md` — status `<status>`, sections checked: S-x, S-y
+- Conflicts: [ticket says X] ↔ [spec S-4.2 says Y]
+- Not covered: [part of a named section the ticket does not implement]
+- Silent changes: [S-x changed after approval without an Amendments row — or "none"]
+
 ### 🔵 Scope Issues
 - [Thing the ticket includes that belongs in a separate ticket]
 - [Claimed blocker that is not actually blocking]
@@ -215,6 +245,10 @@ Reason: [one sentence]
 - **READY TO GROOM** — all claims verified, no critical ⚠️ or 🔴 findings. Proceed to plan.
 - **NEEDS TICKET CORRECTION** — ticket has wrong or missing information. Report to user. Offer to update the ticket using the detected platform's update operation. Ask whether to proceed with corrected understanding or wait for human review.
 - **BLOCKED** — a hard external dependency is not met (another ticket incomplete, external decision pending, environment not ready). Do not produce a plan. Report the blocker.
+
+A ticket that conflicts with its spec is **NEEDS TICKET CORRECTION**, never READY: either the ticket is wrong, or the spec needs an amendment — and amending the contract is the user's call, not grooming's. A `draft` spec is **BLOCKED** (Step 1c).
+
+**Greenfield:** a file that does not exist yet is not a finding when the spec places it (S-3 Architecture, S-4 Components). It is a finding when nothing in the spec says it should exist.
 
 **If NEEDS TICKET CORRECTION:**
 
@@ -244,7 +278,7 @@ With agent findings in hand, do the exhaustive file audit — not a broad search
 - File path
 - Exact line numbers affected
 - What changes and why
-- Verified to exist (run `Glob` or `Read` to confirm)
+- Verified to exist (run `Glob` or `Read` to confirm) — or, for a file the ticket creates, marked `(new)` with the spec section that places it. A `(new)` path with no spec section behind it is checked against the repo's conventions instead
 
 **6b. Every caller of any function / export that changes signature**
 ```bash
@@ -265,7 +299,8 @@ Which existing tests cover the affected area? Which will need updating? Which wi
 Write the formatted plan document yourself, using all Phase 3–6 findings. The plan must:
 - Reflect the actual codebase, not the ticket's assumptions
 - Include a "Validation Notes" section recording what was corrected
-- Have exact file paths and line numbers, verified to exist
+- Have exact file paths and line numbers, verified to exist — new files marked `(new)` (Phase 6a)
+- Have a **`## Spec`** section when the ticket has a Spec reference, right after the header: the spec path, the section IDs, `Content hash: <git hash-object at groom time>` and the spec's `Approved in` value. `/deliver` compares the content hash with the spec on disk to tell whether the contract changed after this plan was written. Omit the section when there is no spec
 - Have ordered steps — each step unblocked by the previous
 - Have a specific verification section (not "run tests" — specific commands and what to check)
 - Have an **Affected Release Targets** section: each target id whose release-guide path overlaps a changed file, and the release-impact notes per target (version/build-number bump required, deploy ordering between targets, feature flag required, external review lead time). `deliver` checks readiness against it and `/release` ships only these targets
@@ -295,7 +330,7 @@ Write the plan to `~/.claude/agent-memory/grooming-agent/plans/<TICKET-ID>.md`. 
 ```
 If there's no graph, or graphify is unavailable, skip the rebuild — the ticket platform and the local copy are sufficient.
 
-Both copies must retain the **Validated against** anchor from Phase 7 verbatim — never strip it from either destination. It is what lets `deliver` re-anchor the plan to current HEAD.
+Both copies must retain the **Validated against** anchor from Phase 7 verbatim — never strip it from either destination. It is what lets `deliver` re-anchor the plan to current HEAD. The same holds for the `## Spec` section's content hash, when there is one: it is what lets `deliver` tell whether the spec moved after grooming.
 
 ---
 
@@ -330,6 +365,7 @@ Ticket health:
   Corrected:    M incorrect claims fixed   ← list each correction
   Added:        K missing context items
   Verdict:      READY TO GROOM / CORRECTED AND PROCEEDING
+  Spec:         docs/specs/<slug>.md — S-x, S-y — N conflicts, N silent changes / no spec
 
 Validation agents used:
   ✓ codebase-navigator
@@ -378,7 +414,8 @@ A groomed ticket is done only when:
 
 - [ ] All agent findings incorporated — no agent output ignored or skimmed
 - [ ] Ticket Health Report produced with explicit verdict
-- [ ] Every file in the plan is verified to exist at the stated path
+- [ ] Every file in the plan is verified to exist at the stated path, or marked `(new)` with what places it
+- [ ] When the ticket has a Spec reference: Spec Conformance filled in, and the plan's `## Spec` section carries the content hash
 - [ ] Every caller of a changed function is identified
 - [ ] "Files NOT changing" section is explicit with reasons
 - [ ] Execution steps are ordered — each unblocked by previous
