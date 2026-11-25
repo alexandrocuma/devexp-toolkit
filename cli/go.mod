@@ -2,7 +2,7 @@ module devexp
 
 go 1.25.11
 
-toolchain go1.26.8
+toolchain go1.26.11
 
 require (
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e
