@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Mutation-checked: making `countLines` report an unreadable file as 99999 lines fails both new cases.
 
+### Security
+
+- **Go toolchain pin raised to go1.26.11.** govulncheck began reporting two standard-library `net/http` vulnerabilities reachable from the CLI's call graph in go1.26.8 — GO-2026-6859 (HTTP/1 server crash, fixed in go1.26.11) and GO-2026-6617 (HTTP/2 server crash, fixed in go1.26.9) — which failed the `govulncheck` job on every pull request. `cli/go.mod` now pins `toolchain go1.26.11`, so CI, release builds and local builds use the fixed standard library; `docs/development/setup.md` and `testing.md` name the new version.
+
 ### Changed
 
 - **`/deliver` fixes the class, not the instance, and proves it.** A delivery now loads the repo's own definition of done (its PR template and any crafting-rules document `CLAUDE.md` names) in Phase 0. A new **Phase 1.8 — Class Sweep**, mandatory for bug fixes, security fixes and new guards, names the defect's shape in one sentence, enumerates every place it occurs (the repo's knowledge graph first, `graphify query`/`path`, then grep for what the graph cannot see), and decides each hit: fixed here, filed, or not affected with the reason. Phase 4 mutation-proves each fix and shows each new guard red on a seeded violation. Phase 5 builds the PR description from the repo's template, class sweep and proof tables included, instead of a one-line "Closes". Phase 2 follows the repo's own graph refresh rule. The report gains *Class sweep* and *Proof* lines. Measured motivation, from a consuming repo: of 96 defects, 5 were caught by a test or gate; about 25 named an earlier fix of the same shape, and one fix led to ten sibling bugs in ten days, each found by reviewing the previous fix.
