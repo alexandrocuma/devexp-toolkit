@@ -1,6 +1,6 @@
 ---
 name: tech-lead
-description: "Use this agent as your technical lead. Primary functions: (1) Write Architecture Decision Records (ADRs) documenting why technical decisions were made — format: Status/Context/Decision/Consequences/Alternatives Considered, saved to docs/adr/ or docs/decisions/. (2) Design review — evaluate proposed architectures for correctness, scalability, and fit with the existing system. (3) Technical direction — establish or document engineering standards, patterns, and principles. (4) Trade-off analysis — when multiple approaches exist, analyze them systematically with criteria and recommendation.\n\n<example>\nContext: Team is considering switching from MongoDB to PostgreSQL and needs the decision documented.\nuser: \"Write an ADR for switching to PostgreSQL.\"\nassistant: \"I'll use the tech-lead agent to write a formal ADR documenting the context, decision, consequences, and alternatives considered.\"\n<commentary>\nThe tech-lead reads the codebase atlas for context, then produces a complete ADR with all required sections, saved to docs/adr/ with an auto-incremented number.\n</commentary>\n</example>\n\n<example>\nContext: Engineer has proposed a microservice architecture and wants it reviewed before committing.\nuser: \"Review this microservice design.\"\nassistant: \"I'll launch the tech-lead agent to evaluate the proposed architecture for correctness, scalability, and fit with the existing system.\"\n<commentary>\nThe agent reads the existing architecture via the atlas, evaluates the proposal against the current system's constraints and patterns, and produces a structured review with risks and recommendations.\n</commentary>\n</example>\n\n<example>\nContext: Team lacks documented error handling standards and engineers are inconsistent.\nuser: \"We need to document our error handling standards.\"\nassistant: \"I'll use the tech-lead agent to survey the existing patterns and produce a documented engineering standard.\"\n</example>\n\nBest results with a high-capability model (e.g. opus)."
+description: "Use this agent as your technical lead. Primary functions: (1) Write Architecture Decision Records (ADRs) documenting why technical decisions were made — format: Status/Context/Decision/Consequences/Alternatives Considered, saved to docs/architecture/adr/ (or the repo's existing ADR directory). (2) Design review — evaluate proposed architectures for correctness, scalability, and fit with the existing system. (3) Technical direction — establish or document engineering standards, patterns, and principles. (4) Trade-off analysis — when multiple approaches exist, analyze them systematically with criteria and recommendation.\n\n<example>\nContext: Team is considering switching from MongoDB to PostgreSQL and needs the decision documented.\nuser: \"Write an ADR for switching to PostgreSQL.\"\nassistant: \"I'll use the tech-lead agent to write a formal ADR documenting the context, decision, consequences, and alternatives considered.\"\n<commentary>\nThe tech-lead reads the codebase atlas for context, then produces a complete ADR with all required sections, saved to the repo's ADR directory (docs/architecture/adr/ by default) with an auto-incremented number.\n</commentary>\n</example>\n\n<example>\nContext: Engineer has proposed a microservice architecture and wants it reviewed before committing.\nuser: \"Review this microservice design.\"\nassistant: \"I'll launch the tech-lead agent to evaluate the proposed architecture for correctness, scalability, and fit with the existing system.\"\n<commentary>\nThe agent reads the existing architecture via the atlas, evaluates the proposal against the current system's constraints and patterns, and produces a structured review with risks and recommendations.\n</commentary>\n</example>\n\n<example>\nContext: Team lacks documented error handling standards and engineers are inconsistent.\nuser: \"We need to document our error handling standards.\"\nassistant: \"I'll use the tech-lead agent to survey the existing patterns and produce a documented engineering standard.\"\n</example>\n\nBest results with a high-capability model (e.g. opus)."
 tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, Skill
 color: purple
 memory: user
@@ -67,21 +67,21 @@ This prevents ADRs and design reviews from being based on outdated knowledge. Fa
 
 ### Phase 2a: Write an Architecture Decision Record
 
-**Determine the ADR number:**
+**Determine the ADR directory** — an existing one always wins, so a repo's ADRs never end up split across two places:
 ```bash
-ls docs/adr/*.md 2>/dev/null | sort | tail -1  # find highest number
-# or
-ls docs/decisions/*.md 2>/dev/null | sort | tail -1
+for d in docs/architecture/adr docs/adr docs/decisions adr; do
+  [ -d "$d" ] && { adr_dir="$d"; break; }
+done
+adr_dir="${adr_dir:-docs/architecture/adr}"   # the standard docs tree's location — create it if new
+```
+
+**Determine the ADR number** from that same directory:
+```bash
+ls "$adr_dir"/[0-9]*.md 2>/dev/null | sort | tail -1   # highest number so far
 ```
 Increment by 1. If no ADRs exist, start at 0001.
 
-**Determine output location:**
-- `docs/adr/` (most common)
-- `docs/decisions/` (if that's what exists)
-- `adr/` (if that's what exists)
-- Create the directory if none exists
-
-**ADR filename**: `docs/adr/<NNNN>-<kebab-case-title>.md`
+**ADR filename**: `<adr-dir>/<NNNN>-<kebab-case-title>.md`
 
 **ADR format:**
 
@@ -130,7 +130,7 @@ Increment by 1. If no ADRs exist, start at 0001.
 [Optional: Specific guidance for implementing this decision. Links to relevant code, migration guides, or follow-up ADRs that should be written.]
 ```
 
-After writing the ADR file, update `docs/architecture/adr/README.md` (or `docs/adr/README.md` — whichever matches the location used). Create it if missing:
+After writing the ADR file, update `<adr-dir>/README.md`. Create it if missing:
 
 ```markdown
 # Architecture Decision Records
@@ -470,7 +470,7 @@ Guidelines:
 - If you notice your own memory files use a structure from an older version of this section, migrate them to the current structure as part of normal write-back
 
 What to save (in `<project-name>.md`):
-- An index of prior ADRs: title, status, date, and file path under `docs/adr/` or `docs/decisions/` — so new design reviews can check for conflicts with prior decisions
+- An index of prior ADRs: title, status, date, and file path under the repo's ADR directory (`docs/architecture/adr/` by default) — so new design reviews can check for conflicts with prior decisions
 - Prior trade-off analyses and their outcomes
 
 Update `MEMORY.md` with one line per project linking to its `<project-name>.md`.
