@@ -62,6 +62,8 @@ docs/
 │       └── README.md       # ADR index with status (Accepted/Superseded/Proposed)
 ├── development/            # Dev environment, authoring guides, conventions, testing
 │   └── README.md
+├── specs/                  # Tech specs — one per feature or project in flight (written by /refine)
+│   └── README.md           # Spec index with status (draft/approved/in-build/implemented)
 └── postmortems/            # Incident postmortems (no index required)
 ```
 
@@ -75,9 +77,12 @@ docs/
 | Component catalogs, CLI reference | `docs/reference/<topic>.md` |
 | Dev environment, setup, authoring | `docs/development/<topic>.md` |
 | Architecture decisions | `docs/architecture/adr/NNNN-<title>.md` |
+| Tech spec for a feature or project in flight | `docs/specs/<slug>.md` |
 | Incident postmortems | `docs/postmortems/YYYY-MM-DD-<title>.md` |
 
 Note: `docs/api/` vs `docs/reference/` — use `api/` for REST/GraphQL endpoints; use `reference/` for component catalogs, tool reference, or configuration schemas that aren't HTTP endpoints.
+
+Note: `docs/specs/` vs `docs/architecture/adr/` — a spec is the plan for a whole feature, written by `/refine` before the code and retired once the feature ships; it states intent, so it is never edited to match the code. An ADR records one decision for good. Durable decisions in a spec become ADRs when it retires.
 
 ---
 
