@@ -27,7 +27,7 @@ Problem statement: a reviewer with no context cannot tell from today's deck what
 - Visual tech specs (Phase 3.5). The spec stays Markdown. A spec deck is a possible follow-up, see S-10.
 - A diagram library, a renderer binary or any external dependency. Diagrams are hand-written inline SVG.
 - Interactive editing of the deck, or comments in it. Sign-off stays in the chat: approve / adjust / skip.
-- Changing what the plan contains apart from the new `## Diagrams` section.
+- Changing what the plan's sections say. The plan gains the `## Diagrams` section and a `## Risks` section, and Phase 7 fixes the heading names of the sections the deck reads (S-4.1). Their content requirements are unchanged.
 - Changing Phase 6's gate (S never, M+ always) or its approval flow.
 
 ## S-3 Architecture
@@ -40,16 +40,18 @@ ticket ──▶ grooming-agent ──▶ plan <id>.md ──▶ /refine Phase 6
                                                  derive + render                         adjust / skip
 ```
 
-1. **Source**: `grooming-agent` Phase 7 writes the plan as today and adds a `## Diagrams` section. It holds only the *before → after flow*, the one picture the plan's other sections cannot produce, written as a plain-text edge list.
-2. **Derive**: Phase 6 builds every other diagram from sections the plan already has. *Files that change* gives the change map, *Execution Steps* gives the step graph, *Decisions* gives the decision boards and *Risks* plus *Affected Release Targets* give the blast-radius view.
+1. **Source**: `grooming-agent` Phase 7 writes the plan under seven fixed headings (S-4.1). One is the new `## Diagrams` section. It holds only the *before → after flow*, the one picture the plan's other sections cannot produce, written as a plain-text edge list.
+2. **Derive**: Phase 6 builds every other diagram from the plan's other fixed sections. *Files that change* gives the change map, *Execution Steps* gives the step graph, *Decisions* gives the decision boards and *Risks* plus *Affected Release Targets* give the blast-radius view.
 3. **Render**: Phase 6 draws each diagram as inline SVG in the deck, runs the traceability check (now per node), writes the file and publishes it where the host can.
 
 `adjust` goes back through grooming exactly as today, so a diagram can never show something the plan does not.
 
 ## S-4 Components
 
-### S-4.1 Plan `## Diagrams` section (`agents/grooming-agent.md`, Phase 7)
-Owns the before → after flow. Written in the text format in S-6.1. Required for every plan. For a change with no runtime flow (docs only, say), the section says `Not applicable — <why>` and the deck uses the change map as its hero diagram.
+### S-4.1 Plan sections and the `## Diagrams` section (`agents/grooming-agent.md`, Phase 7)
+Phase 7 names, exactly and as level-2 headings, the seven sections the deck reads: `## Files that change`, `## Files confirmed NOT changing`, `## Execution Steps`, `## Risks`, `## Affected Release Targets`, `## Decisions` and `## Diagrams`. The names are fixed so the deck and the drift test (S-4.5) can find each section without guessing. `## Risks` is new. It lists what could break and the blast radius, where today's plans put risks in whatever section fits.
+
+`## Diagrams` owns the before → after flow, written in the text format in S-6.1 and required for every plan. For a change with no runtime flow (docs only, say), the section says `Not applicable — <why>` and the deck uses the change map as its hero diagram.
 
 ### S-4.2 Diagram catalog (`skills/refine/SKILL.md`, Phase 6 "Slides")
 A fixed set of diagram kinds, each tied to one plan section:
@@ -61,6 +63,8 @@ A fixed set of diagram kinds, each tied to one plan section:
 | Decision board: chosen option vs alternatives, with the deciding reason on the arrow | `## Decisions` row | 4, one per row |
 | Step graph: ordered steps as a lane, with dependencies and the files each touches | `## Execution Steps` | 5 |
 | Blast radius: changed parts, what they touch, release targets | `## Risks`, `## Affected Release Targets` | 6 |
+
+Plans groomed before the headings were fixed name these sections differently (`### Steps`, `Files confirmed safe`, `### Risk`). For such a plan, Phase 6 finds each source by what it holds. Where no `## Risks` exists, it uses the Ticket Health Report's Release Impact and Security Notes. A source it cannot find is stated on its slide, with `adjust` suggested. The diagram is never invented.
 
 ### S-4.3 Slide layout rules (Phase 6 "The file")
 A diagram is the first and largest element on each slide. Text is limited to a one-line headline plus at most three short captions. The full plan text for the slide sits in a closed `<details>` under the diagram, so nothing is lost and the traceability check still has a place to look.
@@ -78,22 +82,26 @@ Nothing persisted changes shape apart from one new plan section. The deck stays 
 ## S-6 Interfaces and Contracts
 
 ### S-6.1 `## Diagrams` section format
-Plain text, readable without a renderer, so the plan stays useful to agents and to the ticket platform copy:
+Plain text, readable without a renderer, so the plan stays useful to agents and to the ticket platform copy. Each flow sits in a fenced `text` block, so the ticket platform does not read `<id>`, `_` or `*` as markup:
 
-```
+~~~
 ## Diagrams
 ### Flow: before
+```text
 user -> /refine : runs
 /refine -> deck.html : writes text slides
 deck.html -> reviewer : reads 19 slides
+```
 
 ### Flow: after
+```text
 user -> /refine : runs
 /refine -> deck.html : writes diagram slides
 deck.html -> reviewer : scans diagrams, opens details on demand
 ```
+~~~
 
-One `a -> b : label` edge per line. Node names are the plan's own terms (file paths, skill names, components). A node that appears only in *after* is new, one only in *before* is removed, and the deck colours them that way.
+Phase 6 reads edges only inside the fences. One `a -> b : label` edge per line. A node keeps the same spelling in *before* and *after*, otherwise an unchanged node would read as one removed and one new. Node names are the plan's own terms (file paths, skill names, components). A node that appears only in *after* is new, one only in *before* is removed, and the deck colours them that way.
 
 ### S-6.2 Deck file contract (unchanged apart from SVG)
 - Self-contained: inline CSS and inline SVG; no external font, script, image or stylesheet.
@@ -114,6 +122,7 @@ Not applicable: the deck is a local file produced in a chat session. The Phase 6
 - Plan has no `## Diagrams` (groomed before this ships): the deck builds without the flow diagram, says so on slide 2, and suggests re-grooming. It never invents the flow.
 - Diagram too dense (more than ~12 nodes): split into grouped sub-diagrams, the same rule as "split steps past seven, never truncate".
 - `Not applicable` flow: the change map becomes the hero diagram.
+- Plan groomed before the headings were fixed: sources are found by what they hold (S-4.2). A missing source is stated, never invented.
 
 ## S-8 Milestones
 
@@ -144,3 +153,6 @@ Not applicable: the deck is a local file produced in a chat session. The Phase 6
 ## Amendments
 | Date | Section | Change | Reason |
 |------|---------|--------|--------|
+| 2026-11-24 | S-2, S-3, S-4.1 | Phase 7 fixes seven plan headings, including a new `## Risks`. The Non-Goal now says only section content stays unchanged | Grooming #236–#238 found that Phase 7 fixes only `## Spec` and `## Decisions`, and past plans name the other sections differently. The deck and the drift test had nothing reliable to read |
+| 2026-11-24 | S-4.2, S-7.3 | Plans groomed before the headings were fixed have their sources found by what they hold, with the Health Report as the fallback for risks. A missing source is stated | Existing plans must still produce a deck, without inventing diagrams |
+| 2026-11-24 | S-6.1 | Flows sit in fenced `text` blocks. Node names keep one spelling across before and after | GitHub reads `<id>`, `_` and `*` in bare lines as markup. Inconsistent spelling turns an unchanged node into a removed node plus a new one |
