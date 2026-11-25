@@ -2,4 +2,4 @@
 
 | Spec | Status | Tickets |
 |------|--------|---------|
-| [Visual plan deck](visual-plan-deck.md) | approved | #236, #237, #238 |
+| [Visual plan deck](visual-plan-deck.md) | in-build | #236, #237, #238 |

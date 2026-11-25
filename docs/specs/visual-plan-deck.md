@@ -1,6 +1,6 @@
 # Tech Spec: Visual plan deck
 
-**Status**: approved
+**Status**: in-build
 **Shape**: epic
 **Owner**: Alexandro Cu
 **Approved by**: Alexandro Cu
@@ -22,6 +22,7 @@ Problem statement: a reviewer with no context cannot tell from today's deck what
 - Each decision is shown as the chosen option next to the alternatives it beat, not as a paragraph.
 - Diagrams are drawn only from what the plan says. Each node traces to a plan item.
 - The deck still opens offline from a file, works in light and dark, and prints one slide per page.
+- A deck has at most four slides. A plan that needs more (five to seven) means the feature is too large or the plan is not yet well defined, so it is sent back to be split or re-groomed, never presented.
 
 ### Non-Goals
 - Visual tech specs (Phase 3.5). The spec stays Markdown. A spec deck is a possible follow-up, see S-10.
@@ -58,15 +59,19 @@ A fixed set of diagram kinds, each tied to one plan section:
 
 | Diagram | Source section | Slide |
 |---|---|---|
-| Before → after flow | `## Diagrams` | 2 (Problem), and the "what changes" hero |
-| Change map: affected areas grouped, new / changed / untouched-but-checked | `## Files that change`, `## Files confirmed NOT changing` | 3 (Scope) |
-| Decision board: chosen option vs alternatives, with the deciding reason on the arrow | `## Decisions` row | 4, one per row |
-| Step graph: ordered steps as a lane, with dependencies and the files each touches | `## Execution Steps` | 5 |
-| Blast radius: changed parts, what they touch, release targets | `## Risks`, `## Affected Release Targets` | 6 |
+| Before → after flow | `## Diagrams` | 1 (What) |
+| Change map: affected areas grouped, new / changed / untouched-but-checked | `## Files that change`, `## Files confirmed NOT changing` | 2 (Where); 1 when the flow is `Not applicable` |
+| Blast radius: changed parts, what they touch, release targets | `## Risks`, `## Affected Release Targets` | 2 (Where) |
+| Step graph: ordered steps as a lane, with dependencies and the files each touches | `## Execution Steps` | 3 (How) |
+| Decision board: chosen option vs alternatives, with the deciding reason on the arrow | `## Decisions` row | 4 (Why), one per row |
+
+The deck is exactly four slides: **1 What** (ticket, problem, before → after flow), **2 Where** (change map, blast radius → release targets), **3 How** (step graph), **4 Why** (decision boards, open questions, the ask). Title, problem, open questions and the ask are text on slides 1 and 4; they get no slide of their own.
 
 Plans groomed before the headings were fixed name these sections differently (`### Steps`, `Files confirmed safe`, `### Risk`). For such a plan, Phase 6 finds each source by what it holds. Where no `## Risks` exists, it uses the Ticket Health Report's Release Impact and Security Notes. A source it cannot find is stated on its slide, with `adjust` suggested. The diagram is never invented.
 
 ### S-4.3 Slide layout rules (Phase 6 "The file")
+A plan fits four slides when its step graph has at most seven steps, its `## Decisions` table at most six rows, and every diagram at most 12 nodes. Phase 6 checks this before it writes anything. A plan that does not fit gets no deck: Phase 6 says which part overflowed and how many slides it would have needed, and offers to split the ticket (back to Phase 4) or `adjust` (re-groom). Content is never squeezed, truncated or spread onto a fifth slide.
+
 A diagram is the first and largest element on each slide. Text is limited to a one-line headline plus at most three short captions. The full plan text for the slide sits in a closed `<details>` under the diagram, so nothing is lost and the traceability check still has a place to look.
 
 Every diagram reads top to bottom. Order and cause run down the page:
@@ -110,7 +115,7 @@ deck.html -> reviewer : scans diagrams, opens details on demand
 ```
 ~~~
 
-Phase 6 reads edges only inside the fences. One `a -> b : label` edge per line. A node keeps the same spelling in *before* and *after*, otherwise an unchanged node would read as one removed and one new. Node names are the plan's own terms (file paths, skill names, components). A node that appears only in *after* is new, one only in *before* is removed, and the deck colours them that way.
+Phase 6 reads edges only inside the fences. One `a -> b : label` edge per line. A node keeps the same spelling in *before* and *after*, otherwise an unchanged node would read as one removed and one new. Node names are the plan's own terms (file paths, skill names, components). A node that appears only in *after* is new, one only in *before* is removed, and the deck colours them that way. An edge is identified by its two ends: an edge `a -> b` in both flows with the same label is unchanged, one whose label differs is **changed** (the deck shows the after label and keeps the before label in the diagram's `<desc>`), and an edge only in *after* or only in *before* is new or removed. A change that keeps every node but alters what passes between them therefore still shows.
 
 ### S-6.2 Deck file contract (unchanged apart from SVG)
 - Self-contained: inline CSS and inline SVG; no external font, script, image or stylesheet.
@@ -128,9 +133,9 @@ Ticket and plan text is untrusted. SVG is markup, so the existing escape rule no
 Not applicable: the deck is a local file produced in a chat session. The Phase 6 sign-off summary gains a count: `Diagrams: N` next to Decisions, Steps and Open questions.
 
 ### S-7.3 Errors and Edge Cases
-- Plan has no `## Diagrams` (groomed before this ships): the deck builds without the flow diagram, says so on slide 2, and suggests re-grooming. It never invents the flow.
-- Diagram too dense (more than ~12 nodes): split into grouped sub-diagrams, the same rule as "split steps past seven, never truncate".
-- `Not applicable` flow: the change map becomes the hero diagram.
+- Plan has no `## Diagrams` (groomed before this ships): the deck builds without the flow diagram, says so on slide 1, and suggests re-grooming. It never invents the flow.
+- Plan too large for four slides (more than seven steps, more than six decisions, or a diagram past 12 nodes): no deck. Phase 6 names what overflowed and offers split or `adjust` (S-4.3).
+- `Not applicable` flow: the change map becomes the hero diagram on slide 1, and slide 2 keeps the blast radius.
 - Plan groomed before the headings were fixed: sources are found by what they hold (S-4.2). A missing source is stated, never invented.
 
 ## S-8 Milestones
@@ -166,3 +171,6 @@ Not applicable: the deck is a local file produced in a chat session. The Phase 6
 | 2026-11-24 | S-4.2, S-7.3 | Plans groomed before the headings were fixed have their sources found by what they hold, with the Health Report as the fallback for risks. A missing source is stated | Existing plans must still produce a deck, without inventing diagrams |
 | 2026-11-24 | S-6.1 | Flows sit in fenced `text` blocks. Node names keep one spelling across before and after | GitHub reads `<id>`, `_` and `*` in bare lines as markup. Inconsistent spelling turns an unchanged node into a removed node plus a new one |
 | 2026-11-25 | S-4.3 | Every diagram reads top to bottom, with a rule per diagram kind. Side by side is allowed only for two things of the same kind | The owner reviewed the first visual deck (#237) and asked for vertical diagrams, required by the skill and not just by one deck |
+| 2026-11-25 | S-6.1 | Edges are compared too, by their two ends: same ends with a different label is a changed edge, shown with its after label and the before label kept in `<desc>` | Delivering #237, a dry-run deck from plan 237 showed no change at all: its flow keeps every node and changes only what passes along the edges, and S-6.1 marked only nodes |
+| 2026-11-25 | S-2, S-4.2, S-4.3, S-7.3 | A deck has at most four slides — What (flow), Where (change map, blast radius), How (steps), Why (decisions, open questions, the ask). A plan needing more gets no deck and is sent back to be split or re-groomed; diagrams are no longer split into sub-diagrams | The owner: a deck that needs five to seven slides means the feature is too long or the plan is not yet well defined. A dry-run deck from plan 237 came to 17 slides |
+| 2026-11-25 | S-4.3, S-7.3 | The Why slide holds up to six decision boards, two per row; the fit limit is six `## Decisions` rows, not four | Owner decision after the four-slide dry runs: with four, every plan of this spec (236, 237, 238) was sent back on decision count alone, including two S tickets |
