@@ -274,7 +274,7 @@ Only if verdict is READY TO GROOM or corrected to proceed.
 
 With agent findings in hand, do the exhaustive file audit — not a broad search, a precise one informed by Phase 3.
 
-**6a. Every file that changes**
+**6a. Every file that changes** — becomes the plan's `## Files that change`
 - File path
 - Exact line numbers affected
 - What changes and why
@@ -286,7 +286,7 @@ grep -rn "<function-name>" --include="*.ts" --include="*.tsx"
 ```
 List every caller. Callers not listed = regression waiting to happen.
 
-**6c. Every file that does NOT change**
+**6c. Every file that does NOT change** — becomes the plan's `## Files confirmed NOT changing`
 Explicitly list files that look related but are confirmed safe — with the reason. This prevents unnecessary churn during implementation.
 
 **6d. Test coverage mapping**
@@ -297,14 +297,21 @@ Which existing tests cover the affected area? Which will need updating? Which wi
 ### Phase 7: Write the Verified Execution Plan
 
 Write the formatted plan document yourself, using all Phase 3–6 findings. The plan must:
+- Use exactly these level-2 headings for its sections, spelled as written: `## Files that change`, `## Files confirmed NOT changing`, `## Execution Steps`, `## Risks`, `## Affected Release Targets`, `## Decisions`, `## Diagrams`. `/refine` Phase 6 finds each section by its heading to draw the plan deck's diagrams, so a renamed heading is a diagram that silently disappears. Other sections (header, Health Report, Validation Notes, Verification) keep their usual form
 - Reflect the actual codebase, not the ticket's assumptions
 - Include a "Validation Notes" section recording what was corrected
 - Have exact file paths and line numbers, verified to exist — new files marked `(new)` (Phase 6a)
 - Have a **`## Spec`** section when the ticket has a Spec reference, right after the header: the spec path, the section IDs, `Content hash: <git hash-object at groom time>` and the spec's `Approved in` value. `/deliver` compares the content hash with the spec on disk to tell whether the contract changed after this plan was written. Omit the section when there is no spec
-- Have ordered steps — each step unblocked by the previous
+- Have a **`## Execution Steps`** section: ordered steps — each step unblocked by the previous
 - Have a specific verification section (not "run tests" — specific commands and what to check)
-- Have an **Affected Release Targets** section: each target id whose release-guide path overlaps a changed file, and the release-impact notes per target (version/build-number bump required, deploy ordering between targets, feature flag required, external review lead time). `deliver` checks readiness against it and `/release` ships only these targets
+- Have a **`## Affected Release Targets`** section: each target id whose release-guide path overlaps a changed file, and the release-impact notes per target (version/build-number bump required, deploy ordering between targets, feature flag required, external review lead time). `deliver` checks readiness against it and `/release` ships only these targets
+- Have a **`## Risks`** section: what could break if the plan is followed — regressions, ordering hazards, merge conflicts, wrong assumptions — and the blast radius (who depends on the changed parts). It does not replace the Health Report's Release Impact (that feeds `## Affected Release Targets`) or its Security Notes
 - Have a **`## Decisions`** section: a table with the columns `# | Decision | Rationale | Alternatives considered | Why rejected`, one row per choice a reviewer could reasonably have made differently (where the change lives, what pattern it follows, what is deliberately left out). A choice with no real alternative says so in the row — `none — <why>` — rather than leaving the cell empty. `/refine` turns each row into one slide of the plan deck, so a rationale that is not in this table does not reach the people approving the plan
+- Have a **`## Diagrams`** section, placed after Validation Notes and before `## Files that change`, holding how the change alters the system's flow. `/refine` draws it as the deck's before → after diagram and may not add anything the plan lacks, so this is the only place the flow can come from:
+  - two subsections, `### Flow: before` and `### Flow: after`, each holding one fenced block opened with ```` ```text ```` so ticket platforms render `<ID>`, `_` and `*` literally
+  - one edge per line, in the form `a -> b : label` — the label says what passes or happens along the edge
+  - node names are the plan's own terms (file paths, skill and agent names, components). A node keeps exactly one spelling in both flows: a node only in *after* is new, a node only in *before* is removed, a node in both is unchanged
+  - when no runtime flow changes (a docs-only change, say), write `Not applicable — <why>` in place of the two flows. Never leave the section empty and never invent a flow
 
 **Stamp the plan with a validation anchor.** Every line/path in the plan was verified against a specific commit; record which one so consumers can detect drift later. Capture it:
 
@@ -379,6 +386,7 @@ Plan summary:
   Files confirmed safe:   M
   Execution steps:        K
   Decisions:              D recorded
+  Diagrams:               flow written (N edges after) / not applicable — <why>
   Breaking changes:       X found, Y affect this codebase
 
 Persisted to:
@@ -419,6 +427,7 @@ A groomed ticket is done only when:
 - [ ] Every caller of a changed function is identified
 - [ ] "Files NOT changing" section is explicit with reasons
 - [ ] Execution steps are ordered — each unblocked by previous
+- [ ] Plan uses the seven fixed level-2 headings from Phase 7, and `## Diagrams` holds both fenced flows or `Not applicable — <why>`
 - [ ] Verification section names specific commands and expected outcomes
 - [ ] Plan saved to ticket platform before the local copy
 - [ ] Agent memory updated with ticket outcome and pattern findings

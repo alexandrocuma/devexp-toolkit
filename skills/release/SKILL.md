@@ -63,7 +63,7 @@ cd "$main"
 
 ```bash
 cat docs/guides/release.md 2>/dev/null || echo "release guide: MISSING"
-cat ~/.claude/agent-memory/grooming-agent/plans/"$ticket".md 2>/dev/null | sed -n '/Affected Release Targets/,/^## /p'
+cat ~/.claude/agent-memory/grooming-agent/plans/"$ticket".md 2>/dev/null | sed -n -E '/^(#{2,3} |\*\*)Affected Release Targets/,/^## /p'   # the heading only — prose elsewhere in the plan names it too
 ```
 
 | State | Targets to ship |

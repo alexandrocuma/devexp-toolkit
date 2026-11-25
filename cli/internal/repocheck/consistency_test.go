@@ -461,3 +461,104 @@ func TestRefineNeverStartsCustomAgentByName(t *testing.T) {
 		}
 	}
 }
+
+// ─── Plan template: the flow grooming writes for the plan deck ─────────────
+
+// phaseRegion returns the part of body from the line starting with from up to
+// the next line starting with to. A whole-file search would let a mention in
+// another phase satisfy the check, so each contract is read only where it is
+// written.
+func phaseRegion(t *testing.T, rel, body, from, to string) string {
+	t.Helper()
+	start := strings.Index(body, "\n"+from)
+	if start < 0 {
+		t.Fatalf("%s has no line starting %q.\n"+
+			"  Fix: restore the heading, or move this test's anchor with it.", rel, from)
+	}
+	region := body[start+1:]
+	if end := strings.Index(region, "\n"+to); end >= 0 {
+		region = region[:end]
+	}
+	return region
+}
+
+// groomingPhase7 is the plan template: the only text that tells
+// grooming-agent which sections a plan has and how they are spelled.
+func groomingPhase7(t *testing.T) string {
+	t.Helper()
+	return phaseRegion(t, "agents/grooming-agent.md", readFile(t, "agents", "grooming-agent.md"),
+		"### Phase 7", "### Phase 8")
+}
+
+// TestGroomingAgent_DiagramsFormat fails when Phase 7 stops describing the
+// before → after flow in the form the plan deck parses. The deck may add
+// nothing the plan lacks, so a plan written without the flow, or in another
+// form, gets a deck with no flow diagram and no error anywhere.
+func TestGroomingAgent_DiagramsFormat(t *testing.T) {
+	phase7 := groomingPhase7(t)
+	format := map[string]struct{ mustSay string }{
+		"section heading":    {mustSay: "`## Diagrams`"},
+		"before subsection":  {mustSay: "`### Flow: before`"},
+		"after subsection":   {mustSay: "`### Flow: after`"},
+		"fenced text block":  {mustSay: "```text"},
+		"edge form":          {mustSay: "`a -> b : label`"},
+		"one spelling":       {mustSay: "exactly one spelling"},
+		"no-flow escape":     {mustSay: "`Not applicable — <why>`"},
+		"never empty":        {mustSay: "Never leave the section empty"},
+		"risks heading":      {mustSay: "`## Risks`"},
+		"steps heading":      {mustSay: "`## Execution Steps`"},
+		"targets heading":    {mustSay: "`## Affected Release Targets`"},
+		"files heading":      {mustSay: "`## Files that change`"},
+		"not-changing files": {mustSay: "`## Files confirmed NOT changing`"},
+	}
+	for name, f := range format {
+		t.Run(name, func(t *testing.T) {
+			if !strings.Contains(phase7, f.mustSay) {
+				t.Errorf("Phase 7 of agents/grooming-agent.md no longer says %s.\n"+
+					"  Fix: restore it — /refine Phase 6 reads plans in exactly this form, and a plan written otherwise loses its diagram silently.", f.mustSay)
+			}
+		})
+	}
+}
+
+// releaseTargetsAddrRe extracts the start address of the sed range /release
+// uses to cut the `## Affected Release Targets` section out of a plan.
+var releaseTargetsAddrRe = regexp.MustCompile(`sed -n -E '/([^/]*Affected Release Targets)/,`)
+
+// TestRelease_ReadsTargetsByHeading fails when /release stops reading the
+// targets section by its heading. Plans mention the section by name in prose
+// too (health report, risks, validation notes), and a range that starts on a
+// mention ships whatever targets that prose happens to list.
+func TestRelease_ReadsTargetsByHeading(t *testing.T) {
+	if !strings.Contains(groomingPhase7(t), "`## Affected Release Targets`") {
+		t.Fatal("Phase 7 of agents/grooming-agent.md no longer names `## Affected Release Targets`, the heading /release reads.\n" +
+			"  Fix: restore the heading, or change /release's sed address in the same commit.")
+	}
+	m := releaseTargetsAddrRe.FindStringSubmatch(readFile(t, "skills", "release", "SKILL.md"))
+	if m == nil {
+		t.Fatal("skills/release/SKILL.md has no `sed -n -E '/…Affected Release Targets/,/^## /p'` line.\n" +
+			"  Fix: restore it — it is how /release binds a plan's targets.")
+	}
+	addr, err := regexp.Compile(m[1])
+	if err != nil {
+		t.Fatalf("/release's sed address %q is not a valid extended regexp: %v", m[1], err)
+	}
+	lines := map[string]struct {
+		line  string
+		match bool
+	}{
+		"fixed heading":      {line: "## Affected Release Targets", match: true},
+		"older h3 heading":   {line: "### Affected Release Targets", match: true},
+		"older bold heading": {line: "**Affected Release Targets**: cli", match: true},
+		"prose mention":      {line: "- Release Impact feeds `## Affected Release Targets`", match: false},
+		"inline mention":     {line: "take the plan's Affected Release Targets section", match: false},
+	}
+	for name, l := range lines {
+		t.Run(name, func(t *testing.T) {
+			if got := addr.MatchString(l.line); got != l.match {
+				t.Errorf("/release's sed address %q matches %q = %v, want %v.\n"+
+					"  Fix: anchor the address on the heading (`^(#{2,3} |\\*\\*)Affected Release Targets`), never on any mention.", m[1], l.line, got, l.match)
+			}
+		})
+	}
+}

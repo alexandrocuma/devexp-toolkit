@@ -1,6 +1,6 @@
 # Tech Spec: Visual plan deck
 
-**Status**: approved
+**Status**: in-build
 **Shape**: epic
 **Owner**: Alexandro Cu
 **Approved by**: Alexandro Cu
