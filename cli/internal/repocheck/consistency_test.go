@@ -305,3 +305,68 @@ func TestSkillCatalog_MatchesDisk(t *testing.T) {
 		}
 	}
 }
+
+// ─── Tech specs: one status vocabulary across the skills ────────────────────
+
+// specStatusListRe finds the one sentence that defines a tech spec's status
+// values. /refine owns the vocabulary; every other skill only moves a spec
+// along it, so this is the source the others are checked against.
+var specStatusListRe = regexp.MustCompile("(?m)^Status values, in order: (.+)$")
+
+// specStatusUseRe finds a status a skill writes or tests for — `Status: x`,
+// the form every consumer uses when it names a spec state.
+var specStatusUseRe = regexp.MustCompile("Status: ([a-z][a-z-]*)")
+
+// TestSpecStatus_ValuesAgree fails when a skill names a spec status /refine
+// never defined, or stops naming one it is responsible for setting. The
+// statuses are plain prose in five files, read by agents that do exactly what
+// the words say: a /deliver that set "building" while /release waited for
+// "in-build" would leave every spec unretired, and nothing else would notice.
+func TestSpecStatus_ValuesAgree(t *testing.T) {
+	m := specStatusListRe.FindStringSubmatch(readFile(t, "skills", "refine", "SKILL.md"))
+	if m == nil {
+		t.Fatal("skills/refine/SKILL.md no longer has its `Status values, in order:` line.\n" +
+			"  Fix: restore it — it is the single definition the other skills are checked against.")
+	}
+	defined := map[string]bool{}
+	for _, v := range regexp.MustCompile("`([a-z][a-z-]*)`").FindAllStringSubmatch(m[1], -1) {
+		defined[v[1]] = true
+	}
+	if len(defined) != 4 {
+		t.Fatalf("skills/refine/SKILL.md defines %d spec statuses (%v), want the four of draft → approved → in-build → implemented.\n"+
+			"  Fix: if the lifecycle really changed, update this test and every skill below in the same commit.", len(defined), defined)
+	}
+
+	// mustSet is the status each file is responsible for writing or stopping
+	// on; losing that sentence is as broken as misspelling it.
+	consumers := map[string]struct {
+		path    []string
+		mustSet []string
+	}{
+		"deliver":        {path: []string{"skills", "deliver", "SKILL.md"}, mustSet: []string{"draft", "in-build"}},
+		"release":        {path: []string{"skills", "release", "SKILL.md"}, mustSet: []string{"implemented"}},
+		"grooming-agent": {path: []string{"agents", "grooming-agent.md"}, mustSet: []string{"draft"}},
+		"cleanup":        {path: []string{"skills", "cleanup", "SKILL.md"}, mustSet: nil},
+		"update-docs":    {path: []string{"agents", "update-docs.md"}, mustSet: nil},
+	}
+	for name, c := range consumers {
+		t.Run(name, func(t *testing.T) {
+			rel := filepath.Join(c.path...)
+			body := readFile(t, c.path...)
+			used := map[string]bool{}
+			for _, u := range specStatusUseRe.FindAllStringSubmatch(body, -1) {
+				used[u[1]] = true
+				if !defined[u[1]] {
+					t.Errorf("%s names spec status %q, which skills/refine/SKILL.md does not define.\n"+
+						"  Fix: use one of draft, approved, in-build, implemented.", rel, u[1])
+				}
+			}
+			for _, want := range c.mustSet {
+				if !used[want] {
+					t.Errorf("%s no longer says `Status: %s`, the spec status it is responsible for.\n"+
+						"  Fix: restore the sentence, or move the responsibility and this test together.", rel, want)
+				}
+			}
+		})
+	}
+}

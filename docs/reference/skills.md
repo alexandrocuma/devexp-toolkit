@@ -68,6 +68,7 @@ The first four orchestrators *build* software and `/release` *ships* it; `/monit
 - **Finishes a deferred release.** Previously, declining `/deliver`'s gate left no way to resume without re-running delivery or releasing by hand — the main source of accumulated worktrees. `/release <ticket>` now closes that loop
 - **Preflight is read-only** and reports branch merge state, commits since the last tag, the detected version file and platform, and the *derived* version bump (breaking → major, feat → minor, else patch)
 - **Failure preserves, completion retires** — only a release whose every target is shipped or skipped removes the worktree, plan, groom session, release state and scratch; every failure or pending path keeps them
+- **Retires the tech spec** (Phase 5.5) when the ticket was cut from one and every other ticket in the spec is closed: offers each S-9 decision as an ADR, one at a time (only accepted ones are written, in the repo's ADR directory), then marks the spec `implemented` — all before the release commit, so it ships with the code. Specs stay in place; nothing is written after the tag push
 - **Never auto-resolves a merge conflict**, and never re-pushes a tag without first checking `git ls-remote --tags origin`
 - Invoked by `/deliver` Phase 6 and chained to by the `changelog` agent when a version bump is needed
 
@@ -97,6 +98,7 @@ The first four orchestrators *build* software and `/release` *ships* it; `/monit
 - Safety rules are load-bearing and inlined: validated `[A-Za-z0-9_-]` ids, prefix-anchored globs, never the main checkout / default branch / shared memory, preserve on failure or doubt
 - Primary sources of accumulated trees: failed deliveries, and releases deferred at `/release`'s gate whose branch has since landed
 - A ticket with any target not yet `shipped`/`skipped` in its release state is **live** — merged branch or not — and is never retired
+- Reports **stuck tech specs** — `approved`/`in-build` with every ticket closed — and lists drafts with their age. Report only: specs are never edited or removed by cleanup
 
 ---
 
