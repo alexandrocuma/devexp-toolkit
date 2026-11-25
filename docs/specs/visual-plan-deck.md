@@ -110,7 +110,7 @@ deck.html -> reviewer : scans diagrams, opens details on demand
 ```
 ~~~
 
-Phase 6 reads edges only inside the fences. One `a -> b : label` edge per line. A node keeps the same spelling in *before* and *after*, otherwise an unchanged node would read as one removed and one new. Node names are the plan's own terms (file paths, skill names, components). A node that appears only in *after* is new, one only in *before* is removed, and the deck colours them that way.
+Phase 6 reads edges only inside the fences. One `a -> b : label` edge per line. A node keeps the same spelling in *before* and *after*, otherwise an unchanged node would read as one removed and one new. Node names are the plan's own terms (file paths, skill names, components). A node that appears only in *after* is new, one only in *before* is removed, and the deck colours them that way. An edge is identified by its two ends: an edge `a -> b` in both flows with the same label is unchanged, one whose label differs is **changed** (the deck shows the after label and keeps the before label in the diagram's `<desc>`), and an edge only in *after* or only in *before* is new or removed. A change that keeps every node but alters what passes between them therefore still shows.
 
 ### S-6.2 Deck file contract (unchanged apart from SVG)
 - Self-contained: inline CSS and inline SVG; no external font, script, image or stylesheet.
@@ -166,3 +166,4 @@ Not applicable: the deck is a local file produced in a chat session. The Phase 6
 | 2026-11-24 | S-4.2, S-7.3 | Plans groomed before the headings were fixed have their sources found by what they hold, with the Health Report as the fallback for risks. A missing source is stated | Existing plans must still produce a deck, without inventing diagrams |
 | 2026-11-24 | S-6.1 | Flows sit in fenced `text` blocks. Node names keep one spelling across before and after | GitHub reads `<id>`, `_` and `*` in bare lines as markup. Inconsistent spelling turns an unchanged node into a removed node plus a new one |
 | 2026-11-25 | S-4.3 | Every diagram reads top to bottom, with a rule per diagram kind. Side by side is allowed only for two things of the same kind | The owner reviewed the first visual deck (#237) and asked for vertical diagrams, required by the skill and not just by one deck |
+| 2026-11-25 | S-6.1 | Edges are compared too, by their two ends: same ends with a different label is a changed edge, shown with its after label and the before label kept in `<desc>` | Delivering #237, a dry-run deck from plan 237 showed no change at all: its flow keeps every node and changes only what passes along the edges, and S-6.1 marked only nodes |
