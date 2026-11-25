@@ -1,12 +1,12 @@
 # Tech Spec: Visual plan deck
 
-**Status**: implemented
+**Status**: in-build
 **Shape**: epic
 **Owner**: Alexandro Cu
 **Approved by**: Alexandro Cu
 **Approved on**: 2026-11-24
 **Approved in**: commit "docs(spec): visual-plan-deck approved"
-**Tickets**: #236 (M1), #237 (M2), #238 (M3)
+**Tickets**: #236 (M1), #237 (M2), #238 (M3), #242 (M4)
 
 ## S-1 Overview
 
@@ -54,6 +54,8 @@ Phase 7 names, exactly and as level-2 headings, the seven sections the deck read
 
 `## Diagrams` owns the before → after flow, written in the text format in S-6.1 and required for every plan. For a change with no runtime flow (docs only, say), the section says `Not applicable — <why>` and the deck uses the change map as its hero diagram.
 
+The plan also carries the **short labels** the diagrams show (S-6.3), so the deck copies words and never rewrites them: each execution step, each risk and each Decisions cell the boards draw leads with a bold label of at most five words, and each flow edge label is at most four words. The full text follows the label and still reaches the deck in its `<details>`.
+
 ### S-4.2 Diagram catalog (`skills/refine/SKILL.md`, Phase 6 "Slides")
 A fixed set of diagram kinds, each tied to one plan section:
 
@@ -72,7 +74,9 @@ Plans groomed before the headings were fixed name these sections differently (`#
 ### S-4.3 Slide layout rules (Phase 6 "The file")
 A plan fits four slides when its step graph has at most seven steps, its `## Decisions` table at most six rows, and every diagram at most 12 nodes. Phase 6 checks this before it writes anything. A plan that does not fit gets no deck: Phase 6 says which part overflowed and how many slides it would have needed, and offers to split the ticket (back to Phase 4) or `adjust` (re-groom). Content is never squeezed, truncated or spread onto a fifth slide.
 
-A diagram is the first and largest element on each slide. Text is limited to a one-line headline plus at most three short captions. The full plan text for the slide sits in a closed `<details>` under the diagram, so nothing is lost and the traceability check still has a place to look.
+A diagram is the first and largest element on each slide. Text is limited to a one-line headline plus at most three captions of at most 12 words each.
+
+A diagram is a picture, not the plan's prose in boxes. Every label in it is the plan's short label, copied as written (S-6.3): at most five words in a box (a file path or release target id counts as one label), at most four on an arrow. A step row shows its label and its file, a change-map box shows only its path, and a decision board shows the chosen label, the alternatives' labels and the deciding reason on the arrow. Descriptions, rationale and sub-bullets live only in the slide's `<details>`. A plan item with no short label gets no invented one: the deck shows the item's name or number and asks for `adjust`. The full plan text for the slide sits in a closed `<details>` under the diagram, so nothing is lost and the traceability check still has a place to look.
 
 Every diagram reads top to bottom. Order and cause run down the page:
 - **Flows**: one node under the next, with each arrow's label beside it. A return edge, such as adjust, loops back up the side.
@@ -124,6 +128,20 @@ Phase 6 reads edges only inside the fences. One `a -> b : label` edge per line. 
 - Colours come from CSS custom properties redefined under `prefers-color-scheme: dark`; meaning never depends on colour alone (new/changed/removed also differ by line style or a label).
 - `@media print` keeps one slide per page and the diagrams at full width.
 
+### S-6.3 Short labels in the plan
+Grooming writes each label as a bold lead, so it reads in plain text and the deck finds it without guessing:
+
+| Plan item | Label | Example |
+|---|---|---|
+| Execution step | `**<≤5 words>** — <full step>` | `3. **Slides block** — layout lead-in; items 2-6 name their diagram…` |
+| Risk | `**<≤5 words>** — <full risk>` | `- **Escape gap in SVG** — plan text in an attribute…` |
+| Decisions, `Decision` cell | `**<≤5 words>** — <full decision>` | `**Anchors over line numbers** — Build on merged #235…` |
+| Decisions, `Alternatives considered` cell | each alternative `**<≤5 words>**`, separated by `;` | `**Pin line numbers**; **Free inference**` |
+| Decisions, `Why rejected` cell | `**<≤5 words>** — <full reason>` | `**Lines move every edit** — They move with…` |
+| Flow edge (S-6.1) | the label after `:` is at most four words | `deck.html -> reviewer : scans diagrams` |
+
+File paths and release target ids are their own labels. A `none — <why>` row keeps that form; its board shows `none` and the reason's first five words.
+
 ## S-7 Cross-cutting Concerns
 
 ### S-7.1 Security
@@ -136,6 +154,7 @@ Not applicable: the deck is a local file produced in a chat session. The Phase 6
 - Plan has no `## Diagrams` (groomed before this ships): the deck builds without the flow diagram, says so on slide 1, and suggests re-grooming. It never invents the flow.
 - Plan too large for four slides (more than seven steps, more than six decisions, or a diagram past 12 nodes): no deck. Phase 6 names what overflowed and offers split or `adjust` (S-4.3).
 - `Not applicable` flow: the change map becomes the hero diagram on slide 1, and slide 2 keeps the blast radius.
+- Plan item with no short label, or a label past its word limit (a plan groomed before S-6.3): the deck shows the item's name or number in its place, never a rewording, and the sign-off suggests `adjust`.
 - Plan groomed before the headings were fixed: sources are found by what they hold (S-4.2). A missing source is stated, never invented.
 
 ## S-8 Milestones
@@ -145,6 +164,7 @@ Not applicable: the deck is a local file produced in a chat session. The Phase 6
 | M1 | Plans carry a flow diagram | S-4.1, S-6.1 | — |
 | M2 | Deck renders the diagram catalog | S-4.2, S-4.3, S-4.4, S-6.2, S-7 | M1, #234 merged |
 | M3 | Drift test + docs | S-4.5, CHANGELOG, `docs/reference/skills.md` | M1, M2 |
+| M4 | Short labels: plan writes them, deck draws only them | S-4.1, S-4.3, S-6.3, S-7.3 | M1, M2, M3 |
 
 ## S-9 Decisions
 
@@ -157,6 +177,7 @@ Not applicable: the deck is a local file produced in a chat session. The Phase 6
 | D5 | Diagram first, text capped at a headline plus three captions, full text in a closed `<details>` → ADR-0005 | The point is to read by looking. Keeping the full text one click away keeps traceability and nothing is lost | Remove the text; keep text and add diagrams beside it | Removing text loses the rationale that the decision slides exist for. Text beside the diagram is today's deck with pictures, and the reading load stays |
 | D6 | Build on #234, which merges first → ADR-0006 | #234 rewrites Phase 6 delivery (parallel deck subagents carrying Phase 6's rules verbatim). Editing the same text in parallel means a guaranteed conflict | Land this first and rebase #234 | #234 is already groomed with an approved deck. Its verbatim-rules decision (D9 there) means this spec's new rules travel to subagents automatically once both land |
 | D7 | Accessibility is part of the contract: `<title>` + `<desc>` on every SVG, meaning never by colour alone → ADR-0007 | Visual-first must not mean sight-only. The `<desc>` also gives the traceability check and a printout a text form | Leave it to the author | Without a rule it is skipped, and a colour-only legend fails in print and for colour-blind reviewers |
+| D8 | Short labels are written by grooming in the plan, and the deck copies them as written → ADR-0008 | The deck may not reword the plan, and per-node traceability needs each label to be the plan's own words | The deck condenses each label from the full text; a separate label column in each table | Condensing is rewriting: it breaks "the deck never extends the plan". A new column would change the Decisions table shape that the spec, the plan and the deck share |
 
 ## S-10 Open Questions
 
@@ -174,3 +195,5 @@ Not applicable: the deck is a local file produced in a chat session. The Phase 6
 | 2026-11-25 | S-6.1 | Edges are compared too, by their two ends: same ends with a different label is a changed edge, shown with its after label and the before label kept in `<desc>` | Delivering #237, a dry-run deck from plan 237 showed no change at all: its flow keeps every node and changes only what passes along the edges, and S-6.1 marked only nodes |
 | 2026-11-25 | S-2, S-4.2, S-4.3, S-7.3 | A deck has at most four slides — What (flow), Where (change map, blast radius), How (steps), Why (decisions, open questions, the ask). A plan needing more gets no deck and is sent back to be split or re-groomed; diagrams are no longer split into sub-diagrams | The owner: a deck that needs five to seven slides means the feature is too long or the plan is not yet well defined. A dry-run deck from plan 237 came to 17 slides |
 | 2026-11-25 | S-4.3, S-7.3 | The Why slide holds up to six decision boards, two per row; the fit limit is six `## Decisions` rows, not four | Owner decision after the four-slide dry runs: with four, every plan of this spec (236, 237, 238) was sent back on decision count alone, including two S tickets |
+| 2026-11-25 | S-4.1, S-4.3, S-6.3, S-7.3, S-8, S-9 | Diagrams show only short labels (≤5 words per box, ≤4 per arrow, captions ≤12 words) that grooming writes into the plan as bold leads; the deck copies them and keeps full text in `<details>`. New M4 and D8; status back to `in-build` | The owner reviewed the published #237 deck: its diagrams repeat the plan's paragraphs inside boxes and on arrows, so they read like a document, not a schema |
+| 2026-11-25 | S-9 | D8 links its record, ADR-0008 | Every other decision in S-9 links its ADR; delivering #242 added the missing one |

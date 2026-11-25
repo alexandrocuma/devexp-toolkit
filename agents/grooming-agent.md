@@ -302,14 +302,20 @@ Write the formatted plan document yourself, using all Phase 3–6 findings. The 
 - Include a "Validation Notes" section recording what was corrected
 - Have exact file paths and line numbers, verified to exist — new files marked `(new)` (Phase 6a)
 - Have a **`## Spec`** section when the ticket has a Spec reference, right after the header: the spec path, the section IDs, `Content hash: <git hash-object at groom time>` and the spec's `Approved in` value. `/deliver` compares the content hash with the spec on disk to tell whether the contract changed after this plan was written. Omit the section when there is no spec
-- Have a **`## Execution Steps`** section: ordered steps — each step unblocked by the previous
+- Have a **`## Execution Steps`** section: ordered steps — each step unblocked by the previous, each opening with its short label (see the short-label rule below)
 - Have a specific verification section (not "run tests" — specific commands and what to check)
 - Have a **`## Affected Release Targets`** section: each target id whose release-guide path overlaps a changed file, and the release-impact notes per target (version/build-number bump required, deploy ordering between targets, feature flag required, external review lead time). `deliver` checks readiness against it and `/release` ships only these targets
 - Have a **`## Risks`** section: what could break if the plan is followed — regressions, ordering hazards, merge conflicts, wrong assumptions — and the blast radius (who depends on the changed parts). It does not replace the Health Report's Release Impact (that feeds `## Affected Release Targets`) or its Security Notes
 - Have a **`## Decisions`** section: a table with the columns `# | Decision | Rationale | Alternatives considered | Why rejected`, one row per choice a reviewer could reasonably have made differently (where the change lives, what pattern it follows, what is deliberately left out). A choice with no real alternative says so in the row — `none — <why>` — rather than leaving the cell empty. `/refine` turns each row into one slide of the plan deck, so a rationale that is not in this table does not reach the people approving the plan
+- Give every item the plan deck draws a **short label**: a bold lead of at most five words, then ` — ` and the full text. It is what the deck's boxes and arrows show, copied as written; the deck never shortens anything itself, so an item with no label shows up as a bare number. The full text stays and reaches the deck's `<details>`:
+  - each execution step: `3. **Slides block** — <full step>`
+  - each risk: `- **Escape gap in SVG** — <full risk>`
+  - in `## Decisions`, the `Decision` cell and the `Why rejected` cell: `**Anchors over line numbers** — <full text>`; the `Why rejected` label is the deciding reason the board draws on its arrow
+  - in `## Decisions`, the `Alternatives considered` cell: each alternative named by a label alone, `**Pin line numbers**; **Free inference**`
+  - a file path or a release target id is its own label and needs no other. A `none — <why>` cell keeps that form
 - Have a **`## Diagrams`** section, placed after Validation Notes and before `## Files that change`, holding how the change alters the system's flow. `/refine` draws it as the deck's before → after diagram and may not add anything the plan lacks, so this is the only place the flow can come from:
   - two subsections, `### Flow: before` and `### Flow: after`, each holding one fenced block opened with ```` ```text ```` so ticket platforms render `<ID>`, `_` and `*` literally
-  - one edge per line, in the form `a -> b : label` — the label says what passes or happens along the edge
+  - one edge per line, in the form `a -> b : label` — the label says what passes or happens along the edge, in at most four words (`deck.html -> reviewer : scans diagrams`)
   - node names are the plan's own terms (file paths, skill and agent names, components). A node keeps exactly one spelling in both flows: a node only in *after* is new, a node only in *before* is removed, a node in both is unchanged. Edges compare by their two ends too, so an edge whose label changes keeps the same two ends and reads as changed
   - when no runtime flow changes (a docs-only change, say), write `Not applicable — <why>` in place of the two flows. Never leave the section empty and never invent a flow
 
@@ -428,6 +434,7 @@ A groomed ticket is done only when:
 - [ ] "Files NOT changing" section is explicit with reasons
 - [ ] Execution steps are ordered — each unblocked by previous
 - [ ] Plan uses the seven fixed level-2 headings from Phase 7, and `## Diagrams` holds both fenced flows or `Not applicable — <why>`
+- [ ] Every step, risk and drawn Decisions cell opens with a bold short label of at most five words; every flow edge label is at most four words
 - [ ] Verification section names specific commands and expected outcomes
 - [ ] Plan saved to ticket platform before the local copy
 - [ ] Agent memory updated with ticket outcome and pattern findings

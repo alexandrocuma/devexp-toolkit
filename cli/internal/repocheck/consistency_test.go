@@ -680,6 +680,40 @@ func TestRefineDeckSVGRulesTravelToSubagents(t *testing.T) {
 	}
 }
 
+// ─── Plan deck: short labels, written by grooming and drawn by the deck ────
+
+// TestShortLabels_LimitsAgree fails when the label limits grooming writes to
+// and the limits the deck draws to drift apart, or drop out of either side.
+// The deck copies labels and never shortens them, so a plan written to a looser
+// limit than the deck expects fills the diagrams with prose again — and a deck
+// rule outside the copied span reaches single-ticket decks only. Neither raises
+// an error: the deck still looks finished.
+func TestShortLabels_LimitsAgree(t *testing.T) {
+	phase7 := groomingPhase7(t)
+	deck := refineDeckRules(t, readFile(t, "skills", "refine", "SKILL.md"))
+	limits := map[string]struct{ plan, deck string }{
+		"box label":       {plan: "at most five words", deck: "at most five words in a box"},
+		"arrow label":     {plan: "at most four words", deck: "at most four words on an arrow"},
+		"copied verbatim": {plan: "copied as written", deck: "copied as written"},
+		"bold lead":       {plan: "**short label**", deck: "**short label**"},
+		"no rewording":    {plan: "never shortens", deck: "Never shorten, reword or truncate"},
+		"missing label":   {plan: "bare number", deck: "never a rewording"},
+		"short captions":  {plan: "", deck: "at most 12 words"},
+	}
+	for name, l := range limits {
+		t.Run(name, func(t *testing.T) {
+			if l.plan != "" && !strings.Contains(phase7, l.plan) {
+				t.Errorf("Phase 7 of agents/grooming-agent.md no longer says %q: plans would carry labels the deck cannot draw as written.\n"+
+					"  Fix: restore the short-label rule in Phase 7, matching Phase 6 of skills/refine/SKILL.md.", l.plan)
+			}
+			if !strings.Contains(deck, l.deck) {
+				t.Errorf("Phase 6 of skills/refine/SKILL.md does not say %q inside the paragraphs deck subagents copy (**Input** … **The file**).\n"+
+					"  Fix: restore the label rule there, matching Phase 7 of agents/grooming-agent.md.", l.deck)
+			}
+		})
+	}
+}
+
 // ─── Plan deck: the diagram catalog against the plan template ──────────────
 
 // planHeadingRe finds a backticked level-2 plan heading, such as
