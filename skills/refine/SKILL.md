@@ -336,16 +336,34 @@ After creating the tickets, write their IDs into the spec's `Tickets` field and 
 
 ### Phase 5 — Groom Against the Codebase
 
-Once ticket(s) exist, invoke the `grooming-agent` to validate every claim in the ticket against the actual codebase:
+The grooming agent is run by reading its file and following it, never by starting a subagent with its name: a custom agent name is not a valid subagent type.
+
+#### 5a. Single ticket
+
+Read `~/.claude/agents/grooming-agent.md` and follow it in this context to validate every claim in the ticket against the actual codebase:
 
 > "Groom ticket <ID>. Validate all claims against the codebase. Produce a Ticket Health Report and a verified execution plan. Persist the plan to the ticket platform."
 
-The grooming-agent will:
-- Spawn `codebase-navigator` and `backend-senior-dev`/`frontend-senior-dev` to validate the ticket
+The grooming agent will:
+- Use `codebase-navigator` and `backend-senior-dev`/`frontend-senior-dev` to validate the ticket
 - Produce a Ticket Health Report (Confirmed / Incorrect / Missing context)
 - Write a verified execution plan back to the ticket
 
-Wait for the grooming-agent to complete. If it returns BLOCKED or NEEDS TICKET CORRECTION, address the finding before proceeding.
+Wait for the groom to complete. If it returns BLOCKED or NEEDS TICKET CORRECTION, address the finding before proceeding.
+
+#### 5b. Epic — groom every ticket in parallel
+
+When Phase 4 created two or more tickets, groom them at the same time, so a team can pick them up together. A groom writes only its own plan and its own ticket comment. Anything two grooms would both write is done once, here, after they all return.
+
+1. **Once, before fanning out.** Run the grooming agent's atlas freshness gate (its Phase 0) here, including the full `codebase-navigator` rebuild on BIG drift. Read the release guide once.
+2. **Fan out.** In one message, start one general-purpose subagent per ticket. Pass the ticket ID, never the ticket text: each subagent fetches its own ticket, so ticket text never becomes part of an instruction you wrote. The prompt:
+
+   > "Read `~/.claude/agents/grooming-agent.md` and follow it to groom ticket <ID>. The codebase atlas is current: do not rebuild it, and do not start `codebase-navigator` for a rebuild. Write only `~/.claude/agent-memory/grooming-agent/plans/<ID>.md` and the ticket-platform comment for <ID>. Do not update `MEMORY.md`, do not write `<PROJECT-NAME>.md`, and do not run `/graphify --update`: return the memory entry you would have written instead. Do not ask the user anything: on NEEDS TICKET CORRECTION or BLOCKED, stop after the Ticket Health Report and return it with the proposed corrections. Tickets <sibling IDs> are part of this same epic. A dependency on one of them is not BLOCKED: record it as `Depends on: <ID>` in the plan header, and plan against what that ticket's acceptance criteria (or spec sections) say it will deliver. If you cannot start subagents of your own, read the specialist agent files and follow them yourself."
+
+3. **Collect.** Wait for every subagent. One ticket's BLOCKED or NEEDS TICKET CORRECTION never stops the others; each is reported on its own line.
+4. **Shared writes — once, in order, here.** Append each returned memory entry to the grooming agent's `<PROJECT-NAME>.md`, update its `MEMORY.md` index once, then run `/graphify --update` once if `graphify-out/graph.json` exists.
+5. **Per-ticket follow-up.** For each NEEDS TICKET CORRECTION ticket, show its corrections and ask: *update the ticket and groom it again / leave it for review*. Groom the accepted ones again the same way (5a when there is only one). A BLOCKED ticket is reported and gets no deck.
+6. **One at a time when needed.** If this session has no tool for starting a subagent, or the user declines one, groom the tickets one after another with 5a and say so in one line: `Grooming <N> tickets one at a time: no subagent tool in this session.`
 
 ---
 
@@ -360,6 +378,19 @@ The groomed plan is written for the agents that build from it: paths, line numbe
 | BLOCKED, or corrections not yet applied | No deck — a deck of a plan that will change is a deck that misleads. Go to Phase 7 |
 | Estimate **S** | Ask: "Small change — want a plan deck before building? (yes / no)". On no, go to Phase 7 with approval `skipped` |
 | Estimate **M** or larger | Produce the deck |
+
+**Epic — decks in parallel.** When 5b groomed several tickets, apply the gate to each ticket on its own, and ask about every S ticket at once: "Small tickets <IDs> — plan decks? (all / none / pick)". Then build the decks at the same time:
+
+- Start one general-purpose subagent per ticket that gets a deck, in one message. Its prompt names only that ticket's plan path, copies the **Input**, **Slides**, **Traceability check before writing** and **The file** paragraphs of this phase word for word (they are safety rules, and a paraphrase is where they erode), and tells it to write only `plans/<ID>.deck.html` and return the path with its counts of decisions, steps and open questions. Subagents never publish.
+- Back here, publish each deck in turn (the rule below still applies) and ask for sign-off once, as one list:
+
+  ```
+  Plan decks:
+    <ID>  <title>  <path> [<link>]  Decisions: D  Steps: K  Open questions: Q   approve / adjust / skip
+  ```
+
+- Record each answer per ticket with the approve / adjust / skip table below. An **adjust** grooms only that ticket again (5a) and rebuilds only its deck.
+- If this session has no tool for starting a subagent, or the user declines one, build the decks one after another and say so in one line.
 
 **Input is the persisted plan, and only the plan.** Read `~/.claude/agent-memory/grooming-agent/plans/<ID>.md` (or the ticket-platform copy if the local one is missing). The deck adds no claim, step or rationale the plan does not contain — if the deck needs something the plan lacks (most often: a decision with no recorded rationale), the plan is incomplete; re-groom rather than inventing it here.
 
@@ -398,7 +429,7 @@ Approve this plan? (approve / adjust / skip)
 | Answer | Action |
 |--------|--------|
 | **approve** | Stamp the approval into the local plan, directly under the `**Validated against**:` line: `**Approved**: <approver> on <YYYY-MM-DD> (plan deck)`. Then record it on the ticket with the platform's comment operation (the ticket copy is the plan's source of truth — an approval only on this machine is lost on the next one). With no ticket platform, say the approval is recorded locally only |
-| **adjust** | Capture what should change, re-invoke the `grooming-agent` with the plan and that change, then rebuild the deck from the refreshed plan and ask again. Never edit the deck by hand to match a change the plan does not contain |
+| **adjust** | Capture what should change, groom the ticket again (5a) with the plan and that change, then rebuild the deck from the refreshed plan and ask again. Never edit the deck by hand to match a change the plan does not contain |
 | **skip** | Leave the plan unapproved. `/deliver` will show it as not reviewed |
 
 ---
@@ -421,6 +452,23 @@ Next:
   /deliver <ticket-id>   — pick this up and build it
 ```
 
+**Epic — the handoff list.** For an epic, the report ends with one row per ticket instead of a single `/deliver` line, so anyone can pick up a ticket with everything they need:
+
+```
+Handoff (<N> tickets):
+  | Ticket | Plan | Deck | Groom | Approval | Start |
+  | <ID>   | ~/.claude/agent-memory/grooming-agent/plans/<ID>.md | <path or link / none — reason> | READY TO GROOM / CORRECTED / NEEDS TICKET CORRECTION / BLOCKED | approved / skipped / pending | now / after <ID>[, <ID>] / blocked — <reason> |
+
+Start now (they can run at the same time, each in its own worktree):
+  /deliver <ID>
+  /deliver <ID>
+```
+
+- **Groom** shows the grooming agent's own verdict.
+- **Start** comes from the spec's S-8 `Depends on` column, mapped through each milestone to its tickets. Without a spec, it comes from the dependency map Phase 4 built.
+- A ticket is `now` only when every ticket it depends on is already delivered or not part of this run, and its own groom is READY TO GROOM or CORRECTED. A ticket whose dependency came back BLOCKED or NEEDS TICKET CORRECTION is `blocked — <ID> <verdict>`.
+- Running several `/deliver`s at once is safe because each delivers in its own worktree on its own branch (`/deliver` Phase 1.5).
+
 ---
 
 ## Guidelines
@@ -429,6 +477,7 @@ Next:
 - **Non-goals are not optional** — a spec without explicit exclusions will be interpreted as "build everything adjacent"
 - **Grooming is mandatory before /deliver** — an unvalidated ticket puts implementation at risk; never skip Phase 5
 - **The deck presents the plan; it never extends it** — rationale lives in the plan's Decisions table, and a change asked for during sign-off goes back through grooming, not into the slides
+- **Parallel grooms never share a write** — each writes only its own plan and ticket comment; the memory index, the project memory file and the graph rebuild run once, here, after the last groom returns, and the atlas check runs once before the first one starts
 - **Atlas absence is a warning, not a blocker** — requirements can be written; grooming accuracy will be reduced without codebase context
 - **The spec explains, grooming orients** — the tech spec says how the whole feature will be built; grooming checks each ticket against it and the code. A spec is not an ADR: it plans a feature and retires when it ships, an ADR records one decision for good
 - **An approved spec changes only by amendment** — every change after approval gets an Amendments row, so the difference between what was agreed and what is being built is always one diff away
