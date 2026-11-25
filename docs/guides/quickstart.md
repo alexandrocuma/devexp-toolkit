@@ -57,8 +57,9 @@ What it does:
 3. For a multi-part feature or a new project, writes a tech spec to `docs/specs/<slug>.md` — how the whole thing will be built — and asks you to approve it. Tickets are cut from the approved spec, and any later change to it is recorded as an amendment
 4. Creates a well-formed ticket on your issue tracker (GitHub Issues, GitLab, Linear, or Jira — auto-detected), recording which release targets it affects
 5. Grooms the new ticket against the codebase: validates its claims and writes a verified execution plan back to it
+6. Presents the plan as a slide deck — what will be built, why each decision was made, the steps — and asks you to approve or adjust it
 
-Output: a groomed ticket with an attached execution plan — ready for `/deliver`.
+Output: a groomed, approved ticket with an attached execution plan — ready for `/deliver`.
 
 ---
 

@@ -46,7 +46,8 @@ The first four orchestrators *build* software and `/release` *ships* it; `/monit
 - Creates a structured ticket on GitHub Issues, GitLab, Linear, or Jira (auto-detected)
 - Validates ticket claims against the codebase (via `grooming-agent`)
 - Records **affected release targets** and release impact (store review lead time, cross-target ordering, flag-only rollback) — multi-target or externally-gated releases raise the estimate
-- **Planification** — produces a verified execution plan attached to the ticket. This is the cycle's planning phase; it has no command of its own because a plan with no ticket to attach to is just a document
+- **Planification** — produces a verified execution plan attached to the ticket, including a **Decisions** table (choice · rationale · alternatives · why rejected). This is the cycle's planning phase; it has no command of its own because a plan with no ticket to attach to is just a document
+- **Plan deck and sign-off (Phase 6)** — turns the groomed plan into a self-contained HTML slide deck next to it (`plans/<id>.deck.html`; also published privately where the host CLI can publish pages): problem, scope, one slide per decision with its rationale and rejected alternatives, the ordered steps, risks, open questions. Then asks to **approve / adjust / skip** — *adjust* re-grooms and rebuilds the deck, *approve* stamps the plan and comments on the ticket. Produced for M+ estimates, offered for S. `/refine present <ticket>` re-presents an existing plan. `/deliver` shows the approval and only warns when it is missing
 
 ### `/deliver <ticket>`
 - Loads the groom plan (or runs grooming if missing)

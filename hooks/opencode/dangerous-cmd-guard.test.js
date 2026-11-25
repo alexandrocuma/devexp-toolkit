@@ -310,6 +310,7 @@ const ALLOW = [
   'rm -f /tmp/.deliver-PAY-123-*',
   'rm -f /tmp/.recently_changed.txt',
   'rm -f ~/.claude/agent-memory/grooming-agent/plans/PAY-123.md',
+  'rm -f ~/.claude/agent-memory/grooming-agent/plans/PAY-123.md ~/.claude/agent-memory/grooming-agent/plans/PAY-123.deck.html', // plan + its /refine deck
   'rm -f ~/.claude/agent-memory/grooming-agent/sessions/PAY-123-*',
   'git push origin main',
   'git commit -m "fix -f false positive" ; git push',
