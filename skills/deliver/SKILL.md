@@ -69,6 +69,20 @@ fi
 
 **Read the approval.** `/refine` Phase 6 stamps `**Approved**: <who> on <date>` under the plan's anchor when a person signs off on the plan deck. Record it, or its absence, for Phase 1. A missing approval is a notice, not a gate — plans groomed by this skill itself never pass through the deck, and the user may have skipped it on purpose.
 
+**Load the tech spec** *(only when the work was cut from one)*. Take the spec path and section IDs from the plan's `## Spec` section, or from the ticket's `## Spec` section when the plan has none. No spec on either → skip this step; nothing about a spec applies to this delivery.
+
+The spec is the contract this ticket implements. Read its header and the named sections, then:
+
+| Spec state | Action |
+|------------|--------|
+| `Status: draft` | **Stop** — there is no agreed contract to build against. Tell the user to approve it with `/refine`. Like a missing ticket, this is a missing precondition, not a judgement call |
+| `git hash-object <spec>` equals the plan's `Content hash` | Use it as-is |
+| Hash differs, but the ticket's sections are unchanged | Proceed; note which other sections moved |
+| Hash differs and a ticket section changed | The plan was groomed against a different contract — **re-groom before building**, as for BIG drift |
+| Plan has no `Content hash` (groomed before spec checks existed) | Diff the ticket's sections against the spec's approval point instead, and say the comparison is approval-relative |
+
+Two approvals, never confused: the plan-deck **Approved** stamp above is a notice; the spec's `approved` status is the contract, and a draft spec stops the delivery.
+
 **Load the release guide.** Read `docs/guides/release.md` alongside the plan and take the plan's **Affected Release Targets** section as this delivery's target list. A missing guide or section is a note, not a blocker — the delivery proceeds and Phase 4.5 reports readiness as unverified.
 
 If the plan has no anchor (groomed before A3), or the anchor is not an ancestor of HEAD (per the guard above), treat it as drift-unknown: run the classification against the plan's `Groomed` date instead (`git log --since="<Groomed date> 00:00:00" --name-only`), and prefer re-grooming if that date is not same-day.
@@ -97,6 +111,7 @@ Groom plan loaded:
   Risk:             low / medium / high
   Release targets:  <target ids from the plan / unverified — no release guide>
   Approval:         <approved by <who> on <date> / not reviewed by a person — `/refine present <ticket-id>` shows the plan deck first>
+  Spec:             <docs/specs/<slug>.md — sections S-x, S-y (<status>; unchanged / other sections moved since grooming) / none>
 
 Delivery sequence:
   1. Worktree           → isolate this ticket in its own git worktree
@@ -282,9 +297,13 @@ find . -maxdepth 3 \( -name "*.tf" -o -name "*.hcl" -o -name "Dockerfile" -o -na
 
 If the ticket or changed files include infrastructure definitions, apply the same discipline as application code: read 2–3 existing infrastructure files first, match the project's existing style exactly, and handle them within this implementation step. Never introduce a new IaC tool or pattern without user confirmation.
 
+**Mark the spec in build.** When this delivery implements an `approved` spec, set its header to `Status: in-build` and update its row in `docs/specs/README.md` — on the delivery branch, so the change ships in this PR. It is bookkeeping, not a design change, so it needs no Amendments row. A spec already `in-build` is left alone.
+
 **For new features and bug fixes** — invoke the `dev-agent`:
 
 > "Implement ticket <ID>. The verified execution plan is: <paste groom plan key steps and file list>. Follow the plan exactly. Write tests alongside the implementation. Match existing code conventions."
+
+When there is a spec, add: *"This ticket implements spec sections <IDs>: <paste them>. The spec is the contract — where the plan and the spec seem to disagree, stop and report it instead of choosing."*
 
 **For library/framework upgrades** — invoke the `migration` agent:
 
@@ -486,6 +505,17 @@ Fix any issues found before proceeding — these are correctness bugs, not style
 - Magic numbers or strings that should be named constants
 - Missing input validation at public function boundaries
 
+**Spec conformance** *(only when the work implements a spec)*. Compare the diff with every linked section — contracts, data model, behaviour, errors — and list each divergence: something the spec says that the code does not do, or does differently. Nothing found is stated, with the sections checked.
+
+For each divergence the user decides, one at a time:
+
+| Choice | What happens |
+|--------|--------------|
+| **Fix the code** | In scope — fixed before the release gate, like any other in-scope finding |
+| **Amend the spec** | Edit the section, append an Amendments row (date, section ID, what changed, why), commit as `docs(spec): <slug> amended — <IDs>` on the delivery branch |
+
+Neither happens silently, and no divergence reaches the release gate unresolved. The code is never declared right by default: the spec is what was agreed, and changing the agreement is the user's call.
+
 **Apply the scope test to every finding.** A finding inside this ticket's own change belongs to this delivery and is fixed now. A finding elsewhere in the codebase is a different ticket.
 
 | Finding | Action | Owner |
@@ -503,7 +533,8 @@ Document the **out-of-scope** findings in the PR description for the reviewer. T
 
 Create a PR if one doesn't exist. **Its description is the repo's template, filled
 in**, not a one-line "Closes": the class sweep from Phase 1.8 (queries and table),
-the proof table from Phase 4, the size and any waiver the repo asks for, and the
+the proof table from Phase 4, the size and any waiver the repo asks for, the
+spec amendments made in this delivery (section, change, reason), and the
 out-of-scope findings above. Some repos gate the description in CI; an empty
 section fails the build there and the reviewer here.
 
@@ -514,7 +545,7 @@ glab mr view 2>/dev/null || glab mr create --title "<ticket-id>: <title>" --desc
 
 Invoke the `pr-review` agent:
 
-> "Review PR <number> on branch <branch>. Focus on: (1) correctness against the acceptance criteria from ticket <ID>, (2) security implications if the change touches auth or data handling, (3) whether the implementation matches the project's existing patterns. Post findings as inline review comments."
+> "Review PR <number> on branch <branch>. Focus on: (1) correctness against the acceptance criteria from ticket <ID>, (2) security implications if the change touches auth or data handling, (3) whether the implementation matches the project's existing patterns, (4) when there is a spec, whether the change matches spec sections <IDs> — <paste them>. Post findings as inline review comments."
 
 Wait for the pr-review agent. If it posts findings, address them — either via `pr-feedback` agent or manually — before proceeding to release.
 
@@ -558,6 +589,7 @@ If the `/release` skill is not installed, **do not improvise a release**: report
   Dependents:      <N of M blast-radius dependents covered by a test; uncovered listed with why>
   Release ready:   <per target: ready / gaps — … / unverified — no release guide>
   E2E coverage:    <N scenarios added / no E2E suite detected / already covered>
+  Spec:            <S-x, S-y checked — N divergences: X fixed in code, Y amended (<IDs>) / no divergence / no spec>
   Review:          <findings addressed / approved>
   Release:         <v<version> — per target: shipped | awaiting-external | blocked | skipped / deferred — finish with /release <ticket-id> / failed at <step> / skipped>
   Cleanup:         <retired by /release / preserved — release did not complete>
@@ -576,6 +608,7 @@ Next:
 - **Instrumentation is inline, not delegated** — detecting and adding log calls is straightforward enough to do here; a specialist skill is not required
 - **Release is delegated, and it is the only hard gate** — Phase 6 hands off to `/release`, which asks for its own confirmation. Every other step can be skipped; release is irreversible and affects shared systems, so its consent is never inherited from Phase 1
 - **In scope is fixed, out of scope is filed** — a defect inside the change being delivered is folded into that delivery before the release gate; only work outside its scope becomes a ticket. A follow-up filed for something in scope is a quality gap wearing a ticket
+- **The spec is the contract** — a divergence from it is fixed in the code or amended in the spec with a recorded reason, never shipped silently. Spec checks apply only when the ticket was cut from a spec; every other delivery runs exactly as before
 - **Architecture check is a suggestion, not a gate** — surface it for high-complexity tickets; never block on it
 - **Test coverage, not test count** — if the implementation agent wrote tests, verify they cover the acceptance criteria, not just that they exist
 - **Worktree isolation is the default, merge is deferred** — each ticket is delivered in its own worktree (rationale: `docs/guides/worktree-per-ticket.md`, maintainer-only in the devexp-toolkit repo, not installed); the branch merges only at the release gate — inside `/release` — and conflicts always surface to the user, never auto-resolved
