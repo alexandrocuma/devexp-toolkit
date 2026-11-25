@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-25
+
 ### Added
+
+- **The visual-plan-deck spec is implemented and its decisions are recorded as the repo's first ADRs.** `docs/specs/visual-plan-deck.md` is marked `implemented`, and seven of its decisions now live in `docs/architecture/adr/` (0001–0007): hand-written inline SVG, diagrams derived from plan sections, the plain-text edge-list flow, the fixed diagram catalog, the four-slide diagram-first deck, building on the epic-deck rewrite, and accessibility by contract.
 
 - **The plan deck's diagram catalog is guarded against the plan template, and the visual deck is documented** (#238, completes the visual-plan-deck spec). New `TestDeckCatalog_MatchesPlanTemplate` reads the `` `## X` `` sources in the table under Phase 6's `**Diagram catalog.**` line and fails when one is not a heading Phase 7 of `grooming-agent` writes, when the table names fewer than seven headings, or when `## Diagrams` drops out of either side. Mutation-checked: removing `## Diagrams` from the agent, renaming a catalog source, deleting the catalog line or a row each fail it. `docs/reference/skills.md` describes the visual deck and the catalog.
 
