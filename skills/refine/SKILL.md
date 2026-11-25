@@ -397,10 +397,11 @@ The groomed plan is written for the agents that build from it: paths, line numbe
 
 - **Find each section by its heading.** A plan groomed today has seven fixed level-2 headings: `## Files that change`, `## Files confirmed NOT changing`, `## Execution Steps`, `## Risks`, `## Affected Release Targets`, `## Decisions`, `## Diagrams`.
 - **An older plan is read by what it holds.** A plan groomed before the headings were fixed names them differently (`### Steps`, `Files confirmed safe`, `### Risk`), so find each source by its content: the ordered steps list, the files table, the risks list. With no `## Risks`, the blast radius comes from the Ticket Health Report's `### Release Impact` and `### Security Notes`.
-- **A source that cannot be found is stated, never invented.** Its slide says "`<section>` is not in the plan — suggest `adjust`" in place of the diagram.
+- **A source that cannot be found is stated, never invented.** Its slide says "`<section>` is not in the plan — suggest `adjust`" in place of the diagram. With no files table, the changed files are the ones the steps name. A source found only in part is drawn from the part that exists, with a caption naming what is missing.
+- **A text field the plan lacks** (estimate, problem statement, non-goals) shows as "not in the plan"; the problem headline falls back to the ticket title.
 - **Edges are read only inside the fenced `text` blocks** under `### Flow: before` and `### Flow: after` in `## Diagrams`, one `a -> b : label` edge per line. A node spelled the same in both flows is unchanged; one only in *after* is new; one only in *before* is removed. Edges compare by their two ends: the same `a -> b` with the same label is unchanged, with a different label it is **changed** (draw the after label, marked changed, and keep the before label in the `<desc>`), and an edge only in *after* or only in *before* is new or removed. An `a -> b` line anywhere else in the plan is prose, not an edge.
 
-**Four slides, no more.** A deck has at most four slides. Before writing anything, check the plan fits: at most seven execution steps, at most four rows in `## Decisions`, and no diagram past about 12 nodes. A plan that does not fit gets **no deck** — needing five to seven slides means the feature is too long or the plan is not yet well defined, and a longer deck only hides that. Name what overflowed and how many slides it would have needed, and offer **split** (cut the ticket smaller, back to Phase 4) or **adjust** (re-groom it). Never squeeze, truncate, group into sub-diagrams or add a fifth slide to make a plan fit.
+**Four slides, no more.** A deck has at most four slides. Once the gate says a deck is built, and before writing anything, check the plan fits: at most seven execution steps, at most four rows in `## Decisions`, and at most 12 nodes in any diagram. A node is one box: a step row with its files is one node, and a file listed as both changed and checked is one node (changed). A plan that does not fit gets **no deck** — needing five to seven slides means the feature is too long or the plan is not yet well defined, and a longer deck only hides that. Name every limit it broke and how many slides it would have needed — one more for each further seven steps, four decisions or 12-node diagram — and offer **split** (cut the ticket smaller, back to Phase 4) or **adjust** (re-groom it: tighten the steps, or keep in `## Decisions` only the choices a reviewer could reasonably have made differently). Never squeeze, truncate, group into sub-diagrams or add a fifth slide to make a plan fit.
 
 **Slides, in this order.** Each slide leads with its diagram, the first and largest thing on the slide — or, where its source is missing from the plan, with the note that says so. Under it come a one-line headline and at most three short captions. The slide's full plan text follows in a closed `<details>`, so nothing is lost and the traceability check has a place to look. Each diagram is drawn once.
 
@@ -412,12 +413,12 @@ The groomed plan is written for the agents that build from it: paths, line numbe
 **Every diagram reads top to bottom.** Order and cause run down the page:
 
 - **Flow** — one node under the next, each arrow's label beside it; a return edge, such as *adjust*, loops back up the side
-- **Step graph** — one row per step, in order, with the file it touches on the same row
+- **Step graph** — one row per step, in order, with the files it touches on the same row
 - **Decision board** — the chosen option on top, and what it beat below with an arrow up to the winner carrying the deciding reason; a row marked `none — <why>` draws the chosen option alone, with that reason under it
 - **Blast radius** — tiers going down, from changed part to what it touches to release target
 - **Change map** — changed files first, then the files checked and left alone
 
-Two diagrams of the same kind may sit side by side, such as the before and after flows or two decision boards, each still reading top to bottom. No diagram runs left to right.
+Two diagrams of the same kind may sit side by side, such as the before and after flows or two decision boards, each still reading top to bottom; three or four decision boards sit two per row. No diagram runs left to right.
 
 **Diagram catalog.** Each diagram kind is drawn from these plan sections and nothing else:
 

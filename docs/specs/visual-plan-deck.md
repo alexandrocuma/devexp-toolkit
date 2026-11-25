@@ -70,7 +70,7 @@ The deck is exactly four slides: **1 What** (ticket, problem, before → after f
 Plans groomed before the headings were fixed name these sections differently (`### Steps`, `Files confirmed safe`, `### Risk`). For such a plan, Phase 6 finds each source by what it holds. Where no `## Risks` exists, it uses the Ticket Health Report's Release Impact and Security Notes. A source it cannot find is stated on its slide, with `adjust` suggested. The diagram is never invented.
 
 ### S-4.3 Slide layout rules (Phase 6 "The file")
-A plan fits four slides when its step graph has at most seven steps, its `## Decisions` table at most four rows, and every diagram at most ~12 nodes. Phase 6 checks this before it writes anything. A plan that does not fit gets no deck: Phase 6 says which part overflowed and how many slides it would have needed, and offers to split the ticket (back to Phase 4) or `adjust` (re-groom). Content is never squeezed, truncated or spread onto a fifth slide.
+A plan fits four slides when its step graph has at most seven steps, its `## Decisions` table at most four rows, and every diagram at most 12 nodes. Phase 6 checks this before it writes anything. A plan that does not fit gets no deck: Phase 6 says which part overflowed and how many slides it would have needed, and offers to split the ticket (back to Phase 4) or `adjust` (re-groom). Content is never squeezed, truncated or spread onto a fifth slide.
 
 A diagram is the first and largest element on each slide. Text is limited to a one-line headline plus at most three short captions. The full plan text for the slide sits in a closed `<details>` under the diagram, so nothing is lost and the traceability check still has a place to look.
 
@@ -134,7 +134,7 @@ Not applicable: the deck is a local file produced in a chat session. The Phase 6
 
 ### S-7.3 Errors and Edge Cases
 - Plan has no `## Diagrams` (groomed before this ships): the deck builds without the flow diagram, says so on slide 1, and suggests re-grooming. It never invents the flow.
-- Plan too large for four slides (more than seven steps, more than four decisions, or a diagram past ~12 nodes): no deck. Phase 6 names what overflowed and offers split or `adjust` (S-4.3).
+- Plan too large for four slides (more than seven steps, more than four decisions, or a diagram past 12 nodes): no deck. Phase 6 names what overflowed and offers split or `adjust` (S-4.3).
 - `Not applicable` flow: the change map becomes the hero diagram on slide 1, and slide 2 keeps the blast radius.
 - Plan groomed before the headings were fixed: sources are found by what they hold (S-4.2). A missing source is stated, never invented.
 
