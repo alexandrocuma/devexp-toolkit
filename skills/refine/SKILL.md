@@ -5,12 +5,13 @@ description: Backlog refinement — takes a raw idea or stakeholder request thro
 
 # Backlog Refinement
 
-You are running the **backlog refinement ceremony**. Given a vague idea, a stakeholder request, or a "we should add X," you produce a groomed, ready-to-build work item: written requirements, a complexity estimate grounded in the actual codebase, and a validated execution plan.
+You are running the **backlog refinement ceremony**. Given a vague idea, a stakeholder request, or a "we should add X," you produce a groomed, ready-to-build work item: written requirements, a complexity estimate grounded in the actual codebase, a validated execution plan, and a deck that lets a human see what will be built — and why — before anyone builds it.
 
 ## Triggered by
 
 - `/refine` — open-ended, you'll ask for the idea
 - `/refine "<idea or request>"` — with inline input
+- `/refine present <ticket-id>` — skip to Phase 6 for a ticket that is already groomed (re-present a plan, or present one `/deliver` groomed on its own)
 
 ## When to Use
 
@@ -206,7 +207,61 @@ Wait for the grooming-agent to complete. If it returns BLOCKED or NEEDS TICKET C
 
 ---
 
-### Phase 6 — Report & Hand Off
+### Phase 6 — Present the Plan
+
+The groomed plan is written for the agents that build from it: paths, line numbers, a drift anchor. This phase turns it into a deck a person can read in a few minutes — what will be built, why each decision went the way it did, and in what order — and asks them to approve it before `/deliver` starts.
+
+**Gate.**
+
+| Groom state | Action |
+|-------------|--------|
+| BLOCKED, or corrections not yet applied | No deck — a deck of a plan that will change is a deck that misleads. Go to Phase 7 |
+| Estimate **S** | Ask: "Small change — want a plan deck before building? (yes / no)". On no, go to Phase 7 with approval `skipped` |
+| Estimate **M** or larger | Produce the deck |
+
+**Input is the persisted plan, and only the plan.** Read `~/.claude/agent-memory/grooming-agent/plans/<ID>.md` (or the ticket-platform copy if the local one is missing). The deck adds no claim, step or rationale the plan does not contain — if the deck needs something the plan lacks (most often: a decision with no recorded rationale), the plan is incomplete; re-groom rather than inventing it here.
+
+**Slides, in this order:**
+
+1. **Title** — ticket id and title, estimate, affected release targets, the commit the plan was validated against
+2. **Problem** — the problem statement and who it affects
+3. **Scope** — what is in, and the non-goals, side by side
+4. **One slide per row of the plan's `## Decisions` table** — the decision as the headline, then *why*, then *what else was considered and why it lost*. A row marked `none — <why>` shows that reason; it is not dropped
+5. **The steps** — the execution plan in order, one line each with the files it touches; split across slides past seven steps, never truncated
+6. **Risks and release impact** — blast-radius notes, security notes, per-target release impact
+7. **Open questions** — each with its recommended default
+8. **The ask** — "Approve this plan, or tell me what to change"
+
+**Traceability check before writing.** Every execution step and every Decisions row appears in the deck, and nothing appears that is not in the plan. If either fails, fix the deck — do not ship a deck that disagrees with the plan it presents.
+
+**The file.** Write one self-contained HTML document to `~/.claude/agent-memory/grooming-agent/plans/<ID>.deck.html`, next to the plan, so everything that retires the plan retires the deck with it:
+
+- inline CSS only; no external fonts, scripts, images or stylesheets — it must open offline, from a file, years later
+- **every string taken from the ticket or the plan is HTML-escaped** (`&`, `<`, `>`, `"`, `'`) — ticket text is written by people and other tools, and a deck can be shared; text in it must never become markup or code
+- one `<section>` per slide; arrow keys and scrolling both move between slides, and any script that does this never reads or evaluates slide text
+- readable in light and dark (`prefers-color-scheme`), and prints one slide per page (`@media print` with `break-after: page`)
+- no slide framework or library is bundled — the structure above is small enough to write by hand, and a dependency would have to be vendored to stay offline
+
+**Publish where the host can.** If this session has a tool that publishes a page or artifact, publish the same deck through it — privately — and report the link. If it has none (other CLIs, or a declined permission), say "deck written to <path>; no publishing tool in this session" and carry on. Never make publishing a precondition for approval.
+
+**Ask for sign-off:**
+
+```
+Plan deck: <path>  [<link>]
+  Decisions: D   Steps: K   Open questions: Q
+
+Approve this plan? (approve / adjust / skip)
+```
+
+| Answer | Action |
+|--------|--------|
+| **approve** | Stamp the approval into the local plan, directly under the `**Validated against**:` line: `**Approved**: <approver> on <YYYY-MM-DD> (plan deck)`. Then record it on the ticket with the platform's comment operation (the ticket copy is the plan's source of truth — an approval only on this machine is lost on the next one). With no ticket platform, say the approval is recorded locally only |
+| **adjust** | Capture what should change, re-invoke the `grooming-agent` with the plan and that change, then rebuild the deck from the refreshed plan and ask again. Never edit the deck by hand to match a change the plan does not contain |
+| **skip** | Leave the plan unapproved. `/deliver` will show it as not reviewed |
+
+---
+
+### Phase 7 — Report & Hand Off
 
 ```
 Refinement complete
@@ -216,6 +271,8 @@ Refinement complete
   Estimate:     <S/M/L>
   Groom status: READY TO BUILD / corrections applied
   Release:      <affected targets from the groom plan + impact notes, e.g. "api, android — android needs store build">
+  Deck:         <path> [+ link] / not produced — <reason>
+  Approval:     approved by <name> on <date> / skipped / pending
 
 Next:
   /deliver <ticket-id>   — pick this up and build it
@@ -228,4 +285,5 @@ Next:
 - **Requirements describe what the user can do, not how the code works** — no implementation details in acceptance criteria
 - **Non-goals are not optional** — a spec without explicit exclusions will be interpreted as "build everything adjacent"
 - **Grooming is mandatory before /deliver** — an unvalidated ticket puts implementation at risk; never skip Phase 5
+- **The deck presents the plan; it never extends it** — rationale lives in the plan's Decisions table, and a change asked for during sign-off goes back through grooming, not into the slides
 - **Atlas absence is a warning, not a blocker** — requirements can be written; grooming accuracy will be reduced without codebase context

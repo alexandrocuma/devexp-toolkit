@@ -45,6 +45,7 @@ expect block 'git commit -m x && git push --force'          # force push after s
 expect allow 'rm -f /tmp/.deliver-PAY-123-*'                 # prefix-anchored toolkit scratch
 expect allow 'rm -f /tmp/.recently_changed.txt'             # specific file (improve uses this)
 expect allow 'rm -f ~/.claude/agent-memory/grooming-agent/plans/PAY-123.md'
+expect allow 'rm -f ~/.claude/agent-memory/grooming-agent/plans/PAY-123.md ~/.claude/agent-memory/grooming-agent/plans/PAY-123.deck.html'   # plan + its /refine deck
 expect allow 'rm -f ~/.claude/agent-memory/grooming-agent/sessions/PAY-123-*'
 expect allow 'git push origin main'
 expect allow 'git commit -m "fix rm -f false positive" ; git push'   # the bug this PR fixes

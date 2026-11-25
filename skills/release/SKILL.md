@@ -330,9 +330,9 @@ With `$ticket` verified, retire each artifact:
    git worktree list          # this ticket's tree should no longer appear
    git branch -d "${type}/${ticket}" 2>/dev/null
    ```
-2. **Persisted plan** — the plan described pre-merge intent; once delivered it only invites drift:
+2. **Persisted plan and its deck** — the plan described pre-merge intent; once delivered it only invites drift, and the deck `/refine` built from it goes with it:
    ```bash
-   rm -f ~/.claude/agent-memory/grooming-agent/plans/"$ticket".md
+   rm -f ~/.claude/agent-memory/grooming-agent/plans/"$ticket".md ~/.claude/agent-memory/grooming-agent/plans/"$ticket".deck.html
    ```
    The ticket-platform copy is a tracker action, not a filesystem delete — **ask first**, then remove it via the platform's CLI.
 3. **Groom-session artifacts** — **prefix-anchor** the glob (`"$ticket"-*`, never `*"$ticket"*`) so it can never match the project's shared memory file:

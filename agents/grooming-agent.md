@@ -269,6 +269,7 @@ Write the formatted plan document yourself, using all Phase 3–6 findings. The 
 - Have ordered steps — each step unblocked by the previous
 - Have a specific verification section (not "run tests" — specific commands and what to check)
 - Have an **Affected Release Targets** section: each target id whose release-guide path overlaps a changed file, and the release-impact notes per target (version/build-number bump required, deploy ordering between targets, feature flag required, external review lead time). `deliver` checks readiness against it and `/release` ships only these targets
+- Have a **`## Decisions`** section: a table with the columns `# | Decision | Rationale | Alternatives considered | Why rejected`, one row per choice a reviewer could reasonably have made differently (where the change lives, what pattern it follows, what is deliberately left out). A choice with no real alternative says so in the row — `none — <why>` — rather than leaving the cell empty. `/refine` turns each row into one slide of the plan deck, so a rationale that is not in this table does not reach the people approving the plan
 
 **Stamp the plan with a validation anchor.** Every line/path in the plan was verified against a specific commit; record which one so consumers can detect drift later. Capture it:
 
@@ -341,6 +342,7 @@ Plan summary:
   Files to change:        N (listed with lines)
   Files confirmed safe:   M
   Execution steps:        K
+  Decisions:              D recorded
   Breaking changes:       X found, Y affect this codebase
 
 Persisted to:

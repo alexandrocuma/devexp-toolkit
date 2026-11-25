@@ -321,7 +321,7 @@ For each candidate, classify before proposing removal:
 ```
 Hygiene sweep — candidates found:
   Orphaned worktrees:   N (branch merged/abandoned)   [live, preserved: M]
-  Stale plans:          N (ticket closed)
+  Stale plans:          N (ticket closed — each with its .deck.html, if any)
   Old groom sessions:   N
   Drift-stale memory:   N (A1 flagged)                 [kept, still current: M]
   /tmp scratch:         N (toolkit prefix)
@@ -338,7 +338,7 @@ safe_id() { case "${1}" in ""|*[!A-Za-z0-9_-]*) return 1 ;; *) return 0 ;; esac;
 git worktree remove "<verified-abs-path>"   # confirmed-orphan trees only (refuses a dirty tree without --force)
 git worktree prune                          # drop stale admin entries for dirs already gone
 
-id="<closed-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/grooming-agent/plans/"$id".md
+id="<closed-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/grooming-agent/plans/"$id".md ~/.claude/agent-memory/grooming-agent/plans/"$id".deck.html
 id="<closed-ticket-id>"; safe_id "$id" && rm -f ~/.claude/agent-memory/grooming-agent/sessions/"$id"-* 2>/dev/null
 id="<released-id>";      safe_id "$id" && rm -f ~/.claude/agent-memory/release/"$id".md
 id="<finished-id>";      safe_id "$id" && rm -f /tmp/.deliver-"$id"-* /tmp/.improve-"$id"-* /tmp/.groom-"$id"-* 2>/dev/null

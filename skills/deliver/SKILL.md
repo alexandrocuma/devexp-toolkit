@@ -67,6 +67,8 @@ fi
 
 **Load the repo's definition of done.** Read the pull/merge request template (`.github/pull_request_template.md`, `.gitlab/merge_request_templates/`) and any document the repo's `CLAUDE.md` names as its definition of done, crafting rules or PR checklist. Every section it requires is something this delivery produces, not something to fill in afterwards: Phase 1.8 produces the class sweep, Phase 4 the proof, Phase 5 checks the rest. When the repo's rules are stricter than this skill, the repo wins. A repo with none of these is a note, not a blocker.
 
+**Read the approval.** `/refine` Phase 6 stamps `**Approved**: <who> on <date>` under the plan's anchor when a person signs off on the plan deck. Record it, or its absence, for Phase 1. A missing approval is a notice, not a gate — plans groomed by this skill itself never pass through the deck, and the user may have skipped it on purpose.
+
 **Load the release guide.** Read `docs/guides/release.md` alongside the plan and take the plan's **Affected Release Targets** section as this delivery's target list. A missing guide or section is a note, not a blocker — the delivery proceeds and Phase 4.5 reports readiness as unverified.
 
 If the plan has no anchor (groomed before A3), or the anchor is not an ancestor of HEAD (per the guard above), treat it as drift-unknown: run the classification against the plan's `Groomed` date instead (`git log --since="<Groomed date> 00:00:00" --name-only`), and prefer re-grooming if that date is not same-day.
@@ -94,6 +96,7 @@ Groom plan loaded:
   Steps:            N
   Risk:             low / medium / high
   Release targets:  <target ids from the plan / unverified — no release guide>
+  Approval:         <approved by <who> on <date> / not reviewed by a person — `/refine present <ticket-id>` shows the plan deck first>
 
 Delivery sequence:
   1. Worktree           → isolate this ticket in its own git worktree
